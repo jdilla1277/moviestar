@@ -1,0 +1,100 @@
+name: pr-opener-check
+
+# Every PR opens with a two-sentence plain-language summary: first describe
+# what an agent or user can now do, then state what was missing before.
+#
+# Intentionally lenient about HTML comments and leading whitespace
+# (PRs sometimes start with template scaffolding) but strict about
+# the first prose paragraph: it must NOT be a heading / list /
+# blockquote, and it must contain at least 2 sentence-ending
+# punctuation marks.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+jobs:
+  check-opener:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Validate PR opener
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          python3 <<'PY'
+          import os
+          import re
+          import sys
+
+          body = os.environ.get("PR_BODY") or ""
+
+          # Strip HTML comments (some PR templates scaffold with these).
+          body = re.sub(r"<!--.*?-->", "", body, flags=re.DOTALL)
+
+          # Split into paragraphs separated by blank lines.
+          paragraphs = [p.strip() for p in re.split(r"\n\s*\n", body) if p.strip()]
+
+          if not paragraphs:
+              print(
+                  "::error::PR body is empty. Every PR must open "
+                  "with a 2-sentence plain-language summary (sentence 1 = new "
+                  "capability, sentence 2 = what was broken before)."
+              )
+              sys.exit(1)
+
+          first = paragraphs[0]
+          first_line = first.split("\n", 1)[0].strip()
+
+          # Reject markdown structural starts — the opener must be prose,
+          # not a heading / list / blockquote / code fence.
+          structural_prefixes = ("#", "- ", "* ", "> ", "```", "1. ", "2. ", "|")
+          if any(first_line.startswith(p) for p in structural_prefixes):
+              print(
+                  f"::error::PR body's first paragraph looks like a "
+                  f"{('heading' if first_line.startswith('#') else 'list/blockquote')} "
+                  f"({first_line[:60]!r}), not the 2-sentence opener. The "
+                  f"opener comes BEFORE any structured "
+                  f"section. Add two plain-language sentences at the very top of "
+                  f"the body, then continue with `## Summary` / etc."
+              )
+              sys.exit(1)
+
+          # Require at least 2 sentence-ending punctuation marks in the
+          # first paragraph. Cheap heuristic — catches "## Summary" being
+          # disguised as prose, single-sentence openers, etc.
+          # Count `. `, `! `, `? `, plus end-of-paragraph terminal punctuation.
+          interior_terminals = len(re.findall(r"[.!?](?:\s|$)", first))
+          if interior_terminals < 2:
+              print(
+                  f"::error::PR body's first paragraph has only {interior_terminals} "
+                  f"sentence-ending punctuation marks; the convention requires 2 "
+                  f"(sentence 1 = new capability, sentence 2 = what was broken "
+                  f"before). Got: {first[:200]!r}"
+              )
+              sys.exit(1)
+
+          # Cheap quality nudge: opener should reference user-facing
+          # impact, not pure mechanism. Pass through if any of these tokens
+          # appear; otherwise warn (don't fail) — too easy to false-positive.
+          quality_signals = (
+              "agent",
+              "before this",
+              "now",
+              "user",
+              "you can",
+              "an agent",
+          )
+          if not any(s in first.lower() for s in quality_signals):
+              print(
+                  f"::warning::PR body's first paragraph passes the structural "
+                  f"checks but doesn't obviously frame agent/user-facing impact. "
+                  f"Convention says sentence 1 = what an agent can now do, "
+                  f"sentence 2 = what was broken/missing before. Consider rewording "
+                  f"if the opener leads with mechanism (file lists, flag changes) "
+                  f"instead of impact."
+              )
+
+          print("PR opener passes structural checks.")
+          PY

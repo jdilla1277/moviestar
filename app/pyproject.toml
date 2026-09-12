@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "moviestar"
+version = "0.7.0"
+description = "Video editing CLI for AI agents. Compose and shape scenes, animate camera moves, retime footage, mix audio, burn captions, and render with FFmpeg."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = [
+    "LICENSE",
+    "src/moviestar/fonts/OFL-LICENSE.txt",
+]
+authors = [{name = "James Dillard"}]
+keywords = ["video", "ffmpeg", "ai", "agents", "cli", "transcript", "whisper", "editing"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = ["click>=8.0", "faster-whisper>=1.0", "keyring>=25.0", "rapidfuzz>=3.0"]
+
+[project.optional-dependencies]
+diarize = ["pyannote.audio>=3.0"]
+
+[project.scripts]
+moviestar = "moviestar.cli:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"moviestar.schema" = ["*.json"]
+"moviestar" = ["fonts/*.ttf", "fonts/OFL-LICENSE.txt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: tests that call real faster-whisper (skipped by default; use --run-slow to include).",
+]

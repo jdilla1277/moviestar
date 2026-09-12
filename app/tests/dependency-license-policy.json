@@ -1,0 +1,93 @@
+{
+  "allowed_simple": [
+    "0BSD",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MIT-CMU",
+    "PSF-2.0",
+    "Zlib"
+  ],
+  "reviewed": {
+    "aiohttp": {
+      "metadata_sha256": "52067c026211594fba2f1b58554221f3288c06ea683d36fb49585eb06647c9bd",
+      "license": "Apache-2.0 AND MIT",
+      "evidence": "https://github.com/aio-libs/aiohttp/blob/master/LICENSE.txt"
+    },
+    "certifi": {
+      "metadata_sha256": "2e3a62cde7fb0c1fcec84b6a5b0761368df27dc54675b35e05f5f325c4e781b9",
+      "license": "MPL-2.0",
+      "evidence": "https://github.com/certifi/python-certifi/blob/master/LICENSE"
+    },
+    "numpy": {
+      "metadata_sha256": "ceec730a7e7641cc0d16bca8dd083d729dcd726c10ae8e4aa10376fbc2ef8136",
+      "license": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
+      "evidence": "https://github.com/numpy/numpy/blob/main/LICENSE.txt"
+    },
+    "packaging": {
+      "metadata_sha256": "f125334683dee8b6c37ca607a93e51afdc982819b97892884afe8a0b0a5fcf52",
+      "license": "Apache-2.0 OR BSD-2-Clause",
+      "evidence": "https://github.com/pypa/packaging/blob/main/LICENSE"
+    },
+    "pyannote-audio": {
+      "version": "4.0.7",
+      "metadata_sha256": "7120700a68be04fced5126b7a4a00a4dacbedc487bf809bfc25c2b48b31e7841",
+      "license": "MIT",
+      "evidence": "https://github.com/pyannote/pyannote-audio/blob/main/LICENSE"
+    },
+    "pyannote-core": {
+      "version": "6.0.1",
+      "metadata_sha256": "7120700a68be04fced5126b7a4a00a4dacbedc487bf809bfc25c2b48b31e7841",
+      "license": "MIT",
+      "evidence": "https://github.com/pyannote/pyannote-core/blob/develop/LICENSE"
+    },
+    "pyannote-database": {
+      "version": "6.1.1",
+      "metadata_sha256": "7120700a68be04fced5126b7a4a00a4dacbedc487bf809bfc25c2b48b31e7841",
+      "license": "MIT",
+      "evidence": "https://github.com/pyannote/pyannote-database/blob/develop/LICENSE"
+    },
+    "pyannote-metrics": {
+      "version": "4.1",
+      "metadata_sha256": "7120700a68be04fced5126b7a4a00a4dacbedc487bf809bfc25c2b48b31e7841",
+      "license": "MIT",
+      "evidence": "https://github.com/pyannote/pyannote-metrics/blob/develop/LICENSE"
+    },
+    "pyannote-pipeline": {
+      "version": "4.0.0",
+      "metadata_sha256": "7120700a68be04fced5126b7a4a00a4dacbedc487bf809bfc25c2b48b31e7841",
+      "license": "MIT",
+      "evidence": "https://github.com/pyannote/pyannote-pipeline/blob/develop/LICENSE"
+    },
+    "pyannoteai-sdk": {
+      "version": "0.4.0",
+      "metadata_sha256": "7120700a68be04fced5126b7a4a00a4dacbedc487bf809bfc25c2b48b31e7841",
+      "license": "MIT",
+      "evidence": "https://github.com/pyannote/pyannoteAI-python-sdk/blob/main/LICENSE"
+    },
+    "python-dateutil": {
+      "metadata_sha256": "395518f6d38c4c6e3d46bf0ef961f4e9451ecec3b95c2b2dcb138c211e30d173",
+      "license": "Apache-2.0 OR BSD-3-Clause",
+      "evidence": "https://github.com/dateutil/dateutil/blob/master/LICENSE"
+    },
+    "torch": {
+      "metadata_sha256": "1cc33147e56dd2cca7ac9d04cc490d1471963a92aee8ce0422e47d5836967517",
+      "license": "Apache-2.0 AND Apache-2.0 WITH LLVM-exception AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND MIT",
+      "evidence": "https://github.com/pytorch/pytorch/blob/main/LICENSE"
+    },
+    "torchcodec": {
+      "version": "0.16.0",
+      "metadata_sha256": "7120700a68be04fced5126b7a4a00a4dacbedc487bf809bfc25c2b48b31e7841",
+      "license": "BSD-3-Clause",
+      "evidence": "https://github.com/meta-pytorch/torchcodec/blob/main/LICENSE"
+    },
+    "tqdm": {
+      "metadata_sha256": "365bc6ef69d978c2bd76932dea5e9c456a362d700cea3017035ff39416464bdd",
+      "license": "MPL-2.0 AND MIT",
+      "evidence": "https://github.com/tqdm/tqdm/blob/master/LICENCE"
+    }
+  }
+}

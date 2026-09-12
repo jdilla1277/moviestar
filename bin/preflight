@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Run the appropriate pre-push test suite based on what's changed.
+#
+# Some failures only appear in the slow suite, including Python-version
+# annotation differences and incomplete bulk replacements in test arguments.
+# This wrapper selects the fast or slow path based on what changed.
+#
+# Usage:
+#   bin/preflight              # auto-pick based on `git diff` against origin/main
+#   bin/preflight --slow       # force --run-slow regardless
+#   bin/preflight --fast       # force fast path regardless
+#
+# Wire it into git as a pre-push hook with:
+#   ln -s ../../bin/preflight .git/hooks/pre-push
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+mode="${1:-auto}"
+
+case "$mode" in
+  --slow) want_slow=1 ;;
+  --fast) want_slow=0 ;;
+  auto)
+    # Look at uncommitted + staged + ahead-of-main changes.
+    base="$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main 2>/dev/null || echo HEAD~1)"
+    changed="$(git diff --name-only "$base"...HEAD ; git diff --name-only ; git diff --cached --name-only)"
+    if echo "$changed" | grep -qE '^app/(tests/|src/moviestar/(transcribe|project|cli|spec)\.py)'; then
+      want_slow=1
+      echo "preflight: tests or transcription-touching code changed → --run-slow" >&2
+    else
+      want_slow=0
+      echo "preflight: no tests or transcription-touching code changed → fast path" >&2
+    fi
+    ;;
+  *)
+    echo "usage: bin/preflight [--slow|--fast]" >&2
+    exit 2
+    ;;
+esac
+
+if [[ "$want_slow" -eq 1 ]]; then
+  "$REPO_ROOT/bin/test" --run-slow
+else
+  "$REPO_ROOT/bin/test"
+fi
+
+"$REPO_ROOT/app/.venv/bin/python" "$REPO_ROOT/bin/check-dependency-licenses"

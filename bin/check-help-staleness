@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""Scan MovieStar's CLI source for stale release-planning wording.
+
+Catches phrases like "coming in M14" and "deferred to M14" that become stale
+when plans change. User-facing help should describe current behavior instead.
+
+Exits non-zero on any matches and prints file:line for each.
+"""
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+
+# Patterns that expose internal milestone shorthand in user-facing text.
+STALE_PATTERNS = [
+    re.compile(r"\bis M\d+[a-z]?\b"),
+    re.compile(r"\bcoming in M\d+[a-z]?\b", re.IGNORECASE),
+    re.compile(r"\bdeferred to M\d+[a-z]?\b", re.IGNORECASE),
+    re.compile(r"\bcome[s]? later\b", re.IGNORECASE),
+    re.compile(r"\bM\d+[a-z]? will\b"),
+    re.compile(r"\bin M\d+[a-z]? \[?\]?\s*\("),  # "in M13b (step 5)" style
+]
+
+
+# The check targets help strings and command docstrings, not code comments.
+def _is_user_facing_line(line: str) -> bool:
+    """True if the line is part of a docstring or help= string, not a
+    code comment. Heuristic but good enough for the friction this is
+    catching."""
+    stripped = line.lstrip()
+    if stripped.startswith("#"):
+        return False
+    return True
+
+
+def scan(path: Path) -> list[tuple[int, str, str]]:
+    """Return stale-wording matches as line, text, and matched pattern."""
+    hits: list[tuple[int, str, str]] = []
+    for line_no, line in enumerate(path.read_text().splitlines(), start=1):
+        if not _is_user_facing_line(line):
+            continue
+        for pat in STALE_PATTERNS:
+            m = pat.search(line)
+            if m:
+                hits.append((line_no, line.strip(), m.group(0)))
+                break  # one report per line
+    return hits
+
+
+def main() -> int:
+    repo_root = Path(__file__).resolve().parent.parent
+    cli_py = repo_root / "app" / "src" / "moviestar" / "cli.py"
+    if not cli_py.exists():
+        print(f"ERROR: expected to find {cli_py}", file=sys.stderr)
+        return 2
+
+    hits = scan(cli_py)
+    if not hits:
+        print("OK — no stale future-milestone wording in user-facing strings.")
+        return 0
+
+    print(
+        f"Stale future-milestone wording in {cli_py.relative_to(repo_root)}:\n",
+        file=sys.stderr,
+    )
+    for line_no, line_text, matched in hits:
+        print(
+            f"  {cli_py.relative_to(repo_root)}:{line_no}: "
+            f"found {matched!r}",
+            file=sys.stderr,
+        )
+        print(f"    {line_text}", file=sys.stderr)
+    print(
+        "\nRemove the milestone reference or rewrite the wording to be "
+        "milestone-agnostic.\n"
+        "(Code comments with milestone references are fine — this check "
+        "targets user-facing help/docstring text.)",
+        file=sys.stderr,
+    )
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

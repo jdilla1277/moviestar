@@ -1,0 +1,19 @@
+name: help-staleness-check
+
+# Prevents release-planning shorthand from leaking into user-facing help.
+# See bin/check-help-staleness for the patterns and scoping rules.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+  push:
+    branches: [main]
+
+jobs:
+  check-help-staleness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v6
+      - name: Scan for stale future-milestone wording
+        run: ./bin/check-help-staleness

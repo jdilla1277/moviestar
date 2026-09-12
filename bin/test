@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Run pytest in app/ with the venv activated.
+#
+# Keeps environment activation and the app working directory consistent for
+# humans, agents, and automation.
+#
+# Usage:
+#   bin/test                 # fast path (default)
+#   bin/test --run-slow      # full suite, including whisper tests
+#   bin/test tests/test_spec.py -k "TestResolveSpec"  # any pytest args
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VENV="$REPO_ROOT/app/.venv"
+
+if [[ ! -d "$VENV" ]]; then
+  echo "error: virtualenv not found at $VENV" >&2
+  echo "create it with:" >&2
+  echo "  python3 -m venv $VENV && source $VENV/bin/activate && pip install -e $REPO_ROOT/app pytest" >&2
+  exit 1
+fi
+
+# shellcheck source=/dev/null
+source "$VENV/bin/activate"
+cd "$REPO_ROOT/app"
+exec pytest "$@"

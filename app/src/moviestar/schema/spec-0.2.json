@@ -1,0 +1,540 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trymoviestar.com/schema/spec-0.2.json",
+  "title": "MovieStar Edit Spec v0.2",
+  "description": "Multi-source declarative edit spec. Each source carries its own operations stack (independent edit history). The optional `composition` block stitches per-source edits into a unified result; null means no stitching (single-source export only). Trim timecodes are interpreted in result-time per source — a subsequent trim on a source narrows that source's current result, not its original media.",
+  "type": "object",
+  "required": ["version", "sources", "revisions"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "0.2"
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/source" }
+    },
+    "composition": {
+      "description": "How edited sources stitch into the final result. Null when no concat has been called. Flat concat stores an ordered list of composition segments — each carrying its source id plus a SOURCE-TIME range frozen at concat time. Global layout concat stores one layout scene with slot assignments.",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/$defs/composition_segment" },
+              { "$ref": "#/$defs/layout_scene" }
+            ]
+          }
+        }
+      ]
+    },
+    "composition_audio_from": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "string", "minLength": 1 }
+      ]
+    },
+    "composition_canvas": {
+      "description": "Final output canvas for the composition. Null when no canvas has been set. Preset canvases resolve to concrete dimensions so renderers never need preset lookup.",
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/canvas" }
+      ]
+    },
+    "opening_transition": {
+      "description": "Optional fade from black or white at the project opening. Null preserves the default hard edge.",
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/edge_transition" }
+      ]
+    },
+    "closing_transition": {
+      "description": "Optional fade to black or white at the project closing. Null preserves the default hard edge.",
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/edge_transition" }
+      ]
+    },
+    "overlays": {
+      "description": "Timed text overlays rendered over canvas compositions. Manual overlays and generated captions share this canonical shape.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/overlay" }
+    },
+    "audio_mix": {
+      "description": "Complete audio intent: one routed source-audio layer plus independent result-time external tracks.",
+      "$ref": "#/$defs/audio_mix"
+    },
+    "motion": {
+      "description": "Scene-slot pacing and camera plan. Pacing and animated camera targets drive screenshot, inspect, watch, export dry-run, and real export through one resolved plan.",
+      "$ref": "#/$defs/motion_document"
+    },
+    "captions": {
+      "description": "Authoritative recipes for derived caption tracks.",
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "revisions": {
+      "description": "Ordered command journal for atomic global undo. Each entry stores the prior values of exactly the fields changed by one command.",
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "required": ["command", "changed"],
+        "properties": {
+          "command": { "type": "string", "minLength": 1 },
+          "changed": {
+            "type": "object",
+            "minProperties": 1,
+            "propertyNames": {
+              "enum": [
+                "sources",
+                "composition",
+                "composition_audio_from",
+                "composition_canvas",
+                "composition_authored_as",
+                "opening_transition",
+                "closing_transition",
+                "motion",
+                "overlays",
+                "audio_mix",
+                "captions"
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "required": ["id", "path", "operations"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "operations": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/$defs/trim" },
+              { "$ref": "#/$defs/cut" }
+            ]
+          }
+        }
+      }
+    },
+    "trim": {
+      "type": "object",
+      "required": ["type", "from", "to"],
+      "properties": {
+        "type": { "const": "trim" },
+        "from": { "$ref": "#/$defs/timecode" },
+        "to": { "$ref": "#/$defs/timecode" }
+      }
+    },
+    "cut": {
+      "type": "object",
+      "description": "Remove a result-time range from a source. Cuts compose with prior trims and cuts in result-time. Internally this produces a multi-segment stitched result; agents see one contiguous timeline.",
+      "required": ["type", "from", "to"],
+      "properties": {
+        "type": { "const": "cut" },
+        "from": { "$ref": "#/$defs/timecode" },
+        "to": { "$ref": "#/$defs/timecode" }
+      }
+    },
+    "composition_segment": {
+      "type": "object",
+      "description": "One entry in a populated composition. `source` references a source id; `source_from`/`source_to` are SOURCE-TIME ranges snapshotted at concat time, not result-time, so future per-source edits don't shift the composition.",
+      "required": ["source", "source_from", "source_to"],
+      "properties": {
+        "source": { "type": "string", "minLength": 1 },
+        "source_from": { "$ref": "#/$defs/timecode" },
+        "source_to": { "$ref": "#/$defs/timecode" },
+        "framing": { "$ref": "#/$defs/framing" }
+      }
+    },
+    "layout_scene": {
+      "type": "object",
+      "description": "One layout scene. A single unnamed scene represents the legacy global-layout shape; named scenes support scene-by-scene layout changes.",
+      "required": ["layout", "slots"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "layout": { "$ref": "#/$defs/layout" },
+        "audio_from": { "type": "string", "minLength": 1 },
+        "transition_in": {
+          "description": "Visual transition at the boundary before this incoming scene. Omitted for the first scene and for the default hard cut.",
+          "$ref": "#/$defs/transition"
+        },
+        "slots": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/layout_slot" }
+        }
+      }
+    },
+    "transition": {
+      "type": "object",
+      "description": "Persisted visual transition intent. Duration is the total transition duration in seconds.",
+      "required": ["type", "duration"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "enum": ["dissolve", "dip-black", "dip-white"] },
+        "duration": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "edge_transition": {
+      "type": "object",
+      "description": "Project-edge fade. Dissolve is unavailable because an edge has only one scene.",
+      "required": ["type", "duration"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "enum": ["dip-black", "dip-white"] },
+        "duration": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "layout": {
+      "type": "object",
+      "required": ["preset"],
+      "properties": {
+        "preset": { "enum": ["picture-in-picture", "single", "two-up"] },
+        "orientation": { "enum": ["horizontal", "vertical"] },
+        "inset": {
+          "type": "object",
+          "description": "Legacy picture-in-picture inset placement: corner plus width/height as canvas fractions. Absent fields use the defaults (bottom-right, 0.32 x 0.24). Cannot be combined with `geometry`; new specs should use `geometry.inset`.",
+          "properties": {
+            "corner": { "enum": ["bottom-right", "bottom-left", "top-right", "top-left"] },
+            "width": { "type": "number", "minimum": 0.05, "maximum": 0.6 },
+            "height": { "type": "number", "minimum": 0.05, "maximum": 0.6 }
+          }
+        },
+        "geometry": {
+          "type": "object",
+          "description": "Canonical slot geometry overrides. Only the picture-in-picture `inset` slot is supported. Cannot be combined with the legacy `inset` field. Absent geometry keeps the exact preset rectangle.",
+          "required": ["inset"],
+          "properties": {
+            "inset": {
+              "type": "object",
+              "description": "Placement is either `anchor` (+ optional pixel margins, default 4% of the shorter canvas dimension, min 16) or an exact normalized `x`/`y` pair; the two forms are mutually exclusive. `size` is either one fraction of the shorter canvas dimension for an even-pixel square or independent width/height fractions for a non-square region; without `size` the preset dimensions are kept. Out-of-bounds regions are rejected, not clamped.",
+              "properties": {
+                "size": {
+                  "oneOf": [
+                    { "type": "number", "minimum": 0.05, "maximum": 1 },
+                    {
+                      "type": "object",
+                      "required": ["width", "height"],
+                      "properties": {
+                        "width": { "type": "number", "minimum": 0.05, "maximum": 1 },
+                        "height": { "type": "number", "minimum": 0.05, "maximum": 1 }
+                      }
+                    }
+                  ]
+                },
+                "anchor": { "enum": ["top-left", "top", "top-right", "left", "center", "right", "bottom-left", "bottom", "bottom-right"] },
+                "margin_x": { "type": "integer", "minimum": 0 },
+                "margin_y": { "type": "integer", "minimum": 0 },
+                "x": { "type": "number", "minimum": 0, "maximum": 1 },
+                "y": { "type": "number", "minimum": 0, "maximum": 1 },
+                "motion": {
+                  "type": "object",
+                  "description": "Named slot motion. `bounce` travels the canvas and reflects off the edges. It starts at the authored placement; matching resolved motion in adjacent scenes continues without resetting. Speed defaults to medium.",
+                  "required": ["preset"],
+                  "properties": {
+                    "preset": { "enum": ["bounce"] },
+                    "speed": { "enum": ["slow", "medium", "fast"] }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "layout_slot": {
+      "type": "object",
+      "description": "One assigned source within a layout scene. `source_from`/`source_to` are SOURCE-TIME ranges snapshotted at concat time.",
+      "required": ["slot", "source", "source_from", "source_to"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "slot": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "source_from": { "$ref": "#/$defs/timecode" },
+        "source_to": { "$ref": "#/$defs/timecode" },
+        "framing": { "$ref": "#/$defs/framing" }
+      }
+    },
+    "canvas": {
+      "type": "object",
+      "required": ["preset", "width", "height", "aspect_ratio"],
+      "properties": {
+        "preset": {
+          "oneOf": [
+            { "type": "null" },
+            { "enum": ["landscape", "short", "square"] }
+          ]
+        },
+        "width": { "type": "integer", "minimum": 16, "multipleOf": 2 },
+        "height": { "type": "integer", "minimum": 16, "multipleOf": 2 },
+        "aspect_ratio": { "type": "string", "minLength": 1 }
+      }
+    },
+    "framing": {
+      "type": "object",
+      "required": ["mode"],
+      "properties": {
+        "mode": { "enum": ["fill", "fit"] },
+        "anchor": { "enum": ["center", "left", "right", "top", "bottom"] },
+        "x": { "type": "number", "minimum": 0, "maximum": 1 },
+        "y": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              { "required": ["x"] },
+              { "required": ["y"] }
+            ]
+          },
+          "then": {
+            "properties": {
+              "mode": { "const": "fill" }
+            }
+          }
+        }
+      ]
+    },
+    "overlay": {
+      "type": "object",
+      "required": ["id", "track", "kind", "text", "position", "style"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "track": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["caption", "manual"] },
+        "from": { "$ref": "#/$defs/timecode" },
+        "to": { "$ref": "#/$defs/timecode" },
+        "timing": {
+          "type": "object",
+          "required": ["space", "from", "to"],
+          "properties": {
+            "space": { "enum": ["result", "scene"] },
+            "scene": { "type": "string", "minLength": 1 },
+            "from": { "$ref": "#/$defs/timecode" },
+            "to": { "$ref": "#/$defs/timecode" }
+          },
+          "allOf": [{
+            "if": { "properties": { "space": { "const": "scene" } } },
+            "then": { "required": ["scene"] }
+          }]
+        },
+        "text": { "type": "string", "minLength": 1 },
+        "z_index": { "type": "integer" },
+        "position": { "type": "object" },
+        "style": { "type": "object" },
+        "highlight": { "type": "object" },
+        "tokens": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["text", "from", "to"],
+            "properties": {
+              "text": { "type": "string" },
+              "from": { "$ref": "#/$defs/timecode" },
+              "to": { "$ref": "#/$defs/timecode" }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "manual" } } },
+          "then": {
+            "required": ["timing"],
+            "not": {
+              "anyOf": [
+                { "required": ["from"] },
+                { "required": ["to"] }
+              ]
+            }
+          },
+          "else": {
+            "required": ["from", "to"],
+            "not": { "required": ["timing"] }
+          }
+        }
+      ]
+    },
+    "audio_mix": {
+      "type": "object",
+      "required": ["source_audio", "tracks"],
+      "properties": {
+        "source_audio": { "$ref": "#/$defs/source_audio_layer" },
+        "tracks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/audio_track" }
+        }
+      }
+    },
+    "source_audio_layer": {
+      "type": "object",
+      "required": ["muted", "gain_db", "fade_in", "fade_out"],
+      "properties": {
+        "muted": { "type": "boolean" },
+        "gain_db": { "type": "number", "minimum": -60, "maximum": 24 },
+        "fade_in": { "type": "number", "minimum": 0 },
+        "fade_out": { "type": "number", "minimum": 0 }
+      }
+    },
+    "audio_track": {
+      "type": "object",
+      "required": [
+        "id", "kind", "path", "at", "source_from", "source_to",
+        "gain_db", "muted", "loop", "fade_in", "fade_out", "ducking"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "not": { "const": "source" } },
+        "kind": { "enum": ["music", "other", "voiceover"] },
+        "path": { "type": "string", "minLength": 1 },
+        "at": { "$ref": "#/$defs/timecode" },
+        "source_from": { "$ref": "#/$defs/timecode" },
+        "source_to": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/timecode" }
+          ]
+        },
+        "gain_db": { "type": "number", "minimum": -60, "maximum": 24 },
+        "muted": { "type": "boolean" },
+        "loop": { "type": "boolean" },
+        "fade_in": { "type": "number", "minimum": 0 },
+        "fade_out": { "type": "number", "minimum": 0 },
+        "ducking": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/audio_ducking" }
+          ]
+        }
+      }
+    },
+    "audio_ducking": {
+      "type": "object",
+      "required": ["under", "preset"],
+      "properties": {
+        "under": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "preset": { "const": "speech" }
+      }
+    },
+    "motion_document": {
+      "type": "object",
+      "required": ["version", "scenes"],
+      "properties": {
+        "version": { "const": 1 },
+        "scenes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/motion_scene" }
+        }
+      }
+    },
+    "motion_scene": {
+      "type": "object",
+      "required": ["scene", "slots"],
+      "properties": {
+        "scene": { "type": "string", "minLength": 1 },
+        "scene_id": { "type": "string", "minLength": 1 },
+        "slots": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/motion_slot" }
+        }
+      }
+    },
+    "motion_slot": {
+      "type": "object",
+      "required": ["slot", "pacing", "camera"],
+      "properties": {
+        "slot": { "type": "string", "minLength": 1 },
+        "slot_id": { "type": "string", "minLength": 1 },
+        "pacing": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/pacing_record" }
+        },
+        "camera": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/camera_record" }
+        }
+      }
+    },
+    "pacing_record": {
+      "type": "object",
+      "required": ["id", "mode"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "mode": { "enum": ["speed", "duration", "hold"] },
+        "range": { "$ref": "#/$defs/source_local_range" },
+        "at": { "$ref": "#/$defs/timecode" },
+        "space": { "const": "source-local" },
+        "speed": { "type": "number", "exclusiveMinimum": 0 },
+        "duration": { "$ref": "#/$defs/timecode" }
+      }
+    },
+    "camera_record": {
+      "description": "A plain move ('range' or 'at' = start) or, with kind: 'zoom', an incremental zoom whose 'at' is the arrival moment: move in over timing.move_in ending at 'at', hold timing.hold, then return to 'return_to' over timing.move_out. 'authored' keeps the agent's original box/point intent.",
+      "type": "object",
+      "required": ["id", "to"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "const": "zoom" },
+        "range": { "$ref": "#/$defs/result_local_range" },
+        "at": { "$ref": "#/$defs/timecode" },
+        "timing": {
+          "type": "object",
+          "properties": {
+            "move_in": { "$ref": "#/$defs/duration_seconds" },
+            "hold": { "$ref": "#/$defs/duration_seconds" },
+            "move_out": { "$ref": "#/$defs/duration_seconds" }
+          }
+        },
+        "from": { "type": "object" },
+        "to": { "type": "object" },
+        "return_to": { "type": "object" },
+        "authored": { "type": "object" },
+        "ease": { "enum": ["linear", "in", "out", "in-out", "cut"] }
+      }
+    },
+    "duration_seconds": {
+      "description": "A positive duration: seconds as a number, or a timecode string.",
+      "anyOf": [
+        { "type": "number", "exclusiveMinimum": 0 },
+        { "$ref": "#/$defs/timecode" }
+      ]
+    },
+    "source_local_range": {
+      "type": "object",
+      "required": ["from", "to", "space"],
+      "properties": {
+        "from": { "$ref": "#/$defs/timecode" },
+        "to": { "$ref": "#/$defs/timecode" },
+        "space": { "const": "source-local" }
+      }
+    },
+    "result_local_range": {
+      "type": "object",
+      "required": ["from", "to", "space"],
+      "properties": {
+        "from": { "$ref": "#/$defs/timecode" },
+        "to": { "$ref": "#/$defs/timecode" },
+        "space": { "const": "result-local" }
+      }
+    },
+    "timecode": {
+      "description": "On-disk timecodes are plain strings in H:MM:SS.mmm form. The resolver expands them to {text, seconds} only when emitting envelopes.",
+      "type": "string",
+      "pattern": "^\\d+:\\d{2}:\\d{2}\\.\\d{3}$"
+    }
+  }
+}

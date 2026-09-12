@@ -1,0 +1,215 @@
+#!/usr/bin/env python3
+"""Fail closed when MovieStar's resolved dependency licenses need review."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+from importlib import metadata
+import json
+from pathlib import Path
+import re
+import sys
+
+from packaging.markers import default_environment
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_POLICY = REPO_ROOT / "app" / "tests" / "dependency-license-policy.json"
+COMPOUND_OPERATOR = re.compile(r"\s(?:AND|OR|WITH)\s", re.IGNORECASE)
+REVIEW_REQUIRED_TOKENS = ("AGPL", "GPL", "LGPL", "MPL", "SSPL")
+LICENSE_ALIASES = {
+    "Apache 2.0": "Apache-2.0",
+    "Apache License 2.0": "Apache-2.0",
+    "3-Clause BSD License": "BSD-3-Clause",
+    "BSD": "BSD-3-Clause",
+    "MIT License": "MIT",
+}
+CLASSIFIER_LICENSES = {
+    "OSI Approved :: Apache Software License": "Apache-2.0",
+    "OSI Approved :: BSD License": "BSD-3-Clause",
+    "OSI Approved :: MIT License": "MIT",
+    "OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)": "MPL-2.0",
+    "OSI Approved :: Python Software Foundation License": "PSF-2.0",
+}
+
+
+def metadata_fingerprint(record: dict) -> str:
+    """Hash only license-bearing metadata so harmless version drift can pass."""
+    payload = {
+        "license_expression": record.get("license_expression", ""),
+        "license": record.get("license", ""),
+        "classifiers": sorted(record.get("classifiers", [])),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _reported_license(record: dict) -> str:
+    expression = record.get("license_expression", "").strip()
+    if expression:
+        return expression
+
+    license_value = record.get("license", "").strip()
+    if license_value and license_value.upper() not in {"UNKNOWN", "DUAL LICENSE"}:
+        if len(license_value) <= 200:
+            return LICENSE_ALIASES.get(license_value, license_value)
+
+    classifier_licenses = sorted(
+        {
+            CLASSIFIER_LICENSES[classifier]
+            for classifier in record.get("classifiers", [])
+            if classifier in CLASSIFIER_LICENSES
+        }
+    )
+    if len(classifier_licenses) == 1:
+        return classifier_licenses[0]
+    if classifier_licenses:
+        return " OR ".join(classifier_licenses)
+    return ""
+
+
+def evaluate_record(record: dict, policy: dict) -> tuple[bool, str]:
+    """Return whether one installed distribution satisfies the policy."""
+    name = canonicalize_name(record["name"])
+    reported = _reported_license(record)
+    reviewed = policy.get("reviewed", {}).get(name)
+    if reviewed is not None:
+        actual = metadata_fingerprint(record)
+        expected = reviewed.get("metadata_sha256")
+        if actual != expected:
+            return False, f"reviewed license metadata changed ({expected} -> {actual})"
+        if not reported and record.get("version") != reviewed.get("version"):
+            return False, (
+                "reviewed version changed while license metadata remains missing "
+                f"({reviewed.get('version')} -> {record.get('version')})"
+            )
+        if not reviewed.get("license") or not reviewed.get("evidence"):
+            return False, "review entry must record its license and evidence URL"
+        return True, f"reviewed: {reviewed['license']}"
+
+    if not reported:
+        return False, "no license metadata; add verified upstream evidence"
+
+    if COMPOUND_OPERATOR.search(reported) or any(
+        token in reported.upper() for token in REVIEW_REQUIRED_TOKENS
+    ):
+        return False, f"explicit review required: {reported}"
+
+    if reported in policy.get("allowed_simple", []):
+        return True, f"allowed: {reported}"
+    return False, f"explicit review required: {reported}"
+
+
+def _distribution_record(dist: metadata.Distribution) -> dict:
+    classifiers = [
+        value.removeprefix("License :: ")
+        for value in dist.metadata.get_all("Classifier", [])
+        if value.startswith("License :: ")
+    ]
+    return {
+        "name": dist.metadata["Name"],
+        "version": dist.version,
+        "license_expression": (dist.metadata.get("License-Expression") or "").strip(),
+        "license": (dist.metadata.get("License") or "").strip(),
+        "classifiers": classifiers,
+    }
+
+
+def _marker_applies(requirement: Requirement, parent_extras: set[str]) -> bool:
+    if requirement.marker is None:
+        return True
+    environment = default_environment()
+    return any(
+        requirement.marker.evaluate({**environment, "extra": extra})
+        for extra in parent_extras | {""}
+    )
+
+
+def unknown_extras(provided: set[str], requested: set[str]) -> set[str]:
+    """Return requested extras not declared by the root distribution."""
+    normalized_provided = {canonicalize_name(extra) for extra in provided}
+    return {
+        extra for extra in requested if canonicalize_name(extra) not in normalized_provided
+    }
+
+
+def resolved_dependency_records(
+    root_name: str, requested_extras: set[str]
+) -> tuple[list[dict], list[str]]:
+    """Return the installed runtime closure and any resolution errors."""
+    queue: list[tuple[str, set[str]]] = [(root_name, requested_extras)]
+    processed_extras: dict[str, set[str]] = {}
+    records: dict[str, dict] = {}
+    errors: list[str] = []
+    root_key = canonicalize_name(root_name)
+
+    while queue:
+        requested_name, extras = queue.pop(0)
+        requested_key = canonicalize_name(requested_name)
+        already_processed = processed_extras.get(requested_key, set())
+        if requested_key in processed_extras and extras <= already_processed:
+            continue
+        processed_extras[requested_key] = already_processed | extras
+
+        try:
+            dist = metadata.distribution(requested_name)
+        except metadata.PackageNotFoundError:
+            errors.append(f"required distribution is not installed: {requested_name}")
+            continue
+
+        record = _distribution_record(dist)
+        installed_key = canonicalize_name(record["name"])
+        if installed_key == root_key:
+            provided = set(dist.metadata.get_all("Provides-Extra", []))
+            for extra in sorted(unknown_extras(provided, requested_extras)):
+                errors.append(f"MovieStar does not declare requested extra: {extra}")
+        if installed_key != root_key:
+            records[installed_key] = record
+
+        active_extras = processed_extras[requested_key]
+        for raw_requirement in dist.requires or []:
+            requirement = Requirement(raw_requirement)
+            if _marker_applies(requirement, active_extras):
+                queue.append((requirement.name, set(requirement.extras)))
+
+    return [records[name] for name in sorted(records)], errors
+
+
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--extra",
+        action="append",
+        default=[],
+        help="Resolve an installed MovieStar extra, such as diarize (repeatable).",
+    )
+    parser.add_argument("--policy", type=Path, default=DEFAULT_POLICY)
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv if argv is not None else sys.argv[1:])
+    policy = json.loads(args.policy.read_text(encoding="utf-8"))
+    records, errors = resolved_dependency_records("moviestar", set(args.extra))
+
+    for record in records:
+        ok, detail = evaluate_record(record, policy)
+        marker = "OK" if ok else "FAIL"
+        print(f"{marker:4} {record['name']}=={record['version']}: {detail}")
+        if not ok:
+            errors.append(f"{record['name']}=={record['version']}: {detail}")
+
+    if errors:
+        print("\nDependency license policy failed:", file=sys.stderr)
+        for error in errors:
+            print(f"- {error}", file=sys.stderr)
+        return 1
+    print(f"\nDependency license policy passed for {len(records)} distributions.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,70 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      # MovieStar shells out to FFmpeg and ffprobe for media operations.
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -1
+          ffprobe -version | head -1
+
+      # Cache the faster-whisper tiny model so CI doesn't re-download ~75MB
+      # on every run. Key includes the model name; bump to invalidate.
+      - name: Cache HuggingFace models
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/huggingface
+          key: hf-whisper-tiny-v1
+
+      - name: Install moviestar
+        run: |
+          cd app
+          python -m venv .venv
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+          pip install -e . pytest
+
+      - name: Check dependency license policy
+        run: |
+          source app/.venv/bin/activate
+          bin/check-dependency-licenses
+
+      # Fast path: everything except slow (whisper) tests. Gives quick
+      # signal on most failures even if the slow path breaks.
+      - name: Run fast tests
+        run: |
+          cd app
+          source .venv/bin/activate
+          pytest -v
+
+      # Full path: includes slow whisper tests. --run-slow is the
+      # conftest.py opt-in.
+      - name: Run full suite (with --run-slow)
+        run: |
+          cd app
+          source .venv/bin/activate
+          pytest --run-slow
+
+      - name: Build and check package artifacts
+        run: |
+          source app/.venv/bin/activate
+          python -m pip install build twine
+          python -m build app
+          python -m twine check app/dist/*
