@@ -6,6 +6,9 @@
 .env.*
 !.env.example
 
+# Machine-specific Conductor overrides
+.conductor/settings.local.toml
+
 __pycache__/
 *.py[cod]
 *.egg-info/
