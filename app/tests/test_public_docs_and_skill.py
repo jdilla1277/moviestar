@@ -47,6 +47,11 @@ def test_public_readme_routes_users_to_docs_and_skill_installation() -> None:
     assert "docs/install-skill.md" in readme
 
 
+def test_dev_gitignore_excludes_package_test_workspace() -> None:
+    ignored = (ROOT / ".gitignore").read_text().splitlines()
+    assert "/app/moviestar/" in ignored
+
+
 def test_plugin_manifest_matches_package_identity() -> None:
     manifest = _json(PLUGIN / ".codex-plugin" / "plugin.json")
     pyproject = tomllib.loads((ROOT / "app" / "pyproject.toml").read_text())
