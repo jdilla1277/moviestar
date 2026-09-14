@@ -22,6 +22,16 @@
       "license": "MPL-2.0",
       "evidence": "https://github.com/certifi/python-certifi/blob/master/LICENSE"
     },
+    "cffi": {
+      "metadata_sha256": "bfd7d82f16174f4eaae2ee616df968eac2d934efbf2bf72984776ce7b5b8c918",
+      "license": "MIT-0",
+      "evidence": "https://github.com/python-cffi/cffi/blob/main/LICENSE"
+    },
+    "cryptography": {
+      "metadata_sha256": "e3166a1ead4b893c4e9ea40205c45294896617be9f9c921a0afb9c860c14f334",
+      "license": "Apache-2.0 OR BSD-3-Clause",
+      "evidence": "https://github.com/pyca/cryptography/blob/main/LICENSE"
+    },
     "numpy": {
       "metadata_sha256": "ceec730a7e7641cc0d16bca8dd083d729dcd726c10ae8e4aa10376fbc2ef8136",
       "license": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",

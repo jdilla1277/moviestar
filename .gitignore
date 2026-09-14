@@ -18,6 +18,7 @@ build/
 dist/
 
 /moviestar/
+/app/moviestar/
 /moviestar-clips/
 *.mp4
 *.mov

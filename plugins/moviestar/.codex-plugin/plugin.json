@@ -1,0 +1,36 @@
+{
+  "name": "moviestar",
+  "version": "0.7.0",
+  "description": "Plan, execute, and verify deterministic video edits with the MovieStar CLI.",
+  "author": {
+    "name": "James Dillard",
+    "url": "https://github.com/jdilla1277"
+  },
+  "homepage": "https://trymoviestar.com/docs",
+  "repository": "https://github.com/jdilla1277/moviestar",
+  "license": "Apache-2.0",
+  "keywords": [
+    "video-editing",
+    "ffmpeg",
+    "agents",
+    "captions",
+    "multicam"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "MovieStar",
+    "shortDescription": "Edit and verify videos with MovieStar.",
+    "longDescription": "Use MovieStar's structured CLI to inspect footage, author non-destructive edits, compose scenes, add captions and audio, and verify final renders.",
+    "developerName": "James Dillard",
+    "category": "Productivity",
+    "capabilities": [
+      "Write"
+    ],
+    "websiteURL": "https://trymoviestar.com",
+    "defaultPrompt": [
+      "Edit this video into a concise clip and verify the export.",
+      "Turn this recording into a captioned vertical short.",
+      "Compose these camera angles into a polished scene edit."
+    ]
+  }
+}
