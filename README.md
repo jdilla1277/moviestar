@@ -28,6 +28,13 @@ modified.
 
 The detailed command guide is in [`app/README.md`](app/README.md).
 
+## Documentation
+
+- [Getting started](docs/getting-started.md)
+- [Agent guide](docs/agent-guide.md)
+- [Install the MovieStar skill](docs/install-skill.md)
+- [Documentation index](docs/README.md)
+
 ## Develop
 
 ```bash
