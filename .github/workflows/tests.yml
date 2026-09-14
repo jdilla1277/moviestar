@@ -20,6 +20,7 @@ jobs:
       - name: Validate public docs and MovieStar skill
         run: |
           python -m pip install pytest
+          python -m pip install --no-deps -e ./app
           python -m pytest app/tests/test_public_docs_and_skill.py -q
 
   test:
