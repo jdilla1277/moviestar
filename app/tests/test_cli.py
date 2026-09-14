@@ -11091,15 +11091,15 @@ class TestHoldStabilityWarning:
         self, runner, tmp_path, monkeypatch
     ):
         video = tmp_path / "switching.mp4"
-        # Frame content flips from testsrc2 to rgbtestsrc at 1.0s — the
-        # hold (source 0.8 → 1.4) spans the switch.
+        # Frame content flips from black to white at 1.0s — the hold
+        # (source 0.8 → 1.4) spans a codec- and FFmpeg-stable switch.
         subprocess.run(
             [
                 "ffmpeg", "-y", "-loglevel", "error",
                 "-f", "lavfi",
-                "-i", "testsrc2=size=320x240:duration=1:rate=30",
+                "-i", "color=black:size=320x240:duration=1:rate=30",
                 "-f", "lavfi",
-                "-i", "rgbtestsrc=size=320x240:duration=1:rate=30",
+                "-i", "color=white:size=320x240:duration=1:rate=30",
                 "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
                 "-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0[v]",
                 "-map", "[v]", "-map", "2:a",
