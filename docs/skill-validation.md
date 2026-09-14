@@ -36,6 +36,10 @@ audio track, then followed the skill's workflow:
    title over the generated test pattern.
 
 No source-tree import was available to the editing environment, and no
-generated media was committed. A GitHub-backed marketplace install should be
-repeated against the PR branch after it is pushed and against `main` after the
-owner merges it.
+generated media was committed.
+
+After the branch was pushed, a second isolated Codex home added
+`jdilla1277/moviestar` as a Git marketplace at the PR branch, installed and
+enabled `moviestar@moviestar` v0.7.0, and cached the plugin manifest, skill UI
+metadata, and all three references. Repeat that Git-backed install against
+`main` after the owner merges the PR.
