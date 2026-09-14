@@ -31,6 +31,12 @@ source app/.venv/bin/activate
 python -m pip install -e app pytest
 ```
 
+### Conductor
+
+The shared Conductor settings create `app/.venv` when a workspace is created.
+The Run menu provides the fast test suite and the full preflight check; FFmpeg
+and ffprobe must still be installed on the host.
+
 ## Contribution terms
 
 MovieStar is licensed under the Apache License 2.0. By intentionally submitting

@@ -1,0 +1,14 @@
+"$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
+
+[scripts]
+setup = "python3 -m venv app/.venv && app/.venv/bin/python -m pip install -e app pytest"
+run_mode = "concurrent"
+
+[scripts.run.test]
+command = "bin/test"
+default = true
+icon = "test-tube"
+
+[scripts.run.preflight]
+command = "bin/preflight"
+icon = "shield-check"
