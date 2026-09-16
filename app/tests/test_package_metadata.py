@@ -24,6 +24,17 @@ def test_v070_is_declared_as_the_first_apache_release():
     assert pyproject["project"]["license"] == "Apache-2.0"
 
 
+def test_package_metadata_routes_users_to_public_project_surfaces():
+    pyproject = _pyproject()
+
+    assert pyproject["project"]["urls"] == {
+        "Homepage": "https://trymoviestar.com",
+        "Documentation": "https://github.com/jdilla1277/moviestar/tree/main/docs",
+        "Repository": "https://github.com/jdilla1277/moviestar",
+        "Issues": "https://github.com/jdilla1277/moviestar/issues",
+    }
+
+
 def test_build_metadata_declares_both_distributed_license_files():
     pyproject = _pyproject()
 

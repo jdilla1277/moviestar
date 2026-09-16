@@ -15,6 +15,7 @@ PUBLIC_DOCS = (
     ROOT / "docs" / "agent-guide.md",
     ROOT / "docs" / "install-skill.md",
     ROOT / "docs" / "skill-validation.md",
+    ROOT / "docs" / "releases" / "v0.7.0.md",
 )
 
 
