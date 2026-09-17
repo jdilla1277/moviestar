@@ -27,6 +27,12 @@ classifiers = [
 ]
 dependencies = ["click>=8.0", "faster-whisper>=1.0", "keyring>=25.0", "rapidfuzz>=3.0"]
 
+[project.urls]
+Homepage = "https://trymoviestar.com"
+Documentation = "https://github.com/jdilla1277/moviestar/tree/main/docs"
+Repository = "https://github.com/jdilla1277/moviestar"
+Issues = "https://github.com/jdilla1277/moviestar/issues"
+
 [project.optional-dependencies]
 diarize = ["pyannote.audio>=3.0"]
 

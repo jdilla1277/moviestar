@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""Verify that a GitHub release tag matches MovieStar's package version."""
+
+from __future__ import annotations
+
+from pathlib import Path
+import sys
+import tomllib
+
+
+ROOT = Path(__file__).resolve().parents[1]
+PYPROJECT = ROOT / "app" / "pyproject.toml"
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 2:
+        print("usage: check-release-version vX.Y.Z", file=sys.stderr)
+        return 2
+
+    package = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]
+    version = package["version"]
+    tag = argv[1]
+    expected_tag = f"v{version}"
+
+    if tag != expected_tag:
+        print(
+            f"release tag {tag} does not match package version {version} "
+            f"(expected {expected_tag})",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"release tag {tag} matches package version {version}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

@@ -11,6 +11,8 @@ AI agents. Start with the path that matches your task:
   Codex plugin or copy the portable skill to another compatible agent.
 - [Skill validation](skill-validation.md) — review the scaffold, installation,
   and source-blind editing evidence.
+- [v0.7.0 release notes](releases/v0.7.0.md) — preview the first open-source
+  release and its upgrade notes.
 - [Complete command guide](../app/README.md) — browse every command family and
   feature.
 
