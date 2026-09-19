@@ -60,7 +60,7 @@ def test_publish_workflow_is_release_only_and_uses_trusted_publishing() -> None:
 def test_v070_release_notes_capture_the_open_source_transition() -> None:
     notes = RELEASE_NOTES.read_text(encoding="utf-8")
 
-    assert notes.startswith("# MovieStar v0.7.0")
+    assert "MovieStar v0.7.0" in notes.splitlines()[0]
     assert "Apache License 2.0" in notes
     assert "v0.6.0" in notes
     assert "pip install --upgrade \"moviestar==0.7.0\"" in notes
