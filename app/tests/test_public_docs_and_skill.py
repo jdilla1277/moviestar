@@ -48,6 +48,15 @@ def test_public_readme_routes_users_to_docs_and_skill_installation() -> None:
     assert "docs/install-skill.md" in readme
 
 
+def test_v070_release_notes_lead_with_the_product_and_demo() -> None:
+    notes = (ROOT / "docs" / "releases" / "v0.7.0.md").read_text()
+
+    assert notes.startswith("# A video editor for AI agents")
+    assert "https://trymoviestar.com" in notes
+    assert "https://youtu.be/8CbBgtiSlNw" in notes
+    assert "https://i.ytimg.com/vi/8CbBgtiSlNw/hqdefault.jpg" in notes
+
+
 def test_dev_gitignore_excludes_package_test_workspace() -> None:
     ignored = (ROOT / ".gitignore").read_text().splitlines()
     assert "/app/moviestar/" in ignored
