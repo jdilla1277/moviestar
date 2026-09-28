@@ -8,15 +8,14 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-Until the first Apache-2.0 PyPI release is published, install the public v0.7
-source directly from GitHub:
+Install the current MovieStar release from PyPI:
 
 ```bash
-python -m pip install "moviestar @ git+https://github.com/jdilla1277/moviestar.git@main#subdirectory=app"
+python -m pip install --upgrade moviestar
 ```
 
-`pip install moviestar` currently installs the earlier v0.6.0 release. After
-v0.7.0 is published, it becomes the normal installation command.
+Confirm that `moviestar --version` reports v0.7.0 or newer before using v0.7
+commands.
 
 Check the environment before starting an edit:
 
