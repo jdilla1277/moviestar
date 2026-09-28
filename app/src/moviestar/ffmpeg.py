@@ -1733,6 +1733,20 @@ def compose_storyboard_tiles(
     return cmd
 
 
+def _h264_video_args(preview: bool) -> list[str]:
+    """libx264 encoder argv for preview and full-quality renders.
+
+    Pins yuv420p: filters such as xfade and alpha masks negotiate 4:4:4
+    formats, and x264 would otherwise encode High 4:4:4 Predictive, which
+    QuickTime, iOS, and many browsers cannot play.
+    """
+    if preview:
+        quality = ["-preset", "ultrafast", "-crf", "28"]
+    else:
+        quality = ["-preset", "fast", "-crf", "18"]
+    return ["-c:v", "libx264", *quality, "-pix_fmt", "yuv420p"]
+
+
 def build_extract_clip_command(
     video_path: str,
     start_time: float,
@@ -1764,20 +1778,9 @@ def build_extract_clip_command(
         "-t", str(duration),
     ]
     if preview:
-        cmd += [
-            "-vf", "scale=-2:480",
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-crf", "28",
-            "-c:a", "aac",
-        ]
+        cmd += ["-vf", "scale=-2:480", *_h264_video_args(True), "-c:a", "aac"]
     elif precise:
-        cmd += [
-            "-c:v", "libx264",
-            "-preset", "fast",
-            "-crf", "18",
-            "-c:a", "aac",
-        ]
+        cmd += [*_h264_video_args(False), "-c:a", "aac"]
     else:
         cmd += ["-c", "copy"]
     cmd.append(output_path)
@@ -2809,10 +2812,7 @@ def build_render_layout_video_command(
     cmd += ["-filter_complex", ";".join(filter_parts), "-map", "[outv]"]
     if audio_label is not None:
         cmd += ["-map", audio_label]
-    if preview:
-        cmd += ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "28"]
-    else:
-        cmd += ["-c:v", "libx264", "-preset", "fast", "-crf", "18"]
+    cmd += _h264_video_args(preview)
     if audio_label is not None:
         cmd += ["-c:a", "aac"]
     cmd.append(output_path)
@@ -3439,22 +3439,13 @@ def build_render_segments_command(
     cmd += ["-map", "[outv]"]
     if mapped_audio_label is not None:
         cmd += ["-map", f"[{mapped_audio_label}]"]
-    if preview:
-        cmd += [
-            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-        ]
-        if use_audio:
-            cmd += ["-c:a", "aac"]
-    else:
-        # Multi-segment always re-encodes. precise=True and the stream-copy
-        # fallback both land here; the caller's intent of "fast" can't be
-        # honored across a filter graph, so the envelope layer is responsible
-        # for surfacing the override in the response.
-        cmd += [
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-        ]
-        if use_audio:
-            cmd += ["-c:a", "aac"]
+    # Multi-segment always re-encodes. precise=True and the stream-copy
+    # fallback both land here; the caller's intent of "fast" can't be
+    # honored across a filter graph, so the envelope layer is responsible
+    # for surfacing the override in the response.
+    cmd += _h264_video_args(preview)
+    if use_audio:
+        cmd += ["-c:a", "aac"]
     cmd.append(output_path)
     return cmd
 

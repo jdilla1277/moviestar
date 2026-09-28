@@ -1067,6 +1067,61 @@ class TestExtractClip:
         assert "1.0" in argv
 
 
+class TestDeliveryPixelFormat:
+    """Every libx264 encode pins yuv420p so exports play everywhere."""
+
+    _SEGMENTS = [("/tmp/a.mp4", 0.0, 1.0), ("/tmp/b.mp4", 0.0, 1.0)]
+    _SLOTS = [
+        {
+            "path": "/tmp/a.mp4",
+            "source_from": 0.0,
+            "source_to": 1.0,
+            "region": {"x": 0, "y": 0, "width": 160, "height": 240},
+            "framing": {"mode": "fill", "anchor": "center"},
+        },
+    ]
+
+    @pytest.mark.parametrize(
+        "build",
+        [
+            lambda: build_render_segments_command(
+                [("/tmp/a.mp4", 0.0, 1.0)], "/tmp/o.mp4", precise=True
+            ),
+            lambda: build_render_segments_command(
+                [("/tmp/a.mp4", 0.0, 1.0)], "/tmp/o.mp4", preview=True
+            ),
+            lambda: build_render_segments_command(
+                TestDeliveryPixelFormat._SEGMENTS, "/tmp/o.mp4", precise=True
+            ),
+            lambda: build_render_segments_command(
+                TestDeliveryPixelFormat._SEGMENTS, "/tmp/o.mp4", preview=True
+            ),
+            lambda: build_render_layout_video_command(
+                TestDeliveryPixelFormat._SLOTS, "/tmp/o.mp4", (320, 240), 1.0
+            ),
+            lambda: build_render_layout_video_command(
+                TestDeliveryPixelFormat._SLOTS,
+                "/tmp/o.mp4",
+                (320, 240),
+                1.0,
+                preview=True,
+            ),
+        ],
+        ids=[
+            "extract-precise",
+            "extract-preview",
+            "segments-full",
+            "segments-preview",
+            "layout-full",
+            "layout-preview",
+        ],
+    )
+    def test_libx264_encode_pins_yuv420p(self, build):
+        argv = build()
+        assert "libx264" in argv
+        assert argv[argv.index("-pix_fmt") + 1] == "yuv420p"
+
+
 class TestFailureMessage:
     """Issue #26: when ffprobe/ffmpeg returns non-zero with empty
     stderr, the failure message used to render as 'ffmpeg failed: '
@@ -1436,6 +1491,35 @@ class TestRenderSceneTransitions:
         assert early[0] > 200 and early[2] < 50
         assert middle[0] > 70 and middle[2] > 70
         assert late[2] > 200 and late[0] < 50
+
+    @pytest.mark.parametrize("transition_type", ["dissolve", "dip-black", "dip-white"])
+    def test_real_transition_render_stays_yuv420p(self, tmp_path, transition_type):
+        """xfade negotiates a 4:4:4 format; delivery must not inherit it."""
+        red = tmp_path / f"red-{transition_type}.mp4"
+        blue = tmp_path / f"blue-{transition_type}.mp4"
+        output = tmp_path / f"{transition_type}.mp4"
+        self._solid_clip(red, "red", 440)
+        self._solid_clip(blue, "blue", 880)
+
+        render_segments(
+            [(str(red), 0.0, 0.6), (str(blue), 0.0, 0.6)],
+            str(output),
+            segment_has_audio=[True, True],
+            video_segment_durations=[0.8, 0.8],
+            video_transitions=[
+                {"incoming_index": 1, "type": transition_type, "duration": 0.4}
+            ],
+            output_fps=30.0,
+            progress_cb=lambda _line: None,
+        )
+
+        video = next(
+            stream
+            for stream in run_ffprobe(str(output))["streams"]
+            if stream["codec_type"] == "video"
+        )
+        assert video["pix_fmt"] == "yuv420p"
+        assert "4:4:4" not in video.get("profile", "")
 
     @pytest.mark.parametrize(
         ("transition_type", "expected"),
