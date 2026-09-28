@@ -34,6 +34,7 @@ from moviestar.ffmpeg import (
     run_ffprobe,
     run_layer_loudness_probe,
 )
+from tests.conftest import make_odd_sized_video
 
 
 def _resolved_mix(*, source=None, tracks=None):
@@ -1124,28 +1125,16 @@ class TestDeliveryPixelFormat:
     _ODD_SIZES = pytest.mark.parametrize(
         ("size", "expected"),
         [
-            ("321x240", (322, 240)),
-            ("320x241", (320, 242)),
-            ("321x241", (322, 242)),
+            ((321, 240), (322, 240)),
+            ((320, 241), (320, 242)),
+            ((321, 241), (322, 242)),
         ],
         ids=["odd-width", "odd-height", "odd-both"],
     )
 
     @staticmethod
     def _odd_source(tmp_path, size):
-        # yuv444p H.264 is the realistic way to carry odd dimensions.
-        path = tmp_path / f"odd-{size}.mp4"
-        subprocess.run(
-            [
-                "ffmpeg", "-y", "-v", "error",
-                "-f", "lavfi", "-i", f"color=c=red:s={size}:r=30:d=1",
-                "-f", "lavfi", "-i", "sine=duration=1",
-                "-c:v", "libx264", "-pix_fmt", "yuv444p", "-c:a", "aac",
-                "-shortest", str(path),
-            ],
-            check=True,
-        )
-        return str(path)
+        return make_odd_sized_video(tmp_path / "odd", *size)
 
     @staticmethod
     def _video_stream(path):

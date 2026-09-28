@@ -16,7 +16,11 @@ from moviestar import __version__
 from moviestar.cli import _ffmpeg_capability_error_exit, cli
 from moviestar.ffmpeg import FFmpegCapabilityError, run_ffprobe
 from moviestar.fonts import bundled_font_dir
-from tests.conftest import assert_error_envelope, assert_no_project_envelope
+from tests.conftest import (
+    assert_error_envelope,
+    assert_no_project_envelope,
+    make_odd_sized_video,
+)
 
 STUB_COMMANDS: list[str] = []
 
@@ -16537,21 +16541,10 @@ class TestExport:
     def test_export_odd_sized_source_pads_to_even_yuv420p(
         self, runner, tmp_path, monkeypatch, cut
     ):
-        import subprocess
-        source = tmp_path / "odd.mp4"
-        subprocess.run(
-            [
-                "ffmpeg", "-y", "-v", "error",
-                "-f", "lavfi", "-i", "color=c=red:s=321x241:r=30:d=2",
-                "-f", "lavfi", "-i", "sine=duration=2",
-                "-c:v", "libx264", "-pix_fmt", "yuv444p", "-c:a", "aac",
-                "-shortest", str(source),
-            ],
-            check=True,
-        )
-        self._load(runner, str(source), tmp_path, monkeypatch)
+        source = make_odd_sized_video(tmp_path / "odd", 321, 241)
+        self._load(runner, source, tmp_path, monkeypatch)
         if cut:
-            cut_result = runner.invoke(cli, ["cut", "--from", "0.5", "--to", "1.0"])
+            cut_result = runner.invoke(cli, ["cut", "--from", "0.3", "--to", "0.6"])
             assert cut_result.exit_code == 0, cut_result.stdout
         out = tmp_path / "odd-export.mp4"
 
