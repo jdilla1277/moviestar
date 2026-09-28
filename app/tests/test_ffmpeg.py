@@ -1121,6 +1121,76 @@ class TestDeliveryPixelFormat:
         assert "libx264" in argv
         assert argv[argv.index("-pix_fmt") + 1] == "yuv420p"
 
+    _ODD_SIZES = pytest.mark.parametrize(
+        ("size", "expected"),
+        [
+            ("321x240", (322, 240)),
+            ("320x241", (320, 242)),
+            ("321x241", (322, 242)),
+        ],
+        ids=["odd-width", "odd-height", "odd-both"],
+    )
+
+    @staticmethod
+    def _odd_source(tmp_path, size):
+        # yuv444p H.264 is the realistic way to carry odd dimensions.
+        path = tmp_path / f"odd-{size}.mp4"
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-v", "error",
+                "-f", "lavfi", "-i", f"color=c=red:s={size}:r=30:d=1",
+                "-f", "lavfi", "-i", "sine=duration=1",
+                "-c:v", "libx264", "-pix_fmt", "yuv444p", "-c:a", "aac",
+                "-shortest", str(path),
+            ],
+            check=True,
+        )
+        return str(path)
+
+    @staticmethod
+    def _video_stream(path):
+        return next(
+            stream
+            for stream in run_ffprobe(str(path))["streams"]
+            if stream["codec_type"] == "video"
+        )
+
+    @_ODD_SIZES
+    def test_real_single_segment_odd_source_pads_to_even(
+        self, tmp_path, size, expected
+    ):
+        source = self._odd_source(tmp_path, size)
+        output = tmp_path / "single.mp4"
+
+        render_segments(
+            [(source, 0.0, 0.5)],
+            str(output),
+            precise=True,
+            progress_cb=lambda _line: None,
+        )
+
+        video = self._video_stream(output)
+        assert (video["width"], video["height"]) == expected
+        assert video["pix_fmt"] == "yuv420p"
+
+    @_ODD_SIZES
+    def test_real_multi_segment_odd_source_pads_to_even(
+        self, tmp_path, size, expected
+    ):
+        source = self._odd_source(tmp_path, size)
+        output = tmp_path / "multi.mp4"
+
+        render_segments(
+            [(source, 0.0, 0.3), (source, 0.6, 0.9)],
+            str(output),
+            precise=True,
+            progress_cb=lambda _line: None,
+        )
+
+        video = self._video_stream(output)
+        assert (video["width"], video["height"]) == expected
+        assert video["pix_fmt"] == "yuv420p"
+
 
 class TestFailureMessage:
     """Issue #26: when ffprobe/ffmpeg returns non-zero with empty
@@ -1423,7 +1493,8 @@ class TestRenderSegmentsInputSideSeek:
 
         graph = cmd[cmd.index("-filter_complex") + 1]
         assert "concat=n=2:v=1:a=1[vraw][outa]" in graph
-        assert "[vraw]fps=60.0[outv]" in graph
+        assert "[vraw]fps=60.0[vodd]" in graph
+        assert graph.endswith("[vodd]pad=ceil(iw/2)*2:ceil(ih/2)*2[outv]")
 
     def test_segment_fps_length_must_match_segments(self):
         with pytest.raises(ValueError, match="segment_fps length"):

@@ -16533,6 +16533,33 @@ class TestExport:
 
     # --- plumbing ---
 
+    @pytest.mark.parametrize("cut", [False, True], ids=["single", "multi"])
+    def test_export_odd_sized_source_pads_to_even_yuv420p(
+        self, runner, tmp_path, monkeypatch, cut
+    ):
+        import subprocess
+        source = tmp_path / "odd.mp4"
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-v", "error",
+                "-f", "lavfi", "-i", "color=c=red:s=321x241:r=30:d=2",
+                "-f", "lavfi", "-i", "sine=duration=2",
+                "-c:v", "libx264", "-pix_fmt", "yuv444p", "-c:a", "aac",
+                "-shortest", str(source),
+            ],
+            check=True,
+        )
+        self._load(runner, str(source), tmp_path, monkeypatch)
+        if cut:
+            cut_result = runner.invoke(cli, ["cut", "--from", "0.5", "--to", "1.0"])
+            assert cut_result.exit_code == 0, cut_result.stdout
+        out = tmp_path / "odd-export.mp4"
+
+        result = runner.invoke(cli, ["export", "--out", str(out), "--quiet"])
+
+        assert result.exit_code == 0, result.stdout
+        assert self._ffprobe_dimensions(out) == (322, 242)
+
     def test_export_requires_project(self, runner, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         result = runner.invoke(cli, ["export"])

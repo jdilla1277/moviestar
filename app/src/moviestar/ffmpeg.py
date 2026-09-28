@@ -1747,6 +1747,21 @@ def _h264_video_args(preview: bool) -> list[str]:
     return ["-c:v", "libx264", *quality, "-pix_fmt", "yuv420p"]
 
 
+# yuv420p needs even dimensions. Source-sized renders can be odd (H.264
+# 4:4:4 and other codecs allow it), so pad right/bottom by at most one
+# pixel rather than crop away content. A no-op on even frames.
+_EVEN_DIMENSIONS_FILTER = "pad=ceil(iw/2)*2:ceil(ih/2)*2"
+
+
+def _pad_graph_output_to_even(filter_parts: list[str]) -> None:
+    """Route the graph's ``[outv]`` through the even-dimensions pad."""
+    producers = [i for i, part in enumerate(filter_parts) if "[outv]" in part]
+    assert len(producers) == 1, producers
+    index = producers[0]
+    filter_parts[index] = filter_parts[index].replace("[outv]", "[vodd]")
+    filter_parts.append(f"[vodd]{_EVEN_DIMENSIONS_FILTER}[outv]")
+
+
 def build_extract_clip_command(
     video_path: str,
     start_time: float,
@@ -1780,7 +1795,10 @@ def build_extract_clip_command(
     if preview:
         cmd += ["-vf", "scale=-2:480", *_h264_video_args(True), "-c:a", "aac"]
     elif precise:
-        cmd += [*_h264_video_args(False), "-c:a", "aac"]
+        cmd += [
+            "-vf", _EVEN_DIMENSIONS_FILTER, *_h264_video_args(False),
+            "-c:a", "aac",
+        ]
     else:
         cmd += ["-c", "copy"]
     cmd.append(output_path)
@@ -3427,6 +3445,9 @@ def build_render_segments_command(
         video_output_label = fps_out
     if preview:
         filter_parts.append(f"[{video_output_label}]scale=-2:480[outv]")
+    elif output_canvas is None:
+        # Canvas renders are validated even; source-sized ones may not be.
+        _pad_graph_output_to_even(filter_parts)
 
     mapped_audio_label: str | None
     if audio_from_input is not None:
