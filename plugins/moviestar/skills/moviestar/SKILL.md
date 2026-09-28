@@ -1,6 +1,14 @@
 ---
 name: moviestar
 description: Edit and verify videos with the MovieStar CLI. Use for trimming, transcript search, multicamera composition, scene layout and motion, captions, overlays, audio mixing, rendering, or inspecting MovieStar projects and exports. Do not use for image-only editing or unrelated FFmpeg administration.
+metadata:
+  openclaw:
+    requires:
+      bins:
+        - moviestar
+        - ffmpeg
+        - ffprobe
+    homepage: https://trymoviestar.com
 ---
 
 # MovieStar

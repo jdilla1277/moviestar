@@ -107,6 +107,19 @@ def test_skill_has_portable_metadata_and_resolvable_references() -> None:
     assert "$moviestar" in openai_yaml
 
 
+def test_skill_declares_runtime_binaries_and_uses_the_pypi_release() -> None:
+    skill = (SKILL / "SKILL.md").read_text()
+    frontmatter = skill.split("---", 2)[1]
+    installation = (SKILL / "references" / "installation.md").read_text()
+
+    assert "metadata:\n  openclaw:\n    requires:\n      bins:" in frontmatter
+    for binary in ("moviestar", "ffmpeg", "ffprobe"):
+        assert f"        - {binary}\n" in frontmatter
+
+    assert "python -m pip install moviestar" in installation
+    assert "git+https://" not in installation
+
+
 def test_public_docs_and_skill_contain_no_private_repository_markers() -> None:
     paths = (
         *PUBLIC_DOCS,
