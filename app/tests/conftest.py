@@ -374,17 +374,21 @@ def assert_no_project_envelope(data: dict, *, command: str) -> None:
 def make_odd_sized_video(path: Path, width: int, height: int) -> str:
     """Write a 1s clip with odd dimensions and return its path.
 
-    FFV1 is FFmpeg's built-in lossless codec and keeps odd sizes on every
-    build. Some libx264 builds (Ubuntu's FFmpeg 6.1) silently round odd
-    4:4:4 input down to even, so H.264 fixtures don't stay odd everywhere.
+    FFmpeg 6.1's lavfi ``color`` source rounds odd sizes down to even, so
+    render an even frame and crop it to the odd size in 4:4:4. FFV1 is
+    FFmpeg's built-in lossless codec and stores odd 4:4:4 frames as-is.
     """
     path = Path(path).with_suffix(".mkv")
+    even_size = f"{width + width % 2}x{height + height % 2}"
     subprocess.run(
         [
             "ffmpeg", "-y", "-v", "error",
-            "-f", "lavfi", "-i", f"color=c=red:s={width}x{height}:r=30:d=1",
+            "-f", "lavfi", "-i",
+            f"color=c=red:s={even_size}:r=30:d=1,format=yuv444p,"
+            f"crop={width}:{height}:0:0",
             "-f", "lavfi", "-i", "sine=duration=1",
-            "-c:v", "ffv1", "-c:a", "aac", "-shortest", str(path),
+            "-c:v", "ffv1", "-pix_fmt", "yuv444p", "-c:a", "aac",
+            "-shortest", str(path),
         ],
         check=True,
     )
