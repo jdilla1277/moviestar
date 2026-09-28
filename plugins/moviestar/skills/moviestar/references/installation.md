@@ -8,18 +8,16 @@ MovieStar needs Python 3.10 or newer, `ffmpeg`, and `ffprobe`. If FFmpeg is
 missing, identify the platform package-manager command and ask the user before
 installing it.
 
-During the public v0.7 prerelease period, install the Apache-2.0 source from
-GitHub:
+Install the current MovieStar release from PyPI:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install "moviestar @ git+https://github.com/jdilla1277/moviestar.git@main#subdirectory=app"
+python -m pip install moviestar
 ```
 
-After v0.7.0 or newer is available on PyPI, use `python -m pip install
-moviestar` instead. Do not silently fall back to the older v0.6 package when
-the task depends on v0.7 commands.
+Confirm that `moviestar --version` reports v0.7.0 or newer before using v0.7
+commands.
 
 Run `moviestar doctor` after installation. Treat blocked features in its JSON
 response as setup failures to resolve or report before editing. Whisper models
