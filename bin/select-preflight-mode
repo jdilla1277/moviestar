@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+"""Select the smallest safe preflight suite for changed repository paths."""
+
+from __future__ import annotations
+
+import re
+import sys
+
+
+DOCS_EXACT = {
+    "README.md",
+    "app/tests/test_public_docs_and_skill.py",
+    "app/tests/test_release_plumbing.py",
+}
+DOCS_PREFIXES = (
+    ".agents/plugins/",
+    "docs/",
+    "plugins/moviestar/",
+)
+SLOW_PATH = re.compile(
+    r"^app/(tests/|src/moviestar/(transcribe|project|cli|spec)\.py)"
+)
+
+
+def is_docs_or_skill(path: str) -> bool:
+    return path in DOCS_EXACT or path.startswith(DOCS_PREFIXES)
+
+
+def main() -> int:
+    paths = [line.strip() for line in sys.stdin if line.strip()]
+    if paths and all(is_docs_or_skill(path) for path in paths):
+        print("docs")
+    elif any(SLOW_PATH.search(path) for path in paths):
+        print("slow")
+    else:
+        print("fast")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

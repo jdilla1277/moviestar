@@ -9,7 +9,9 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 PUBLISH_WORKFLOW = ROOT / ".github" / "workflows" / "publish.yml"
+TEST_WORKFLOW = ROOT / ".github" / "workflows" / "tests.yml"
 VERSION_CHECK = ROOT / "bin" / "check-release-version"
+PREFLIGHT_MODE = ROOT / "bin" / "select-preflight-mode"
 RELEASE_NOTES = ROOT / "docs" / "releases" / "v0.7.0.md"
 PYPI_PUBLISH_ACTION_SHA = "dc37677b2e1c63e2034f94d8a5b11f265b73ba33"
 
@@ -75,3 +77,37 @@ def test_public_install_guides_use_the_released_pypi_package() -> None:
         assert "git+https://" not in text
         assert "has not reached PyPI" not in text
         assert "earlier v0.6.0 release" not in text
+
+
+def test_preflight_mode_keeps_docs_and_skill_changes_focused() -> None:
+    def select(*paths: str) -> str:
+        result = subprocess.run(
+            [sys.executable, str(PREFLIGHT_MODE)],
+            cwd=ROOT,
+            input="\n".join(paths),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip()
+
+    assert (
+        select(
+            "README.md",
+            "docs/getting-started.md",
+            "plugins/moviestar/skills/moviestar/SKILL.md",
+            "app/tests/test_public_docs_and_skill.py",
+            "app/tests/test_release_plumbing.py",
+        )
+        == "docs"
+    )
+    assert select("docs/getting-started.md", "app/tests/test_cli.py") == "slow"
+    assert select("app/src/moviestar/cli.py") == "slow"
+    assert select("bin/preflight") == "fast"
+
+
+def test_docs_ci_runs_both_public_documentation_contracts() -> None:
+    workflow = TEST_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "app/tests/test_public_docs_and_skill.py" in workflow
+    assert "app/tests/test_release_plumbing.py" in workflow

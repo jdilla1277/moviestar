@@ -7,6 +7,7 @@
 #
 # Usage:
 #   bin/preflight              # auto-pick based on `git diff` against origin/main
+#   bin/preflight --docs       # public docs and distributed-skill contracts only
 #   bin/preflight --slow       # force --run-slow regardless
 #   bin/preflight --fast       # force fast path regardless
 #
@@ -21,30 +22,37 @@ cd "$REPO_ROOT"
 mode="${1:-auto}"
 
 case "$mode" in
-  --slow) want_slow=1 ;;
-  --fast) want_slow=0 ;;
+  --docs) suite=docs ;;
+  --slow) suite=slow ;;
+  --fast) suite=fast ;;
   auto)
     # Look at uncommitted + staged + ahead-of-main changes.
     base="$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main 2>/dev/null || echo HEAD~1)"
     changed="$(git diff --name-only "$base"...HEAD ; git diff --name-only ; git diff --cached --name-only)"
-    if echo "$changed" | grep -qE '^app/(tests/|src/moviestar/(transcribe|project|cli|spec)\.py)'; then
-      want_slow=1
-      echo "preflight: tests or transcription-touching code changed → --run-slow" >&2
-    else
-      want_slow=0
-      echo "preflight: no tests or transcription-touching code changed → fast path" >&2
-    fi
+    suite="$(printf '%s\n' "$changed" | python3 "$REPO_ROOT/bin/select-preflight-mode")"
     ;;
   *)
-    echo "usage: bin/preflight [--slow|--fast]" >&2
+    echo "usage: bin/preflight [--docs|--slow|--fast]" >&2
     exit 2
     ;;
 esac
 
-if [[ "$want_slow" -eq 1 ]]; then
-  "$REPO_ROOT/bin/test" --run-slow
-else
-  "$REPO_ROOT/bin/test"
-fi
+case "$suite" in
+  docs)
+    echo "preflight: public docs/skill-only changes → focused contracts" >&2
+    "$REPO_ROOT/app/.venv/bin/python" -m pytest \
+      "$REPO_ROOT/app/tests/test_public_docs_and_skill.py" \
+      "$REPO_ROOT/app/tests/test_release_plumbing.py" \
+      -q
+    ;;
+  slow)
+    echo "preflight: tests or transcription-touching code changed → --run-slow" >&2
+    "$REPO_ROOT/bin/test" --run-slow
+    ;;
+  fast)
+    echo "preflight: no tests or transcription-touching code changed → fast path" >&2
+    "$REPO_ROOT/bin/test"
+    ;;
+esac
 
 "$REPO_ROOT/app/.venv/bin/python" "$REPO_ROOT/bin/check-dependency-licenses"
