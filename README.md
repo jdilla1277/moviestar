@@ -11,19 +11,18 @@ inspect each result and decide what to do next.
 
 ## Quick start
 
-MovieStar v0.7.0 has not reached PyPI yet. Until it does, install the current
-public source with FFmpeg and Python 3.10 or newer:
+Install MovieStar from PyPI with FFmpeg and Python 3.10 or newer:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install "moviestar @ git+https://github.com/jdilla1277/moviestar.git@main#subdirectory=app"
+python -m pip install --upgrade moviestar
 moviestar doctor
 moviestar --help
 ```
 
-The [getting-started guide](docs/getting-started.md) explains the temporary Git
-install and how the command will change when v0.7.0 is published.
+The [getting-started guide](docs/getting-started.md) walks through installation
+and a first verified edit.
 
 Give your coding agent a video-editing task and tell it to use the `moviestar`
 CLI. MovieStar's help output is designed as the operational briefing; every

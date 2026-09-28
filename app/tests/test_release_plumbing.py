@@ -67,12 +67,11 @@ def test_v070_release_notes_capture_the_open_source_transition() -> None:
     assert "moviestar doctor" in notes
 
 
-def test_public_readme_does_not_claim_the_unreleased_build_is_on_pypi() -> None:
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+def test_public_install_guides_use_the_released_pypi_package() -> None:
+    for path in (ROOT / "README.md", ROOT / "docs" / "getting-started.md"):
+        text = path.read_text(encoding="utf-8")
 
-    assert "v0.7.0 has not reached PyPI yet" in readme
-    assert (
-        'pip install "moviestar @ '
-        'git+https://github.com/jdilla1277/moviestar.git@main#subdirectory=app"'
-        in readme
-    )
+        assert "python -m pip install --upgrade moviestar" in text
+        assert "git+https://" not in text
+        assert "has not reached PyPI" not in text
+        assert "earlier v0.6.0 release" not in text
