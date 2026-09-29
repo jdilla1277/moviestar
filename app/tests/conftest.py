@@ -368,6 +368,49 @@ def assert_no_project_envelope(data: dict, *, command: str) -> None:
     )
 
 
+# -------------------- Odd-sized media --------------------
+
+
+def make_odd_sized_video(path: Path, width: int, height: int) -> str:
+    """Write a 1s clip with odd dimensions and return its path.
+
+    FFmpeg 6.1's lavfi ``color`` source rounds odd sizes down to even, so
+    render an even frame and crop it to the odd size in 4:4:4. FFV1 is
+    FFmpeg's built-in lossless codec and stores odd 4:4:4 frames as-is.
+    """
+    path = Path(path).with_suffix(".mkv")
+    even_size = f"{width + width % 2}x{height + height % 2}"
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-v", "error",
+            "-f", "lavfi", "-i",
+            f"color=c=red:s={even_size}:r=30:d=1,format=yuv444p,"
+            f"crop={width}:{height}:0:0",
+            "-f", "lavfi", "-i", "sine=duration=1",
+            "-c:v", "ffv1", "-pix_fmt", "yuv444p", "-c:a", "aac",
+            "-shortest", str(path),
+        ],
+        check=True,
+    )
+    probe = json.loads(
+        subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-select_streams", "v:0",
+                "-show_entries", "stream=width,height", "-of", "json",
+                str(path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+    )
+    stream = probe["streams"][0]
+    assert (stream["width"], stream["height"]) == (width, height), (
+        f"fixture is {stream['width']}x{stream['height']}, not {width}x{height}"
+    )
+    return str(path)
+
+
 # -------------------- Synthetic transcript helpers --------------------
 #
 # Tests that exercise transcript-dependent commands (find,

@@ -1017,6 +1017,21 @@ class TestM29TransitionRendering:
         data = json.loads(rendered.stdout)
         assert data["transition_render_status"] == "active"
         assert data["result_duration"]["seconds"] == pytest.approx(1.2)
+        video = next(
+            stream
+            for stream in json.loads(
+                subprocess.run(
+                    [
+                        "ffprobe", "-v", "error", "-select_streams", "v:0",
+                        "-show_entries", "stream=codec_type,pix_fmt",
+                        "-of", "json", str(output),
+                    ],
+                    check=True,
+                    stdout=subprocess.PIPE,
+                ).stdout
+            )["streams"]
+        )
+        assert video["pix_fmt"] == "yuv420p"
         early = self._pixel(output, 0.2)
         middle = self._pixel(output, 0.6)
         late = self._pixel(output, 1.0)

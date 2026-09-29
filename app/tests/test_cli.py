@@ -16,7 +16,11 @@ from moviestar import __version__
 from moviestar.cli import _ffmpeg_capability_error_exit, cli
 from moviestar.ffmpeg import FFmpegCapabilityError, run_ffprobe
 from moviestar.fonts import bundled_font_dir
-from tests.conftest import assert_error_envelope, assert_no_project_envelope
+from tests.conftest import (
+    assert_error_envelope,
+    assert_no_project_envelope,
+    make_odd_sized_video,
+)
 
 STUB_COMMANDS: list[str] = []
 
@@ -16532,6 +16536,22 @@ class TestExport:
         return int(video["width"]), int(video["height"])
 
     # --- plumbing ---
+
+    @pytest.mark.parametrize("cut", [False, True], ids=["single", "multi"])
+    def test_export_odd_sized_source_pads_to_even_yuv420p(
+        self, runner, tmp_path, monkeypatch, cut
+    ):
+        source = make_odd_sized_video(tmp_path / "odd", 321, 241)
+        self._load(runner, source, tmp_path, monkeypatch)
+        if cut:
+            cut_result = runner.invoke(cli, ["cut", "--from", "0.3", "--to", "0.6"])
+            assert cut_result.exit_code == 0, cut_result.stdout
+        out = tmp_path / "odd-export.mp4"
+
+        result = runner.invoke(cli, ["export", "--out", str(out), "--quiet"])
+
+        assert result.exit_code == 0, result.stdout
+        assert self._ffprobe_dimensions(out) == (322, 242)
 
     def test_export_requires_project(self, runner, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
