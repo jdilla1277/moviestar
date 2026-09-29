@@ -21,7 +21,10 @@ jobs:
         run: |
           python -m pip install pytest
           python -m pip install --no-deps -e ./app
-          python -m pytest app/tests/test_public_docs_and_skill.py -q
+          python -m pytest \
+            app/tests/test_public_docs_and_skill.py \
+            app/tests/test_release_plumbing.py \
+            -q
 
   test:
     runs-on: ubuntu-latest
