@@ -186,7 +186,12 @@ from moviestar.fonts import (
     resolve_font,
     user_font_dir,
 )
-from moviestar.overlays import overlay_plan_summary, plan_overlays
+from moviestar.overlays import (
+    VIEWPORT_UNITS,
+    length_px,
+    overlay_plan_summary,
+    plan_overlays,
+)
 from moviestar.audio_surface import (
     AUDIO_DUCKING_PRESETS,
     AUDIO_KINDS,
@@ -1695,7 +1700,7 @@ def _caption_cache_fingerprint(
     except (ResolvedProjectError, SpecValidationError):
         timeline_repr = ["unresolved"]
     payload = {
-        "v": 2,
+        "v": 3,
         "timeline": timeline_repr,
         "recipe": {
             key: value
@@ -14748,25 +14753,6 @@ def _rects_intersect(first: dict, second: dict) -> bool:
     )
 
 
-def _caption_position_for_scene(
-    recipe: dict, scene_name: str, layout_preset: str | None
-) -> str:
-    """Resolve one scene's caption position from a recipe's placement
-    policy — the same precedence 'captions placement' documents: scene
-    overrides beat layout overrides; both beat the default."""
-    placement = recipe.get("placement") or {}
-    position = (
-        placement.get("default") or recipe.get("position") or "bottom"
-    )
-    for override in placement.get("overrides", []):
-        selector = override.get("selector", {})
-        if selector.get("layout") == layout_preset:
-            position = override["position"]
-        if selector.get("scene") == scene_name:
-            position = override["position"]
-    return position
-
-
 def _suggested_inset_relocation(
     *,
     spec: dict,
@@ -15145,31 +15131,36 @@ def _selection_coverage_warnings(
 
     # Caption recipes whose cues are not materialized as overlays (a
     # failed derivation or a frozen track with cleared cues) have no
-    # estimated_bounds above. Fall back to the position-baseline lane
-    # so a caption track never silently covers the selection (#436).
+    # estimated_bounds above. Measure a sample cue through the same
+    # geometry and planner so a caption track never silently covers the
+    # selection (#436).
     materialized_tracks = {
         overlay.get("track")
         for overlay in spec_candidate.get("overlays", [])
     }
-    canvas_width = int(context["canvas"]["width"])
-    canvas_height = int(context["canvas"]["height"])
     for recipe in spec_candidate.get("captions") or []:
         track = recipe.get("track")
         if track in materialized_tracks:
             continue
-        position = _caption_position_for_scene(
+        geometry, _rule = _caption_geometry_for_scene(
             recipe,
             context["scene_name"],
             context["scene_info"]["layout_preset"],
         )
-        baseline_y = canvas_height * _CAPTION_POSITION_BASELINES.get(
-            position, 0.9
-        )
+        position = _caption_placement_label(geometry)
+        try:
+            block = _caption_resolved_geometry(
+                _caption_sample_record(recipe, geometry, 0.0, 1.0),
+                canvas_tuple,
+                sample=True,
+            )["block"]
+        except ValueError:
+            continue
         lane = {
             "x": 0,
-            "y": round(baseline_y - 0.07 * canvas_height),
-            "width": canvas_width,
-            "height": round(0.08 * canvas_height),
+            "y": block["y"],
+            "width": canvas_tuple[0],
+            "height": block["height"],
         }
         if _rects_intersect(selection_canvas, lane):
             suggestion = _suggestion_for(lane)
@@ -17774,23 +17765,35 @@ def _parse_overlay_css(css: str | None) -> dict:
     return resolved
 
 
-def _px_int(value, prop: str) -> int:
-    """Normalize a px size to a plain int. Friction fix: resolved
-    ``font_size`` flipped between int (preset) and string (CSS) shapes,
-    forcing downstream consumers into two code paths."""
+def _viewport_length(number: float, unit: str) -> str:
+    """Canonical stored form of a viewport length, e.g. '6.6667vmin'."""
+    return f"{round(number, 4):g}{unit}"
+
+
+def _css_size(value, prop: str) -> int | str:
+    """Normalize a CSS size: px becomes a plain int; viewport units
+    (vmin, vmax, vw, vh) stay canonical strings that resolve against the
+    render canvas. Friction fix: resolved ``font_size`` used to flip
+    between int and string shapes for the same px value."""
     if isinstance(value, bool):
         raise ValueError(f"Invalid {prop} value {value!r}.")
     if isinstance(value, (int, float)):
         return int(round(value))
     text = str(value).strip().lower()
+    for unit in VIEWPORT_UNITS:
+        if text.endswith(unit):
+            try:
+                return _viewport_length(float(text[: -len(unit)]), unit)
+            except ValueError:
+                break
     if text.endswith("px"):
         text = text[:-2].strip()
     try:
         return int(round(float(text)))
     except ValueError:
         raise ValueError(
-            f"Invalid {prop} value {value!r}. Use a px size like "
-            f"'{prop}: 72px'."
+            f"Invalid {prop} value {value!r}. Use px like '{prop}: 72px' or "
+            f"a canvas-relative size like '{prop}: 6vmin'."
         ) from None
 
 
@@ -17816,9 +17819,9 @@ def _overlay_style_envelope(
             resolved["stroke_color"] = parts[1]
     resolved.update(css_resolved)
     if "font_size" in resolved:
-        resolved["font_size"] = _px_int(resolved["font_size"], "font-size")
+        resolved["font_size"] = _css_size(resolved["font_size"], "font-size")
     if "stroke_width" in resolved:
-        resolved["stroke_width"] = _px_int(
+        resolved["stroke_width"] = _css_size(
             resolved["stroke_width"], "-moviestar-stroke"
         )
     try:
@@ -17936,6 +17939,27 @@ OVERLAY_POSITION_PRESETS = {
     "center",
     "lower-third-left",
     "lower-third-right",
+    "top-left",
+    "top-right",
+    "left",
+    "right",
+    "bottom-left",
+    "bottom-right",
+}
+
+# Default preset margins in 1920x1080 reference pixels.
+_POSITION_PRESET_LAYOUT = {
+    "bottom": {"anchor": "bottom-center", "margin_y": 180},
+    "top": {"anchor": "top-center", "margin_y": 160},
+    "center": {"anchor": "center"},
+    "lower-third-left": {"anchor": "bottom-left", "margin_x": 96, "margin_y": 180},
+    "lower-third-right": {"anchor": "bottom-right", "margin_x": 96, "margin_y": 180},
+    "top-left": {"anchor": "top-left", "margin_x": 96, "margin_y": 160},
+    "top-right": {"anchor": "top-right", "margin_x": 96, "margin_y": 160},
+    "left": {"anchor": "left", "margin_x": 96},
+    "right": {"anchor": "right", "margin_x": 96},
+    "bottom-left": {"anchor": "bottom-left", "margin_x": 96, "margin_y": 180},
+    "bottom-right": {"anchor": "bottom-right", "margin_x": 96, "margin_y": 180},
 }
 
 
@@ -17980,16 +18004,7 @@ def _overlay_position_envelope(
         "coordinate_space": "canvas",
         "safe_area": True,
     }
-    if preset == "bottom":
-        position.update({"anchor": "bottom-center", "margin_y": 180})
-    elif preset == "top":
-        position.update({"anchor": "top-center", "margin_y": 160})
-    elif preset == "center":
-        position.update({"anchor": "center"})
-    elif preset == "lower-third-left":
-        position.update({"anchor": "bottom-left", "margin_x": 96, "margin_y": 180})
-    elif preset == "lower-third-right":
-        position.update({"anchor": "bottom-right", "margin_x": 96, "margin_y": 180})
+    position.update(_POSITION_PRESET_LAYOUT[preset])
     if margin_x is not None:
         position["margin_x"] = margin_x
     if margin_y is not None:
@@ -18898,7 +18913,8 @@ def captions(ctx: click.Context) -> None:
                     "moviestar captions generate",
                     "moviestar captions import <captions.srt|captions.vtt>",
                     "moviestar captions dump",
-                    "moviestar captions placement --default P --for SEL=P",
+                    "moviestar captions placement [--scene S | --layout L] "
+                    "--at A --size S",
                     "moviestar captions break --at T | --at-word W",
                     "moviestar captions join --at T",
                     "moviestar captions suppress --from T --to T",
@@ -18919,11 +18935,6 @@ def captions(ctx: click.Context) -> None:
             indent=2,
         )
     )
-
-
-_CAPTION_PLACEMENT_POSITIONS = (
-    "bottom", "top", "center", "lower-third-left", "lower-third-right",
-)
 
 
 def _caption_track_cues(spec: dict, track: str, command: str) -> list[dict]:
@@ -18960,104 +18971,478 @@ def _caption_scene_at(project: dict, spec: dict, at_s: float) -> str | None:
     return resolved.span_at(min(at_s, resolved.duration_s)).scene_name
 
 
-def _parse_placement_overrides(
-    override_args: tuple[str, ...], command: str
-) -> list[dict]:
+# -------------------- Caption geometry --------------------
+#
+# `captions placement` mirrors `scenes geometry`: named or exact sizes,
+# nine anchors, exact normalized centers, margins, and per-scene or
+# per-layout scope. Every control resolves against the render canvas, so
+# one recipe reads correctly on a 1920x1080 video, a 1080x1920 Short, and
+# a 480p source. Explicit pixel values (48px, --css font-size: 40px) stay
+# absolute.
+
+CAPTION_AT_CHOICES = (
+    "top-left", "top", "top-right",
+    "left", "center", "right",
+    "bottom-left", "bottom", "bottom-right",
+    "lower-third-left", "lower-third-right",
+)
+# Named text sizes as a fraction of the canvas's shorter side: 54, 72,
+# and 90 px on a 1080-line canvas. medium matches the social-bold default.
+CAPTION_SIZE_FRACTIONS = {
+    "small": 54 / 1080,
+    "medium": 72 / 1080,
+    "large": 90 / 1080,
+}
+_CAPTION_SIZE_FRACTION_RANGE = (0.02, 0.25)
+_CAPTION_SIZE_PX_RANGE = (8, 400)
+_CAPTION_MARGIN_MAX = 0.45
+_CAPTION_WIDTH_RANGE = (0.1, 1.0)
+_CAPTION_GEOMETRY_FIELDS = ("at", "x", "y", "margin", "size", "width")
+_CAPTION_SAMPLE_TEXT = "Sample caption text"
+# Style and position presets are authored in pixels on a 1920x1080
+# reference canvas; captions restate them relative to the real canvas.
+_REFERENCE_SHORT_SIDE = 1080
+_REFERENCE_WIDTH = 1920
+
+
+def _parse_caption_at(raw: str) -> str:
+    at = raw.strip().lower()
+    if at not in CAPTION_AT_CHOICES:
+        raise ValueError(
+            f"Unknown --at {raw!r}. Use one of: {', '.join(CAPTION_AT_CHOICES)}."
+        )
+    return at
+
+
+def _parse_caption_size(raw: str) -> str | float:
+    text = raw.strip().lower()
+    if text in CAPTION_SIZE_FRACTIONS:
+        return text
+    usage = (
+        f"Invalid --size {raw!r}. Use small, medium, or large; a fraction "
+        "of the canvas's shorter side from "
+        f"{_CAPTION_SIZE_FRACTION_RANGE[0]} to {_CAPTION_SIZE_FRACTION_RANGE[1]} "
+        "such as 0.06; or pixels such as 48px."
+    )
+    try:
+        if text.endswith("px"):
+            pixels = float(text[:-2])
+            low, high = _CAPTION_SIZE_PX_RANGE
+            if not low <= pixels <= high:
+                raise ValueError
+            return f"{int(round(pixels))}px"
+        fraction = float(text)
+    except ValueError:
+        raise ValueError(usage) from None
+    low, high = _CAPTION_SIZE_FRACTION_RANGE
+    if not low <= fraction <= high:
+        raise ValueError(usage)
+    return fraction
+
+
+def _parse_caption_margin(raw: str) -> float | str | dict:
+    usage = (
+        f"Invalid --margin {raw!r}. Use a fraction of the canvas from 0 to "
+        f"{_CAPTION_MARGIN_MAX} such as 0.1, pixels such as 40px, or X,Y "
+        "for different horizontal and vertical margins."
+    )
+    parts = [part.strip().lower() for part in raw.split(",")]
+    if len(parts) not in (1, 2):
+        raise ValueError(usage)
+    values: list[float | str] = []
+    for part in parts:
+        try:
+            if part.endswith("px"):
+                pixels = float(part[:-2])
+                if pixels < 0:
+                    raise ValueError
+                values.append(f"{int(round(pixels))}px")
+                continue
+            fraction = float(part)
+        except ValueError:
+            raise ValueError(usage) from None
+        if not 0 <= fraction <= _CAPTION_MARGIN_MAX:
+            raise ValueError(usage)
+        values.append(fraction)
+    if len(values) == 1:
+        return values[0]
+    return {"x": values[0], "y": values[1]}
+
+
+def _parse_caption_width(value: float) -> float:
+    low, high = _CAPTION_WIDTH_RANGE
+    if not low <= value <= high:
+        raise ValueError(
+            f"Invalid --width {value:g}. Use the caption wrap width as a "
+            f"fraction of the canvas width, {low} to {high}."
+        )
+    return value
+
+
+def _caption_placement_policy(recipe: dict) -> dict:
+    """The recipe's placement policy in its current shape. Recipes from
+    before caption geometry stored bare position names ("top"); those
+    read as {"at": "top"}."""
+    placement = recipe.get("placement")
+    if placement is None:
+        position = recipe.get("position")
+        default = {"at": position} if position and position != "bottom" else {}
+        return {"default": default, "overrides": []}
+    default = placement.get("default")
+    if isinstance(default, str):
+        default = {"at": default}
+    overrides = []
+    for override in placement.get("overrides") or []:
+        entry: dict = {"selector": dict(override["selector"])}
+        if "position" in override:
+            entry["at"] = override["position"]
+        entry.update(
+            {key: override[key] for key in _CAPTION_GEOMETRY_FIELDS if key in override}
+        )
+        overrides.append(entry)
+    return {"default": dict(default or {}), "overrides": overrides}
+
+
+def _layer_caption_geometry(base: dict, layer: dict) -> dict:
+    """Apply one layer of placement controls over another. Anchor
+    placement (at, margin) and an exact center (x, y) are alternatives:
+    setting one clears the other, the same rule `scenes geometry` uses.
+    Everything else a layer leaves unset is inherited."""
+    merged = dict(base)
+    if "at" in layer or "margin" in layer:
+        merged.pop("x", None)
+        merged.pop("y", None)
+    if "x" in layer or "y" in layer:
+        merged.pop("at", None)
+        merged.pop("margin", None)
+    merged.update(
+        {key: layer[key] for key in _CAPTION_GEOMETRY_FIELDS if key in layer}
+    )
+    return merged
+
+
+def _caption_geometry_for_scene(
+    recipe: dict, scene_name: str | None, layout_preset: str | None
+) -> tuple[dict, str]:
+    """One scene's effective caption geometry and the rule that set it.
+    Scene overrides beat layout overrides; both beat the default. The
+    single precedence implementation behind render, preview, and
+    warnings."""
+    policy = _caption_placement_policy(recipe)
+    geometry = dict(policy["default"])
+    rule = "default"
+    for override in policy["overrides"]:
+        layout = override["selector"].get("layout")
+        if layout is not None and layout == layout_preset:
+            geometry = _layer_caption_geometry(geometry, override)
+            rule = f"layout:{layout}"
+    for override in policy["overrides"]:
+        scene = override["selector"].get("scene")
+        if scene is not None and scene == scene_name:
+            geometry = _layer_caption_geometry(geometry, override)
+            rule = f"scene:{scene}"
+    return geometry, rule
+
+
+def _caption_geometry_resolver(project, spec, recipe):
+    """cue midpoint -> (geometry, rule) against the compiled timeline."""
+    default = _caption_geometry_for_scene(recipe, None, None)
+    if not _caption_placement_policy(recipe)["overrides"]:
+        return lambda mid: default
+    try:
+        resolved = resolve_project(project, spec)
+    except (ResolvedProjectError, SpecValidationError):
+        return lambda mid: default
+    if not resolved.spans:
+        return lambda mid: default
+
+    def resolver(mid: float) -> tuple[dict, str]:
+        span = resolved.span_at(min(mid, resolved.duration_s))
+        return _caption_geometry_for_scene(recipe, span.scene_name, span.layout)
+
+    return resolver
+
+
+def _caption_placement_label(geometry: dict) -> str:
+    return "custom" if "x" in geometry else geometry.get("at", "bottom")
+
+
+def _caption_margin_length(value, axis: str, reference_px: int) -> int | str:
+    """A caption margin as stored on the cue: whole pixels, or vw/vh."""
+    unit = "vw" if axis == "x" else "vh"
+    if value is None:
+        extent = _REFERENCE_WIDTH if axis == "x" else _REFERENCE_SHORT_SIDE
+        return _viewport_length(reference_px / extent * 100, unit)
+    if isinstance(value, str):
+        return int(value[:-2])
+    return _viewport_length(value * 100, unit)
+
+
+def _caption_position_for_geometry(geometry: dict) -> dict:
+    if "x" in geometry and "y" in geometry:
+        return _overlay_position_envelope(
+            x=geometry["x"], y=geometry["y"], anchor="center"
+        )
+    at = geometry.get("at") or "bottom"
+    layout = _POSITION_PRESET_LAYOUT[at]
+    margin = geometry.get("margin")
+    if isinstance(margin, dict):
+        margin_x, margin_y = margin.get("x"), margin.get("y")
+    else:
+        margin_x = margin_y = margin
+    margins = {}
+    if "margin_x" in layout:
+        margins["margin_x"] = _caption_margin_length(margin_x, "x", layout["margin_x"])
+    if "margin_y" in layout:
+        margins["margin_y"] = _caption_margin_length(margin_y, "y", layout["margin_y"])
+    return _overlay_position_envelope(preset=at, **margins)
+
+
+def _caption_size_length(size) -> tuple[float, str]:
+    if isinstance(size, str) and size.endswith("px"):
+        return float(size[:-2]), "px"
+    fraction = CAPTION_SIZE_FRACTIONS.get(size, size)
+    return float(fraction) * 100, "vmin"
+
+
+def _caption_cue_css(
+    style: str, css: str | None, override_css: str | None, geometry: dict
+) -> str | None:
+    """CSS for one cue, in precedence order: the style preset's sizes
+    restated relative to the canvas, the recipe CSS, per-source CSS, then
+    placement --size/--width. Recipe px values therefore stay absolute."""
+    preset = OVERLAY_STYLE_PRESETS.get(style, {})
+    scaled: list[str] = []
+    if isinstance(preset.get("font_size"), (int, float)):
+        scaled.append(
+            "font-size: "
+            + _viewport_length(
+                preset["font_size"] / _REFERENCE_SHORT_SIDE * 100, "vmin"
+            )
+        )
+    if isinstance(preset.get("stroke_width"), (int, float)):
+        scaled.append(
+            "-moviestar-stroke: "
+            + _viewport_length(
+                preset["stroke_width"] / _REFERENCE_SHORT_SIDE * 100, "vmin"
+            )
+        )
+    placed: list[str] = []
+    if geometry.get("size") is not None:
+        number, unit = _caption_size_length(geometry["size"])
+        placed.append(f"font-size: {_viewport_length(number, unit)}")
+        user_css = " ".join(piece for piece in (css, override_css) if piece)
+        if (
+            preset.get("stroke_width")
+            and preset.get("font_size")
+            and "-moviestar-stroke" not in user_css.lower()
+        ):
+            ratio = preset["stroke_width"] / preset["font_size"]
+            placed.append(
+                f"-moviestar-stroke: {_viewport_length(number * ratio, unit)}"
+            )
+    if geometry.get("width") is not None:
+        placed.append(f"max-width: {round(geometry['width'] * 100, 4):g}%")
+    combined = None
+    for piece in ("; ".join(scaled), css, override_css, "; ".join(placed)):
+        combined = _combine_css(combined, piece)
+    return combined
+
+
+def _caption_sample_record(
+    recipe: dict, geometry: dict, from_s: float, to_s: float
+) -> dict:
+    """A representative cue for a scene with no cues of its own, built
+    through the same position/style path as real cues. Raises ValueError."""
+    style = recipe.get("style") or "social-bold"
+    return {
+        "id": "caption_sample",
+        "track": recipe.get("track", "captions"),
+        "kind": "caption",
+        "text": _CAPTION_SAMPLE_TEXT,
+        "from": str(from_s),
+        "to": str(to_s),
+        "z_index": 100,
+        "position": _caption_position_for_geometry(geometry),
+        "style": _overlay_style_envelope(
+            preset=style,
+            css=_caption_cue_css(style, recipe.get("css"), None, geometry),
+        ),
+    }
+
+
+def _caption_render_canvas(project: dict, spec: dict) -> tuple[int, int] | None:
+    """The canvas captions render on: the composition canvas, or the
+    single loaded source's frame."""
+    canvas = spec.get("composition_canvas") or {}
+    if spec.get("composition") and canvas.get("width") and canvas.get("height"):
+        return (int(canvas["width"]), int(canvas["height"]))
+    sources = project.get("sources") or []
+    if len(sources) == 1 and sources[0].get("width") and sources[0].get("height"):
+        return (int(sources[0]["width"]), int(sources[0]["height"]))
+    return None
+
+
+def _caption_resolved_geometry(
+    record: dict, canvas: tuple[int, int], *, sample: bool
+) -> dict:
+    """Pixels for one cue from the render planner itself, so the preview
+    can never disagree with export, screenshot, or watch."""
+    from_s = parse_timecode(record["from"])
+    to_s = parse_timecode(record["to"])
+    plan = plan_overlays([record], canvas, from_s, to_s)["plans"][0]
+    position = record["position"]
+    style = record["style"]["resolved"]
+    resolved: dict = {
+        "canvas": {"width": canvas[0], "height": canvas[1]},
+        "anchor": plan["anchor"],
+        "font_size_px": plan["font_size"],
+    }
+    if position.get("x") is not None:
+        resolved["center_px"] = {
+            "x": round(position["x"] * canvas[0]),
+            "y": round(position["y"] * canvas[1]),
+        }
+    else:
+        resolved["margin_px"] = {
+            axis: round(
+                length_px(position.get(f"margin_{axis}") or 0, canvas, axis, "margin")
+            )
+            for axis in ("x", "y")
+        }
+    if style.get("max_width") is not None:
+        resolved["max_width_px"] = round(
+            length_px(style["max_width"], canvas, "x", "max-width")
+        )
+    resolved["block"] = plan["estimated_bounds"]
+    resolved["sample_text"] = record["text"]
+    resolved["sample"] = sample
+    return resolved
+
+
+_CAPTION_PLACEMENT_CONTROLS = {
+    "at": list(CAPTION_AT_CHOICES),
+    "x_y": "normalized center of the caption block, 0..1",
+    "margin": f"canvas fraction 0..{_CAPTION_MARGIN_MAX}, Npx, or X,Y",
+    "size": ["small", "medium", "large", "fraction 0.02..0.25", "Npx"],
+    "width": "fraction of the canvas width, 0.1..1",
+    "scope": ["--scene NAME", "--layout PRESET"],
+}
+
+
+def _parse_legacy_placement_overrides(override_args: tuple[str, ...]) -> list[dict]:
+    """Parse the older --for SELECTOR=POSITION syntax. Raises ValueError."""
     overrides: list[dict] = []
     for raw in override_args:
         selector, sep, position = raw.partition("=")
         if not sep or not selector or not position:
-            _error_exit_with_hint(
-                command,
-                f"Could not parse placement override {raw!r}.",
-                "Use SELECTOR=POSITION, e.g. layout:two-up=center or "
-                "scene:intro=top.",
+            raise ValueError(
+                f"Could not parse placement override {raw!r}. Use "
+                "SELECTOR=POSITION, e.g. layout:two-up=center or "
+                "scene:intro=top."
             )
         kind, ksep, name = selector.partition(":")
         if not ksep or kind not in ("layout", "scene") or not name:
-            _error_exit_with_hint(
-                command,
-                f"Unknown placement selector {selector!r}.",
-                "Selectors are layout:<preset> or scene:<name> — e.g. "
-                "layout:two-up=center or scene:intro=top.",
+            raise ValueError(
+                f"Unknown placement selector {selector!r}. Selectors are "
+                "layout:<preset> or scene:<name>."
             )
-        if position not in _CAPTION_PLACEMENT_POSITIONS:
-            _error_exit_with_hint(
-                command,
-                f"Unknown position {position!r}.",
-                "Positions: " + ", ".join(_CAPTION_PLACEMENT_POSITIONS) + ".",
-            )
-        overrides.append(
-            {"selector": {kind: name}, "position": position}
-        )
+        overrides.append({"selector": {kind: name}, "at": _parse_caption_at(position)})
     return overrides
 
 
-# Estimated text-baseline height per position, as a fraction of canvas
-# height. Good enough for placement proof without rendering; the exact
-# baseline depends on font metrics and wrapping.
-_CAPTION_POSITION_BASELINES = {
-    "bottom": 0.90,
-    "top": 0.10,
-    "center": 0.50,
-    "lower-third-left": 0.72,
-    "lower-third-right": 0.72,
-}
+def _upsert_caption_override(policy: dict, selector: dict, controls: dict) -> None:
+    """Layer controls onto the override for ``selector``, adding it if new."""
+    for index, override in enumerate(policy["overrides"]):
+        if override["selector"] == selector:
+            fields = {k: v for k, v in override.items() if k != "selector"}
+            policy["overrides"][index] = {
+                "selector": selector,
+                **_layer_caption_geometry(fields, controls),
+            }
+            return
+    policy["overrides"].append(
+        {"selector": selector, **_layer_caption_geometry({}, controls)}
+    )
 
 
 def _caption_placement_preview(
-    project: dict, spec: dict, default: str, overrides: list[dict]
+    project: dict, spec: dict, recipe: dict, records: list[dict]
 ) -> list[dict]:
-    """Per-scene resolved placement: which rule fires where, with an
-    estimated pixel baseline and the scene's result range so agents can
-    prove placement (e.g. clear of a two-up seam) without rendering."""
-    composition = spec.get("composition")
-    if not composition or not _is_layout_composition(composition):
-        return []
-    canvas = spec.get("composition_canvas") or {}
-    canvas_height = int(canvas.get("height") or 0)
-    scene_ranges: dict[str, dict] = {}
+    """Per-scene resolved placement: which rule fires, the effective
+    geometry, and planner-measured pixels for a real cue in that scene
+    (or a sample cue when the scene has none), so agents can prove where
+    captions land without rendering."""
+    canvas = _caption_render_canvas(project, spec)
+    composition = spec.get("composition") or []
+    layout_scenes = (
+        composition if composition and _is_layout_composition(composition) else []
+    )
+    scene_ranges: dict[str, tuple[float, float]] = {}
     try:
-        resolved = resolve_project(project, spec)
-        for span in resolved.spans:
+        for span in resolve_project(project, spec).spans:
             scene_ranges.setdefault(
-                span.scene_name,
-                {
-                    "from": format_timecode(span.scene_start_s),
-                    "to": format_timecode(span.scene_end_s),
-                },
+                span.scene_name, (span.scene_start_s, span.scene_end_s)
             )
     except (ResolvedProjectError, SpecValidationError):
         pass
+    targets = [
+        (scene.get("name", f"scene_{index + 1}"), scene.get("layout", {}).get("preset"))
+        for index, scene in enumerate(layout_scenes)
+    ] or [(None, None)]
+    cues = sorted(records, key=lambda record: parse_timecode(record["from"]))
+
+    def midpoint(record: dict) -> float:
+        return (parse_timecode(record["from"]) + parse_timecode(record["to"])) / 2
+
     preview: list[dict] = []
-    for index, scene in enumerate(composition):
-        name = scene.get("name", f"scene_{index + 1}")
-        layout = scene.get("layout", {}).get("preset")
-        position = default
-        rule = "default"
-        for override in overrides:
-            selector = override["selector"]
-            if selector.get("layout") == layout:
-                position, rule = override["position"], f"layout:{layout}"
-            if selector.get("scene") == name:
-                position, rule = override["position"], f"scene:{name}"
-        entry = {
+    for name, layout in targets:
+        geometry, rule = _caption_geometry_for_scene(recipe, name, layout)
+        entry: dict = {
             "scene": name,
             "layout": layout,
-            "position": position,
             "rule": rule,
+            "position": _caption_placement_label(geometry),
+            "geometry": geometry,
         }
-        if canvas_height:
-            entry["estimated_baseline"] = {
-                "y_px": round(
-                    canvas_height
-                    * _CAPTION_POSITION_BASELINES.get(position, 0.9)
-                ),
-                "canvas_height": canvas_height,
-                "note": "estimate; exact baseline depends on font metrics",
+        scene_range = scene_ranges.get(name) if name is not None else None
+        if scene_range is not None:
+            entry["result_range"] = {
+                "from": format_timecode(scene_range[0]),
+                "to": format_timecode(scene_range[1]),
             }
-        if name in scene_ranges:
-            entry["result_range"] = scene_ranges[name]
+        if canvas is not None:
+            if name is None:
+                sample = cues[0] if cues else None
+            elif scene_range is None:
+                sample = None
+            else:
+                sample = next(
+                    (
+                        cue
+                        for cue in cues
+                        if scene_range[0] <= midpoint(cue) < scene_range[1]
+                    ),
+                    None,
+                )
+            synthetic = sample is None
+            if synthetic:
+                start = scene_range[0] if scene_range else 0.0
+                try:
+                    sample = _caption_sample_record(
+                        recipe, geometry, start, start + 1.0
+                    )
+                except ValueError:
+                    sample = None
+            if sample is not None:
+                resolved = _caption_resolved_geometry(sample, canvas, sample=synthetic)
+                entry["resolved"] = resolved
+                block = resolved["block"]
+                entry["estimated_baseline"] = {
+                    "y_px": block["y"] + block["height"],
+                    "canvas_height": canvas[1],
+                    "note": "bottom edge of the estimated caption block",
+                }
         preview.append(entry)
     return preview
 
@@ -19112,7 +19497,7 @@ def captions_dump(track: str) -> None:
             ),
         }
     placement = (
-        _caption_placement_resolver(project, spec, recipe)
+        _caption_geometry_resolver(project, spec, recipe)
         if derived
         else None
     )
@@ -19139,7 +19524,7 @@ def captions_dump(track: str) -> None:
                 "tokens_count": len(cue.get("tokens", [])),
                 "placement": {
                     "position": (cue.get("position") or {}).get(
-                        "preset", "bottom"
+                        "preset", "custom"
                     ),
                     "rule": (
                         placement((from_s + to_s) / 2)[1]
@@ -19168,11 +19553,7 @@ def captions_dump(track: str) -> None:
                             "source": recipe.get("source"),
                             "range": recipe.get("range"),
                             "position": recipe.get("position") or "bottom",
-                            "placement": recipe.get("placement")
-                            or {
-                                "default": recipe.get("position") or "bottom",
-                                "overrides": [],
-                            },
+                            "placement": _caption_placement_policy(recipe),
                             "style": recipe.get("style") or "social-bold",
                             "css": recipe.get("css"),
                             "highlight": recipe.get("highlight"),
@@ -19903,54 +20284,191 @@ def captions_suppress(
 @project_workspace_option
 @click.option("--track", default="captions", help="Caption track to adjust.")
 @click.option(
+    "--scene", "scene_name", default=None,
+    help="Apply these controls to one scene (by name) instead of every scene.",
+)
+@click.option(
+    "--layout", "layout_name", default=None,
+    help="Apply these controls to every scene using this layout preset, "
+    "e.g. two-up.",
+)
+@click.option(
+    "--at", "at_value", default=None,
+    help="Anchor: top-left, top, top-right, left, center, right, "
+    "bottom-left, bottom, bottom-right (also lower-third-left/right). "
+    "Mutually exclusive with --x/--y.",
+)
+@click.option(
+    "--x", "x_value", type=float, default=None,
+    help="Exact normalized x of the caption block's center, 0..1.",
+)
+@click.option(
+    "--y", "y_value", type=float, default=None,
+    help="Exact normalized y of the caption block's center, 0..1.",
+)
+@click.option(
+    "--margin", "margin_value", default=None,
+    help="Distance from the anchored edge: a canvas fraction such as 0.1 "
+    "(of height vertically, width horizontally), pixels such as 40px, or "
+    "X,Y. Default: 1/6 of the height at the bottom.",
+)
+@click.option(
+    "--size", "size_value", default=None,
+    help="Text size: small, medium, large (0.05 / 0.067 / 0.083 of the "
+    "canvas's shorter side), a custom fraction such as 0.06, or pixels "
+    "such as 48px. Outline width scales with it.",
+)
+@click.option(
+    "--width", "width_value", type=float, default=None,
+    help="Wrap width as a fraction of the canvas width, 0.1..1.",
+)
+@click.option(
+    "--reset", is_flag=True, default=False,
+    help="Remove the --scene/--layout override, or with no scope restore "
+    "every default and drop all overrides.",
+)
+@click.option(
+    "--dry-run", is_flag=True, default=False,
+    help="Resolve and preview without writing spec.json.",
+)
+@click.option(
     "--default", "default_position", default=None,
-    help="Default position for every scene.",
+    help="Older syntax for --at on every scene.",
 )
 @click.option(
     "--for", "override_args", multiple=True,
-    help="Override as SELECTOR=POSITION; selectors are layout:<preset> "
-    "or scene:<name>. Repeatable.",
+    help="Older syntax: SELECTOR=POSITION with layout:<preset> or "
+    "scene:<name>. Repeatable.",
 )
 def captions_placement(
-    track: str, default_position: str | None, override_args: tuple[str, ...]
+    track: str,
+    scene_name: str | None,
+    layout_name: str | None,
+    at_value: str | None,
+    x_value: float | None,
+    y_value: float | None,
+    margin_value: str | None,
+    size_value: str | None,
+    width_value: float | None,
+    reset: bool,
+    dry_run: bool,
+    default_position: str | None,
+    override_args: tuple[str, ...],
 ) -> None:
-    """Set where a caption track sits, per scene, without regenerating.
+    """Set where captions sit and how big they are, per scene.
 
     \b
-    Placement is policy, not per-cue coordinates:
-      --default bottom                    every scene, unless overridden
-      --for layout:two-up=center          every two-up scene
-      --for scene:intro=top               one scene by name
-
+    Every scene, or one scene / layout:
+      moviestar captions placement --at bottom --size medium
+      moviestar captions placement --scene intro --at top --size small
+      moviestar captions placement --layout two-up --at center
     \b
-    Positions: bottom, top, center, lower-third-left, lower-third-right.
-    --track defaults to 'captions' (the generate default).
+    Exact spot, margins, and wrap width:
+      moviestar captions placement --x 0.5 --y 0.72
+      moviestar captions placement --margin 0.2 --width 0.8
+    \b
+    Inspect, preview, undo:
+      moviestar captions placement                      (report only)
+      moviestar captions placement --at top --dry-run
+      moviestar captions placement --scene intro --reset
 
-    Scene overrides beat layout overrides; both beat the default. The
-    envelope's resolved_preview shows, per scene, which rule fired,
-    the position's estimated baseline in canvas pixels, and the
-    scene's result range — proof of where cues land without rendering.
-    The same resolution appears in 'captions dump' and every render
-    surface.
+    Sizes and margins scale with the canvas: the same recipe reads
+    correctly on 1920x1080, a 1080x1920 Short, and a 480p source. The
+    default bottom margin (1/6 of the height) keeps captions clear of
+    Shorts, Reels, and TikTok controls. Explicit pixels (48px) stay fixed.
+
+    Unspecified controls keep their stored values. --at/--margin and
+    --x/--y are alternatives: setting one clears the other. Scene
+    overrides beat layout overrides; both beat the default, and inherit
+    any control they do not set.
+
+    resolved_preview reports, per scene, the rule that fired and the
+    exact pixels (text size, margins, block bounds) from the same planner
+    export and screenshot use. --track defaults to 'captions'.
     """
     command = "captions placement"
     project, spec = _overlay_project_spec(command)
     _caption_track_cues(spec, track, command)
-    if default_position is None and not override_args:
+    recipe = _require_caption_recipe(spec, track, command)
+
+    controls: dict = {}
+    legacy = default_position is not None or bool(override_args)
+    has_new_controls = any(
+        value is not None
+        for value in (
+            at_value, x_value, y_value, margin_value, size_value, width_value
+        )
+    )
+    if legacy and (has_new_controls or scene_name or layout_name or reset):
         _error_exit_with_hint(
             command,
-            "Nothing to set: pass --default and/or --for overrides.",
-            "Example: moviestar captions placement --default bottom "
-            "--for layout:two-up=center",
+            "--default and --for are the older placement syntax and cannot "
+            "be combined with --at, --x/--y, --margin, --size, --width, "
+            "--scene, --layout, or --reset.",
+            "Use --at with --scene or --layout, e.g. 'moviestar captions "
+            "placement --scene intro --at top'.",
         )
-    default = default_position or "bottom"
-    if default not in _CAPTION_PLACEMENT_POSITIONS:
+    if scene_name and layout_name:
         _error_exit_with_hint(
             command,
-            f"Unknown position {default!r}.",
-            "Positions: " + ", ".join(_CAPTION_PLACEMENT_POSITIONS) + ".",
+            "Choose one scope: --scene or --layout, not both.",
+            "Scene overrides already beat layout overrides; set each with "
+            "its own call.",
         )
-    overrides = _parse_placement_overrides(override_args, command)
+    if reset and has_new_controls:
+        _error_exit_with_hint(
+            command,
+            "--reset cannot be combined with placement controls.",
+            "Run --reset on its own, then set new controls in a second call.",
+        )
+    if at_value is not None and (x_value is not None or y_value is not None):
+        _error_exit_with_hint(
+            command,
+            "Choose --at or --x/--y, not both.",
+            "--at pins the block to an edge or corner; --x/--y put its center "
+            "at an exact normalized point.",
+        )
+    if (x_value is None) != (y_value is None):
+        _error_exit_with_hint(
+            command,
+            "Pass both --x and --y for an exact position.",
+            "Example: --x 0.5 --y 0.72 centers the caption block there.",
+        )
+    if margin_value is not None and x_value is not None:
+        _error_exit_with_hint(
+            command,
+            "--margin applies to --at placement, not --x/--y.",
+            "Use --at with --margin, or move the exact center with --x/--y.",
+        )
+    try:
+        if at_value is not None:
+            controls["at"] = _parse_caption_at(at_value)
+        if x_value is not None:
+            if not (0.0 <= x_value <= 1.0 and 0.0 <= y_value <= 1.0):
+                raise ValueError(
+                    "--x and --y must be normalized values from 0..1."
+                )
+            controls["x"] = x_value
+            controls["y"] = y_value
+        if margin_value is not None:
+            controls["margin"] = _parse_caption_margin(margin_value)
+        if size_value is not None:
+            controls["size"] = _parse_caption_size(size_value)
+        if width_value is not None:
+            controls["width"] = _parse_caption_width(width_value)
+        legacy_default = (
+            _parse_caption_at(default_position)
+            if default_position is not None
+            else None
+        )
+        legacy_overrides = _parse_legacy_placement_overrides(override_args)
+    except ValueError as exc:
+        _error_exit_with_hint(
+            command,
+            str(exc),
+            "Run 'moviestar captions placement --help' for every control.",
+        )
+
     composition = spec.get("composition") or []
     scene_names = {
         scene.get("name", f"scene_{i + 1}")
@@ -19959,62 +20477,133 @@ def captions_placement(
     layouts = {
         scene.get("layout", {}).get("preset") for scene in composition
     }
-    for override in overrides:
-        selector = override["selector"]
+    selectors = [override["selector"] for override in legacy_overrides]
+    if scene_name:
+        selectors.append({"scene": scene_name})
+    if layout_name:
+        selectors.append({"layout": layout_name})
+    for selector in selectors:
         if "scene" in selector and selector["scene"] not in scene_names:
             _error_exit_with_hint(
                 command,
                 f"Unknown scene {selector['scene']!r}.",
-                "Scenes: " + ", ".join(sorted(scene_names)) + ".",
+                "Scenes: " + (", ".join(sorted(scene_names)) or "none") + ".",
             )
         if "layout" in selector and selector["layout"] not in layouts:
             _error_exit_with_hint(
                 command,
                 f"No scene uses layout {selector['layout']!r}.",
                 "Layouts in this composition: "
-                + ", ".join(sorted(x for x in layouts if x)) + ".",
+                + (", ".join(sorted(x for x in layouts if x)) or "none") + ".",
             )
-    recipe = caption_recipe_for_track(spec, track)
-    if recipe is None:
-        _error_exit_with_hint(
-            command,
-            f"Track {track!r} is frozen: it has no caption recipe to "
-            "carry a placement policy.",
-            "Re-run 'moviestar captions generate' to create a derived "
-            "track, or reposition frozen cues via 'moviestar overlays "
-            "dump' -> 'moviestar overlays set'.",
+
+    policy = _caption_placement_policy(recipe)
+    scope: dict | None = (
+        {"scene": scene_name} if scene_name
+        else {"layout": layout_name} if layout_name
+        else None
+    )
+    changing = legacy or has_new_controls or reset
+    if legacy:
+        if legacy_default is not None:
+            policy["default"] = _layer_caption_geometry(
+                policy["default"], {"at": legacy_default}
+            )
+        for override in legacy_overrides:
+            _upsert_caption_override(
+                policy, override["selector"], {"at": override["at"]}
+            )
+    elif reset and scope is None:
+        policy = {"default": {}, "overrides": []}
+    elif reset:
+        policy["overrides"] = [
+            override
+            for override in policy["overrides"]
+            if override["selector"] != scope
+        ]
+    elif has_new_controls and scope is None:
+        policy["default"] = _layer_caption_geometry(policy["default"], controls)
+    elif has_new_controls:
+        _upsert_caption_override(policy, scope, controls)
+
+    if not changing:
+        records = [
+            overlay
+            for overlay in spec.get("overlays", [])
+            if overlay.get("kind") == "caption" and overlay.get("track") == track
+        ]
+        click.echo(
+            json.dumps(
+                {
+                    "status": "caption_placement",
+                    "writes_spec": False,
+                    "track": track,
+                    "placement": policy,
+                    "resolved_preview": _caption_placement_preview(
+                        project, spec, recipe, records
+                    ),
+                    "controls": _CAPTION_PLACEMENT_CONTROLS,
+                    "hint": (
+                        "Change placement with --at/--x/--y/--margin/--size/"
+                        "--width, scoped with --scene or --layout; add "
+                        "--dry-run to preview first."
+                    ),
+                },
+                indent=2,
+            )
         )
+        return
+
     updated = {
         **recipe,
-        "position": default,
-        "placement": {"default": default, "overrides": overrides},
+        "position": policy["default"].get("at", "bottom"),
+        "placement": policy,
         "cache_fingerprint": None,
     }
     records, _meta = _derive_caption_records(project, spec, updated, command)
     updated["cache_fingerprint"] = _caption_cache_fingerprint(
         project, spec, updated
     )
-    new_spec = upsert_caption_recipe(spec, updated)
-    new_spec, _replaced = _replace_caption_track(
-        new_spec, track, records, command
-    )
+    preview_spec = spec
+    if not dry_run:
+        preview_spec = upsert_caption_recipe(spec, updated)
+        preview_spec, _replaced = _replace_caption_track(
+            preview_spec, track, records, command
+        )
     click.echo(
         json.dumps(
             {
-                "status": "caption_placement_set",
-                "writes_spec": True,
+                "status": (
+                    "would_set_caption_placement"
+                    if dry_run
+                    else "caption_placement_set"
+                ),
+                "dry_run": dry_run,
+                "writes_spec": not dry_run,
                 "track": track,
-                "placement": {"default": default, "overrides": overrides},
+                "changed": {
+                    "scope": scope or "default",
+                    "reset": reset,
+                    "controls": controls
+                    or (
+                        {"at": legacy_default}
+                        if legacy_default is not None
+                        else {}
+                    ),
+                },
+                "placement": policy,
                 "resolved_preview": _caption_placement_preview(
-                    project, new_spec, default, overrides
+                    project, preview_spec, updated, records
                 ),
                 "cues_count": len(records),
                 "hint": (
-                    "resolved_preview shows which rule fires per scene, "
-                    "with estimated baselines. The policy is part of the "
-                    "recipe and re-applies on every derivation. Verify "
-                    "visually with 'moviestar screenshot --at <t>' inside "
-                    "an affected scene."
+                    "Dry run: nothing written. Re-run without --dry-run to "
+                    "apply."
+                    if dry_run
+                    else "The policy is part of the recipe and re-applies on "
+                    "every derivation. resolved_preview pixels come from the "
+                    "render planner; verify visually with 'moviestar "
+                    "screenshot --at <t>' inside an affected scene."
                 ),
             },
             indent=2,
@@ -20660,50 +21249,51 @@ def _caption_records_from_cues(
     cues: list[dict],
     spec: dict,
     track: str,
-    position: str,
+    position: str | None = None,
     style: str,
     css: str | None,
     style_for: dict[str, str] | None = None,
     highlight_mode: str,
     highlight_color: str | None,
     command: str,
-    cue_positions: list[str] | None = None,
+    cue_geometries: list[dict] | None = None,
 ) -> list[dict]:
     """Build canonical caption overlay records from result-time cues,
     through the same position/style validators `overlays add` uses.
-    ``cue_positions`` (parallel to ``cues``) applies per-cue placement
+    ``cue_geometries`` (parallel to ``cues``) applies per-cue geometry
     from a recipe's placement policy; ``position`` is the default."""
     kept_ids = {
         o["id"] for o in spec.get("overlays", []) if o["track"] != track
     }
     records: list[dict] = []
+    default_geometry = {"at": position} if position else {}
     position_env_cache: dict[str, dict] = {}
 
-    def position_env(preset: str) -> dict:
-        if preset not in position_env_cache:
+    def position_env(geometry: dict) -> dict:
+        key = json.dumps(geometry, sort_keys=True)
+        if key not in position_env_cache:
             try:
-                position_env_cache[preset] = _overlay_position_envelope(
-                    preset=preset, default_preset="bottom"
-                )
+                position_env_cache[key] = _caption_position_for_geometry(geometry)
             except ValueError as exc:
                 _error_exit(command, str(exc))
-        return position_env_cache[preset]
+        return position_env_cache[key]
 
-    pos_env = position_env(position)
-    style_env_cache: dict[tuple[str | None, str | None], dict] = {}
+    style_env_cache: dict[tuple, dict] = {}
 
-    def style_for_source(source: str | None) -> tuple[dict, str | None]:
+    def style_for_cue(
+        source: str | None, geometry: dict
+    ) -> tuple[dict, str | None]:
         override_css = (style_for or {}).get(source or "")
-        combined_css = _combine_css(css, override_css)
+        cue_css = _caption_cue_css(style, css, override_css, geometry)
         source_highlight = _caption_highlight_color_from_css(override_css)
         base_highlight = _caption_highlight_color_from_css(css)
         cue_highlight = source_highlight or base_highlight or highlight_color
-        cache_key = (source, cue_highlight)
+        cache_key = (cue_css, cue_highlight)
         if cache_key not in style_env_cache:
             try:
                 style_env_cache[cache_key] = _overlay_style_envelope(
                     preset=style,
-                    css=combined_css,
+                    css=cue_css,
                     highlight_color=cue_highlight,
                 )
             except ValueError as exc:
@@ -20714,7 +21304,12 @@ def _caption_records_from_cues(
         overlay_id = next_overlay_id(kept_ids, "caption")
         kept_ids.add(overlay_id)
         source = cue.get("source")
-        style_env, cue_highlight = style_for_source(source)
+        geometry = (
+            cue_geometries[cue_index]
+            if cue_geometries is not None
+            else default_geometry
+        )
+        style_env, cue_highlight = style_for_cue(source, geometry)
         tokens = None
         if cue.get("tokens"):
             tokens = [
@@ -20748,9 +21343,7 @@ def _caption_records_from_cues(
                 }
                 for token in cue["tokens"]
             ]
-        cue_pos_env = pos_env
-        if cue_positions is not None:
-            cue_pos_env = position_env(cue_positions[cue_index])
+        cue_pos_env = position_env(geometry)
         try:
             records.append(
                 _overlay_record(
@@ -20771,40 +21364,6 @@ def _caption_records_from_cues(
         except ValueError as exc:
             _error_exit(command, f"Cue at {cue['from_s']}s: {exc}")
     return records
-
-
-def _caption_placement_resolver(project, spec, recipe):
-    """cue-midpoint -> (position, rule) from the recipe's placement
-    policy. Scene overrides beat layout overrides; both beat the
-    default."""
-    placement = recipe.get("placement") or {}
-    default = placement.get("default") or recipe.get("position") or "bottom"
-    overrides = placement.get("overrides") or []
-    if not overrides:
-        return lambda mid: (default, "default")
-    try:
-        resolved = resolve_project(project, spec)
-    except (ResolvedProjectError, SpecValidationError):
-        return lambda mid: (default, "default")
-    if not resolved.spans:
-        return lambda mid: (default, "default")
-
-    def resolver(mid: float) -> tuple[str, str]:
-        span = resolved.span_at(min(mid, resolved.duration_s))
-        position, rule = default, "default"
-        for override in overrides:
-            selector = override["selector"]
-            if selector.get("layout") and selector["layout"] == span.layout:
-                position = override["position"]
-                rule = f"layout:{span.layout}"
-        for override in overrides:
-            selector = override["selector"]
-            if selector.get("scene") == span.scene_name:
-                position = override["position"]
-                rule = f"scene:{span.scene_name}"
-        return position, rule
-
-    return resolver
 
 
 def _derive_caption_records(
@@ -20934,25 +21493,24 @@ def _derive_caption_records(
                 "--source <id>').",
             )
 
-    placement = _caption_placement_resolver(project, spec, recipe)
-    cue_positions = []
+    placement = _caption_geometry_resolver(project, spec, recipe)
+    cue_geometries = []
     cue_rules = []
     for cue in cues:
-        position, rule = placement((cue["from_s"] + cue["to_s"]) / 2)
-        cue_positions.append(position)
+        geometry, rule = placement((cue["from_s"] + cue["to_s"]) / 2)
+        cue_geometries.append(geometry)
         cue_rules.append(rule)
     records = _caption_records_from_cues(
         cues=cues,
         spec=spec,
         track=track,
-        position=recipe.get("position") or "bottom",
         style=recipe.get("style") or "social-bold",
         css=recipe.get("css"),
         style_for=style_for,
         highlight_mode=highlight,
         highlight_color=active_color,
         command=command,
-        cue_positions=cue_positions,
+        cue_geometries=cue_geometries,
     )
     warnings.extend(
         _caption_content_warning_objects(records, source="captions")
@@ -20995,7 +21553,9 @@ def _derive_caption_records(
 @click.option(
     "--position",
     default="bottom",
-    help="Overlay position preset: bottom, top, center, lower-third-left/right.",
+    help="Starting anchor: bottom, top, center, a corner or side "
+    "(top-left ... bottom-right), or lower-third-left/right. Fine-tune "
+    "size and placement later with 'moviestar captions placement'.",
 )
 @click.option("--style", default="social-bold", help="Caption style preset.")
 @click.option("--css", default=None, help="CSS-like declaration subset.")
@@ -21259,7 +21819,8 @@ def captions_generate(
 @click.option(
     "--position",
     default="bottom",
-    help="Overlay position preset: bottom, top, center, lower-third-left/right.",
+    help="Position preset: bottom, top, center, a corner or side "
+    "(top-left ... bottom-right), or lower-third-left/right.",
 )
 @click.option("--style", default="caption-default", help="Caption style preset.")
 @click.option("--css", default=None, help="CSS-like declaration subset.")
@@ -21390,6 +21951,26 @@ def _overlay_project_spec(command: str) -> tuple[dict, dict]:
     return project, spec
 
 
+def _position_margin(value, name: str) -> int | str:
+    """A stored position margin: whole pixels, or a vw/vh/vmin/vmax
+    length that resolves against the render canvas."""
+    if isinstance(value, bool):
+        raise ValueError(f"Overlay position '{name}' must be an integer.")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().lower().endswith(VIEWPORT_UNITS):
+        try:
+            length_px(value, (100, 100), "y", name)
+        except ValueError:
+            pass
+        else:
+            return _css_size(value, name)
+    raise ValueError(
+        f"Overlay position '{name}' must be an integer or a canvas-relative "
+        "length such as '16.6667vh'."
+    )
+
+
 def _normalized_overlay(raw: dict, *, existing_ids: set[str]) -> dict:
     """Rebuild one overlay from an overlays.json entry through the same
     validators `overlays add` uses. Inputs (preset, css, timing, text,
@@ -21421,11 +22002,10 @@ def _normalized_overlay(raw: dict, *, existing_ids: set[str]) -> dict:
         raise ValueError("Overlay 'position' must be an object.")
     margin_x = position_in.get("margin_x")
     margin_y = position_in.get("margin_y")
-    for name, value in (("margin_x", margin_x), ("margin_y", margin_y)):
-        if value is not None and (
-            isinstance(value, bool) or not isinstance(value, int)
-        ):
-            raise ValueError(f"Overlay position '{name}' must be an integer.")
+    if margin_x is not None:
+        margin_x = _position_margin(margin_x, "margin_x")
+    if margin_y is not None:
+        margin_y = _position_margin(margin_y, "margin_y")
     position = _overlay_position_envelope(
         preset=position_in.get("preset"),
         x=position_in.get("x"),
@@ -21603,8 +22183,14 @@ def overlays(ctx: click.Context) -> None:
 
     \b
     Position presets (--position):
-      bottom, top, center, lower-third-left, lower-third-right
+      bottom, top, center, lower-third-left, lower-third-right,
+      top-left, top-right, left, right, bottom-left, bottom-right
       (or normalized --x/--y instead of a preset)
+
+    \b
+    Sizes accept px or canvas-relative units in --css:
+      font-size: 6vmin      6% of the canvas's shorter side
+      max-width: 80%        80% of the canvas width
 
     \b
     Timing spaces:
@@ -21680,8 +22266,9 @@ def overlays(ctx: click.Context) -> None:
 @click.option(
     "--position",
     default=None,
-    help="Position preset: bottom, top, center, lower-third-left/right. "
-    "Default: top. Mutually exclusive with --x/--y.",
+    help="Position preset: bottom, top, center, a corner or side "
+    "(top-left ... bottom-right), or lower-third-left/right. Default: top. "
+    "Mutually exclusive with --x/--y.",
 )
 @click.option("--x", type=float, default=None, help="Normalized x (0.0-1.0).")
 @click.option("--y", type=float, default=None, help="Normalized y (0.0-1.0).")

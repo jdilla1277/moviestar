@@ -60,21 +60,41 @@ def ffmpeg_color(value: str, alpha: float = 1.0) -> str:
     return f"{value}@{round(alpha, 4)}"
 
 
-def _px_value(value, canvas_extent: int, where: str) -> float:
-    """Resolve a px/percent length against a canvas dimension."""
+# CSS viewport units resolve against the render canvas, so one stored
+# length reads the same on 1920x1080, a 1080x1920 Short, and a 480p source.
+VIEWPORT_UNITS = ("vmin", "vmax", "vw", "vh")
+_LENGTH_RE = re.compile(r"^(-?\d+(?:\.\d+)?)(px|%|vmin|vmax|vw|vh)?$")
+
+
+def length_px(value, canvas: tuple[int, int], axis: str, where: str) -> float:
+    """Resolve a px, %, vw, vh, vmin, or vmax length to canvas pixels.
+
+    ``axis`` picks what ``%`` measures against: ``"x"`` (width), ``"y"``
+    (height), or ``"min"`` (the shorter side, for sizes such as font-size).
+    """
+    if isinstance(value, bool):
+        raise ValueError(f"{where}: invalid length {value!r}.")
     if isinstance(value, (int, float)):
         return float(value)
-    text = str(value).strip()
-    if text.endswith("%"):
-        return float(text[:-1]) / 100.0 * canvas_extent
-    if text.endswith("px"):
-        text = text[:-2]
-    try:
-        return float(text)
-    except ValueError as exc:
+    match = _LENGTH_RE.match(str(value).strip().lower())
+    if not match:
         raise ValueError(
-            f"{where}: could not parse length {value!r}; use px or %."
-        ) from exc
+            f"{where}: could not parse length {value!r}; use px, %, vw, vh, "
+            "vmin, or vmax."
+        )
+    number = float(match.group(1))
+    unit = match.group(2) or "px"
+    if unit == "px":
+        return number
+    width, height = canvas
+    extent = {
+        "vw": width,
+        "vh": height,
+        "vmin": min(width, height),
+        "vmax": max(width, height),
+        "%": {"x": width, "y": height}.get(axis, min(width, height)),
+    }[unit]
+    return number / 100.0 * extent
 
 
 def _parse_padding(value) -> tuple[int, int]:
@@ -419,7 +439,15 @@ def plan_overlays(
         fonts.setdefault(f"{font['family']}:{font['weight']}", font)
 
         rotate_deg, scale = _parse_transform(resolved.get("transform"))
-        font_size = int(round(resolved.get("font_size", 48) * scale))
+        font_size = int(
+            round(
+                length_px(
+                    resolved.get("font_size", 48), canvas, "min",
+                    f"{oid}: font-size",
+                )
+                * scale
+            )
+        )
 
         text = record["text"]
         transform_case = str(resolved.get("text_transform") or "none").lower()
@@ -432,7 +460,7 @@ def plan_overlays(
         max_width_px: float | None = None
         if resolved.get("max_width") is not None:
             max_width_px = (
-                _px_value(resolved["max_width"], width, f"{oid}: max-width")
+                length_px(resolved["max_width"], canvas, "x", f"{oid}: max-width")
                 - 2 * pad_x
             )
         lines = _wrap_text(text, font_size, max_width_px)
@@ -447,9 +475,17 @@ def plan_overlays(
         font_color = ffmpeg_color(resolved.get("color", "#ffffff"), opacity)
 
         stroke = None
-        if resolved.get("stroke_width"):
+        stroke_width = int(
+            round(
+                length_px(
+                    resolved.get("stroke_width") or 0, canvas, "min",
+                    f"{oid}: -moviestar-stroke",
+                )
+            )
+        )
+        if stroke_width:
             stroke = {
-                "width": int(resolved["stroke_width"]),
+                "width": stroke_width,
                 "color": ffmpeg_color(
                     resolved.get("stroke_color", "#000000"), opacity
                 ),
@@ -495,8 +531,22 @@ def plan_overlays(
 
         position = record.get("position", {})
         anchor = position.get("anchor", "center")
-        margin_x = int(position.get("margin_x", 0) or 0)
-        margin_y = int(position.get("margin_y", 0) or 0)
+        margin_x = int(
+            round(
+                length_px(
+                    position.get("margin_x") or 0, canvas, "x",
+                    f"{oid}: margin_x",
+                )
+            )
+        )
+        margin_y = int(
+            round(
+                length_px(
+                    position.get("margin_y") or 0, canvas, "y",
+                    f"{oid}: margin_y",
+                )
+            )
+        )
         norm_x = position.get("x")
         norm_y = position.get("y")
 
