@@ -17,7 +17,7 @@ import time
 from collections.abc import Iterable
 from pathlib import Path
 
-from moviestar.ffmpeg import run_audio_energy_probe
+from moviestar.ffmpeg import run_audio_energy_probe, run_stereo_phase_probe
 from moviestar.timecodes import format_timecode
 
 
@@ -88,6 +88,21 @@ DEFAULT_MODEL = "base"
 # Transcript coverage QA intentionally targets large holes, not ordinary
 # pauses or timestamp jitter. Audio pauses shorter than two seconds are kept
 # together by the FFmpeg probe; word timestamps get another one-second buffer.
+# Audio checks before transcription (issues #18, #19).
+TRANSCRIPTION_CHANNELS = ("auto", "mix", "left", "right")
+WHISPER_SAMPLE_RATE = 16000
+# At or below this left/right correlation a mono mixdown cancels most of
+# what the channels carry, so auto transcribes the louder channel alone.
+OUT_OF_PHASE_CORRELATION = -0.5
+# Less detected speech than this skips Whisper: on non-speech audio it
+# invents fluent, plausible words instead of returning nothing.
+NO_SPEECH_MAX_SECONDS = 0.5
+# Flag a transcript when at least this many words exist and more than
+# this share of them fall outside detected speech.
+OUTSIDE_SPEECH_MIN_WORDS = 10
+OUTSIDE_SPEECH_MAX_FRACTION = 0.5
+SPEECH_SPAN_TOLERANCE_SECONDS = 0.5
+
 TRANSCRIPT_COVERAGE_MIN_GAP_SECONDS = 5.0
 TRANSCRIPT_WORD_ALIGNMENT_TOLERANCE_SECONDS = 1.0
 
@@ -302,6 +317,114 @@ def _estimate_transcription_eta(model: str, duration_seconds: float) -> str | No
     return f"{low}-{high} {unit}"
 
 
+def _choose_transcription_channel(requested: str, phase: dict | None) -> str:
+    """The channel to transcribe. ``auto`` keeps the usual mono mixdown
+    unless the channels are out of phase, then takes the louder one."""
+    if requested != "auto":
+        return requested
+    if phase is None or phase["correlation"] > OUT_OF_PHASE_CORRELATION:
+        return "mix"
+    return "right" if phase["right_rms_db"] > phase["left_rms_db"] else "left"
+
+
+def _load_audio(source_path: str, channel: str):
+    """Decode 16 kHz audio for Whisper exactly as faster-whisper would,
+    optionally keeping one channel of a stereo source."""
+    from faster_whisper.audio import decode_audio
+
+    if channel in ("left", "right"):
+        left, right = decode_audio(
+            source_path, sampling_rate=WHISPER_SAMPLE_RATE, split_stereo=True
+        )
+        return left if channel == "left" else right
+    return decode_audio(source_path, sampling_rate=WHISPER_SAMPLE_RATE)
+
+
+def _detect_speech(audio) -> list[tuple[float, float]]:
+    """Voice-activity spans in seconds, from faster-whisper's Silero VAD."""
+    from faster_whisper.vad import VadOptions, get_speech_timestamps
+
+    return [
+        (span["start"] / WHISPER_SAMPLE_RATE, span["end"] / WHISPER_SAMPLE_RATE)
+        for span in get_speech_timestamps(
+            audio, VadOptions(), sampling_rate=WHISPER_SAMPLE_RATE
+        )
+    ]
+
+
+def _words_outside_speech(
+    words: list[dict], speech_spans: list[tuple[float, float]]
+) -> int:
+    tolerance = SPEECH_SPAN_TOLERANCE_SECONDS
+    outside = 0
+    for word in words:
+        middle = (word["start"]["seconds"] + word["end"]["seconds"]) / 2
+        if not any(
+            start - tolerance <= middle <= end + tolerance
+            for start, end in speech_spans
+        ):
+            outside += 1
+    return outside
+
+
+def _out_of_phase_warning(source_id: str, phase: dict, channel: str) -> dict:
+    return {
+        "code": "audio_channels_out_of_phase",
+        "severity": "warning",
+        "message": (
+            "The left and right channels are out of phase (correlation "
+            f"{phase['correlation']:+.2f}), so a mono mix cancels the speech. "
+            f"Transcribed the {channel} channel instead."
+        ),
+        "source": source_id,
+        "source_id": source_id,
+        "stereo_correlation": phase["correlation"],
+        "channel_used": channel,
+        "remedy": (
+            "Override with 'moviestar retranscribe --channel left|right|mix'. "
+            "Mono playback of this source (phone speakers) will cancel too."
+        ),
+    }
+
+
+def _no_speech_warning(source_id: str, duration: float, speech: float) -> dict:
+    return {
+        "code": "no_speech_in_audio",
+        "severity": "warning",
+        "message": (
+            "Voice activity detection found no speech in "
+            f"{format_timecode(duration)['text']} of audio, so Whisper was "
+            "skipped: on non-speech audio it invents plausible words."
+        ),
+        "source": source_id,
+        "source_id": source_id,
+        "detected_speech": format_timecode(speech),
+        "remedy": (
+            "If the source does contain speech, run 'moviestar retranscribe "
+            "--no-speech-check', or pick one channel with --channel left|right."
+        ),
+    }
+
+
+def _outside_speech_warning(source_id: str, outside: int, total: int) -> dict:
+    return {
+        "code": "words_outside_detected_speech",
+        "severity": "warning",
+        "message": (
+            f"{outside} of {total} transcript words fall outside detected "
+            "speech; they may be invented rather than heard."
+        ),
+        "source": source_id,
+        "source_id": source_id,
+        "words_outside_speech": outside,
+        "words_total": total,
+        "remedy": (
+            "Spot-check with 'moviestar find' or a short 'moviestar watch' "
+            "render; retranscribe with a larger --model or one --channel."
+        ),
+    }
+
+
 class TranscriptionError(RuntimeError):
     """Raised when transcription fails."""
 
@@ -389,6 +512,8 @@ def transcribe_file(
     quiet: bool = False,
     vocabulary: Iterable[str] | None = None,
     allow_download: bool = True,
+    channel: str = "auto",
+    speech_check: bool = True,
 ) -> dict:
     """Transcribe an audio or video file with faster-whisper.
 
@@ -402,6 +527,13 @@ def transcribe_file(
     ``initial_prompt`` (issue #136). The normalized term list is echoed back
     in the result under ``vocabulary``.
 
+    Before Whisper runs, ``channel="auto"`` measures stereo phase and
+    transcribes the louder channel when a mono mix would cancel the
+    speech (issue #18); ``mix``, ``left``, or ``right`` force a choice.
+    ``speech_check`` runs voice activity detection first and skips Whisper
+    when there is no speech, since Whisper invents words on non-speech
+    audio (issue #19). Both report under ``audio`` and ``warnings``.
+
     Progress is reported on stderr (plain prose, one line per segment,
     with elapsed time). Pass quiet=True to suppress.
 
@@ -414,6 +546,11 @@ def transcribe_file(
     if model not in AVAILABLE_MODELS:
         raise TranscriptionError(
             f"Unknown model {model!r}. Available: {', '.join(AVAILABLE_MODELS)}"
+        )
+    if channel not in TRANSCRIPTION_CHANNELS:
+        raise TranscriptionError(
+            f"Unknown channel {channel!r}. Use one of: "
+            f"{', '.join(TRANSCRIPTION_CHANNELS)}."
         )
 
     try:
@@ -429,6 +566,73 @@ def transcribe_file(
             f"Whisper model {model!r} is not cached. Run "
             f"'moviestar models pull {model}' before retrying."
         )
+
+    audio_warnings: list[dict] = []
+    phase = None
+    if channel == "auto":
+        try:
+            phase = run_stereo_phase_probe(source_path)
+        except (FileNotFoundError, RuntimeError) as exc:
+            _log(f"  Stereo phase check skipped: {exc}", quiet=quiet)
+    channel_used = _choose_transcription_channel(channel, phase)
+    if channel == "auto" and channel_used != "mix" and phase is not None:
+        _log(
+            f"  Left and right channels are out of phase (correlation "
+            f"{phase['correlation']:+.2f}); transcribing the {channel_used} "
+            "channel.",
+            quiet=quiet,
+        )
+        audio_warnings.append(_out_of_phase_warning(source_id, phase, channel_used))
+    audio_report: dict = {
+        "channel": {
+            "requested": channel,
+            "used": channel_used,
+            "stereo_correlation": phase["correlation"] if phase else None,
+        },
+        "speech_check": {"enabled": False},
+    }
+
+    try:
+        audio = _load_audio(source_path, channel_used)
+    except Exception as exc:  # noqa: BLE001 — surface the decoder's error
+        raise TranscriptionError(f"Transcription failed: {exc}") from exc
+    audio_duration = len(audio) / WHISPER_SAMPLE_RATE
+
+    speech_spans: list[tuple[float, float]] | None = None
+    if speech_check:
+        speech_spans = _detect_speech(audio)
+        speech_seconds = sum(end - start for start, end in speech_spans)
+        whisper_skipped = speech_seconds < NO_SPEECH_MAX_SECONDS
+        audio_report["speech_check"] = {
+            "enabled": True,
+            "detected_speech": format_timecode(speech_seconds),
+            "whisper_skipped": whisper_skipped,
+        }
+        if whisper_skipped:
+            _log(
+                "  No speech detected by voice activity detection in "
+                f"{_format_short_timecode(audio_duration)} of audio; "
+                "skipped Whisper.",
+                quiet=quiet,
+            )
+            return {
+                "source_id": source_id,
+                "source_path": os.path.realpath(source_path),
+                "model": model,
+                "backend": "faster-whisper",
+                "language": language,
+                "text": "",
+                "duration": format_timecode(audio_duration),
+                "words": [],
+                "segments": [],
+                "no_speech_detected": True,
+                "vocabulary": _normalize_vocabulary(vocabulary),
+                "audio": audio_report,
+                "warnings": [
+                    *audio_warnings,
+                    _no_speech_warning(source_id, audio_duration, speech_seconds),
+                ],
+            }
 
     if cached_model is None:
         _announce_download_if_needed(model, quiet=quiet)
@@ -463,7 +667,7 @@ def transcribe_file(
 
     try:
         segments_iter, info = whisper_model.transcribe(
-            source_path,
+            audio,
             word_timestamps=True,
             language=language,
             initial_prompt=initial_prompt,
@@ -559,6 +763,17 @@ def transcribe_file(
             "have no transcript words nearby.",
             quiet=quiet,
         )
+    if speech_spans is not None and len(words) >= OUTSIDE_SPEECH_MIN_WORDS:
+        outside = _words_outside_speech(words, speech_spans)
+        if outside > OUTSIDE_SPEECH_MAX_FRACTION * len(words):
+            _log(
+                f"  Warning: {outside} of {len(words)} words fall outside "
+                "detected speech.",
+                quiet=quiet,
+            )
+            audio_warnings.append(
+                _outside_speech_warning(source_id, outside, len(words))
+            )
 
     result = {
         "source_id": source_id,
@@ -572,7 +787,9 @@ def transcribe_file(
         "segments": segments_out,
         "no_speech_detected": no_speech_detected,
         "vocabulary": vocab,
+        "audio": audio_report,
     }
-    if coverage_warnings:
-        result["warnings"] = coverage_warnings
+    warnings = [*audio_warnings, *coverage_warnings]
+    if warnings:
+        result["warnings"] = warnings
     return result

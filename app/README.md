@@ -34,7 +34,7 @@ For a product demo, `scenes geometry` resizes, places, shapes, borders, or bounc
 ## What's in MovieStar
 
 **Browse:**
-- `moviestar load` — index one or more videos, transcribe with local Whisper. `--as <name>` names sources; `--add` appends to an existing project; `--no-download` guarantees a hermetic run.
+- `moviestar load` — index one or more videos, transcribe with local Whisper. `--as <name>` names sources; `--add` appends to an existing project; `--no-download` guarantees a hermetic run. Before transcribing, MovieStar checks the audio: stereo channels that are out of phase (which cancel in a mono mix) are transcribed from the louder channel, and audio with no detected speech skips Whisper instead of receiving invented words. Both report as structured warnings; `--channel auto|mix|left|right` and `--no-speech-check` override them on `load` and `retranscribe`.
 - `moviestar skim` — fast browse: thumbnails + transcript over a range (`--text-only` for transcript alone).
 - `moviestar inspect` — dense thumbnails on demand at a configurable interval.
 - `moviestar activity` — read-only visual-change evidence for silent recordings: per-sample scores plus candidate active, idle, and held-frame ranges (`--dry-run` previews decode cost).

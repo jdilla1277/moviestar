@@ -233,6 +233,7 @@ from moviestar.timecodes import format_timecode, parse_timecode
 from moviestar.transcribe import (
     AVAILABLE_MODELS,
     DEFAULT_MODEL,
+    TRANSCRIPTION_CHANNELS,
     TranscriptionError,
     _normalize_vocabulary,
     model_download_requirement,
@@ -2569,6 +2570,23 @@ def probe(video: str, loudness: bool, from_tc: str | None, to_tc: str | None) ->
     "Comma-separated and repeatable. Applies to all loaded sources.",
 )
 @click.option(
+    "--channel",
+    type=click.Choice(TRANSCRIPTION_CHANNELS),
+    default="auto",
+    show_default=True,
+    help="Audio channel to transcribe. auto uses the mono mix unless the "
+    "left and right channels are out of phase (the mix would cancel the "
+    "speech), then the louder channel. mix, left, or right force a choice.",
+)
+@click.option(
+    "--no-speech-check",
+    "no_speech_check",
+    is_flag=True,
+    help="Transcribe even when voice activity detection finds no speech. "
+    "By default Whisper is skipped on audio without speech, where it "
+    "invents words.",
+)
+@click.option(
     "--start-offset",
     "start_offsets",
     multiple=True,
@@ -2630,6 +2648,8 @@ def load(
     names: tuple[str, ...],
     model: str,
     vocabulary: tuple[str, ...],
+    channel: str,
+    no_speech_check: bool,
     start_offsets: tuple[str, ...],
     thumb_width: int,
     no_transcribe: bool,
@@ -2885,6 +2905,8 @@ def load(
             frames=not no_frames,
             quiet=quiet,
             vocabulary=_normalize_vocabulary(vocabulary),
+            channel=channel,
+            speech_check=not no_speech_check,
             start_offsets=start_offset_values,
             allow_model_download=not no_download,
             thumb_width=thumb_width,
@@ -3062,13 +3084,35 @@ def load(
     "Comma-separated and repeatable.",
 )
 @click.option(
+    "--channel",
+    type=click.Choice(TRANSCRIPTION_CHANNELS),
+    default="auto",
+    show_default=True,
+    help="Audio channel to transcribe. auto uses the mono mix unless the "
+    "left and right channels are out of phase (the mix would cancel the "
+    "speech), then the louder channel. mix, left, or right force a choice.",
+)
+@click.option(
+    "--no-speech-check",
+    "no_speech_check",
+    is_flag=True,
+    help="Transcribe even when voice activity detection finds no speech. "
+    "By default Whisper is skipped on audio without speech, where it "
+    "invents words.",
+)
+@click.option(
     "--no-download",
     is_flag=True,
     help="Never download a Whisper model; error if MODEL is not cached.",
 )
 @_quiet_option
 def retranscribe(
-    model: str, vocabulary: tuple[str, ...], no_download: bool, quiet: bool
+    model: str,
+    vocabulary: tuple[str, ...],
+    channel: str,
+    no_speech_check: bool,
+    no_download: bool,
+    quiet: bool,
 ) -> None:
     """Re-run transcription against the loaded source. Keeps frames + spec.
 
@@ -3141,6 +3185,8 @@ def retranscribe(
             vocabulary=_normalize_vocabulary(vocabulary),
             allow_download=not no_download,
             quiet=quiet,
+            channel=channel,
+            speech_check=not no_speech_check,
         )
     except TranscriptionError as exc:
         _error_exit("retranscribe", f"Transcription failed: {exc}")

@@ -5,7 +5,10 @@ Choose the smallest workflow that satisfies the request. Run the relevant
 
 ## Find and cut a spoken moment
 
-1. `load` the source with transcription enabled.
+1. `load` the source with transcription enabled. Read its warnings:
+   `audio_channels_out_of_phase` means one channel was transcribed instead
+   of a cancelling mix; `no_speech_in_audio` means Whisper was skipped; and
+   `words_outside_detected_speech` means the transcript may be invented.
 2. Use `find QUERY --context 1` to locate candidate speech and inspect its
    score, contiguous match, surrounding segments, and result range.
 3. Use `skim --text-only` or `watch` around the candidate when wording or
