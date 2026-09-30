@@ -55,3 +55,12 @@ def test_sdist_excludes_repository_tests():
     manifest = (APP_ROOT / "MANIFEST.in").read_text(encoding="utf-8")
 
     assert manifest == "prune tests\n"
+
+
+def test_dependencies_cap_pyav_below_19_for_faster_whisper():
+    # faster-whisper 1.2.1 (latest) calls av.open(metadata_errors=...),
+    # which PyAV 19.0.0 removed; every transcription fails on a fresh
+    # install. Lift the cap once a faster-whisper release supports av 19.
+    dependencies = _pyproject()["project"]["dependencies"]
+
+    assert "av<19" in dependencies
