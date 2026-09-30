@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "moviestar"
-version = "0.7.0"
+version = "0.7.1"
 description = "Video editing CLI for AI agents. Compose and shape scenes, animate camera moves, retime footage, mix audio, burn captions, and render with FFmpeg."
 readme = "README.md"
 requires-python = ">=3.10"

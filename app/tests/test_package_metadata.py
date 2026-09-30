@@ -17,10 +17,10 @@ def _pyproject() -> dict:
     return tomllib.loads((APP_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
 
-def test_v070_is_declared_as_the_first_apache_release():
+def test_v071_is_declared_as_an_apache_licensed_release():
     pyproject = _pyproject()
 
-    assert pyproject["project"]["version"] == "0.7.0"
+    assert pyproject["project"]["version"] == "0.7.1"
     assert pyproject["project"]["license"] == "Apache-2.0"
 
 
