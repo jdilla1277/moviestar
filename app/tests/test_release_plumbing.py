@@ -13,6 +13,7 @@ TEST_WORKFLOW = ROOT / ".github" / "workflows" / "tests.yml"
 VERSION_CHECK = ROOT / "bin" / "check-release-version"
 PREFLIGHT_MODE = ROOT / "bin" / "select-preflight-mode"
 RELEASE_NOTES = ROOT / "docs" / "releases" / "v0.7.0.md"
+HOTFIX_NOTES = ROOT / "docs" / "releases" / "v0.7.1.md"
 PYPI_PUBLISH_ACTION_SHA = "dc37677b2e1c63e2034f94d8a5b11f265b73ba33"
 
 
@@ -111,3 +112,13 @@ def test_docs_ci_runs_both_public_documentation_contracts() -> None:
 
     assert "app/tests/test_public_docs_and_skill.py" in workflow
     assert "app/tests/test_release_plumbing.py" in workflow
+
+
+def test_v071_hotfix_notes_explain_the_transcription_fix() -> None:
+    notes = HOTFIX_NOTES.read_text(encoding="utf-8")
+
+    assert "MovieStar v0.7.1" in notes.splitlines()[0]
+    assert "PyAV 19" in notes
+    assert "metadata_errors" in notes
+    assert "pip install --upgrade \"moviestar==0.7.1\"" in notes
+    assert "SYSTRAN/faster-whisper/issues/1492" in notes
