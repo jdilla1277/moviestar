@@ -17,10 +17,10 @@ def _pyproject() -> dict:
     return tomllib.loads((APP_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
 
-def test_v070_is_declared_as_the_first_apache_release():
+def test_v071_is_declared_as_an_apache_licensed_release():
     pyproject = _pyproject()
 
-    assert pyproject["project"]["version"] == "0.7.0"
+    assert pyproject["project"]["version"] == "0.7.1"
     assert pyproject["project"]["license"] == "Apache-2.0"
 
 
@@ -55,3 +55,12 @@ def test_sdist_excludes_repository_tests():
     manifest = (APP_ROOT / "MANIFEST.in").read_text(encoding="utf-8")
 
     assert manifest == "prune tests\n"
+
+
+def test_dependencies_cap_pyav_below_19_for_faster_whisper():
+    # faster-whisper 1.2.1 (latest) calls av.open(metadata_errors=...),
+    # which PyAV 19.0.0 removed; every transcription fails on a fresh
+    # install. Lift the cap once a faster-whisper release supports av 19.
+    dependencies = _pyproject()["project"]["dependencies"]
+
+    assert "av<19" in dependencies

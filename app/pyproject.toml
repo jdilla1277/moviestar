@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "moviestar"
-version = "0.7.0"
+version = "0.7.1"
 description = "Video editing CLI for AI agents. Compose and shape scenes, animate camera moves, retime footage, mix audio, burn captions, and render with FFmpeg."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -25,7 +25,13 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
-dependencies = ["click>=8.0", "faster-whisper>=1.0", "keyring>=25.0", "rapidfuzz>=3.0"]
+dependencies = [
+    "av<19",  # faster-whisper 1.2.1 passes av.open(metadata_errors=...), removed in av 19
+    "click>=8.0",
+    "faster-whisper>=1.0",
+    "keyring>=25.0",
+    "rapidfuzz>=3.0",
+]
 
 [project.urls]
 Homepage = "https://trymoviestar.com"
