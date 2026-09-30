@@ -11985,35 +11985,36 @@ class TestCaptionLaneWarning:
         assert "selected_content_covered" in codes
 
     def test_position_precedence_scene_beats_layout_beats_default(self):
-        from moviestar.cli import _caption_position_for_scene
+        from moviestar.cli import _caption_geometry_for_scene
 
+        # Stored in the pre-geometry shape: bare position names.
         recipe = {
             "position": "bottom",
             "placement": {
                 "default": "bottom",
                 "overrides": [
                     {
-                        "selector": {"layout": "picture-in-picture"},
-                        "position": "top",
-                    },
-                    {
                         "selector": {"scene": "walkthrough"},
                         "position": "center",
+                    },
+                    {
+                        "selector": {"layout": "picture-in-picture"},
+                        "position": "top",
                     },
                 ],
             },
         }
-        assert (
-            _caption_position_for_scene(recipe, "walkthrough", "picture-in-picture")
-            == "center"
+        assert _caption_geometry_for_scene(
+            recipe, "walkthrough", "picture-in-picture"
+        ) == ({"at": "center"}, "scene:walkthrough")
+        assert _caption_geometry_for_scene(
+            recipe, "other", "picture-in-picture"
+        ) == ({"at": "top"}, "layout:picture-in-picture")
+        assert _caption_geometry_for_scene(recipe, "other", "single") == (
+            {"at": "bottom"},
+            "default",
         )
-        assert (
-            _caption_position_for_scene(recipe, "other", "picture-in-picture")
-            == "top"
-        )
-        assert _caption_position_for_scene(recipe, "other", "single") == "bottom"
-        assert _caption_position_for_scene({}, "any", "single") == "bottom"
-
+        assert _caption_geometry_for_scene({}, "any", "single") == ({}, "default")
 
 class TestZoomPreviewExportParity:
     """Issue #434: the preview 'to' image must match the exported video.
@@ -21409,7 +21410,7 @@ class TestCaptionRecipeSurfaceMock:
         )
         assert result.exit_code == 0, result.stdout
         data = json.loads(result.stdout)
-        assert data["placement"]["default"] == "bottom"
+        assert data["placement"]["default"] == {"at": "bottom"}
         preview = data["resolved_preview"]
         assert preview[0]["scene"] == "intro"
         assert preview[0]["position"] == "top"

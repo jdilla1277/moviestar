@@ -304,7 +304,7 @@ class TestDumpRecipeBlock:
         data = _dump(runner)
         recipe = data["recipe"]
         assert recipe["style"] == "social-bold"
-        assert recipe["placement"]["default"] == "bottom"
+        assert recipe["placement"] == {"default": {}, "overrides": []}
         ops = [edit["op"] for edit in recipe["edits"]]
         assert ops == ["break", "suppress"]
         assert all(edit["id"] for edit in recipe["edits"])

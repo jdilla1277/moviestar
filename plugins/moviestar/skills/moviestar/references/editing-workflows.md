@@ -40,6 +40,11 @@ audio cannot be judged from still frames.
   `captions import` for SRT/VTT sources.
 - Use caption rules for repeatable token corrections; use dump/edit/set or the
   caption edit commands for cue-level changes.
+- Use `captions placement` for caption size and position: `--at`, `--size`,
+  `--margin`, `--width`, or `--x/--y`, scoped with `--scene` or `--layout`.
+  Run it with no flags to read the current placement and exact pixels, and
+  add `--dry-run` before changing it. Defaults already scale with the canvas
+  and clear vertical-platform controls.
 - Use `overlays add` for titles, lower thirds, labels, or emphasis text. Use
   dump/edit/set for bulk changes and validate the replacement first.
 - Verify text at multiple timecodes with project-aware `screenshot` or a short
