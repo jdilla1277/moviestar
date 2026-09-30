@@ -19184,6 +19184,11 @@ def _caption_position_for_geometry(geometry: dict) -> dict:
             x=geometry["x"], y=geometry["y"], anchor="center"
         )
     at = geometry.get("at") or "bottom"
+    if at not in _POSITION_PRESET_LAYOUT:
+        raise ValueError(
+            f"Unknown overlay position {at!r}. Use one of: "
+            f"{', '.join(sorted(OVERLAY_POSITION_PRESETS))}."
+        )
     layout = _POSITION_PRESET_LAYOUT[at]
     margin = geometry.get("margin")
     if isinstance(margin, dict):

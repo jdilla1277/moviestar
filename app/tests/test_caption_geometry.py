@@ -144,6 +144,26 @@ class TestViewportLengthUnits:
     def test_lengths_resolve_against_canvas(self, value, axis, expected):
         assert length_px(value, (1080, 1920), axis, "test") == pytest.approx(expected)
 
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("800 px", 800.0),
+            ("+800px", 800.0),
+            ("8e2px", 800.0),
+            ("800PX", 800.0),
+            (" 50 % ", 540.0),
+            ("1e2", 100.0),
+            ("6 vmin", 64.8),
+        ],
+    )
+    def test_previously_accepted_length_spellings_still_resolve(
+        self, value, expected
+    ):
+        # The pre-viewport parser used float() after stripping px/%, so
+        # spaces, signs, and exponents were accepted and may be stored.
+        axis = "x" if "%" in value else "min"
+        assert length_px(value, (1080, 1920), axis, "t") == pytest.approx(expected)
+
     def test_unknown_unit_is_rejected(self):
         with pytest.raises(ValueError, match="vmin"):
             length_px("3em", (1080, 1920), "min", "test")
@@ -510,3 +530,38 @@ class TestManualOverlayCanvasUnits:
         )
         assert data["command"] == "overlays add"
         assert "vmin" in data["error"]
+
+
+class TestReviewRegressions:
+    def test_spaced_px_max_width_still_exports(self, runner, tmp_path, monkeypatch):
+        _project(runner, tmp_path, monkeypatch, canvas="short")
+        _invoke(
+            runner,
+            [
+                "overlays", "add", "--track", "titles", "--text", "Example",
+                "--from", "0", "--to", "1", "--css", "max-width: 800 px",
+            ],
+        )
+        data = _invoke(runner, ["export", "--dry-run"])
+        assert any(item["track"] == "titles" for item in data["overlays"]["items"])
+
+    @pytest.mark.parametrize("command", ["generate", "import"])
+    def test_unknown_caption_position_returns_error_envelope(
+        self, runner, tmp_path, monkeypatch, command
+    ):
+        _project(runner, tmp_path, monkeypatch, canvas="short")
+        if command == "generate":
+            args = ["captions", "generate", "--position", "middle"]
+        else:
+            srt = tmp_path / "cues.srt"
+            srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nhello\n")
+            args = [
+                "captions", "import", str(srt), "--track", "imported",
+                "--position", "middle",
+            ]
+        result = runner.invoke(cli, args)
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["command"] == f"captions {command}"
+        assert "'middle'" in data["error"]
+        assert "bottom" in data["error"] and "top-left" in data["error"]

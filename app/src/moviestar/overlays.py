@@ -63,7 +63,7 @@ def ffmpeg_color(value: str, alpha: float = 1.0) -> str:
 # CSS viewport units resolve against the render canvas, so one stored
 # length reads the same on 1920x1080, a 1080x1920 Short, and a 480p source.
 VIEWPORT_UNITS = ("vmin", "vmax", "vw", "vh")
-_LENGTH_RE = re.compile(r"^(-?\d+(?:\.\d+)?)(px|%|vmin|vmax|vw|vh)?$")
+_LENGTH_UNITS = (*VIEWPORT_UNITS, "px", "%")
 
 
 def length_px(value, canvas: tuple[int, int], axis: str, where: str) -> float:
@@ -76,14 +76,19 @@ def length_px(value, canvas: tuple[int, int], axis: str, where: str) -> float:
         raise ValueError(f"{where}: invalid length {value!r}.")
     if isinstance(value, (int, float)):
         return float(value)
-    match = _LENGTH_RE.match(str(value).strip().lower())
-    if not match:
+    # float() after stripping the unit, as the original px/% parser did:
+    # stored values such as "800 px", "+800px", and "8e2px" keep working.
+    text = str(value).strip().lower()
+    unit = next((u for u in _LENGTH_UNITS if text.endswith(u)), "px")
+    if text.endswith(unit):
+        text = text[: -len(unit)]
+    try:
+        number = float(text)
+    except ValueError:
         raise ValueError(
             f"{where}: could not parse length {value!r}; use px, %, vw, vh, "
             "vmin, or vmax."
-        )
-    number = float(match.group(1))
-    unit = match.group(2) or "px"
+        ) from None
     if unit == "px":
         return number
     width, height = canvas
