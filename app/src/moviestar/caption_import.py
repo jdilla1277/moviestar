@@ -29,6 +29,11 @@ _TIME = r"(?:\d+:)?\d{1,2}:\d{2}[.,]\d{1,3}"
 _TIMING_RE = re.compile(rf"^\s*({_TIME})\s*-->\s*({_TIME})")
 _INLINE_TIME_RE = re.compile(r"<((?:\d+:)?\d{1,2}:\d{2}\.\d{1,3})>")
 _TAG_RE = re.compile(r"<[^>]*>")
+# Rolling captions start each cue where the previous one ended. A cue that
+# only repeats the previous text is a roll-up hold when it flashes by, like
+# YouTube's 10 ms cues; held longer, or after a gap, it is repeated speech.
+ROLL_UP_MAX_GAP_SECONDS = 0.05
+ROLL_UP_HOLD_MAX_SECONDS = 0.1
 # Speaker-change and music markers carry no speech.
 _MARKER_RE = re.compile(r"^[>\-\u2013\u2014\u266a\u266b~*#]+$")
 
@@ -113,18 +118,34 @@ def parse_caption_file(path: str) -> dict:
 
 
 def _new_lines(cues: list[dict]) -> list[tuple[dict, list[str]]]:
-    """Each cue with only the lines it adds over the previous cue."""
+    """Each cue with only the lines it adds over the previous cue.
+
+    Leading lines are treated as a roll-up repeat only when the cue starts
+    where the previous one ended, so independent repeats ("Aye." at
+    several votes) stay in the transcript.
+    """
     kept: list[tuple[dict, list[str]]] = []
     previous: list[str] = []
+    previous_end: float | None = None
     for cue in cues:
         raw = [line for line in cue["lines"] if _plain(line)]
         plain = [_plain(line) for line in raw]
         overlap = 0
-        for k in range(min(len(plain), len(previous)), 0, -1):
-            if plain[:k] == previous[-k:]:
-                overlap = k
-                break
+        if (
+            previous_end is not None
+            and cue["start"] - previous_end <= ROLL_UP_MAX_GAP_SECONDS
+        ):
+            for k in range(min(len(plain), len(previous)), 0, -1):
+                if plain[:k] == previous[-k:]:
+                    overlap = k
+                    break
+            if (
+                overlap == len(plain)
+                and cue["end"] - cue["start"] > ROLL_UP_HOLD_MAX_SECONDS
+            ):
+                overlap = 0
         previous = plain
+        previous_end = cue["end"]
         if raw[overlap:]:
             kept.append((cue, raw[overlap:]))
     return kept
@@ -179,27 +200,32 @@ def import_caption_transcript(
     The result matches ``transcribe_file``'s shape with ``backend:
     "imported-captions"`` and ``model: None``, plus a ``captions`` block
     naming the file, its format, and how many cues carried word timing.
-    Cues starting at or after ``source_duration`` are dropped with a
-    ``captions_extend_past_source`` warning.
+    Words starting at or after ``source_duration`` are dropped, and the
+    survivors' ends are clamped to it, with a ``captions_extend_past_source``
+    warning.
     """
     parsed = parse_caption_file(caption_path)
+    limit = source_duration if source_duration > 0 else None
     words: list[dict] = []
     segments: list[dict] = []
     tagged_cues = 0
-    dropped = 0
+    dropped_cues = 0
+    dropped_words = 0
     for cue, lines in _new_lines(parsed["cues"]):
-        if source_duration > 0 and cue["start"] >= source_duration:
-            dropped += 1
-            continue
         cue_words, tagged = _cue_words(cue, lines)
-        if not cue_words:
+        if limit is not None and cue["start"] >= limit:
+            dropped_cues += 1
+            dropped_words += len(cue_words)
             continue
-        tagged_cues += tagged
-        limit = source_duration if source_duration > 0 else None
         clipped = [
             (text, start, min(end, limit) if limit is not None else end)
             for text, start, end in cue_words
+            if limit is None or start < limit
         ]
+        dropped_words += len(cue_words) - len(clipped)
+        if not clipped:
+            continue
+        tagged_cues += tagged
         words.extend(
             {
                 "text": text,
@@ -238,19 +264,21 @@ def import_caption_transcript(
             "cues_with_word_timing": tagged_cues,
         },
     }
-    if dropped:
+    if dropped_words:
         transcript["warnings"] = [
             {
                 "code": "captions_extend_past_source",
                 "severity": "warning",
                 "message": (
-                    f"{dropped} caption cue(s) start after the source ends at "
-                    f"{format_timecode(source_duration)['text']} and were "
-                    "dropped."
+                    f"Captions run past the source end at "
+                    f"{format_timecode(source_duration)['text']}; "
+                    f"{dropped_words} word(s) after it were dropped, "
+                    f"including {dropped_cues} whole cue(s)."
                 ),
                 "source": source_id,
                 "source_id": source_id,
-                "cues_dropped": dropped,
+                "cues_dropped": dropped_cues,
+                "words_dropped": dropped_words,
                 "likely_cause": (
                     "The caption file may belong to a longer or different "
                     "video, or to an untrimmed upload of this one."

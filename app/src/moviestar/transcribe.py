@@ -190,32 +190,32 @@ def _transcript_coverage_warnings(
         _log(f"  Transcript coverage check skipped: {exc}", quiet=quiet)
         return []
 
-    likely_cause = (
-        "Whisper or VAD may have omitted speech; the interval may instead "
-        "contain sustained non-speech audio."
-    )
-    warnings = []
-    for start, end in _speech_energy_without_words(energy_spans, words):
-        duration = end - start
-        warnings.append(
-            {
-                "code": "speech_energy_without_words",
-                "severity": "warning",
-                "message": (
-                    f"Sustained speech-like audio from "
-                    f"{format_timecode(start)['text']} to "
-                    f"{format_timecode(end)['text']} has no transcript "
-                    "words nearby."
-                ),
-                "source": source_id,
-                "source_id": source_id,
-                "from": format_timecode(start),
-                "to": format_timecode(end),
-                "duration": format_timecode(duration),
-                "likely_cause": likely_cause,
-            }
-        )
-    return warnings
+    return [
+        _coverage_warning(source_id, start, end)
+        for start, end in _speech_energy_without_words(energy_spans, words)
+    ]
+
+
+def _coverage_warning(source_id: str, start: float, end: float) -> dict:
+    return {
+        "code": "speech_energy_without_words",
+        "severity": "warning",
+        "message": (
+            f"Sustained speech-like audio from "
+            f"{format_timecode(start)['text']} to "
+            f"{format_timecode(end)['text']} has no transcript "
+            "words nearby."
+        ),
+        "source": source_id,
+        "source_id": source_id,
+        "from": format_timecode(start),
+        "to": format_timecode(end),
+        "duration": format_timecode(end - start),
+        "likely_cause": (
+            "Whisper or VAD may have omitted speech; the interval may instead "
+            "contain sustained non-speech audio."
+        ),
+    }
 
 
 def _quiet_hf_hub_warnings() -> None:
@@ -963,6 +963,33 @@ def _seconds(entry: dict, key: str) -> float:
     return float(entry[key]["seconds"])
 
 
+def _outside_windows_warnings(
+    warnings: list[dict], windows: list[tuple[float, float]]
+) -> list[dict]:
+    """Coverage warnings narrowed to what the new windows didn't replace.
+
+    A replaced window has fresh words and its own fresh checks, so an old
+    "no words here" warning only survives for the parts outside it, and
+    only while those parts are still long enough to report.
+    """
+    kept = []
+    for warning in warnings:
+        if warning.get("code") != "speech_energy_without_words":
+            kept.append(warning)
+            continue
+        start, end = _seconds(warning, "from"), _seconds(warning, "to")
+        pieces = _subtract(start, end, windows)
+        if pieces == [(start, end)]:
+            kept.append(warning)
+            continue
+        kept.extend(
+            {**warning, **_coverage_warning(warning["source_id"], p_start, p_end)}
+            for p_start, p_end in pieces
+            if p_end - p_start >= TRANSCRIPT_COVERAGE_MIN_GAP_SECONDS
+        )
+    return kept
+
+
 def merge_range_transcript(base: dict | None, ranged: dict) -> dict:
     """Lay a ranged Whisper transcript over an existing transcript.
 
@@ -970,8 +997,9 @@ def merge_range_transcript(base: dict | None, ranged: dict) -> dict:
     else in ``base`` is kept, including its ``backend`` (so imported
     captions stay ``imported-captions``). Segments that straddle a window
     keep only their outside part. Older ``transcribed_ranges`` overlapped
-    by a new window are trimmed. ``coverage`` stays ``full`` over a full
-    transcript and ``ranges`` over a ranges-only one.
+    by a new window are trimmed, and so are old coverage warnings.
+    ``coverage`` stays ``full`` over a full transcript and ``ranges`` over
+    a ranges-only one.
     """
     if base is None:
         return ranged
@@ -1037,7 +1065,10 @@ def merge_range_transcript(base: dict | None, ranged: dict) -> dict:
             key=lambda r: _seconds(r, "from"),
         ),
     }
-    warnings = [*(base.get("warnings") or []), *(ranged.get("warnings") or [])]
+    warnings = [
+        *_outside_windows_warnings(base.get("warnings") or [], windows),
+        *(ranged.get("warnings") or []),
+    ]
     if warnings:
         merged["warnings"] = warnings
     else:

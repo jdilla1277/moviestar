@@ -210,6 +210,56 @@ class TestMergeRangeTranscript:
         assert merged["coverage"] == "full"
         assert len(merged["transcribed_ranges"]) == 1
 
+    def _coverage_warning(self, start: float, end: float) -> dict:
+        return {
+            "code": "speech_energy_without_words",
+            "severity": "warning",
+            "message": "old",
+            "source": "src_0",
+            "source_id": "src_0",
+            "from": {"text": "", "seconds": start},
+            "to": {"text": "", "seconds": end},
+            "duration": {"text": "", "seconds": end - start},
+            "likely_cause": "old",
+        }
+
+    def test_a_repaired_window_clears_its_old_coverage_warning(self):
+        base = self._base("faster-whisper")
+        base["warnings"] = [
+            self._coverage_warning(4.0, 5.5),
+            self._coverage_warning(7.0, 9.0),
+            {"code": "audio_channels_out_of_phase", "source_id": "src_0"},
+        ]
+
+        merged = merge_range_transcript(base, self._ranged())
+
+        codes = [w["code"] for w in merged["warnings"]]
+        assert codes == ["speech_energy_without_words", "audio_channels_out_of_phase"]
+        untouched = merged["warnings"][0]
+        assert (untouched["from"]["seconds"], untouched["to"]["seconds"]) == (7.0, 9.0)
+
+    def test_a_partly_repaired_gap_keeps_only_its_outside_part(self):
+        base = self._base("faster-whisper")
+        base["warnings"] = [
+            self._coverage_warning(0.0, 12.0),
+            self._coverage_warning(5.0, 6.0),
+        ]
+
+        merged = merge_range_transcript(base, self._ranged())
+
+        # Of the 0-12 s gap, 5.5-12 s is still long enough to report; 0-4 s
+        # and 5.5-6 s fall under the coverage threshold.
+        [warning] = merged["warnings"]
+        assert (warning["from"]["seconds"], warning["to"]["seconds"]) == (5.5, 12.0)
+        assert warning["duration"]["seconds"] == 6.5
+        assert warning["from"]["text"] in warning["message"]
+
+    def test_merging_without_remaining_warnings_drops_the_key(self):
+        base = self._base("faster-whisper")
+        base["warnings"] = [self._coverage_warning(4.0, 5.5)]
+        merged = merge_range_transcript(base, self._ranged())
+        assert "warnings" not in merged
+
     def test_without_a_base_the_ranged_transcript_stands_alone(self):
         ranged = self._ranged()
         assert merge_range_transcript(None, ranged) == ranged

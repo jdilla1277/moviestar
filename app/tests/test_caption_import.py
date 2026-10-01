@@ -152,6 +152,34 @@ class TestImportCaptionTranscript:
         assert _texts(transcript)[:3] == ["call", "the", "roll"]
         assert len(transcript["words"]) == 8
 
+    def test_independent_repeated_cues_are_kept(self, tmp_path):
+        text = (
+            "1\n00:00:00,000 --> 00:00:01,000\nAye.\n\n"
+            "2\n00:00:10,000 --> 00:00:11,000\nAye.\n\n"
+            "3\n00:00:11,000 --> 00:00:12,000\nAye.\n"
+        )
+        transcript = import_caption_transcript(
+            _write(tmp_path, "a.srt", text), "src_0", source_duration=30.0
+        )
+
+        # A gap or a held, full-length repeat is new speech, not a roll-up.
+        assert _starts(transcript) == [0.0, 10.0, 11.0]
+        assert len(search_transcript(transcript, "aye", exact=True)) == 3
+
+    def test_broadcast_roll_up_drops_only_the_repeated_line(self, tmp_path):
+        text = (
+            "1\n00:00:00,000 --> 00:00:02,000\nthe motion carries\n\n"
+            "2\n00:00:02,000 --> 00:00:04,000\nthe motion carries\n"
+            "next item please\n"
+        )
+        transcript = import_caption_transcript(
+            _write(tmp_path, "a.srt", text), "src_0", source_duration=10.0
+        )
+        assert _texts(transcript) == [
+            "the", "motion", "carries", "next", "item", "please",
+        ]
+        assert transcript["words"][3]["start"]["seconds"] == 2.0
+
     def test_untagged_cues_distribute_words_across_the_cue(self, tmp_path):
         transcript = import_caption_transcript(
             _write(tmp_path, "a.srt", BROADCAST_SRT), "src_0", source_duration=3.0
@@ -194,13 +222,34 @@ class TestImportCaptionTranscript:
 
     def test_cues_past_the_source_end_are_dropped_with_a_warning(self, tmp_path):
         transcript = import_caption_transcript(
-            _write(tmp_path, "a.srt", BROADCAST_SRT), "src_0", source_duration=1.5
+            _write(tmp_path, "a.srt", BROADCAST_SRT), "src_0", source_duration=2.0
         )
         assert _texts(transcript)[-1] == "favor?"
-        assert transcript["words"][-1]["end"]["seconds"] <= 1.5
         [warning] = transcript["warnings"]
         assert warning["code"] == "captions_extend_past_source"
         assert warning["cues_dropped"] == 1
+        assert warning["words_dropped"] == 3
+
+    def test_a_cue_straddling_the_source_end_keeps_only_words_before_it(
+        self, tmp_path
+    ):
+        text = "1\n00:00:00,000 --> 00:00:10,000\none two three four\n"
+        transcript = import_caption_transcript(
+            _write(tmp_path, "a.srt", text), "src_0", source_duration=3.0
+        )
+
+        assert _texts(transcript) == ["one", "two"]
+        for word in transcript["words"]:
+            assert word["start"]["seconds"] < 3.0
+            assert 0 < word["end"]["seconds"] - word["start"]["seconds"]
+            assert word["end"]["seconds"] <= 3.0
+        [segment] = transcript["segments"]
+        assert segment["text"] == "one two"
+        assert segment["end"]["seconds"] == 3.0
+        [warning] = transcript["warnings"]
+        assert warning["code"] == "captions_extend_past_source"
+        assert warning["cues_dropped"] == 0
+        assert warning["words_dropped"] == 2
 
     def test_find_returns_cue_accurate_hits(self, tmp_path):
         transcript = import_caption_transcript(
