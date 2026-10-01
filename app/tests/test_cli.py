@@ -13154,6 +13154,13 @@ class TestCaptions:
                         "applications_count": 1,
                     }
                 ],
+                "rules": [
+                    {
+                        "id": "caption_rule_0001",
+                        "applications_count": 1,
+                    }
+                ],
+                "unmatched_rule_ids": [],
             }
             [overlay] = data["overlays"]
             assert overlay["text"] == "ground-truthing works"
@@ -13351,6 +13358,106 @@ class TestCaptions:
         assert "coding" not in cue_text
         assert "agent" not in cue_text
         assert cue_text == "we today"
+
+    def test_replace_rule_fixes_punctuated_variants_in_dumped_captions(
+        self, runner, test_video, tmp_path, loaded_project
+    ):
+        loaded_project(test_video)
+        self._fake_transcript(
+            tmp_path,
+            words=[
+                {"text": "from", "start": 0.10, "end": 0.20},
+                {"text": "Moviestar.", "start": 0.20, "end": 0.40},
+                {"text": "Moviestar", "start": 1.20, "end": 1.40},
+                {"text": "has", "start": 1.40, "end": 1.50},
+            ],
+        )
+        self._scenes(runner)
+        generated = runner.invoke(cli, ["captions", "generate"])
+        assert generated.exit_code == 0, generated.stdout
+
+        added = runner.invoke(
+            cli,
+            ["captions", "rules", "add", "--replace", "Moviestar=moviestar"],
+        )
+        assert added.exit_code == 0, added.stdout
+        added_data = json.loads(added.stdout)
+        assert added_data["current_applications"]["rules"] == [
+            {
+                "id": "caption_rule_0001",
+                "applications_count": 2,
+                "matches_current_captions": True,
+            }
+        ]
+        assert added_data.get("warning_count", 0) == 0
+
+        dumped = runner.invoke(cli, ["captions", "dump"])
+        assert dumped.exit_code == 0, dumped.stdout
+        texts = " ".join(cue["text"] for cue in json.loads(dumped.stdout)["cues"])
+        assert "moviestar." in texts
+        assert "moviestar has" in texts
+        assert "Moviestar" not in texts
+
+    def test_generate_reports_every_rule_and_warns_on_unmatched(
+        self, runner, test_video, tmp_path, loaded_project
+    ):
+        loaded_project(test_video)
+        self._fake_transcript(
+            tmp_path,
+            words=[
+                {"text": "Moviestar,", "start": 0.10, "end": 0.30},
+                {"text": "works", "start": 0.30, "end": 0.50},
+            ],
+        )
+        self._scenes(runner)
+        for expression in ("Moviestar=moviestar", "banana=apple"):
+            added = runner.invoke(
+                cli, ["captions", "rules", "add", "--replace", expression]
+            )
+            assert added.exit_code == 0, added.stdout
+
+        generated = runner.invoke(cli, ["captions", "generate"])
+
+        assert generated.exit_code == 0, generated.stdout
+        data = json.loads(generated.stdout)
+        assert data["caption_rules"]["rules"] == [
+            {"id": "caption_rule_0001", "applications_count": 1},
+            {"id": "caption_rule_0002", "applications_count": 0},
+        ]
+        assert data["caption_rules"]["unmatched_rule_ids"] == [
+            "caption_rule_0002"
+        ]
+        [warning] = [
+            item
+            for item in data["warnings"]
+            if item["code"] == "caption_rule_unmatched"
+        ]
+        assert warning["rule_id"] == "caption_rule_0002"
+        assert "banana" in warning["message"]
+        assert data["overlays"][0]["text"].startswith("moviestar, works")
+
+    def test_rules_add_warns_when_new_rule_matches_nothing(
+        self, runner, test_video, tmp_path, loaded_project
+    ):
+        loaded_project(test_video)
+        self._fake_transcript(
+            tmp_path,
+            words=[{"text": "Moviestar", "start": 0.10, "end": 0.30}],
+        )
+        self._scenes(runner)
+        generated = runner.invoke(cli, ["captions", "generate"])
+        assert generated.exit_code == 0, generated.stdout
+
+        added = runner.invoke(
+            cli, ["captions", "rules", "add", "--replace", "movieStar=moviestar"]
+        )
+
+        assert added.exit_code == 0, added.stdout
+        data = json.loads(added.stdout)
+        assert data["warning_count"] == 1
+        [warning] = data["warnings"]
+        assert warning["code"] == "caption_rule_unmatched"
+        assert warning["rule_id"] == "caption_rule_0001"
 
     def test_rules_add_and_list_report_current_counts_after_timeline_changes(
         self, runner, test_video, tmp_path, loaded_project

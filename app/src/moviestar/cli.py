@@ -1701,7 +1701,7 @@ def _caption_cache_fingerprint(
     except (ResolvedProjectError, SpecValidationError):
         timeline_repr = ["unresolved"]
     payload = {
-        "v": 3,
+        "v": 4,
         "timeline": timeline_repr,
         "recipe": {
             key: value
@@ -20734,6 +20734,12 @@ def caption_rules(ctx: click.Context) -> None:
     Rules persist in project metadata and are applied by every future
     ``captions generate`` call before words are grouped into cues.
 
+    Matching is case-sensitive but ignores leading and trailing
+    punctuation on transcript words, which the replacement keeps:
+    'Moviestar=moviestar' turns "Moviestar." into "moviestar.".
+    Generate and add report per-rule counts and warn when a rule
+    matched nothing.
+
     Split rules divide the source and result spans into equal timing
     slices. Their children have distinct anchors for break/join edits,
     while suppressing any child suppresses its whole source token.
@@ -20769,9 +20775,11 @@ def caption_rules(ctx: click.Context) -> None:
                     "and result spans are divided into equal timing slices. "
                     "Split children have distinct break/join anchors; "
                     "suppression remains atomic to the whole source token. "
-                    "Matching is case-sensitive. Add and list "
-                    "report current application counts when a derived caption "
-                    "track exists."
+                    "Matching is case-sensitive and ignores leading/trailing "
+                    "punctuation on transcript words, which the replacement "
+                    "keeps. Generate, add, and list report per-rule "
+                    "application counts when a derived caption track exists; "
+                    "generate and add warn when a rule matched nothing."
                 ),
             },
             indent=2,
@@ -20891,6 +20899,25 @@ def _caption_rules_current_applications(
     if unavailable_tracks:
         result["unavailable_tracks"] = unavailable_tracks
     return result
+
+
+def _caption_rule_unmatched_warnings(
+    rules: list[dict], rule_ids: list[str]
+) -> list[dict]:
+    """Warn for each rule that matched no words in a caption pass."""
+    by_id = {rule["id"]: rule for rule in rules}
+    return [
+        _warning(
+            "caption_rule_unmatched",
+            f"Caption rule {rule_id} ({by_id[rule_id]['type']} "
+            f"{' '.join(by_id[rule_id]['match'])!r} -> "
+            f"{by_id[rule_id]['replacement']!r}) matched no caption words. "
+            "Matching is case-sensitive and ignores only leading/trailing "
+            "punctuation; inspect exact text with 'moviestar captions dump'.",
+            rule_id=rule_id,
+        )
+        for rule_id in rule_ids
+    ]
 
 
 def _caption_rules_list_result(
@@ -21016,7 +21043,8 @@ def caption_rules_add(
     if current_rule["applications_count"] == 0:
         hint = (
             "The rule is stored but currently matches no words on derived "
-            "caption tracks. Matching is case-sensitive; inspect exact text "
+            "caption tracks. Matching is case-sensitive and ignores only "
+            "leading/trailing punctuation; inspect exact text "
             "with 'moviestar captions dump'. The rule remains available for "
             "future caption passes."
         )
@@ -21032,20 +21060,20 @@ def caption_rules_add(
             "caption pass. Current applicability is unavailable until a "
             "derived track exists; run 'moviestar captions generate' first."
         )
-    click.echo(
-        json.dumps(
-            {
-                "status": "added_caption_rule",
-                "writes_spec": False,
-                "writes_project": True,
-                "rule": rule,
-                "rules_count": len(project["caption_rules"]),
-                "current_applications": current,
-                "hint": hint,
-            },
-            indent=2,
+    result = {
+        "status": "added_caption_rule",
+        "writes_spec": False,
+        "writes_project": True,
+        "rule": rule,
+        "rules_count": len(project["caption_rules"]),
+        "current_applications": current,
+        "hint": hint,
+    }
+    if current_rule["applications_count"] == 0:
+        _add_warnings(
+            result, _caption_rule_unmatched_warnings([rule], [rule["id"]])
         )
-    )
+    click.echo(json.dumps(result, indent=2))
 
 
 @caption_rules.command("remove")
@@ -21753,6 +21781,11 @@ def captions_generate(
     needed_sources = meta["needed_sources"]
     cues = meta["cues"]
     caption_rules_report = meta["caption_rules_report"]
+    warnings.extend(
+        _caption_rule_unmatched_warnings(
+            caption_rule_values, caption_rules_report["unmatched_rule_ids"]
+        )
+    )
     unmapped = meta["unmapped"]
     recipe["cache_fingerprint"] = _caption_cache_fingerprint(
         project, spec, recipe

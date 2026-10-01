@@ -141,32 +141,172 @@ class TestCaptionRules:
             "applied": [
                 {"id": "caption_rule_0001", "applications_count": 1}
             ],
+            "rules": [
+                {"id": "caption_rule_0001", "applications_count": 1}
+            ],
+            "unmatched_rule_ids": [],
         }
 
-    def test_replace_is_exact_and_counts_repeated_applications(self):
+    def test_replace_ignores_surrounding_punctuation_and_keeps_it(self):
         words = [
-            _word("mispelled", 0.0, 0.2),
-            _word("mispelled.", 0.3, 0.5),
-            _word("mispelled", 0.6, 0.8),
+            _word("Moviestar", 0.0, 0.2),
+            _word("Moviestar.", 0.3, 0.5),
+            _word("\u201cMoviestar,\u201d", 0.6, 0.8),
+            _word("Moviestars", 0.9, 1.0),
+            _word("moviestar", 1.1, 1.2),
         ]
         rules = [
             {
                 "id": "caption_rule_0001",
                 "type": "replace",
-                "match": ["mispelled"],
-                "replacement": "misspelled",
+                "match": ["Moviestar"],
+                "replacement": "moviestar",
             }
         ]
 
         transformed, report = apply_caption_rules(words, rules)
 
         assert [word["text"] for word in transformed] == [
-            "misspelled",
-            "mispelled.",
-            "misspelled",
+            "moviestar",
+            "moviestar.",
+            "\u201cmoviestar,\u201d",
+            "Moviestars",
+            "moviestar",
         ]
         assert report["applied_rules_count"] == 1
+        assert report["applications_count"] == 3
+
+    def test_phrase_replace_keeps_each_word_punctuation(self):
+        words = [
+            _word("(Worse", 0.0, 0.1),
+            _word("with,", 0.1, 0.2),
+            _word("OpenClaw!)", 0.2, 0.3),
+        ]
+        rules = [
+            {
+                "id": "caption_rule_0001",
+                "type": "replace",
+                "match": ["Worse", "with", "OpenClaw"],
+                "replacement": "works with OpenClaw",
+            }
+        ]
+
+        transformed, _report = apply_caption_rules(words, rules)
+
+        assert [word["text"] for word in transformed] == [
+            "(works",
+            "with,",
+            "OpenClaw!)",
+        ]
+
+    def test_punctuated_rule_token_still_matches_exactly(self):
+        words = [_word("Dr.", 0.0, 0.2), _word("-truthing.", 0.3, 0.5)]
+        rules = [
+            {
+                "id": "caption_rule_0001",
+                "type": "replace",
+                "match": ["Dr."],
+                "replacement": "Doctor",
+            },
+            {
+                "id": "caption_rule_0002",
+                "type": "replace",
+                "match": ["-truthing"],
+                "replacement": "truthing",
+            },
+        ]
+
+        transformed, _report = apply_caption_rules(words, rules)
+
+        assert [word["text"] for word in transformed] == [
+            "Doctor",
+            "truthing.",
+        ]
+
+    def test_merge_and_split_keep_outer_punctuation(self):
+        words = [
+            {**_word("\"ground", 0.0, 0.2), "source": "a"},
+            {**_word("-truthing.\"", 0.2, 0.4), "source": "a"},
+            {**_word("code,", 0.5, 0.7), "source": "a"},
+        ]
+        rules = [
+            {
+                "id": "caption_rule_0001",
+                "type": "merge",
+                "match": ["ground", "-truthing"],
+                "replacement": "ground-truthing",
+            },
+            {
+                "id": "caption_rule_0002",
+                "type": "split",
+                "match": ["code"],
+                "replacement": "coding agent",
+            },
+        ]
+
+        transformed, report = apply_caption_rules(words, rules)
+
+        assert [word["text"] for word in transformed] == [
+            "\"ground-truthing.\"",
+            "coding",
+            "agent,",
+        ]
         assert report["applications_count"] == 2
+
+    def test_merge_does_not_drop_punctuation_between_matched_tokens(self):
+        words = [
+            {**_word("ground,", 0.0, 0.2), "source": "a"},
+            {**_word("-truthing", 0.2, 0.4), "source": "a"},
+        ]
+        rules = [
+            {
+                "id": "caption_rule_0001",
+                "type": "merge",
+                "match": ["ground", "-truthing"],
+                "replacement": "ground-truthing",
+            }
+        ]
+
+        transformed, report = apply_caption_rules(words, rules)
+
+        assert [word["text"] for word in transformed] == [
+            "ground,",
+            "-truthing",
+        ]
+        assert report["applications_count"] == 0
+
+    def test_report_counts_every_rule_and_lists_unmatched(self):
+        words = [_word("mispelled", 0.0, 0.2), _word("mispelled", 0.3, 0.5)]
+        rules = [
+            {
+                "id": "caption_rule_0001",
+                "type": "replace",
+                "match": ["mispelled"],
+                "replacement": "misspelled",
+            },
+            {
+                "id": "caption_rule_0002",
+                "type": "replace",
+                "match": ["Mispelled"],
+                "replacement": "Misspelled",
+            },
+        ]
+
+        _transformed, report = apply_caption_rules(words, rules)
+
+        assert report == {
+            "configured_count": 2,
+            "applied_rules_count": 1,
+            "applications_count": 2,
+            "applied": [
+                {"id": "caption_rule_0001", "applications_count": 2}
+            ],
+            "rules": [
+                {"id": "caption_rule_0001", "applications_count": 2},
+                {"id": "caption_rule_0002", "applications_count": 0},
+            ],
+            "unmatched_rule_ids": ["caption_rule_0002"],
+        }
 
     def test_split_interpolates_result_and_source_timing(self):
         words = [
