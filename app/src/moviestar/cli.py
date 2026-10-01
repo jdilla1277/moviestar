@@ -99,6 +99,12 @@ from moviestar.project import (
     set_explicit_workspace_root,
     slice_transcript,
     subsample_frames,
+    transcript_reference,
+)
+from moviestar.caption_import import (
+    CaptionImportError,
+    import_caption_transcript,
+    parse_caption_file,
 )
 from moviestar.find import (
     STRONG_WARNING_THRESHOLD,
@@ -236,10 +242,13 @@ from moviestar.transcribe import (
     TRANSCRIPTION_CHANNELS,
     TranscriptionError,
     _normalize_vocabulary,
+    merge_range_transcript,
     model_download_requirement,
+    normalize_transcribe_ranges,
     pull_model,
     resolve_cached_model,
     transcribe_file,
+    transcribe_ranges,
 )
 from moviestar.feedback import feedback
 from moviestar.subscribe import subscribe as subscribe_command
@@ -2156,6 +2165,52 @@ def _skip_reason_prose(enum_value: str | None) -> str:
     }.get(enum_value or "", "no transcript loaded")
 
 
+CAPTIONS_HINT = (
+    "Pass a WebVTT (.vtt) or SRT (.srt) caption file, such as YouTube "
+    "captions saved alongside the video."
+)
+RANGE_HINT = (
+    "Give each range as START END in seconds or [HH:]MM:SS, e.g. "
+    "--transcribe-range 03:50:00 04:10:00. Run 'moviestar probe VIDEO' "
+    "for the source duration."
+)
+
+
+def _checked_caption_path(command: str, path: str) -> str:
+    """Absolute caption path, or a structured error if it can't be read."""
+    abs_path = os.path.realpath(path)
+    try:
+        parse_caption_file(abs_path)
+    except CaptionImportError as exc:
+        _error_exit_with_hint(command, str(exc), CAPTIONS_HINT)
+    return abs_path
+
+
+def _checked_transcribe_windows(
+    command: str, ranges: tuple[tuple[str, str], ...], source_duration: float
+) -> list[tuple[float, float]]:
+    """Parse and validate START END ranges against the source duration."""
+    try:
+        parsed = [(parse_timecode(start), parse_timecode(end)) for start, end in ranges]
+        return normalize_transcribe_ranges(parsed, source_duration=source_duration)
+    except (ValueError, TranscriptionError) as exc:
+        _error_exit_with_hint(command, str(exc), RANGE_HINT)
+
+
+def _transcript_summary(transcript: dict) -> dict:
+    """Backend and range coverage for load / retranscribe / status output."""
+    summary: dict = {"backend": transcript.get("backend")}
+    if transcript.get("captions"):
+        summary["captions"] = transcript["captions"].get("path")
+    if transcript.get("transcribed_ranges"):
+        summary["coverage"] = transcript.get("coverage", "full")
+        summary["transcribed_ranges"] = [
+            {"from": r["from"], "to": r["to"], "model": r.get("model")}
+            for r in transcript["transcribed_ranges"]
+        ]
+    return summary
+
+
 def _already_loaded_error(requested_source: str) -> None:
     """Emit a structured error when load is called in a directory that already has a project.
 
@@ -2237,6 +2292,8 @@ def _emit_load_dry_run(
     no_frames: bool,
     force: bool,
     currently_loaded: dict | None,
+    captions_path: str | None = None,
+    transcribe_windows: list[tuple[float, float]] | None = None,
 ) -> None:
     """Emit the dry-run envelope for ``moviestar load --dry-run``.
 
@@ -2285,15 +2342,18 @@ def _emit_load_dry_run(
     else:
         would_extract_frames_count = 0
 
-    # would_transcribe mirrors create_workspace's decision tree.
+    # would_transcribe mirrors create_workspace's decision tree: it means
+    # Whisper would run. Imported captions alone don't run Whisper.
     if no_transcribe:
         would_transcribe = False
         would_skip_reason = TRANSCRIPTION_SKIP_REASON_FLAG
     elif audio_stream is None:
         would_transcribe = False
-        would_skip_reason = TRANSCRIPTION_SKIP_REASON_NO_AUDIO
+        would_skip_reason = (
+            None if captions_path else TRANSCRIPTION_SKIP_REASON_NO_AUDIO
+        )
     else:
-        would_transcribe = True
+        would_transcribe = not captions_path or bool(transcribe_windows)
         would_skip_reason = None
 
     # Would-be project_dir + frame-extraction ffmpeg argv. Neither
@@ -2381,12 +2441,19 @@ def _emit_load_dry_run(
         result["would_skip_frame_extraction_reason"] = (
             FRAME_EXTRACTION_SKIP_REASON_FLAG
         )
+    if captions_path:
+        result["would_import_captions"] = captions_path
+    if transcribe_windows:
+        result["would_transcribe_ranges"] = [
+            {"from": format_timecode(start), "to": format_timecode(end)}
+            for start, end in transcribe_windows
+        ]
     if would_transcribe:
         result["would_use_model"] = model
         requirement = model_download_requirement(model)
         if requirement is not None:
             result["requires_download"] = requirement
-    else:
+    elif would_skip_reason:
         result["would_skip_transcription_reason"] = would_skip_reason
     if currently_loaded is not None:
         result["currently_loaded"] = currently_loaded
@@ -2610,6 +2677,26 @@ def probe(video: str, loudness: bool, from_tc: str | None, to_tc: str | None) ->
 )
 @click.option("--no-transcribe", is_flag=True, help="Skip transcription entirely.")
 @click.option(
+    "--captions",
+    "captions",
+    multiple=True,
+    help="Import a WebVTT or SRT caption file as the transcript instead of "
+    "running Whisper. Takes seconds on hours of footage. YouTube word "
+    "timing tags time each word; otherwise words are spread across each "
+    "cue. Repeat once per video, in order.",
+)
+@click.option(
+    "--transcribe-range",
+    "transcribe_range",
+    nargs=2,
+    multiple=True,
+    metavar="START END",
+    help="Run Whisper only on this window of the source, e.g. "
+    "--transcribe-range 03:50:00 04:10:00. Repeatable. The rest has no "
+    "transcript words but stays browsable with skim. With --captions, "
+    "Whisper words replace the captions inside the window. One video only.",
+)
+@click.option(
     "--no-download",
     is_flag=True,
     help="Never download a Whisper model. Error before changing the workspace "
@@ -2653,6 +2740,8 @@ def load(
     start_offsets: tuple[str, ...],
     thumb_width: int,
     no_transcribe: bool,
+    captions: tuple[str, ...],
+    transcribe_range: tuple[tuple[str, str], ...],
     no_download: bool,
     no_frames: bool,
     dry_run: bool,
@@ -2685,6 +2774,12 @@ def load(
     Use --no-transcribe to skip, or --model tiny|small|medium|large-v3 to
     change size. Pass --vocabulary 'Amal,Holden' to bias the decoder toward
     names/terms it would otherwise misspell.
+
+    Long sources often ship with captions. Pass --captions FILE.vtt (or
+    .srt) to import them as the transcript in seconds; the transcript
+    records backend "imported-captions". Pass --transcribe-range START END
+    to run Whisper on just that window; transcripts record
+    ``transcribed_ranges``.
 
     Use --no-download for hermetic CI or sandboxed runs. If the requested
     model is not cached, load exits before wiping or creating a workspace;
@@ -2744,6 +2839,55 @@ def load(
         if not os.path.exists(abs_v):
             _error_exit("load", f"File not found: {abs_v}")
         abs_paths.append(abs_v)
+
+    abs_captions: list[str] = []
+    if captions:
+        if no_transcribe:
+            _error_exit_with_hint(
+                "load",
+                "--captions imports a transcript, so it cannot be combined "
+                "with --no-transcribe.",
+                "Drop --no-transcribe to import the captions, or drop "
+                "--captions to load without a transcript.",
+            )
+        if len(captions) != len(videos):
+            _error_exit_with_hint(
+                "load",
+                f"Got {len(captions)} --captions file(s) for {len(videos)} "
+                "videos.",
+                "Repeat --captions once per video, in the same order, or "
+                "load captioned videos separately with 'moviestar load "
+                "VIDEO --add --captions FILE'.",
+            )
+        abs_captions = [_checked_caption_path("load", c) for c in captions]
+
+    transcribe_windows: list[tuple[float, float]] = []
+    if transcribe_range:
+        if no_transcribe:
+            _error_exit_with_hint(
+                "load",
+                "--transcribe-range cannot be combined with --no-transcribe.",
+                "Drop --no-transcribe to transcribe the window.",
+            )
+        if len(abs_paths) != 1:
+            _error_exit_with_hint(
+                "load",
+                "--transcribe-range applies to one video, but "
+                f"{len(abs_paths)} were given.",
+                "Load the first video with its range, then add each other "
+                "video with 'moviestar load VIDEO --add --transcribe-range "
+                "START END'.",
+            )
+        try:
+            probe_data = run_ffprobe(abs_paths[0])
+        except FFmpegNotFoundError as exc:
+            _error_exit("load", str(exc))
+        except (RuntimeError, json.JSONDecodeError) as exc:
+            _error_exit("load", f"Could not probe {abs_paths[0]}: {exc}")
+        duration = probe_data.get("format", {}).get("duration")
+        transcribe_windows = _checked_transcribe_windows(
+            "load", transcribe_range, float(duration) if duration else 0.0
+        )
 
     # Multi-source dry-run is out of scope for M13a's first multi-path
     # commit. Single-source dry-run continues to work; agents who need
@@ -2826,15 +2970,16 @@ def load(
             no_frames=no_frames,
             force=force,
             currently_loaded=currently_loaded,
+            captions_path=abs_captions[0] if abs_captions else None,
+            transcribe_windows=transcribe_windows,
         )
         return
 
     # Resolve a cold-model requirement before any workspace mutation. Probe
     # only while the selected model is uncached so silent inputs do not fail
     # --no-download and warm loads do not pay an extra ffprobe call.
-    requirement = (
-        None if no_transcribe else model_download_requirement(model)
-    )
+    whisper_runs = not no_transcribe and (not abs_captions or transcribe_windows)
+    requirement = model_download_requirement(model) if whisper_runs else None
     if requirement is not None:
         source_has_audio = False
         for abs_path in abs_paths:
@@ -2910,9 +3055,15 @@ def load(
             start_offsets=start_offset_values,
             allow_model_download=not no_download,
             thumb_width=thumb_width,
+            captions=abs_captions or None,
+            transcribe_windows=transcribe_windows or None,
         )
     except WorkspaceConflictError as exc:
         _error_exit("load", str(exc))
+    except CaptionImportError as exc:
+        if not add:
+            reset_workspace()
+        _error_exit_with_hint("load", str(exc), CAPTIONS_HINT)
     except FFmpegNotFoundError as exc:
         if not add:
             reset_workspace()
@@ -2972,6 +3123,7 @@ def load(
             transcript_data = json.loads(transcript_path.read_text())
             output_source["transcript"] = {
                 "model": source["transcript"].get("model", model),
+                **_transcript_summary(transcript_data),
                 "path": str(transcript_path),
                 "word_count": len(transcript_data.get("words", [])),
                 "duration": transcript_data.get("duration"),
@@ -3057,6 +3209,15 @@ def load(
             "commands accept '--source <id>' (default: first source)."
         )
 
+    if any(
+        (s.get("transcript") or {}).get("coverage") == "ranges"
+        for s in output_sources
+    ):
+        hint += (
+            " Only the --transcribe-range window(s) have transcript words; "
+            "add more with 'moviestar retranscribe --range START END'."
+        )
+
     result = {
         "status": status,
         "project_dir": str(get_project_dir()),
@@ -3105,6 +3266,23 @@ def load(
     is_flag=True,
     help="Never download a Whisper model; error if MODEL is not cached.",
 )
+@click.option(
+    "--captions",
+    "captions",
+    default=None,
+    help="Replace the transcript with a WebVTT or SRT caption file instead "
+    "of running Whisper.",
+)
+@click.option(
+    "--range",
+    "ranges",
+    nargs=2,
+    multiple=True,
+    metavar="START END",
+    help="Run Whisper only on this window, e.g. --range 03:50:00 04:10:00. "
+    "Repeatable. Words inside the window are replaced; the rest of the "
+    "existing transcript is kept.",
+)
 @_quiet_option
 def retranscribe(
     model: str,
@@ -3112,6 +3290,8 @@ def retranscribe(
     channel: str,
     no_speech_check: bool,
     no_download: bool,
+    captions: str | None,
+    ranges: tuple[tuple[str, str], ...],
     quiet: bool,
 ) -> None:
     """Re-run transcription against the loaded source. Keeps frames + spec.
@@ -3133,6 +3313,12 @@ def retranscribe(
 
     Use ``--no-download`` for hermetic runs. Pre-warm a missing model with
     ``moviestar models pull MODEL``.
+
+    Pass ``--captions FILE.vtt`` to replace the transcript with imported
+    captions, and ``--range START END`` to run Whisper on just that window
+    of a long source. A ranged run merges into the existing transcript:
+    words inside the window are replaced and the rest are kept, so windows
+    can be added one at a time.
 
     Walks up to find the nearest ``moviestar/`` workspace, so it
     works from any subdir of the project.
@@ -3158,7 +3344,19 @@ def retranscribe(
             "moved-to path, or restore the source at the original location.",
         )
 
-    requirement = model_download_requirement(model)
+    caption_path = (
+        _checked_caption_path("retranscribe", captions) if captions else None
+    )
+    windows = (
+        _checked_transcribe_windows(
+            "retranscribe", ranges, float(source["duration"]["seconds"])
+        )
+        if ranges
+        else []
+    )
+    whisper_runs = not caption_path or bool(windows)
+
+    requirement = model_download_requirement(model) if whisper_runs else None
     if no_download and requirement is not None:
         _error_exit_with_hint(
             "retranscribe",
@@ -3170,24 +3368,54 @@ def retranscribe(
         )
 
     if not quiet:
+        action = (
+            f"with {model!r}"
+            if whisper_runs
+            else f"from {os.path.basename(caption_path)}"
+        )
         click.echo(
-            f"Retranscribing {os.path.basename(source_path)} with {model!r}... "
+            f"Retranscribing {os.path.basename(source_path)} {action}... "
             "(--quiet silences progress)",
             err=True,
         )
     start_time = time.time()
 
+    whisper_options = {
+        "model": model,
+        "vocabulary": _normalize_vocabulary(vocabulary),
+        "allow_download": not no_download,
+        "quiet": quiet,
+        "channel": channel,
+        "speech_check": not no_speech_check,
+    }
     try:
-        transcript = transcribe_file(
-            source_path,
-            source_id,
-            model=model,
-            vocabulary=_normalize_vocabulary(vocabulary),
-            allow_download=not no_download,
-            quiet=quiet,
-            channel=channel,
-            speech_check=not no_speech_check,
-        )
+        if caption_path:
+            transcript = import_caption_transcript(
+                caption_path,
+                source_id,
+                source_duration=float(source["duration"]["seconds"]),
+                source_path=source_path,
+            )
+        elif windows:
+            try:
+                transcript = load_transcript(source)
+            except (json.JSONDecodeError, FileNotFoundError):
+                transcript = None
+        if windows:
+            transcript = merge_range_transcript(
+                transcript,
+                transcribe_ranges(
+                    source_path,
+                    source_id,
+                    windows,
+                    source_duration=float(source["duration"]["seconds"]),
+                    **whisper_options,
+                ),
+            )
+        elif not caption_path:
+            transcript = transcribe_file(source_path, source_id, **whisper_options)
+    except CaptionImportError as exc:
+        _error_exit_with_hint("retranscribe", str(exc), CAPTIONS_HINT)
     except TranscriptionError as exc:
         _error_exit("retranscribe", f"Transcription failed: {exc}")
 
@@ -3198,14 +3426,9 @@ def retranscribe(
     # Update project.json's source.transcript metadata so subsequent
     # status / load output reports the new model rather than a stale
     # value from the original load.
-    source["transcript"] = {
-        # Same shape create_workspace writes (issue #42 friction agent
-        # caught the divergence): `model` is what status / inspect
-        # surface; `source` is the legacy field kept for back-compat.
-        "model": model,
-        "source": f"whisper:{model}",
-        "path": f"{TRANSCRIPTS_DIR}/{source_id}.json",
-    }
+    # Same shape create_workspace writes (issue #42 friction agent
+    # caught the divergence).
+    source["transcript"] = transcript_reference(transcript, source_id)
     # Clear any prior --no-transcribe / no-audio reason — there's a
     # transcript now.
     source.pop("transcription_skipped_reason", None)
@@ -3225,7 +3448,8 @@ def retranscribe(
             "path": source_path,
         },
         "transcript": {
-            "model": model,
+            "model": transcript.get("model"),
+            **_transcript_summary(transcript),
             "path": str(transcript_path),
             "word_count": len(transcript.get("words", [])),
             "duration": transcript.get("duration"),
@@ -3236,7 +3460,13 @@ def retranscribe(
             ),
         },
         "hint": (
-            "Transcript replaced. Frames and spec are unchanged. Run "
+            (
+                "Whisper words replaced the transcript inside the range(s); "
+                "words outside were kept."
+                if windows
+                else "Transcript replaced."
+            )
+            + " Frames and spec are unchanged. Run "
             "'moviestar skim --words' to verify the new word-level "
             "timing, or 'moviestar status' to see the project at a "
             "glance."
@@ -23862,6 +24092,7 @@ def status() -> None:
                 transcript_data = json.loads(transcript_path.read_text())
                 section["transcript"] = {
                     "model": transcript_info.get("model"),
+                    **_transcript_summary(transcript_data),
                     "path": str(transcript_path),
                     "word_count": len(transcript_data.get("words", [])),
                     "duration": transcript_data.get("duration"),

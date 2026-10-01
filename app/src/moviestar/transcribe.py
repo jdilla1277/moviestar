@@ -13,11 +13,16 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 import time
 from collections.abc import Iterable
 from pathlib import Path
 
-from moviestar.ffmpeg import run_audio_energy_probe, run_stereo_phase_probe
+from moviestar.ffmpeg import (
+    extract_audio_window,
+    run_audio_energy_probe,
+    run_stereo_phase_probe,
+)
 from moviestar.timecodes import format_timecode
 
 
@@ -167,10 +172,17 @@ def _transcript_coverage_warnings(
     words: list[dict],
     *,
     quiet: bool,
+    offset_seconds: float = 0.0,
 ) -> list[dict]:
-    """Build structured warnings for sustained audio missing transcript words."""
+    """Build structured warnings for sustained audio missing transcript words.
+
+    ``offset_seconds`` places a cut-out window's audio on the source clock.
+    """
     try:
-        energy_spans = run_audio_energy_probe(source_path, duration_seconds)
+        energy_spans = [
+            (start + offset_seconds, end + offset_seconds)
+            for start, end in run_audio_energy_probe(source_path, duration_seconds)
+        ]
     except (FileNotFoundError, RuntimeError) as exc:
         # Coverage QA is an additive guardrail. If its lightweight follow-up
         # probe fails, keep the successful transcript and make the skipped
@@ -517,6 +529,7 @@ def transcribe_file(
     allow_download: bool = True,
     channel: str = "auto",
     speech_check: bool = True,
+    offset_seconds: float = 0.0,
 ) -> dict:
     """Transcribe an audio or video file with faster-whisper.
 
@@ -536,6 +549,9 @@ def transcribe_file(
     ``speech_check`` runs voice activity detection first and skips Whisper
     when there is no speech, since Whisper invents words on non-speech
     audio (issue #19). Both report under ``audio`` and ``warnings``.
+
+    ``offset_seconds`` adds to every word, segment, and warning time, for
+    audio cut out of a longer source (see ``transcribe_ranges``).
 
     Progress is reported on stderr (plain prose, one line per segment,
     with elapsed time). Pass quiet=True to suppress.
@@ -603,7 +619,10 @@ def transcribe_file(
 
     speech_spans: list[tuple[float, float]] | None = None
     if speech_check:
-        speech_spans = _detect_speech(audio)
+        speech_spans = [
+            (start + offset_seconds, end + offset_seconds)
+            for start, end in _detect_speech(audio)
+        ]
         speech_seconds = sum(end - start for start, end in speech_spans)
         whisper_skipped = speech_seconds == 0 or speech_seconds < min(
             NO_SPEECH_MAX_SECONDS, NO_SPEECH_MAX_FRACTION * audio_duration
@@ -701,16 +720,16 @@ def transcribe_file(
             segments_out.append(
                 {
                     "text": seg.text,
-                    "start": format_timecode(seg.start),
-                    "end": format_timecode(seg.end),
+                    "start": format_timecode(seg.start + offset_seconds),
+                    "end": format_timecode(seg.end + offset_seconds),
                 }
             )
             for w in seg.words or []:
                 words.append(
                     {
                         "text": (w.word or "").strip(),
-                        "start": format_timecode(w.start),
-                        "end": format_timecode(w.end),
+                        "start": format_timecode(w.start + offset_seconds),
+                        "end": format_timecode(w.end + offset_seconds),
                         "probability": round(float(w.probability), 4),
                         "speaker": None,
                     }
@@ -738,6 +757,7 @@ def transcribe_file(
         duration,
         words,
         quiet=quiet,
+        offset_seconds=offset_seconds,
     )
     if no_speech_detected:
         if coverage_warnings:
@@ -798,3 +818,228 @@ def transcribe_file(
     if warnings:
         result["warnings"] = warnings
     return result
+
+
+def _range_label(start: float, end: float) -> str:
+    return f"{format_timecode(start)['text']}-{format_timecode(end)['text']}"
+
+
+def normalize_transcribe_ranges(
+    ranges: Iterable[tuple[float, float]], *, source_duration: float
+) -> list[tuple[float, float]]:
+    """Sorted, non-overlapping (start, end) windows clamped to the source.
+
+    Raises TranscriptionError for a window that is empty or starts at or
+    after the end of the source.
+    """
+    windows: list[tuple[float, float]] = []
+    for start, end in ranges:
+        start, end = round(float(start), 3), round(float(end), 3)
+        if end <= start:
+            raise TranscriptionError(
+                f"Range {_range_label(start, end)} must end after it starts."
+            )
+        if source_duration > 0:
+            if start >= source_duration:
+                raise TranscriptionError(
+                    f"Range {_range_label(start, end)} starts at or after the "
+                    "source ends at "
+                    f"{format_timecode(source_duration)['text']}."
+                )
+            end = min(end, round(source_duration, 3))
+        windows.append((start, end))
+    windows.sort()
+    merged: list[tuple[float, float]] = []
+    for start, end in windows:
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def transcribe_ranges(
+    source_path: str,
+    source_id: str,
+    ranges: Iterable[tuple[float, float]],
+    *,
+    source_duration: float,
+    model: str = DEFAULT_MODEL,
+    language: str | None = None,
+    quiet: bool = False,
+    vocabulary: Iterable[str] | None = None,
+    allow_download: bool = True,
+    channel: str = "auto",
+    speech_check: bool = True,
+) -> dict:
+    """Transcribe only the given windows of a source (issue #29).
+
+    Each window is cut to a temporary WAV and transcribed alone, so the
+    cost tracks the windows, not the source. Times are on the source clock.
+    The result has ``coverage: "ranges"`` and one ``transcribed_ranges``
+    entry per window carrying its model and audio checks; everything
+    outside the windows has no words. ``duration`` is the whole source.
+    """
+    if not os.path.exists(source_path):
+        raise FileNotFoundError(f"File not found: {source_path}")
+    windows = normalize_transcribe_ranges(ranges, source_duration=source_duration)
+
+    parts: list[tuple[float, float, dict]] = []
+    with tempfile.TemporaryDirectory(prefix="moviestar-range-") as tmp:
+        for index, (start, end) in enumerate(windows):
+            _log(f"  Transcribing range {_range_label(start, end)} only.", quiet=quiet)
+            window_path = os.path.join(tmp, f"range_{index}.wav")
+            try:
+                extract_audio_window(source_path, start, end - start, window_path)
+            except (FileNotFoundError, RuntimeError) as exc:
+                raise TranscriptionError(
+                    f"Could not cut audio for range {_range_label(start, end)}: {exc}"
+                ) from exc
+            part = transcribe_file(
+                window_path,
+                source_id,
+                model=model,
+                language=language,
+                quiet=quiet,
+                vocabulary=vocabulary,
+                allow_download=allow_download,
+                channel=channel,
+                speech_check=speech_check,
+                offset_seconds=start,
+            )
+            parts.append((start, end, part))
+
+    words = [word for _, _, part in parts for word in part["words"]]
+    result: dict = {
+        "source_id": source_id,
+        "source_path": os.path.realpath(source_path),
+        "model": model,
+        "backend": "faster-whisper",
+        "language": language
+        or next((p["language"] for _, _, p in parts if p.get("language")), None),
+        "text": " ".join(p["text"] for _, _, p in parts if p["text"]),
+        "duration": format_timecode(source_duration),
+        "words": words,
+        "segments": [seg for _, _, part in parts for seg in part["segments"]],
+        "no_speech_detected": not words,
+        "vocabulary": _normalize_vocabulary(vocabulary),
+        "coverage": "ranges",
+        "transcribed_ranges": [
+            {
+                "from": format_timecode(start),
+                "to": format_timecode(end),
+                "model": model,
+                "audio": part["audio"],
+            }
+            for start, end, part in parts
+        ],
+    }
+    warnings = [w for _, _, part in parts for w in part.get("warnings") or []]
+    if warnings:
+        result["warnings"] = warnings
+    return result
+
+
+def _subtract(
+    start: float, end: float, windows: list[tuple[float, float]]
+) -> list[tuple[float, float]]:
+    """Pieces of [start, end] outside every window."""
+    pieces = [(start, end)]
+    for w_start, w_end in windows:
+        next_pieces = []
+        for p_start, p_end in pieces:
+            if w_end <= p_start or w_start >= p_end:
+                next_pieces.append((p_start, p_end))
+                continue
+            if p_start < w_start:
+                next_pieces.append((p_start, w_start))
+            if w_end < p_end:
+                next_pieces.append((w_end, p_end))
+        pieces = next_pieces
+    return pieces
+
+
+def _seconds(entry: dict, key: str) -> float:
+    return float(entry[key]["seconds"])
+
+
+def merge_range_transcript(base: dict | None, ranged: dict) -> dict:
+    """Lay a ranged Whisper transcript over an existing transcript.
+
+    Words whose midpoint falls inside a new window are replaced; everything
+    else in ``base`` is kept, including its ``backend`` (so imported
+    captions stay ``imported-captions``). Segments that straddle a window
+    keep only their outside part. Older ``transcribed_ranges`` overlapped
+    by a new window are trimmed. ``coverage`` stays ``full`` over a full
+    transcript and ``ranges`` over a ranges-only one.
+    """
+    if base is None:
+        return ranged
+    windows = [
+        (_seconds(r, "from"), _seconds(r, "to"))
+        for r in ranged.get("transcribed_ranges") or []
+    ]
+
+    def outside(entry: dict) -> bool:
+        middle = (_seconds(entry, "start") + _seconds(entry, "end")) / 2
+        return not any(start <= middle < end for start, end in windows)
+
+    kept_words = [w for w in base.get("words") or [] if outside(w)]
+    segments: list[dict] = []
+    for seg in base.get("segments") or []:
+        seg_start, seg_end = _seconds(seg, "start"), _seconds(seg, "end")
+        pieces = _subtract(seg_start, seg_end, windows)
+        if pieces == [(seg_start, seg_end)]:
+            segments.append(seg)
+            continue
+        for p_start, p_end in pieces:
+            piece_words = [
+                w for w in kept_words
+                if p_start <= (_seconds(w, "start") + _seconds(w, "end")) / 2 <= p_end
+            ]
+            if piece_words:
+                segments.append(
+                    {
+                        "text": " ".join(w["text"] for w in piece_words),
+                        "start": format_timecode(p_start),
+                        "end": format_timecode(p_end),
+                    }
+                )
+
+    earlier_ranges = []
+    for entry in base.get("transcribed_ranges") or []:
+        for p_start, p_end in _subtract(
+            _seconds(entry, "from"), _seconds(entry, "to"), windows
+        ):
+            earlier_ranges.append(
+                {**entry, "from": format_timecode(p_start), "to": format_timecode(p_end)}
+            )
+
+    words = sorted(kept_words + ranged["words"], key=lambda w: _seconds(w, "start"))
+    segments = sorted(
+        segments + ranged["segments"], key=lambda s: _seconds(s, "start")
+    )
+    ranges_only = base.get("coverage") == "ranges"
+    merged = {
+        **base,
+        "model": ranged.get("model") if ranges_only else base.get("model"),
+        "language": base.get("language") or ranged.get("language"),
+        "text": " ".join(
+            text for text in ((s.get("text") or "").strip() for s in segments) if text
+        ),
+        "words": words,
+        "segments": segments,
+        "no_speech_detected": not words,
+        "vocabulary": ranged.get("vocabulary") or base.get("vocabulary") or [],
+        "coverage": "ranges" if ranges_only else "full",
+        "transcribed_ranges": sorted(
+            earlier_ranges + ranged["transcribed_ranges"],
+            key=lambda r: _seconds(r, "from"),
+        ),
+    }
+    warnings = [*(base.get("warnings") or []), *(ranged.get("warnings") or [])]
+    if warnings:
+        merged["warnings"] = warnings
+    else:
+        merged.pop("warnings", None)
+    return merged

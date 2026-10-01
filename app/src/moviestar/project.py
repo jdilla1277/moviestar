@@ -20,12 +20,15 @@ from datetime import datetime, timezone
 from fractions import Fraction
 from pathlib import Path
 
+from moviestar.caption_import import CAPTIONS_BACKEND, import_caption_transcript
 from moviestar.ffmpeg import extract_frames, run_ffprobe
 from moviestar.timecodes import format_timecode
 from moviestar.transcribe import (
     DEFAULT_MODEL,
     TranscriptionError,
+    merge_range_transcript,
     transcribe_file,
+    transcribe_ranges,
 )
 
 
@@ -273,6 +276,22 @@ def save_transcript(
     return out.resolve()
 
 
+def transcript_reference(transcript: dict, source_id: str) -> dict:
+    """The project.json pointer for a saved transcript.
+
+    ``model`` is what status and load report; ``source`` is the legacy
+    field. ``backend`` tells Whisper output from imported captions.
+    """
+    model = transcript.get("model")
+    backend = transcript.get("backend") or "faster-whisper"
+    return {
+        "model": model,
+        "backend": backend,
+        "source": "captions" if backend == CAPTIONS_BACKEND else f"whisper:{model}",
+        "path": f"{TRANSCRIPTS_DIR}/{source_id}.json",
+    }
+
+
 def list_frames(source: dict, cwd: Path | None = None) -> list[dict]:
     """Return the pre-built frame index for a source, sorted by timecode.
 
@@ -472,12 +491,18 @@ def _build_source_entry(
     start_offset_seconds: float | None = None,
     allow_model_download: bool = True,
     thumb_width: int = DEFAULT_THUMB_WIDTH,
+    captions_path: str | None = None,
+    transcribe_windows: list[tuple[float, float]] | None = None,
 ) -> dict:
     """Probe, extract frames, transcribe one source. Returns the source
     entry dict for project.json. Used by create_workspace.
 
     Same logic the existing create_workspace runs for its single source
     — factored out so the multi-source path can loop cleanly.
+
+    ``captions_path`` imports a caption file as the transcript instead of
+    running Whisper. ``transcribe_windows`` runs Whisper on those windows
+    only, laid over the imported captions when both are given.
     """
     _log(f"  [{source_id}] Probing metadata...", quiet=quiet)
     probe = run_ffprobe(abs_source)
@@ -532,26 +557,42 @@ def _build_source_entry(
     if not transcribe:
         entry["transcript"] = None
         entry["transcription_skipped_reason"] = TRANSCRIPTION_SKIP_REASON_FLAG
-    elif audio_stream is None:
+    elif audio_stream is None and not captions_path:
         entry["transcript"] = None
         entry["transcription_skipped_reason"] = TRANSCRIPTION_SKIP_REASON_NO_AUDIO
     else:
-        transcript = transcribe_file(
-            abs_source,
-            source_id,
-            model=model,
-            quiet=quiet,
-            vocabulary=vocabulary,
-            allow_download=allow_model_download,
-            channel=channel,
-            speech_check=speech_check,
-        )
-        save_transcript(transcript, source_id, cwd)
-        entry["transcript"] = {
+        whisper_options = {
             "model": model,
-            "source": f"whisper:{model}",
-            "path": f"{TRANSCRIPTS_DIR}/{source_id}.json",
+            "quiet": quiet,
+            "vocabulary": vocabulary,
+            "allow_download": allow_model_download,
+            "channel": channel,
+            "speech_check": speech_check,
         }
+        transcript = None
+        if captions_path:
+            _log(f"  [{source_id}] Importing captions from {captions_path}...", quiet=quiet)
+            transcript = import_caption_transcript(
+                captions_path,
+                source_id,
+                source_duration=duration_seconds,
+                source_path=abs_source,
+            )
+        if transcribe_windows and audio_stream is not None:
+            transcript = merge_range_transcript(
+                transcript,
+                transcribe_ranges(
+                    abs_source,
+                    source_id,
+                    transcribe_windows,
+                    source_duration=duration_seconds,
+                    **whisper_options,
+                ),
+            )
+        elif transcript is None:
+            transcript = transcribe_file(abs_source, source_id, **whisper_options)
+        save_transcript(transcript, source_id, cwd)
+        entry["transcript"] = transcript_reference(transcript, source_id)
 
     return entry
 
@@ -579,6 +620,8 @@ def create_workspace(
     start_offsets: list[float | None] | None = None,
     allow_model_download: bool = True,
     thumb_width: int = DEFAULT_THUMB_WIDTH,
+    captions: list[str | None] | None = None,
+    transcribe_windows: list[tuple[float, float]] | None = None,
 ) -> dict:
     """Create or extend a multi-source moviestar/ workspace.
 
@@ -597,6 +640,10 @@ def create_workspace(
     sources to its ``sources`` list. Existing per-source operations
     and transcripts are preserved, along with project-level caption rules.
     Errors if no project exists in cwd.
+
+    ``captions`` pairs a caption file (or None) with each path by position;
+    ``transcribe_windows`` limits Whisper to those windows for every new
+    source (issue #29).
 
     Returns the (possibly extended) project dict that was written.
     """
@@ -618,6 +665,8 @@ def create_workspace(
             f"{len(source_paths)} sources."
         )
     padded_offsets.extend([None] * (len(source_paths) - len(padded_offsets)))
+    padded_captions = list(captions) if captions else []
+    padded_captions.extend([None] * (len(source_paths) - len(padded_captions)))
 
     ms_dir = get_project_dir(cwd, walk=False)
     frames_dir = ms_dir / FRAMES_DIR
@@ -656,8 +705,8 @@ def create_workspace(
             )
 
     new_sources: list[dict] = []
-    for path, override_name, start_offset_seconds in zip(
-        source_paths, padded_names, padded_offsets
+    for path, override_name, start_offset_seconds, captions_path in zip(
+        source_paths, padded_names, padded_offsets, padded_captions
     ):
         abs_source = os.path.realpath(path)
         # Derive IDs from the user-facing argument, not the resolved
@@ -681,6 +730,8 @@ def create_workspace(
             start_offset_seconds=start_offset_seconds,
             thumb_width=thumb_width,
             allow_model_download=allow_model_download,
+            captions_path=captions_path,
+            transcribe_windows=transcribe_windows,
         )
         sources.append(entry)
         new_sources.append(entry)

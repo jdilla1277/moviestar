@@ -1082,6 +1082,39 @@ def run_audio_energy_probe(
     return _parse_audio_energy_spans(result.stderr, duration_seconds)
 
 
+def build_audio_window_command(
+    media_path: str, start_time: float, duration: float, output_path: str
+) -> list[str]:
+    """Return the argv that cuts one audio window to 16 kHz PCM WAV.
+
+    Channels are kept so the stereo-phase check still sees both sides.
+    """
+    return [
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-ss", f"{start_time:.3f}", "-t", f"{duration:.3f}",
+        "-i", media_path,
+        "-map", "0:a:0", "-vn", "-ar", "16000", "-c:a", "pcm_s16le",
+        output_path,
+    ]
+
+
+def extract_audio_window(
+    media_path: str, start_time: float, duration: float, output_path: str
+) -> None:
+    """Cut ``duration`` seconds of audio from ``start_time`` into a WAV,
+    so ranged transcription decodes only the window (issue #29)."""
+    if not os.path.exists(media_path):
+        raise FileNotFoundError(f"File not found: {media_path}")
+    check_ffmpeg_available()
+    result = subprocess.run(
+        build_audio_window_command(media_path, start_time, duration, output_path),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(_failure_message("ffmpeg", result))
+
+
 def build_loudness_probe_command(
     media_path: str,
     start_time: float | None = None,
