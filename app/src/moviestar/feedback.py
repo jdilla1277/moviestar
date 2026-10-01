@@ -1,4 +1,4 @@
-"""Anonymous feedback delivery for the MovieStar CLI."""
+"""Anonymous feedback delivery for the Moviestar CLI."""
 
 from __future__ import annotations
 
@@ -41,13 +41,19 @@ Minimal steps and deliberately shared, redacted commands or output.
 How serious it was and how I continued.
 
 ## What worked well (optional)
-Capabilities and contracts MovieStar should protect.
+Capabilities and contracts Moviestar should protect.
 
 ## Ideas (optional)
 Concrete improvements suggested by this experience.
 
 ## Wild idea (optional)
-If MovieStar could change more fundamentally, what would you try?
+If Moviestar could change more fundamentally, what would you try?
+
+## Likelihood to recommend Moviestar (optional)
+On a scale from 0 (not at all likely) to 10 (extremely likely), how likely are you to recommend Moviestar to others?
+
+## Why or why not? (optional)
+What is the main reason for your score?
 
 ## Follow-up email (optional)
 <!-- Leave an email address to get a note when this feedback has been addressed. -->
@@ -57,7 +63,7 @@ _TEMPLATE_HANDOFF = """Next steps:
   Complete the required sections, then submit the report:
   moviestar feedback --file feedback.md
 A successful submission returns a structured JSON receipt.
-For broader MovieStar update emails, an agent can run:
+For broader Moviestar update emails, an agent can run:
   moviestar subscribe EMAIL
 The human must open the confirmation email before the subscription is active."""
 
@@ -182,12 +188,13 @@ def feedback(
     feedback_file: TextIO | None,
     show_template: bool,
 ) -> None:
-    """Create or send guided feedback to the MovieStar team.
+    """Create or send guided feedback to the Moviestar team.
 
     Run without options to print a guided report with required context plus
-    optional debugging, positive-feedback, idea, and wild-idea prompts. Fill
-    it in and submit it with --file. Use --quick only for a deliberately short
-    note. --template remains an explicit alias for printing the report.
+    optional debugging, positive-feedback, idea, wild-idea, and recommendation
+    prompts. Fill it in and submit it with --file. Use --quick only for a
+    deliberately short note. --template remains an explicit alias for printing
+    the report.
 
     Feedback is anonymous unless you complete the optional follow-up email
     section. That address is stored separately so the team can send a note when
