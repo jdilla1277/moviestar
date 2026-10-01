@@ -98,6 +98,11 @@
       "metadata_sha256": "365bc6ef69d978c2bd76932dea5e9c456a362d700cea3017035ff39416464bdd",
       "license": "MPL-2.0 AND MIT",
       "evidence": "https://github.com/tqdm/tqdm/blob/master/LICENCE"
+    },
+    "yt-dlp": {
+      "metadata_sha256": "243e0d5e565d5902721f91b9914b712e948a08a66b1e132ee50e8eb8cfdace6a",
+      "license": "Unlicense",
+      "evidence": "https://github.com/yt-dlp/yt-dlp/blob/master/LICENSE"
     }
   }
 }

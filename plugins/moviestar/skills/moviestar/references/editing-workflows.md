@@ -22,7 +22,12 @@ Choose the smallest workflow that satisfies the request. Run the relevant
 Whisper on hours of footage takes hours. When the source has captions, such
 as YouTube captions or a broadcaster's SRT, load them instead with
 `load VIDEO --captions FILE.vtt`. This takes seconds, and the transcript
-records `backend: "imported-captions"`. To get Whisper quality only where it
+records `backend: "imported-captions"`. For a YouTube or other public video
+page, pass the URL instead: `load VIDEO --captions URL` fetches the English
+captions with yt-dlp (`pip install 'moviestar[url-captions]'`), saves them in
+`moviestar/captions/`, and reuses that file offline when the URL is passed
+again. A video with no English captions fails with `available_captions`
+before the workspace changes. To get Whisper quality only where it
 matters, use `load VIDEO --transcribe-range START END` or
 `retranscribe --range START END`. Whisper then runs on that window alone,
 and a ranged run replaces only the words inside the window. Do not parse

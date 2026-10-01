@@ -41,6 +41,8 @@ Issues = "https://github.com/jdilla1277/moviestar/issues"
 
 [project.optional-dependencies]
 diarize = ["pyannote.audio>=3.0"]
+# --captions URL fetches caption tracks with yt-dlp (Unlicense).
+url-captions = ["yt-dlp>=2026.8.19"]
 
 [project.scripts]
 moviestar = "moviestar.cli:cli"

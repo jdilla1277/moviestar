@@ -66,6 +66,14 @@ jobs:
           source app/.venv/bin/activate
           bin/check-dependency-licenses
 
+      # --captions URL needs the url-captions extra (yt-dlp). Install it
+      # after the core check so the fast tests cover the real backend too.
+      - name: Check url-captions extra license policy
+        run: |
+          source app/.venv/bin/activate
+          pip install -e "./app[url-captions]"
+          bin/check-dependency-licenses --extra url-captions
+
       # Fast path: everything except slow (whisper) tests. Gives quick
       # signal on most failures even if the slow path breaks.
       - name: Run fast tests
