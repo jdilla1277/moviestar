@@ -152,18 +152,46 @@ def choose_track(info: dict, url: str) -> dict:
     )
 
 
-class _SilentLogger:
-    """Keep yt-dlp off stdout and stderr.
+class _CollectingLogger:
+    """Keep yt-dlp off stdout and stderr, but remember its warnings.
 
-    Its warnings are about video formats, which a caption fetch never
-    downloads; its errors are raised as DownloadError and reported in the
-    JSON envelope.
+    Most are about video formats, which a caption fetch never downloads.
+    When a site blocks a request or the video is gone, yt-dlp still
+    returns an info dict and the reason survives only as a warning, so
+    ``fetch_captions`` reports these when no track turns up. Errors are
+    raised as DownloadError and reported in the JSON envelope.
     """
+
+    def __init__(self, messages: list[str]) -> None:
+        self.messages = messages
 
     def debug(self, msg: str) -> None:
         pass
 
-    info = warning = error = debug
+    info = error = debug
+
+    def warning(self, msg: str) -> None:
+        self.messages.append(msg)
+
+
+# yt-dlp warnings about video formats; they never explain missing captions.
+_FORMAT_NOISE = (
+    "[jsc]",
+    "challenge",
+    "JavaScript runtime",
+    "impersonat",
+    "formats may be missing",
+    "No video formats found",
+    "Requested format is not available",
+)
+
+
+def _site_reason(messages: list[str]) -> str | None:
+    """The first yt-dlp warning that isn't about video formats."""
+    for message in messages:
+        if not any(noise.lower() in message.lower() for noise in _FORMAT_NOISE):
+            return message
+    return None
 
 
 class YtDlpBackend:
@@ -178,6 +206,7 @@ class YtDlpBackend:
                 INSTALL_HINT,
             ) from exc
         self.yt_dlp = yt_dlp
+        self.warnings: list[str] = []
 
     @property
     def version(self) -> str:
@@ -190,7 +219,7 @@ class YtDlpBackend:
             "noplaylist": True,
             "skip_download": True,
             "ignore_no_formats_error": True,
-            "logger": _SilentLogger(),
+            "logger": _CollectingLogger(self.warnings),
             **extra,
         }
 
@@ -301,7 +330,20 @@ def fetch_captions(
                 f"{url} is a playlist, not a single video.",
                 "Pass the URL of the one video whose captions you want.",
             )
-        track = choose_track(info, url)
+        try:
+            track = choose_track(info, url)
+        except RemoteCaptionsError as exc:
+            messages = list(getattr(backend, "warnings", []))
+            reason = _site_reason(messages)
+            if reason is None:
+                raise
+            raise RemoteCaptionsError(
+                f"{exc} yt-dlp reported: {reason}",
+                f"{exc.hint} A sign-in or bot check means the site blocked "
+                "this network; retry from another network.",
+                **exc.details,
+                yt_dlp_messages=messages,
+            ) from exc
         work = staging_dir / f"{key}.download"
         work.mkdir(parents=True, exist_ok=True)
         downloaded = backend.download(info, track, work)

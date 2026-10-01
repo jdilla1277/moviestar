@@ -8,6 +8,7 @@ same path as a local caption file.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -52,9 +53,10 @@ class FakeBackend:
 
     version = "test"
 
-    def __init__(self, info=None, text=YOUTUBE_VTT):
+    def __init__(self, info=None, text=YOUTUBE_VTT, warnings=()):
         self.info = info if info is not None else _info(manual={"en": [_track("en")]})
         self.text = text
+        self.warnings = list(warnings)
         self.extracted: list[str] = []
         self.downloaded: list[dict] = []
 
@@ -208,6 +210,25 @@ class TestFetchCaptions:
         with pytest.raises(RemoteCaptionsError) as raised:
             fetch_captions(URL, tmp_path / "stage")
         assert "could not be read" in str(raised.value)
+
+    def test_blocked_or_missing_videos_name_the_site_reason(self, tmp_path, backend):
+        # With no video formats yt-dlp reports why only as warnings, next
+        # to noise about JavaScript runtimes and formats.
+        backend(
+            FakeBackend(
+                info=_info(),
+                warnings=[
+                    "[youtube] [jsc] Remote components challenge solver script (deno) were skipped.",
+                    "[youtube] abc123: Sign in to confirm you're not a bot.",
+                    "No video formats found!",
+                    "Requested format is not available",
+                ],
+            )
+        )
+        with pytest.raises(RemoteCaptionsError) as raised:
+            fetch_captions(URL, tmp_path / "stage")
+        assert "Sign in to confirm you're not a bot" in str(raised.value)
+        assert raised.value.details["yt_dlp_messages"][1].startswith("[youtube] abc123")
 
     def test_playlists_are_rejected(self, tmp_path, backend):
         backend(FakeBackend(info={"_type": "playlist", "entries": []}))
@@ -462,7 +483,13 @@ class TestCli:
 
 @pytest.mark.slow
 def test_real_youtube_captions_match_the_ytdlp_download(tmp_path):
-    """Network: fetch a real track and compare it with yt-dlp's own file."""
+    """Network: fetch a real track and compare it with yt-dlp's own file.
+
+    Opt-in with MOVIESTAR_NETWORK_TESTS=1: YouTube bot-checks datacenter
+    networks such as CI runners, so this cannot gate merges.
+    """
+    if not os.environ.get("MOVIESTAR_NETWORK_TESTS"):
+        pytest.skip("live YouTube test; set MOVIESTAR_NETWORK_TESTS=1 to run")
     yt_dlp = pytest.importorskip("yt_dlp")
     url = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
     fetched = fetch_captions(url, tmp_path / "stage", quiet=True)
