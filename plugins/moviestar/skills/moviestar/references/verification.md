@@ -14,6 +14,11 @@ successfully.
 4. View returned image paths with the available image tool. Read video files
    with the available multimodal tool or sample them with `screenshot` and
    `watch`; do not ingest `--inline` Base64 as ordinary text.
+5. For TikTok, Instagram Reels, or YouTube Shorts delivery, capture important
+   frames with `screenshot --platform PLATFORM`. Review both the annotated
+   image and structured `platform_ui_occlusion` warnings. This checks only
+   MovieStar-authored overlay/slot geometry; no OCR or object detection is run
+   on source pixels.
 
 ## After the final render
 
