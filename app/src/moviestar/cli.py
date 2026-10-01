@@ -53,6 +53,7 @@ from moviestar.ffmpeg import (
     build_render_layout_video_command,
     build_highlight_ass,
     build_mix_audio_command,
+    build_platform_preview_command,
     compose_storyboard_tiles,
     extract_clip,
     extract_storyboard_frame,
@@ -66,6 +67,7 @@ from moviestar.ffmpeg import (
     render_layout_frame,
     render_layout_frames,
     render_layout_video,
+    render_platform_preview,
     mix_audio,
     probe_last_video_packet_timestamp,
     run_ffprobe,
@@ -100,6 +102,12 @@ from moviestar.project import (
     set_explicit_workspace_root,
     slice_transcript,
     subsample_frames,
+    transcript_reference,
+)
+from moviestar.caption_import import (
+    CaptionImportError,
+    import_caption_transcript,
+    parse_caption_file,
 )
 from moviestar.find import (
     STRONG_WARNING_THRESHOLD,
@@ -193,6 +201,12 @@ from moviestar.overlays import (
     overlay_plan_summary,
     plan_overlays,
 )
+from moviestar.platforms import (
+    PLATFORM_CHOICES,
+    canvas_matches_platform_aspect,
+    lint_platform_targets,
+    resolve_platform_profile,
+)
 from moviestar.audio_surface import (
     AUDIO_DUCKING_PRESETS,
     AUDIO_KINDS,
@@ -237,14 +251,23 @@ from moviestar.transcribe import (
     TRANSCRIPTION_CHANNELS,
     TranscriptionError,
     _normalize_vocabulary,
+    merge_range_transcript,
     model_download_requirement,
+    normalize_transcribe_ranges,
     pull_model,
     resolve_cached_model,
     transcribe_file,
+    transcribe_ranges,
 )
 from moviestar.feedback import feedback
 from moviestar.subscribe import subscribe as subscribe_command
 from moviestar.account import account as account_command
+from moviestar.sharing import (
+    download as download_command,
+    share as share_command,
+    shares as shares_command,
+    unshare as unshare_command,
+)
 
 
 CLIPS_DIR = "moviestar-clips"
@@ -895,7 +918,8 @@ BROWSING COMMANDS
   inspect      Dense sample — many thumbnails + transcript across a range.
                Use for careful scene-by-scene review.
   watch        Extract a video segment for multimodal model analysis.
-  screenshot   Single frame at a timecode. Applies edits when in a project.
+  screenshot   Single frame at a timecode. Applies project edits; --platform
+               adds TikTok/Reels/Shorts UI masks and geometry warnings.
 
 \b
 EDITING COMMANDS
@@ -1087,6 +1111,10 @@ def cli() -> None:
 cli.add_command(subscribe_command)
 cli.add_command(feedback)
 cli.add_command(account_command)
+cli.add_command(download_command)
+cli.add_command(share_command)
+cli.add_command(shares_command)
+cli.add_command(unshare_command)
 
 
 # ---------- Browsing ----------
@@ -1702,7 +1730,7 @@ def _caption_cache_fingerprint(
     except (ResolvedProjectError, SpecValidationError):
         timeline_repr = ["unresolved"]
     payload = {
-        "v": 3,
+        "v": 4,
         "timeline": timeline_repr,
         "recipe": {
             key: value
@@ -2157,6 +2185,52 @@ def _skip_reason_prose(enum_value: str | None) -> str:
     }.get(enum_value or "", "no transcript loaded")
 
 
+CAPTIONS_HINT = (
+    "Pass a WebVTT (.vtt) or SRT (.srt) caption file, such as YouTube "
+    "captions saved alongside the video."
+)
+RANGE_HINT = (
+    "Give each range as START END in seconds or [HH:]MM:SS, e.g. "
+    "--transcribe-range 03:50:00 04:10:00. Run 'moviestar probe VIDEO' "
+    "for the source duration."
+)
+
+
+def _checked_caption_path(command: str, path: str) -> str:
+    """Absolute caption path, or a structured error if it can't be read."""
+    abs_path = os.path.realpath(path)
+    try:
+        parse_caption_file(abs_path)
+    except CaptionImportError as exc:
+        _error_exit_with_hint(command, str(exc), CAPTIONS_HINT)
+    return abs_path
+
+
+def _checked_transcribe_windows(
+    command: str, ranges: tuple[tuple[str, str], ...], source_duration: float
+) -> list[tuple[float, float]]:
+    """Parse and validate START END ranges against the source duration."""
+    try:
+        parsed = [(parse_timecode(start), parse_timecode(end)) for start, end in ranges]
+        return normalize_transcribe_ranges(parsed, source_duration=source_duration)
+    except (ValueError, TranscriptionError) as exc:
+        _error_exit_with_hint(command, str(exc), RANGE_HINT)
+
+
+def _transcript_summary(transcript: dict) -> dict:
+    """Backend and range coverage for load / retranscribe / status output."""
+    summary: dict = {"backend": transcript.get("backend")}
+    if transcript.get("captions"):
+        summary["captions"] = transcript["captions"].get("path")
+    if transcript.get("transcribed_ranges"):
+        summary["coverage"] = transcript.get("coverage", "full")
+        summary["transcribed_ranges"] = [
+            {"from": r["from"], "to": r["to"], "model": r.get("model")}
+            for r in transcript["transcribed_ranges"]
+        ]
+    return summary
+
+
 def _already_loaded_error(requested_source: str) -> None:
     """Emit a structured error when load is called in a directory that already has a project.
 
@@ -2238,6 +2312,8 @@ def _emit_load_dry_run(
     no_frames: bool,
     force: bool,
     currently_loaded: dict | None,
+    captions_path: str | None = None,
+    transcribe_windows: list[tuple[float, float]] | None = None,
 ) -> None:
     """Emit the dry-run envelope for ``moviestar load --dry-run``.
 
@@ -2286,15 +2362,18 @@ def _emit_load_dry_run(
     else:
         would_extract_frames_count = 0
 
-    # would_transcribe mirrors create_workspace's decision tree.
+    # would_transcribe mirrors create_workspace's decision tree: it means
+    # Whisper would run. Imported captions alone don't run Whisper.
     if no_transcribe:
         would_transcribe = False
         would_skip_reason = TRANSCRIPTION_SKIP_REASON_FLAG
     elif audio_stream is None:
         would_transcribe = False
-        would_skip_reason = TRANSCRIPTION_SKIP_REASON_NO_AUDIO
+        would_skip_reason = (
+            None if captions_path else TRANSCRIPTION_SKIP_REASON_NO_AUDIO
+        )
     else:
-        would_transcribe = True
+        would_transcribe = not captions_path or bool(transcribe_windows)
         would_skip_reason = None
 
     # Would-be project_dir + frame-extraction ffmpeg argv. Neither
@@ -2382,12 +2461,19 @@ def _emit_load_dry_run(
         result["would_skip_frame_extraction_reason"] = (
             FRAME_EXTRACTION_SKIP_REASON_FLAG
         )
+    if captions_path:
+        result["would_import_captions"] = captions_path
+    if transcribe_windows:
+        result["would_transcribe_ranges"] = [
+            {"from": format_timecode(start), "to": format_timecode(end)}
+            for start, end in transcribe_windows
+        ]
     if would_transcribe:
         result["would_use_model"] = model
         requirement = model_download_requirement(model)
         if requirement is not None:
             result["requires_download"] = requirement
-    else:
+    elif would_skip_reason:
         result["would_skip_transcription_reason"] = would_skip_reason
     if currently_loaded is not None:
         result["currently_loaded"] = currently_loaded
@@ -2611,6 +2697,26 @@ def probe(video: str, loudness: bool, from_tc: str | None, to_tc: str | None) ->
 )
 @click.option("--no-transcribe", is_flag=True, help="Skip transcription entirely.")
 @click.option(
+    "--captions",
+    "captions",
+    multiple=True,
+    help="Import a WebVTT or SRT caption file as the transcript instead of "
+    "running Whisper. Takes seconds on hours of footage. YouTube word "
+    "timing tags time each word; otherwise words are spread across each "
+    "cue. Repeat once per video, in order.",
+)
+@click.option(
+    "--transcribe-range",
+    "transcribe_range",
+    nargs=2,
+    multiple=True,
+    metavar="START END",
+    help="Run Whisper only on this window of the source, e.g. "
+    "--transcribe-range 03:50:00 04:10:00. Repeatable. The rest has no "
+    "transcript words but stays browsable with skim. With --captions, "
+    "Whisper words replace the captions inside the window. One video only.",
+)
+@click.option(
     "--no-download",
     is_flag=True,
     help="Never download a Whisper model. Error before changing the workspace "
@@ -2654,6 +2760,8 @@ def load(
     start_offsets: tuple[str, ...],
     thumb_width: int,
     no_transcribe: bool,
+    captions: tuple[str, ...],
+    transcribe_range: tuple[tuple[str, str], ...],
     no_download: bool,
     no_frames: bool,
     dry_run: bool,
@@ -2686,6 +2794,12 @@ def load(
     Use --no-transcribe to skip, or --model tiny|small|medium|large-v3 to
     change size. Pass --vocabulary 'Amal,Holden' to bias the decoder toward
     names/terms it would otherwise misspell.
+
+    Long sources often ship with captions. Pass --captions FILE.vtt (or
+    .srt) to import them as the transcript in seconds; the transcript
+    records backend "imported-captions". Pass --transcribe-range START END
+    to run Whisper on just that window; transcripts record
+    ``transcribed_ranges``.
 
     Use --no-download for hermetic CI or sandboxed runs. If the requested
     model is not cached, load exits before wiping or creating a workspace;
@@ -2745,6 +2859,55 @@ def load(
         if not os.path.exists(abs_v):
             _error_exit("load", f"File not found: {abs_v}")
         abs_paths.append(abs_v)
+
+    abs_captions: list[str] = []
+    if captions:
+        if no_transcribe:
+            _error_exit_with_hint(
+                "load",
+                "--captions imports a transcript, so it cannot be combined "
+                "with --no-transcribe.",
+                "Drop --no-transcribe to import the captions, or drop "
+                "--captions to load without a transcript.",
+            )
+        if len(captions) != len(videos):
+            _error_exit_with_hint(
+                "load",
+                f"Got {len(captions)} --captions file(s) for {len(videos)} "
+                "videos.",
+                "Repeat --captions once per video, in the same order, or "
+                "load captioned videos separately with 'moviestar load "
+                "VIDEO --add --captions FILE'.",
+            )
+        abs_captions = [_checked_caption_path("load", c) for c in captions]
+
+    transcribe_windows: list[tuple[float, float]] = []
+    if transcribe_range:
+        if no_transcribe:
+            _error_exit_with_hint(
+                "load",
+                "--transcribe-range cannot be combined with --no-transcribe.",
+                "Drop --no-transcribe to transcribe the window.",
+            )
+        if len(abs_paths) != 1:
+            _error_exit_with_hint(
+                "load",
+                "--transcribe-range applies to one video, but "
+                f"{len(abs_paths)} were given.",
+                "Load the first video with its range, then add each other "
+                "video with 'moviestar load VIDEO --add --transcribe-range "
+                "START END'.",
+            )
+        try:
+            probe_data = run_ffprobe(abs_paths[0])
+        except FFmpegNotFoundError as exc:
+            _error_exit("load", str(exc))
+        except (RuntimeError, json.JSONDecodeError) as exc:
+            _error_exit("load", f"Could not probe {abs_paths[0]}: {exc}")
+        duration = probe_data.get("format", {}).get("duration")
+        transcribe_windows = _checked_transcribe_windows(
+            "load", transcribe_range, float(duration) if duration else 0.0
+        )
 
     # Multi-source dry-run is out of scope for M13a's first multi-path
     # commit. Single-source dry-run continues to work; agents who need
@@ -2827,15 +2990,16 @@ def load(
             no_frames=no_frames,
             force=force,
             currently_loaded=currently_loaded,
+            captions_path=abs_captions[0] if abs_captions else None,
+            transcribe_windows=transcribe_windows,
         )
         return
 
     # Resolve a cold-model requirement before any workspace mutation. Probe
     # only while the selected model is uncached so silent inputs do not fail
     # --no-download and warm loads do not pay an extra ffprobe call.
-    requirement = (
-        None if no_transcribe else model_download_requirement(model)
-    )
+    whisper_runs = not no_transcribe and (not abs_captions or transcribe_windows)
+    requirement = model_download_requirement(model) if whisper_runs else None
     if requirement is not None:
         source_has_audio = False
         for abs_path in abs_paths:
@@ -2911,9 +3075,15 @@ def load(
             start_offsets=start_offset_values,
             allow_model_download=not no_download,
             thumb_width=thumb_width,
+            captions=abs_captions or None,
+            transcribe_windows=transcribe_windows or None,
         )
     except WorkspaceConflictError as exc:
         _error_exit("load", str(exc))
+    except CaptionImportError as exc:
+        if not add:
+            reset_workspace()
+        _error_exit_with_hint("load", str(exc), CAPTIONS_HINT)
     except FFmpegNotFoundError as exc:
         if not add:
             reset_workspace()
@@ -2973,6 +3143,7 @@ def load(
             transcript_data = json.loads(transcript_path.read_text())
             output_source["transcript"] = {
                 "model": source["transcript"].get("model", model),
+                **_transcript_summary(transcript_data),
                 "path": str(transcript_path),
                 "word_count": len(transcript_data.get("words", [])),
                 "duration": transcript_data.get("duration"),
@@ -3058,6 +3229,15 @@ def load(
             "commands accept '--source <id>' (default: first source)."
         )
 
+    if any(
+        (s.get("transcript") or {}).get("coverage") == "ranges"
+        for s in output_sources
+    ):
+        hint += (
+            " Only the --transcribe-range window(s) have transcript words; "
+            "add more with 'moviestar retranscribe --range START END'."
+        )
+
     result = {
         "status": status,
         "project_dir": str(get_project_dir()),
@@ -3106,6 +3286,23 @@ def load(
     is_flag=True,
     help="Never download a Whisper model; error if MODEL is not cached.",
 )
+@click.option(
+    "--captions",
+    "captions",
+    default=None,
+    help="Replace the transcript with a WebVTT or SRT caption file instead "
+    "of running Whisper.",
+)
+@click.option(
+    "--range",
+    "ranges",
+    nargs=2,
+    multiple=True,
+    metavar="START END",
+    help="Run Whisper only on this window, e.g. --range 03:50:00 04:10:00. "
+    "Repeatable. Words inside the window are replaced; the rest of the "
+    "existing transcript is kept.",
+)
 @_quiet_option
 def retranscribe(
     model: str,
@@ -3113,6 +3310,8 @@ def retranscribe(
     channel: str,
     no_speech_check: bool,
     no_download: bool,
+    captions: str | None,
+    ranges: tuple[tuple[str, str], ...],
     quiet: bool,
 ) -> None:
     """Re-run transcription against the loaded source. Keeps frames + spec.
@@ -3134,6 +3333,12 @@ def retranscribe(
 
     Use ``--no-download`` for hermetic runs. Pre-warm a missing model with
     ``moviestar models pull MODEL``.
+
+    Pass ``--captions FILE.vtt`` to replace the transcript with imported
+    captions, and ``--range START END`` to run Whisper on just that window
+    of a long source. A ranged run merges into the existing transcript:
+    words inside the window are replaced and the rest are kept, so windows
+    can be added one at a time.
 
     Walks up to find the nearest ``moviestar/`` workspace, so it
     works from any subdir of the project.
@@ -3159,7 +3364,19 @@ def retranscribe(
             "moved-to path, or restore the source at the original location.",
         )
 
-    requirement = model_download_requirement(model)
+    caption_path = (
+        _checked_caption_path("retranscribe", captions) if captions else None
+    )
+    windows = (
+        _checked_transcribe_windows(
+            "retranscribe", ranges, float(source["duration"]["seconds"])
+        )
+        if ranges
+        else []
+    )
+    whisper_runs = not caption_path or bool(windows)
+
+    requirement = model_download_requirement(model) if whisper_runs else None
     if no_download and requirement is not None:
         _error_exit_with_hint(
             "retranscribe",
@@ -3171,24 +3388,54 @@ def retranscribe(
         )
 
     if not quiet:
+        action = (
+            f"with {model!r}"
+            if whisper_runs
+            else f"from {os.path.basename(caption_path)}"
+        )
         click.echo(
-            f"Retranscribing {os.path.basename(source_path)} with {model!r}... "
+            f"Retranscribing {os.path.basename(source_path)} {action}... "
             "(--quiet silences progress)",
             err=True,
         )
     start_time = time.time()
 
+    whisper_options = {
+        "model": model,
+        "vocabulary": _normalize_vocabulary(vocabulary),
+        "allow_download": not no_download,
+        "quiet": quiet,
+        "channel": channel,
+        "speech_check": not no_speech_check,
+    }
     try:
-        transcript = transcribe_file(
-            source_path,
-            source_id,
-            model=model,
-            vocabulary=_normalize_vocabulary(vocabulary),
-            allow_download=not no_download,
-            quiet=quiet,
-            channel=channel,
-            speech_check=not no_speech_check,
-        )
+        if caption_path:
+            transcript = import_caption_transcript(
+                caption_path,
+                source_id,
+                source_duration=float(source["duration"]["seconds"]),
+                source_path=source_path,
+            )
+        elif windows:
+            try:
+                transcript = load_transcript(source)
+            except (json.JSONDecodeError, FileNotFoundError):
+                transcript = None
+        if windows:
+            transcript = merge_range_transcript(
+                transcript,
+                transcribe_ranges(
+                    source_path,
+                    source_id,
+                    windows,
+                    source_duration=float(source["duration"]["seconds"]),
+                    **whisper_options,
+                ),
+            )
+        elif not caption_path:
+            transcript = transcribe_file(source_path, source_id, **whisper_options)
+    except CaptionImportError as exc:
+        _error_exit_with_hint("retranscribe", str(exc), CAPTIONS_HINT)
     except TranscriptionError as exc:
         _error_exit("retranscribe", f"Transcription failed: {exc}")
 
@@ -3199,14 +3446,9 @@ def retranscribe(
     # Update project.json's source.transcript metadata so subsequent
     # status / load output reports the new model rather than a stale
     # value from the original load.
-    source["transcript"] = {
-        # Same shape create_workspace writes (issue #42 friction agent
-        # caught the divergence): `model` is what status / inspect
-        # surface; `source` is the legacy field kept for back-compat.
-        "model": model,
-        "source": f"whisper:{model}",
-        "path": f"{TRANSCRIPTS_DIR}/{source_id}.json",
-    }
+    # Same shape create_workspace writes (issue #42 friction agent
+    # caught the divergence).
+    source["transcript"] = transcript_reference(transcript, source_id)
     # Clear any prior --no-transcribe / no-audio reason — there's a
     # transcript now.
     source.pop("transcription_skipped_reason", None)
@@ -3226,7 +3468,8 @@ def retranscribe(
             "path": source_path,
         },
         "transcript": {
-            "model": model,
+            "model": transcript.get("model"),
+            **_transcript_summary(transcript),
             "path": str(transcript_path),
             "word_count": len(transcript.get("words", [])),
             "duration": transcript.get("duration"),
@@ -3237,7 +3480,13 @@ def retranscribe(
             ),
         },
         "hint": (
-            "Transcript replaced. Frames and spec are unchanged. Run "
+            (
+                "Whisper words replaced the transcript inside the range(s); "
+                "words outside were kept."
+                if windows
+                else "Transcript replaced."
+            )
+            + " Frames and spec are unchanged. Run "
             "'moviestar skim --words' to verify the new word-level "
             "timing, or 'moviestar status' to see the project at a "
             "glance."
@@ -6060,6 +6309,175 @@ def batch(recipe: str, dry_run: bool, jobs: int) -> None:
     click.echo(json.dumps(result, indent=2))
 
 
+def _platform_preview_temp_path(output: str) -> str:
+    path = Path(output)
+    suffix = path.suffix or ".jpg"
+    return str(path.with_name(f".{path.stem}.platform-preview{suffix}"))
+
+
+def _platform_preview_targets(
+    planned_overlays: dict | None,
+    slots: list[dict] | None,
+    canvas: tuple[int, int],
+    scene_name: str | None = None,
+) -> list[dict]:
+    """Known canvas-space targets worth checking at one result frame."""
+    targets = [
+        {
+            "id": plan["id"],
+            "type": "overlay",
+            "bounds": dict(plan["estimated_bounds"]),
+        }
+        for plan in (planned_overlays or {}).get("plans", [])
+    ]
+    canvas_area = canvas[0] * canvas[1]
+    for slot in slots or []:
+        bounds = slot.get("region")
+        if not bounds:
+            continue
+        area = bounds["width"] * bounds["height"]
+        # Full-canvas/main video naturally sits behind player UI. Linting it
+        # would be a permanent false positive because MovieStar does not know
+        # which source pixels are important. Small floating/inset slots are
+        # intentional geometry and still actionable; large split-screen cells
+        # stay a visual-review concern for the same reason as the main video.
+        if area > canvas_area * 0.30:
+            continue
+        slot_id = slot["slot"]
+        if scene_name:
+            slot_id = f"{scene_name}:{slot_id}"
+        targets.append(
+            {
+                "id": slot_id,
+                "type": "layout_slot",
+                "bounds": dict(bounds),
+            }
+        )
+    return targets
+
+
+def _plan_platform_preview(
+    platform: str | None,
+    canvas: tuple[int, int],
+    output: str,
+    *,
+    planned_overlays: dict | None = None,
+    slots: list[dict] | None = None,
+    scene_name: str | None = None,
+) -> dict | None:
+    if platform is None:
+        return None
+    profile = resolve_platform_profile(platform, canvas)
+    targets = _platform_preview_targets(
+        planned_overlays, slots, canvas, scene_name=scene_name
+    )
+    collisions = lint_platform_targets(profile, targets)
+    font_path = resolve_font(DEFAULT_FONT_FAMILY, "bold")["path"]
+    temp_output = _platform_preview_temp_path(output)
+    ffmpeg_command = build_platform_preview_command(
+        output, temp_output, profile, font_path
+    )
+    return {
+        "profile": profile,
+        "targets": targets,
+        "collisions": collisions,
+        "font_path": font_path,
+        "input_path": output,
+        "temp_output": temp_output,
+        "ffmpeg_command": ffmpeg_command,
+    }
+
+
+def _platform_preview_warnings(planned: dict) -> list[dict]:
+    profile = planned["profile"]
+    warnings = [
+        _warning(
+            issue["code"],
+            issue["message"],
+            source="platform_preview",
+            **{
+                key: value
+                for key, value in issue.items()
+                if key not in {"code", "message"}
+            },
+        )
+        for issue in planned["collisions"]
+    ]
+    if not canvas_matches_platform_aspect(profile):
+        canvas = profile["canvas"]
+        warnings.append(
+            _warning(
+                "platform_canvas_aspect_mismatch",
+                f"{profile['label']} preview expects a 9:16 canvas, but this "
+                f"frame is {canvas['width']}x{canvas['height']}. The UI mask "
+                "was scaled for reference; compose with --canvas short for "
+                "delivery-shaped verification.",
+                source="platform_preview",
+                platform=profile["platform"],
+                profile_version=profile["version"],
+                canvas=canvas,
+                expected_aspect_ratio="9:16",
+            )
+        )
+    return warnings
+
+
+def _platform_preview_envelope(planned: dict, *, annotated: bool) -> dict:
+    profile = planned["profile"]
+    return {
+        "platform": profile["platform"],
+        "label": profile["label"],
+        "profile_version": profile["version"],
+        "expected_aspect_ratio": profile["expected_aspect_ratio"],
+        "canvas": profile["canvas"],
+        "guidance_url": profile["guidance_url"],
+        "ui_regions": profile["ui_regions"],
+        "known_targets_checked": len(planned["targets"]),
+        "known_targets": planned["targets"],
+        "collisions": planned["collisions"],
+        "annotated": annotated,
+        "ocr_performed": False,
+        "limitations": (
+            "Checks only geometry MovieStar authored and can resolve. No OCR "
+            "or object detection was performed, so text and important content "
+            "already baked-in to source pixels were not checked."
+        ),
+        "ffmpeg_command": planned["ffmpeg_command"],
+    }
+
+
+def _attach_platform_preview(
+    result: dict, planned: dict | None, *, annotated: bool
+) -> None:
+    if planned is None:
+        return
+    result["platform_preview"] = _platform_preview_envelope(
+        planned, annotated=annotated
+    )
+    _add_warnings(result, _platform_preview_warnings(planned))
+
+
+def _render_platform_preview_in_place(command: str, planned: dict | None) -> None:
+    if planned is None:
+        return
+    temp_output = planned["temp_output"]
+    try:
+        render_platform_preview(
+            planned["input_path"],
+            temp_output,
+            planned["profile"],
+            planned["font_path"],
+        )
+        os.replace(temp_output, planned["input_path"])
+    except FFmpegCapabilityError as exc:
+        _ffmpeg_capability_error_exit(command, exc)
+    except (FFmpegNotFoundError, FileNotFoundError, RuntimeError) as exc:
+        _error_exit(command, f"Could not draw platform preview: {exc}")
+    finally:
+        if os.path.exists(temp_output):
+            os.remove(temp_output)
+
+
 @cli.command()
 @project_workspace_option
 @click.argument("video", type=click.Path(), required=False)
@@ -6097,6 +6515,15 @@ def batch(recipe: str, dry_run: bool, jobs: int) -> None:
     "Has no effect in file mode.",
 )
 @click.option(
+    "--platform",
+    type=click.Choice(PLATFORM_CHOICES),
+    default=None,
+    help="Overlay a versioned social-player UI reference mask and lint known "
+    "MovieStar overlay/slot geometry. Choices: tiktok, instagram-reels, "
+    "youtube-shorts. This deterministic check does not use OCR or inspect "
+    "text/content already baked into source pixels.",
+)
+@click.option(
     "--dry-run",
     "dry_run",
     is_flag=True,
@@ -6109,6 +6536,7 @@ def screenshot(
     output: str | None,
     inline: bool,
     source_arg: str | None,
+    platform: str | None,
     dry_run: bool,
 ) -> None:
     """Capture a single frame at a timecode.
@@ -6144,6 +6572,11 @@ def screenshot(
     as base64 under ``image: {format, base64}`` for frameworks that
     convert envelope bytes into image blocks.
 
+    Pass ``--platform tiktok|instagram-reels|youtube-shorts`` to draw a
+    versioned social-player UI reference mask. Project-aware screenshots also
+    warn when active MovieStar text or small slots intersect those regions.
+    The check never runs OCR or object detection on source pixels.
+
     Why JPEG default: at the same 720p frame, JPEG (q=2) is roughly
     5x more token-efficient than PNG once read by a model (and once
     base64-encoded under --inline) — ~16K
@@ -6165,10 +6598,14 @@ def screenshot(
     paths_only = not inline
     input_file = file_path or video
     if input_file is None:
-        _screenshot_in_project(at_seconds, output, paths_only, source_arg, dry_run)
+        _screenshot_in_project(
+            at_seconds, output, paths_only, source_arg, platform, dry_run
+        )
         return
 
-    _screenshot_file_mode(input_file, at_seconds, output, paths_only, dry_run)
+    _screenshot_file_mode(
+        input_file, at_seconds, output, paths_only, platform, dry_run
+    )
 
 
 def _screenshot_file_mode(
@@ -6176,6 +6613,7 @@ def _screenshot_file_mode(
     at_seconds: float,
     output: str | None,
     paths_only: bool,
+    platform: str | None,
     dry_run: bool,
 ) -> None:
     """Render a frame from a raw file without project awareness."""
@@ -6218,6 +6656,18 @@ def _screenshot_file_mode(
         )
     abs_output = os.path.realpath(output)
     _validate_output_parent("screenshot", abs_output)
+    platform_preview = None
+    if platform is not None:
+        frame_width = int((video_stream or {}).get("width") or 0)
+        frame_height = int((video_stream or {}).get("height") or 0)
+        if not frame_width or not frame_height:
+            _error_exit(
+                "screenshot",
+                "Could not determine frame dimensions for --platform preview.",
+            )
+        platform_preview = _plan_platform_preview(
+            platform, (frame_width, frame_height), abs_output
+        )
 
     if dry_run:
         result: dict = {
@@ -6235,6 +6685,7 @@ def _screenshot_file_mode(
                 "--dry-run to capture this frame."
             ),
         }
+        _attach_platform_preview(result, platform_preview, annotated=False)
         click.echo(json.dumps(result, indent=2))
         return
 
@@ -6247,6 +6698,7 @@ def _screenshot_file_mode(
     except RuntimeError as exc:
         _error_exit("screenshot", str(exc))
 
+    _render_platform_preview_in_place("screenshot", platform_preview)
     width, height = _probe_output_dimensions(abs_output)
 
     result: dict = {
@@ -6264,6 +6716,7 @@ def _screenshot_file_mode(
     # matches skim/inspect thumbnail entries.
     if not paths_only:
         result["image"] = _read_image_inline(abs_output)
+    _attach_platform_preview(result, platform_preview, annotated=True)
     click.echo(json.dumps(result, indent=2))
 
 
@@ -6272,6 +6725,7 @@ def _screenshot_in_project(
     output: str | None,
     paths_only: bool,
     source_arg: str | None,
+    platform: str | None,
     dry_run: bool,
 ) -> None:
     """Project mode: --at is in result-time. Resolve through the spec."""
@@ -6304,6 +6758,7 @@ def _screenshot_in_project(
                 at_seconds=at_seconds,
                 output=output,
                 paths_only=paths_only,
+                platform=platform,
                 dry_run=dry_run,
             )
             return
@@ -6346,6 +6801,18 @@ def _screenshot_in_project(
         )
     abs_output = os.path.realpath(output)
     _validate_output_parent("screenshot", abs_output)
+    platform_preview = None
+    if platform is not None:
+        frame_width = int(source.get("width") or 0)
+        frame_height = int(source.get("height") or 0)
+        if not frame_width or not frame_height:
+            _error_exit(
+                "screenshot",
+                "Could not determine frame dimensions for --platform preview.",
+            )
+        platform_preview = _plan_platform_preview(
+            platform, (frame_width, frame_height), abs_output
+        )
 
     if dry_run:
         result = {
@@ -6365,6 +6832,7 @@ def _screenshot_in_project(
                 "--dry-run to capture this project frame."
             ),
         }
+        _attach_platform_preview(result, platform_preview, annotated=False)
         click.echo(json.dumps(result, indent=2))
         return
 
@@ -6377,6 +6845,7 @@ def _screenshot_in_project(
     except RuntimeError as exc:
         _error_exit("screenshot", str(exc))
 
+    _render_platform_preview_in_place("screenshot", platform_preview)
     width, height = _probe_output_dimensions(abs_output)
 
     result: dict = {
@@ -6393,6 +6862,7 @@ def _screenshot_in_project(
     }
     if not paths_only:
         result["image"] = _read_image_inline(abs_output)
+    _attach_platform_preview(result, platform_preview, annotated=True)
     click.echo(json.dumps(result, indent=2))
 
 
@@ -6405,6 +6875,7 @@ def _screenshot_scene_layout_composition(
     at_seconds: float,
     output: str | None,
     paths_only: bool,
+    platform: str | None,
     dry_run: bool,
 ) -> None:
     plan, render_plan = _scene_render_plan_at(
@@ -6469,6 +6940,14 @@ def _screenshot_scene_layout_composition(
         )
     scene_out = dict(active_scene)
     scene_out["slots"] = slots_at_time
+    platform_preview = _plan_platform_preview(
+        platform,
+        render_plan["canvas_tuple"],
+        abs_output,
+        planned_overlays=planned_overlays,
+        slots=slots_at_time,
+        scene_name=active_scene.get("scene") or active_scene.get("name"),
+    )
     base_result = {
         "mode": "scene_composition",
         "composition_type": "scenes",
@@ -6501,6 +6980,7 @@ def _screenshot_scene_layout_composition(
                 "--dry-run to capture this scene frame."
             ),
         }
+        _attach_platform_preview(result, platform_preview, annotated=False)
         click.echo(json.dumps(result, indent=2))
         return
 
@@ -6520,6 +7000,7 @@ def _screenshot_scene_layout_composition(
     except RuntimeError as exc:
         _error_exit("screenshot", str(exc))
 
+    _render_platform_preview_in_place("screenshot", platform_preview)
     width, height = _probe_output_dimensions(abs_output)
     result = {
         **base_result,
@@ -6532,6 +7013,7 @@ def _screenshot_scene_layout_composition(
     }
     if not paths_only:
         result["image"] = _read_image_inline(abs_output)
+    _attach_platform_preview(result, platform_preview, annotated=True)
     click.echo(json.dumps(result, indent=2))
 
 
@@ -20760,6 +21242,12 @@ def caption_rules(ctx: click.Context) -> None:
     Rules persist in project metadata and are applied by every future
     ``captions generate`` call before words are grouped into cues.
 
+    Matching is case-sensitive but ignores leading and trailing
+    punctuation on transcript words, which the replacement keeps:
+    'Moviestar=moviestar' turns "Moviestar." into "moviestar.".
+    Generate and add report per-rule counts and warn when a rule
+    matched nothing.
+
     Split rules divide the source and result spans into equal timing
     slices. Their children have distinct anchors for break/join edits,
     while suppressing any child suppresses its whole source token.
@@ -20795,9 +21283,11 @@ def caption_rules(ctx: click.Context) -> None:
                     "and result spans are divided into equal timing slices. "
                     "Split children have distinct break/join anchors; "
                     "suppression remains atomic to the whole source token. "
-                    "Matching is case-sensitive. Add and list "
-                    "report current application counts when a derived caption "
-                    "track exists."
+                    "Matching is case-sensitive and ignores leading/trailing "
+                    "punctuation on transcript words, which the replacement "
+                    "keeps. Generate, add, and list report per-rule "
+                    "application counts when a derived caption track exists; "
+                    "generate and add warn when a rule matched nothing."
                 ),
             },
             indent=2,
@@ -20917,6 +21407,25 @@ def _caption_rules_current_applications(
     if unavailable_tracks:
         result["unavailable_tracks"] = unavailable_tracks
     return result
+
+
+def _caption_rule_unmatched_warnings(
+    rules: list[dict], rule_ids: list[str]
+) -> list[dict]:
+    """Warn for each rule that matched no words in a caption pass."""
+    by_id = {rule["id"]: rule for rule in rules}
+    return [
+        _warning(
+            "caption_rule_unmatched",
+            f"Caption rule {rule_id} ({by_id[rule_id]['type']} "
+            f"{' '.join(by_id[rule_id]['match'])!r} -> "
+            f"{by_id[rule_id]['replacement']!r}) matched no caption words. "
+            "Matching is case-sensitive and ignores only leading/trailing "
+            "punctuation; inspect exact text with 'moviestar captions dump'.",
+            rule_id=rule_id,
+        )
+        for rule_id in rule_ids
+    ]
 
 
 def _caption_rules_list_result(
@@ -21042,7 +21551,8 @@ def caption_rules_add(
     if current_rule["applications_count"] == 0:
         hint = (
             "The rule is stored but currently matches no words on derived "
-            "caption tracks. Matching is case-sensitive; inspect exact text "
+            "caption tracks. Matching is case-sensitive and ignores only "
+            "leading/trailing punctuation; inspect exact text "
             "with 'moviestar captions dump'. The rule remains available for "
             "future caption passes."
         )
@@ -21058,20 +21568,20 @@ def caption_rules_add(
             "caption pass. Current applicability is unavailable until a "
             "derived track exists; run 'moviestar captions generate' first."
         )
-    click.echo(
-        json.dumps(
-            {
-                "status": "added_caption_rule",
-                "writes_spec": False,
-                "writes_project": True,
-                "rule": rule,
-                "rules_count": len(project["caption_rules"]),
-                "current_applications": current,
-                "hint": hint,
-            },
-            indent=2,
+    result = {
+        "status": "added_caption_rule",
+        "writes_spec": False,
+        "writes_project": True,
+        "rule": rule,
+        "rules_count": len(project["caption_rules"]),
+        "current_applications": current,
+        "hint": hint,
+    }
+    if current_rule["applications_count"] == 0:
+        _add_warnings(
+            result, _caption_rule_unmatched_warnings([rule], [rule["id"]])
         )
-    )
+    click.echo(json.dumps(result, indent=2))
 
 
 @caption_rules.command("remove")
@@ -21820,6 +22330,11 @@ def captions_generate(
     needed_sources = meta["needed_sources"]
     cues = meta["cues"]
     caption_rules_report = meta["caption_rules_report"]
+    warnings.extend(
+        _caption_rule_unmatched_warnings(
+            caption_rule_values, caption_rules_report["unmatched_rule_ids"]
+        )
+    )
     unmapped = meta["unmapped"]
     recipe["cache_fingerprint"] = _caption_cache_fingerprint(
         project, spec, recipe
@@ -23959,6 +24474,7 @@ def status() -> None:
                 transcript_data = json.loads(transcript_path.read_text())
                 section["transcript"] = {
                     "model": transcript_info.get("model"),
+                    **_transcript_summary(transcript_data),
                     "path": str(transcript_path),
                     "word_count": len(transcript_data.get("words", [])),
                     "duration": transcript_data.get("duration"),

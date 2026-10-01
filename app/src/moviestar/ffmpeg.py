@@ -71,6 +71,7 @@ FFMPEG_FEATURE_REQUIREMENTS: tuple[dict, ...] = (
             "overlay/title burn-in on composition export, screenshot, "
             "watch, and inspect",
             "caption burn-in",
+            "social-platform screenshot reference masks",
             "storyboard timecode labels (the sheet renders unlabeled "
             "with a warning)",
         ],
@@ -1082,6 +1083,39 @@ def run_audio_energy_probe(
     return _parse_audio_energy_spans(result.stderr, duration_seconds)
 
 
+def build_audio_window_command(
+    media_path: str, start_time: float, duration: float, output_path: str
+) -> list[str]:
+    """Return the argv that cuts one audio window to 16 kHz PCM WAV.
+
+    Channels are kept so the stereo-phase check still sees both sides.
+    """
+    return [
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-ss", f"{start_time:.3f}", "-t", f"{duration:.3f}",
+        "-i", media_path,
+        "-map", "0:a:0", "-vn", "-ar", "16000", "-c:a", "pcm_s16le",
+        output_path,
+    ]
+
+
+def extract_audio_window(
+    media_path: str, start_time: float, duration: float, output_path: str
+) -> None:
+    """Cut ``duration`` seconds of audio from ``start_time`` into a WAV,
+    so ranged transcription decodes only the window (issue #29)."""
+    if not os.path.exists(media_path):
+        raise FileNotFoundError(f"File not found: {media_path}")
+    check_ffmpeg_available()
+    result = subprocess.run(
+        build_audio_window_command(media_path, start_time, duration, output_path),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(_failure_message("ffmpeg", result))
+
+
 def build_loudness_probe_command(
     media_path: str,
     start_time: float | None = None,
@@ -1346,6 +1380,75 @@ def extract_frame(
     check_ffmpeg_available()
 
     cmd = build_extract_frame_command(video_path, at_seconds, output_path, quality)
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(_failure_message("ffmpeg", result))
+    return cmd
+
+
+def build_platform_preview_command(
+    input_path: str,
+    output_path: str,
+    profile: dict,
+    font_path: str,
+    quality: int = 2,
+) -> list[str]:
+    """Build one image-to-image pass that draws platform UI regions.
+
+    The mask is deliberately schematic: translucent red occlusion regions,
+    solid borders, and labels.  It is a review aid, not a branded app replica.
+    """
+    canvas = profile["canvas"]
+    font_size = max(12, round(min(canvas["width"], canvas["height"]) / 32))
+    border = max(2, round(min(canvas["width"], canvas["height"]) / 270))
+    pad = max(4, round(font_size / 4))
+    escaped_font = _filtergraph_escape(font_path)
+    filters: list[str] = []
+    for region in profile["ui_regions"]:
+        bounds = region["bounds"]
+        box = (
+            f"x={bounds['x']}:y={bounds['y']}:"
+            f"w={bounds['width']}:h={bounds['height']}"
+        )
+        filters.append(f"drawbox={box}:color=red@0.18:t=fill")
+        filters.append(f"drawbox={box}:color=red@0.9:t={border}")
+        label = f"{profile['label']} - {region['label']}"
+        estimated_label_width = round(len(label) * font_size * 0.55) + 2 * pad
+        label_x = min(
+            bounds["x"] + pad,
+            max(pad, canvas["width"] - estimated_label_width - pad),
+        )
+        filters.append(
+            f"drawtext=fontfile={escaped_font}:text='{label}':"
+            f"x={label_x}:y={bounds['y'] + pad}:"
+            f"fontsize={font_size}:fontcolor=white:box=1:"
+            "boxcolor=red@0.75:boxborderw=4"
+        )
+    return [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-i", input_path,
+        "-frames:v", "1",
+        "-vf", ",".join(filters),
+        "-q:v", str(quality),
+        output_path,
+    ]
+
+
+def render_platform_preview(
+    input_path: str,
+    output_path: str,
+    profile: dict,
+    font_path: str,
+    quality: int = 2,
+) -> list[str]:
+    """Draw a platform reference mask over an existing frame."""
+    if not os.path.exists(input_path):
+        raise FileNotFoundError(f"File not found: {input_path}")
+    check_ffmpeg_available()
+    check_ffmpeg_drawtext_filter_available()
+    cmd = build_platform_preview_command(
+        input_path, output_path, profile, font_path, quality
+    )
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(_failure_message("ffmpeg", result))

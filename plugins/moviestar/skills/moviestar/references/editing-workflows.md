@@ -17,6 +17,17 @@ Choose the smallest workflow that satisfies the request. Run the relevant
    boundaries. For independent source-time clips that must not alter the edit,
    use `clip` or an atomic `batch` recipe instead.
 
+## Work with long recordings
+
+Whisper on hours of footage takes hours. When the source has captions, such
+as YouTube captions or a broadcaster's SRT, load them instead with
+`load VIDEO --captions FILE.vtt`. This takes seconds, and the transcript
+records `backend: "imported-captions"`. To get Whisper quality only where it
+matters, use `load VIDEO --transcribe-range START END` or
+`retranscribe --range START END`. Whisper then runs on that window alone,
+and a ranged run replaces only the words inside the window. Do not parse
+caption files or write transcript JSON yourself.
+
 ## Browse visual or silent footage
 
 Use `storyboard` for a whole-source map, `skim` for indexed frames plus
@@ -42,7 +53,10 @@ audio cannot be judged from still frames.
 - Use `captions generate` for transcript-derived captions and
   `captions import` for SRT/VTT sources.
 - Use caption rules for repeatable token corrections; use dump/edit/set or the
-  caption edit commands for cue-level changes.
+  caption edit commands for cue-level changes. Rules ignore leading/trailing
+  punctuation and keep it, so one rule covers `Moviestar` and `Moviestar.`.
+  Check `caption_rule_unmatched` warnings after `captions generate` or
+  `captions rules add` for rules that matched nothing.
 - Use `captions placement` for caption size and position: `--at`, `--size`,
   `--margin`, `--width`, or `--x/--y`, scoped with `--scene` or `--layout`.
   Run it with no flags to read the current placement and exact pixels, and
