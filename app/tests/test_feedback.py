@@ -46,6 +46,10 @@ def test_feedback_defaults_to_template_with_required_and_optional_agent_prompts(
     assert "## What worked well (optional)" in result.stdout
     assert "## Ideas (optional)" in result.stdout
     assert "## Wild idea (optional)" in result.stdout
+    assert "## Likelihood to recommend MovieStar (optional)" in result.stdout
+    assert "0 (not at all likely) to 10 (extremely likely)" in result.stdout
+    assert "how likely are you to recommend MovieStar to others?" in result.stdout
+    assert "## Why or why not? (optional)" in result.stdout
     assert "## Follow-up email (optional)" in result.stdout
     assert "when this feedback has been addressed" in result.stdout
 

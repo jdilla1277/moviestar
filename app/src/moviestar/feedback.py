@@ -49,6 +49,12 @@ Concrete improvements suggested by this experience.
 ## Wild idea (optional)
 If MovieStar could change more fundamentally, what would you try?
 
+## Likelihood to recommend MovieStar (optional)
+On a scale from 0 (not at all likely) to 10 (extremely likely), how likely are you to recommend MovieStar to others?
+
+## Why or why not? (optional)
+What is the main reason for your score?
+
 ## Follow-up email (optional)
 <!-- Leave an email address to get a note when this feedback has been addressed. -->
 """
@@ -185,9 +191,10 @@ def feedback(
     """Create or send guided feedback to the MovieStar team.
 
     Run without options to print a guided report with required context plus
-    optional debugging, positive-feedback, idea, and wild-idea prompts. Fill
-    it in and submit it with --file. Use --quick only for a deliberately short
-    note. --template remains an explicit alias for printing the report.
+    optional debugging, positive-feedback, idea, wild-idea, and recommendation
+    prompts. Fill it in and submit it with --file. Use --quick only for a
+    deliberately short note. --template remains an explicit alias for printing
+    the report.
 
     Feedback is anonymous unless you complete the optional follow-up email
     section. That address is stored separately so the team can send a note when
