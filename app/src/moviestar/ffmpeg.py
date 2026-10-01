@@ -980,6 +980,86 @@ def _parse_audio_energy_spans(
     return spans
 
 
+def build_stereo_phase_probe_command(media_path: str) -> list[str]:
+    """One pass measuring mid (L+R), side (L-R), left, and right loudness.
+
+    When mid is much quieter than side, the channels are out of phase and
+    a mono mixdown cancels what they carry — usually speech.
+    """
+    return [
+        "ffmpeg",
+        "-hide_banner",
+        "-nostats",
+        "-loglevel",
+        "info",
+        "-i",
+        media_path,
+        "-map",
+        "0:a:0",
+        "-vn",
+        "-af",
+        (
+            "pan=4c|c0=0.5*c0+0.5*c1|c1=0.5*c0-0.5*c1|c2=c0|c3=c1,"
+            "astats=measure_perchannel=RMS_level:measure_overall=none"
+        ),
+        "-f",
+        "null",
+        "-",
+    ]
+
+
+_AUDIO_LAYOUT_RE = re.compile(r"Audio: [^\n]*?\d+ Hz, ([^,\n]+)")
+_RMS_LEVEL_RE = re.compile(r"RMS level dB: (-?inf|-?\d+(?:\.\d+)?)")
+
+
+def _parse_stereo_phase(stderr: str) -> dict | None:
+    """Correlation of the first two channels from mid/side power.
+
+    For equal-power channels, (M^2 - S^2) / (M^2 + S^2) is the Pearson
+    correlation of left and right: +1 in phase, 0 unrelated, -1 inverted.
+    """
+    layout = _AUDIO_LAYOUT_RE.search(stderr)
+    # FFmpeg 7+ prints "mono"; 6.x prints "1 channels" for WAVs without a
+    # channel layout.
+    if layout is None or layout.group(1).strip() in ("mono", "1 channels"):
+        return None
+    levels = _RMS_LEVEL_RE.findall(stderr)
+    if len(levels) < 4:
+        return None
+    mid_db, side_db, left_db, right_db = (
+        float("-inf") if level.endswith("inf") else float(level)
+        for level in levels[:4]
+    )
+    # A silent channel (or a mono source upmixed by pan) cannot cancel
+    # the other one, so there is no phase question to answer.
+    if float("-inf") in (left_db, right_db):
+        return None
+    mid_power, side_power = (
+        0.0 if db == float("-inf") else 10 ** (db / 10) for db in (mid_db, side_db)
+    )
+    return {
+        "correlation": round((mid_power - side_power) / (mid_power + side_power), 3),
+        "left_rms_db": round(left_db, 2),
+        "right_rms_db": round(right_db, 2),
+    }
+
+
+def run_stereo_phase_probe(media_path: str) -> dict | None:
+    """Stereo phase of a file's first audio stream, or None for mono,
+    silent, or unreadable audio. Raises FileNotFoundError if missing."""
+    if not os.path.exists(media_path):
+        raise FileNotFoundError(f"File not found: {media_path}")
+    check_ffmpeg_available()
+    result = subprocess.run(
+        build_stereo_phase_probe_command(media_path),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    return _parse_stereo_phase(result.stderr)
+
+
 def run_audio_energy_probe(
     media_path: str,
     duration_seconds: float,

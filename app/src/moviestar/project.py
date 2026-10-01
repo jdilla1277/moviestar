@@ -467,6 +467,8 @@ def _build_source_entry(
     quiet: bool,
     frames: bool = True,
     vocabulary: list[str] | None = None,
+    channel: str = "auto",
+    speech_check: bool = True,
     start_offset_seconds: float | None = None,
     allow_model_download: bool = True,
     thumb_width: int = DEFAULT_THUMB_WIDTH,
@@ -541,6 +543,8 @@ def _build_source_entry(
             quiet=quiet,
             vocabulary=vocabulary,
             allow_download=allow_model_download,
+            channel=channel,
+            speech_check=speech_check,
         )
         save_transcript(transcript, source_id, cwd)
         entry["transcript"] = {
@@ -570,6 +574,8 @@ def create_workspace(
     quiet: bool = False,
     frames: bool = True,
     vocabulary: list[str] | None = None,
+    channel: str = "auto",
+    speech_check: bool = True,
     start_offsets: list[float | None] | None = None,
     allow_model_download: bool = True,
     thumb_width: int = DEFAULT_THUMB_WIDTH,
@@ -670,6 +676,8 @@ def create_workspace(
             quiet=quiet,
             frames=frames,
             vocabulary=vocabulary,
+            channel=channel,
+            speech_check=speech_check,
             start_offset_seconds=start_offset_seconds,
             thumb_width=thumb_width,
             allow_model_download=allow_model_download,

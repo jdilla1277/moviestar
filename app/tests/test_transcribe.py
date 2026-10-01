@@ -465,6 +465,23 @@ class _FakeWhisperModel:
         return iter(self.segments), _FakeInfo(duration=60.0, language="en")
 
 
+def _stub_audio_checks(monkeypatch, seconds: float) -> None:
+    """Skip decoding and audio checks for placeholder files: mono audio
+    that voice activity detection says is all speech, so Whisper runs."""
+    import numpy as np
+
+    monkeypatch.setattr(
+        "moviestar.transcribe._load_audio",
+        lambda path, channel: np.zeros(int(seconds * 16000), dtype=np.float32),
+    )
+    monkeypatch.setattr(
+        "moviestar.transcribe._detect_speech", lambda audio: [(0.0, seconds)]
+    )
+    monkeypatch.setattr(
+        "moviestar.transcribe.run_stereo_phase_probe", lambda path: None
+    )
+
+
 @pytest.fixture
 def _no_speech_model(monkeypatch, tmp_path):
     """Patch WhisperModel to yield zero segments; return a real file path."""
@@ -472,6 +489,7 @@ def _no_speech_model(monkeypatch, tmp_path):
 
     monkeypatch.setattr(faster_whisper, "WhisperModel", _FakeWhisperModel)
     monkeypatch.setattr("moviestar.transcribe.is_model_cached", lambda m: True)
+    _stub_audio_checks(monkeypatch, 60.0)
     audio = tmp_path / "silent.wav"
     audio.write_bytes(b"\x00")  # only existence is checked before model load
     return str(audio)
@@ -555,6 +573,7 @@ def _capturing_model(monkeypatch, tmp_path):
     _CapturingWhisperModel.last_init_kwargs = {}
     monkeypatch.setattr(faster_whisper, "WhisperModel", _CapturingWhisperModel)
     monkeypatch.setattr("moviestar.transcribe.is_model_cached", lambda m: True)
+    _stub_audio_checks(monkeypatch, 2.0)
     audio = tmp_path / "clip.wav"
     audio.write_bytes(b"\x00")
     return str(audio)
