@@ -765,8 +765,8 @@ def disconnect() -> None:
 def open_account() -> None:
     """Open the human's MovieStar account page.
 
-    The account page manages the handle, password, and connected installations.
-    It is separate from local MovieStar projects.
+    The account page shows the human's handle and lets them revoke connected
+    installations. It is separate from local MovieStar projects.
 
     """
     url = _account_url()
