@@ -17,6 +17,17 @@ Choose the smallest workflow that satisfies the request. Run the relevant
    boundaries. For independent source-time clips that must not alter the edit,
    use `clip` or an atomic `batch` recipe instead.
 
+## Work with long recordings
+
+Whisper on hours of footage takes hours. When the source has captions, such
+as YouTube captions or a broadcaster's SRT, load them instead with
+`load VIDEO --captions FILE.vtt`. This takes seconds, and the transcript
+records `backend: "imported-captions"`. To get Whisper quality only where it
+matters, use `load VIDEO --transcribe-range START END` or
+`retranscribe --range START END`. Whisper then runs on that window alone,
+and a ranged run replaces only the words inside the window. Do not parse
+caption files or write transcript JSON yourself.
+
 ## Browse visual or silent footage
 
 Use `storyboard` for a whole-source map, `skim` for indexed frames plus
