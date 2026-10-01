@@ -26,8 +26,12 @@ records `backend: "imported-captions"`. For a YouTube or other public video
 page, pass the URL instead: `load VIDEO --captions URL` fetches the English
 captions with yt-dlp (`pip install 'moviestar[url-captions]'`), saves them in
 `moviestar/captions/`, and reuses that file offline when the URL is passed
-again. A video with no English captions fails with `available_captions`
-before the workspace changes. To get Whisper quality only where it
+again. Check the transcript summary: `captions_language` (such as `en-US`)
+and `captions_track` (`manual` for uploaded captions, `automatic` for speech
+recognition) say what was imported. Uploaded English captions on a video in
+another language are a translation, so the words may not match the audio.
+A video with no English captions fails with `available_captions` before the
+workspace changes. To get Whisper quality only where it
 matters, use `load VIDEO --transcribe-range START END` or
 `retranscribe --range START END`. Whisper then runs on that window alone,
 and a ranged run replaces only the words inside the window. Do not parse

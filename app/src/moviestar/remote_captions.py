@@ -16,6 +16,10 @@ ID that yt-dlp reads from the URL without a network call::
     moviestar/captions/youtube-jNQXAC9IVRw.en.vtt
     moviestar/captions/youtube-jNQXAC9IVRw.json   # url, track, language
 
+``language`` is a clean code such as ``en`` or ``en-US``. YouTube's raw
+track key can carry a track ID (``en-US-njLgzgtehjs``); it is kept as
+``track_key``.
+
 Passing the same URL again reuses the saved file, so re-runs are offline
 and repeatable even when a site's auto-captions change.
 """
@@ -91,6 +95,15 @@ def _spoken_auto_tracks(automatic: dict) -> list[str]:
     return sorted(keep)
 
 
+def _language_code(key: str, formats: list[dict]) -> str:
+    """Clean language code: the track URL's ``lang`` parameter, else the key."""
+    for fmt in formats:
+        lang = parse_qs(urlparse(fmt.get("url") or "").query).get("lang")
+        if lang and lang[0]:
+            return lang[0]
+    return key[: -len("-orig")] if key.endswith("-orig") else key
+
+
 def _rank(language: str) -> tuple:
     """Plain ``en`` first, then regional or numbered variants, ``-orig`` last."""
     return (language.lower() != "en", language.endswith("-orig"), language)
@@ -99,7 +112,8 @@ def _rank(language: str) -> tuple:
 def choose_track(info: dict, url: str) -> dict:
     """Pick the caption track to import from yt-dlp's info dict.
 
-    Returns ``{"kind": "manual"|"automatic", "language": KEY}``. Raises
+    Returns ``{"kind": "manual"|"automatic", "key": KEY, "language": CODE}``
+    where KEY is yt-dlp's track key and CODE a clean language code. Raises
     RemoteCaptionsError naming the available languages when no English
     track transcribes the speech.
     """
@@ -107,11 +121,17 @@ def choose_track(info: dict, url: str) -> dict:
     automatic = {k: v for k, v in (info.get("automatic_captions") or {}).items() if v}
     english_manual = sorted((k for k in manual if _is_english(k)), key=_rank)
     if english_manual:
-        return {"kind": MANUAL, "language": english_manual[0]}
+        key = english_manual[0]
+        return {"kind": MANUAL, "key": key, "language": _language_code(key, manual[key])}
     spoken_auto = _spoken_auto_tracks(automatic)
     english_auto = sorted((k for k in spoken_auto if _is_english(k)), key=_rank)
     if english_auto:
-        return {"kind": AUTOMATIC, "language": english_auto[0]}
+        key = english_auto[0]
+        return {
+            "kind": AUTOMATIC,
+            "key": key,
+            "language": _language_code(key, automatic[key]),
+        }
 
     available = {MANUAL: sorted(manual), AUTOMATIC: spoken_auto}
     hint = (
@@ -198,7 +218,7 @@ class YtDlpBackend:
         options = self._options(
             writesubtitles=track["kind"] == MANUAL,
             writeautomaticsub=track["kind"] == AUTOMATIC,
-            subtitleslangs=[re.escape(track["language"])],
+            subtitleslangs=[re.escape(track["key"])],
             subtitlesformat="vtt/srt/best",
             outtmpl={"default": str(out_dir / "track.%(ext)s")},
             postprocessors=[
@@ -213,7 +233,7 @@ class YtDlpBackend:
         written = sorted(out_dir.glob("track.*.vtt"))
         if not written:
             raise RemoteCaptionsError(
-                f"yt-dlp did not write the {track['language']} caption track.",
+                f"yt-dlp did not write the {track['key']} caption track.",
                 "Retry, update yt-dlp with 'pip install -U yt-dlp', or pass a "
                 "caption file you have downloaded.",
             )
@@ -297,6 +317,7 @@ def fetch_captions(
             "title": info.get("title"),
             "track": track["kind"],
             "language": track["language"],
+            "track_key": track["key"],
             "fetched_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "fetched_with": f"yt-dlp {backend.version}",
         }
@@ -330,5 +351,6 @@ def provenance(fetched: dict) -> dict:
     return {
         "url": fetched["url"],
         "track": fetched["track"],
-        "track_language": fetched["language"],
+        "language": fetched["language"],
+        "track_key": fetched["track_key"],
     }

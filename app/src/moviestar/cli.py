@@ -2260,10 +2260,18 @@ def _checked_transcribe_windows(
 def _transcript_summary(transcript: dict) -> dict:
     """Backend and range coverage for load / retranscribe / status output."""
     summary: dict = {"backend": transcript.get("backend")}
-    if transcript.get("captions"):
-        summary["captions"] = transcript["captions"].get("path")
-        if transcript["captions"].get("url"):
-            summary["captions_url"] = transcript["captions"]["url"]
+    captions = transcript.get("captions")
+    if captions:
+        summary["captions"] = captions.get("path")
+        # Fetched tracks name their language and kind (issue #39); local
+        # files report the language their header declares, if any.
+        if captions.get("url"):
+            summary["captions_url"] = captions["url"]
+        language = captions.get("language") or transcript.get("language")
+        if language:
+            summary["captions_language"] = language
+        if captions.get("track"):
+            summary["captions_track"] = captions["track"]
     if transcript.get("transcribed_ranges"):
         summary["coverage"] = transcript.get("coverage", "full")
         summary["transcribed_ranges"] = [
@@ -2845,7 +2853,9 @@ def load(
     video page's English captions with yt-dlp (uploaded captions first,
     then auto-captions; never machine translations). The track is saved
     in moviestar/captions/ and reused offline when the same URL is passed
-    again. Pass --transcribe-range START END
+    again. The transcript summary reports captions_url, captions_language
+    (e.g. "en-US"), and captions_track ("manual" uploaded captions or
+    "automatic" speech recognition). Pass --transcribe-range START END
     to run Whisper on just that window; transcripts record
     ``transcribed_ranges``.
 

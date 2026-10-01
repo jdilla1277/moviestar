@@ -67,7 +67,7 @@ class FakeBackend:
 
     def download(self, info, track, out_dir):
         self.downloaded.append(track)
-        path = Path(out_dir) / f"track.{track['language']}.vtt"
+        path = Path(out_dir) / f"track.{track['key']}.vtt"
         path.write_text(self.text)
         return path
 
@@ -107,7 +107,7 @@ class TestChooseTrack:
             manual={"en": [_track("en")], "de": [_track("de")]},
             automatic={"en": [_track("en")], "en-orig": [_track("en")]},
         )
-        assert choose_track(info, URL) == {"kind": MANUAL, "language": "en"}
+        assert choose_track(info, URL) == {"kind": MANUAL, "key": "en", "language": "en"}
 
     def test_regional_uploaded_tracks_count_as_english(self):
         info = _info(
@@ -117,7 +117,13 @@ class TestChooseTrack:
                 "en-eEY6OEpapPo": [_track("en")],
             }
         )
-        assert choose_track(info, URL)["language"] == "en-US-njLgzgtehjs"
+        # YouTube appends a track ID to the key; the clean code comes
+        # from the track URL's lang parameter.
+        assert choose_track(info, URL) == {
+            "kind": MANUAL,
+            "key": "en-US-njLgzgtehjs",
+            "language": "en-US",
+        }
 
     def test_auto_captions_of_english_speech(self):
         info = _info(
@@ -127,7 +133,11 @@ class TestChooseTrack:
                 "es": [_track("en", tlang="es")],
             }
         )
-        assert choose_track(info, URL) == {"kind": AUTOMATIC, "language": "en"}
+        assert choose_track(info, URL) == {
+            "kind": AUTOMATIC,
+            "key": "en",
+            "language": "en",
+        }
 
     def test_translated_auto_captions_are_never_used(self):
         info = _info(
@@ -154,7 +164,11 @@ class TestChooseTrack:
 
     def test_other_sites_auto_captions_without_orig_markers(self):
         info = _info(automatic={"en-US": [{"ext": "vtt", "url": "https://x/a.vtt"}]})
-        assert choose_track(info, URL) == {"kind": AUTOMATIC, "language": "en-US"}
+        assert choose_track(info, URL) == {
+            "kind": AUTOMATIC,
+            "key": "en-US",
+            "language": "en-US",
+        }
 
     def test_no_tracks_at_all(self):
         with pytest.raises(RemoteCaptionsError) as raised:
@@ -172,7 +186,7 @@ class TestFetchCaptions:
         assert Path(fetched["staged_path"]).read_text() == YOUTUBE_VTT
         assert fetched["track"] == MANUAL and fetched["language"] == "en"
         assert fetched["cached"] is False
-        assert fake.downloaded == [{"kind": MANUAL, "language": "en"}]
+        assert fake.downloaded == [{"kind": MANUAL, "key": "en", "language": "en"}]
         assert not (tmp_path / "cache").exists()
 
     def test_saved_track_is_reused_offline(self, tmp_path, backend):
@@ -274,11 +288,54 @@ class TestCli:
         assert actual["captions"]["path"] == str(saved.resolve())
         assert actual["captions"]["url"] == URL
         assert actual["captions"]["track"] == MANUAL
+        assert actual["captions"]["language"] == "en"
+        assert actual["captions"]["track_key"] == "en"
         record = json.loads((saved.parent / f"{KEY}.json").read_text())
         assert record["url"] == URL and record["file"] == saved.name
 
         [source] = json.loads(from_url.stdout)["sources"]
         assert source["transcript"]["captions_url"] == URL
+        assert source["transcript"]["captions_language"] == "en"
+        assert source["transcript"]["captions_track"] == MANUAL
+
+        status = json.loads(CliRunner().invoke(cli, ["status"]).stdout)
+        summary = status["sources"][0]["transcript"]
+        assert summary["captions_language"] == "en"
+        assert summary["captions_track"] == MANUAL
+
+    def test_regional_track_reports_a_clean_language_code(
+        self, test_video, tmp_path, monkeypatch, backend, no_whisper
+    ):
+        monkeypatch.chdir(tmp_path)
+        track = {"en-US-njLgzgtehjs": [_track("en-US")]}
+        backend(FakeBackend(info=_info(automatic=track)))
+
+        result = self._load(test_video, "--as", "src_0", "--no-frames", "--captions", URL)
+
+        assert result.exit_code == 0, result.stdout
+        [source] = json.loads(result.stdout)["sources"]
+        assert source["transcript"]["captions_language"] == "en-US"
+        assert source["transcript"]["captions_track"] == AUTOMATIC
+        saved = tmp_path / "moviestar" / "captions" / f"{KEY}.en-US.vtt"
+        assert saved.exists()
+        record = json.loads((saved.parent / f"{KEY}.json").read_text())
+        assert record["language"] == "en-US"
+        assert record["track_key"] == "en-US-njLgzgtehjs"
+
+    def test_local_file_reports_its_header_language(
+        self, test_video, tmp_path, monkeypatch, no_whisper
+    ):
+        monkeypatch.chdir(tmp_path)
+        vtt = tmp_path / "meeting.en.vtt"
+        vtt.write_text(YOUTUBE_VTT)
+
+        result = self._load(test_video, "--no-frames", "--captions", str(vtt))
+
+        assert result.exit_code == 0, result.stdout
+        [source] = json.loads(result.stdout)["sources"]
+        assert source["transcript"]["captions_language"] == "en"
+        assert "captions_track" not in source["transcript"]
+        assert "captions_url" not in source["transcript"]
 
     def test_no_caption_track_fails_before_the_workspace_exists(
         self, test_video, tmp_path, monkeypatch, backend
@@ -380,6 +437,8 @@ class TestCli:
         data = json.loads(first.stdout)
         assert data["transcript"]["backend"] == "imported-captions"
         assert data["transcript"]["captions_url"] == URL
+        assert data["transcript"]["captions_language"] == "en"
+        assert data["transcript"]["captions_track"] == MANUAL
         assert (tmp_path / "moviestar" / "captions" / f"{KEY}.json").exists()
 
         backend(OfflineBackend())
