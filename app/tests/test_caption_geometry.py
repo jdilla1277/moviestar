@@ -565,3 +565,99 @@ class TestReviewRegressions:
         assert data["command"] == f"captions {command}"
         assert "'middle'" in data["error"]
         assert "bottom" in data["error"] and "top-left" in data["error"]
+
+
+class TestRegenerateKeepsPlacement:
+    """#27: re-running `captions generate` must not silently discard
+    placement tuned with `captions placement`."""
+
+    def _placement(self, runner):
+        return _invoke(runner, ["captions", "placement"])["placement"]
+
+    def test_regenerate_keeps_placement_and_says_so(
+        self, runner, tmp_path, monkeypatch
+    ):
+        _project(runner, tmp_path, monkeypatch, canvas="short", scenes=2)
+        _invoke(runner, ["captions", "placement", "--size", "large", "--width", "0.7"])
+        _invoke(runner, ["captions", "placement", "--scene", "demo", "--at", "top"])
+        before = self._placement(runner)
+
+        data = _invoke(runner, ["captions", "generate", "--style", "caption-default"])
+
+        assert data["placement"]["status"] == "kept"
+        assert data["placement"]["policy"] == before
+        assert self._placement(runner) == before
+        items = _render_items(runner)
+        assert {item["font_size"] for item in items} == {90}
+        demo = [item for item in items if item["from"]["seconds"] >= 2.0]
+        assert demo and {item["anchor"] for item in demo} == {"top-center"}
+
+    def test_explicit_position_layers_over_kept_placement(
+        self, runner, tmp_path, monkeypatch
+    ):
+        _project(runner, tmp_path, monkeypatch, canvas="short", scenes=2)
+        _invoke(runner, ["captions", "placement", "--x", "0.5", "--y", "0.5",
+                         "--size", "small"])
+        _invoke(runner, ["captions", "placement", "--scene", "demo", "--at", "top"])
+
+        data = _invoke(runner, ["captions", "generate", "--position", "bottom"])
+
+        assert data["placement"]["status"] == "kept"
+        assert self._placement(runner) == {
+            "default": {"size": "small", "at": "bottom"},
+            "overrides": [{"selector": {"scene": "demo"}, "at": "top"}],
+        }
+
+    def test_reset_placement_starts_fresh(self, runner, tmp_path, monkeypatch):
+        _project(runner, tmp_path, monkeypatch, canvas="short")
+        _invoke(runner, ["captions", "placement", "--size", "small"])
+
+        data = _invoke(runner, ["captions", "generate", "--reset-placement"])
+
+        assert data["placement"]["status"] == "reset"
+        assert self._placement(runner) == {"default": {}, "overrides": []}
+        assert {item["font_size"] for item in _render_items(runner)} == {
+            DEFAULT_FONT_AT_1080
+        }
+
+    def test_first_generate_reports_default_placement(
+        self, runner, tmp_path, monkeypatch
+    ):
+        _project(runner, tmp_path, monkeypatch, canvas="short")
+        data = _invoke(runner, ["captions", "generate", "--track", "second"])
+        assert data["placement"] == {
+            "status": "default",
+            "policy": {"default": {}, "overrides": []},
+        }
+
+    def test_overrides_for_removed_scenes_are_reported_and_removable(
+        self, runner, tmp_path, monkeypatch
+    ):
+        _project(runner, tmp_path, monkeypatch, canvas="short", scenes=2)
+        _invoke(runner, ["captions", "placement", "--scene", "demo", "--at", "top"])
+        _invoke(
+            runner,
+            [
+                "scenes", "set", "--canvas", "short",
+                "--scene", "intro=single",
+                "--slot", "intro:main=src_0", "--from", "0", "--to", "4",
+                "--audio-from", "intro=src_0",
+            ],
+        )
+
+        data = _invoke(runner, ["captions", "generate"])
+
+        [warning] = [
+            w for w in data["warnings"]
+            if w["code"] == "caption_placement_override_unmatched"
+        ]
+        assert warning["selectors"] == [{"scene": "demo"}]
+        assert "--scene demo --reset" in warning["hint"]
+        assert data["placement"]["policy"]["overrides"] == [
+            {"selector": {"scene": "demo"}, "at": "top"}
+        ]
+
+        cleared = _invoke(
+            runner, ["captions", "placement", "--scene", "demo", "--reset"]
+        )
+        assert cleared["placement"]["overrides"] == []
