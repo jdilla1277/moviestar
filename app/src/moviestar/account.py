@@ -10,8 +10,10 @@ import re
 import secrets
 import tempfile
 import uuid
+import webbrowser
 from pathlib import Path
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 import click
@@ -21,6 +23,7 @@ from moviestar import __version__
 
 _ACCOUNT_URL = "https://trymoviestar.com/account"
 _DEFAULT_CLAIM_URL = "https://trymoviestar.com/api/v1/account/claims"
+_DEFAULT_INSTALLATION_URL = "https://trymoviestar.com/api/v1/account/installation"
 _CLIENT_MARKER = "moviestar-cli-v1"
 _CREDENTIAL_SERVICE = "trymoviestar.com"
 _EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -52,6 +55,22 @@ def _read_state() -> dict:
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return {}
     return value if isinstance(value, dict) else {}
+
+
+def _installation_url() -> str:
+    override = os.environ.get("MOVIESTAR_ACCOUNT_INSTALLATION_URL")
+    if override:
+        return override
+    remembered = _read_state().get("installation_url")
+    return remembered if isinstance(remembered, str) and remembered else _DEFAULT_INSTALLATION_URL
+
+
+def _account_url() -> str:
+    override = os.environ.get("MOVIESTAR_ACCOUNT_URL")
+    if override:
+        return override
+    parsed = urlsplit(_installation_url())
+    return f"{parsed.scheme}://{parsed.netloc}/account" if parsed.netloc else _ACCOUNT_URL
 
 
 def _write_state(state: dict) -> None:
@@ -155,6 +174,59 @@ def _exchange_claim(
         return str(error), None
 
 
+def _credential_for_connection(state: dict) -> str | None:
+    connection = state.get("connection")
+    if not isinstance(connection, dict):
+        return None
+    if connection.get("credential_storage") == "private_file":
+        credential = connection.get("credential_fallback")
+        return credential if isinstance(credential, str) and credential.startswith("mvs_") else None
+    if connection.get("credential_storage") == "os_keyring":
+        try:
+            import keyring
+
+            credential = keyring.get_password(_CREDENTIAL_SERVICE, str(state.get("installation_id")))
+            return credential if isinstance(credential, str) and credential.startswith("mvs_") else None
+        except Exception:
+            return None
+    return None
+
+
+def _installation_request(method: str, credential: str) -> tuple[int | None, dict | None, str | None]:
+    url = _installation_url()
+    request = Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {credential}",
+            "x-moviestar-client": _CLIENT_MARKER,
+        },
+        method=method,
+    )
+    try:
+        with urlopen(request, timeout=10) as response:
+            return response.status, _decode_response(response.read()), None
+    except HTTPError as error:
+        return error.code, _decode_response(error.read()), None
+    except (URLError, TimeoutError, OSError) as error:
+        return None, None, str(error)
+
+
+def _forget_connection(state: dict, command: str) -> bool:
+    connection = state.pop("connection", None)
+    try:
+        _write_state(state)
+    except OSError as error:
+        _state_write_error(error, command)
+    if isinstance(connection, dict) and connection.get("credential_storage") == "os_keyring":
+        try:
+            import keyring
+
+            keyring.delete_password(_CREDENTIAL_SERVICE, str(state.get("installation_id")))
+        except Exception:
+            return False
+    return True
+
+
 def _store_device_credential(
     installation_id: str, credential: str
 ) -> tuple[str, str | None]:
@@ -205,9 +277,15 @@ def _pending_request(email: str) -> tuple[dict, dict]:
         ).hexdigest(),
         "moviestar_version": __version__,
     }
+    claim_url = os.environ.get("MOVIESTAR_ACCOUNT_CLAIM_URL", _DEFAULT_CLAIM_URL)
+    claim_origin = urlsplit(claim_url)
+    installation_url = os.environ.get("MOVIESTAR_ACCOUNT_INSTALLATION_URL") or (
+        f"{claim_origin.scheme}://{claim_origin.netloc}/api/v1/account/installation"
+    )
     return payload, {
         "version": 1,
         "installation_id": installation_id,
+        "installation_url": installation_url,
         "pending_claim": pending,
     }
 
@@ -235,8 +313,8 @@ def account() -> None:
     the installation in a private browser flow; the agent never receives the
     email link or password. Local editing never requires an account.
 
-    ``connect`` creates a real email claim and ``status`` completes an approved
-    connection. ``disconnect`` and ``open`` still preview later lifecycle work.
+    ``connect`` creates an email claim, ``status`` checks the grant, and
+    ``disconnect`` revokes it. ``open`` opens the human's account page.
     """
 
 
@@ -280,7 +358,7 @@ def connect(email: str) -> None:
                     "handle": existing_handle,
                     "hint": (
                         "Run 'moviestar account status' to inspect this connection. "
-                        "Account switching will land with remote disconnect."
+                        "Run 'moviestar account disconnect' before connecting another account."
                     ),
                 }
             )
@@ -375,19 +453,72 @@ def status() -> None:
                 )
             )
         ):
+            credential = _credential_for_connection(state)
+            if not credential:
+                _emit({
+                    "command": "account status",
+                    "status": "error",
+                    "error": "The local installation credential is unavailable.",
+                    "hint": "Open your MovieStar account to revoke this installation, then connect again.",
+                })
+                raise click.exceptions.Exit(1)
+            response_status, remote, request_error = _installation_request("GET", credential)
+            if request_error:
+                _emit({
+                    "command": "account status",
+                    "status": "error",
+                    "error": request_error,
+                    "remote_status_checked": False,
+                    "hint": "Retry 'moviestar account status' when the account service is available.",
+                })
+                raise click.exceptions.Exit(1)
+            if response_status == 401:
+                _forget_connection(state, "account status")
+                _emit({
+                    "command": "account status",
+                    "status": "not_connected",
+                    "remote_status_checked": True,
+                    "hint": "This installation was revoked. Run 'moviestar account connect EMAIL' to reconnect.",
+                })
+                return
+            remote_installation = remote.get("installation") if isinstance(remote, dict) else None
+            if (
+                response_status != 200
+                or not isinstance(remote_installation, dict)
+                or remote_installation.get("id") != installation_id
+                or remote.get("status") != "connected"
+                or not isinstance(remote.get("handle"), str)
+                or not _HANDLE_RE.fullmatch(remote["handle"])
+                or not isinstance(remote_installation.get("name"), str)
+            ):
+                _emit({
+                    "command": "account status",
+                    "status": "error",
+                    "error": (remote or {}).get("error") or "The account service returned an invalid installation status.",
+                    "remote_status_checked": response_status is not None,
+                    "hint": "Retry later; the local credential was kept.",
+                })
+                raise click.exceptions.Exit(1)
+            if remote["handle"] != handle or remote_installation["name"] != installation_name:
+                connection["handle"] = remote["handle"]
+                connection["installation_name"] = remote_installation["name"]
+                try:
+                    _write_state(state)
+                except OSError as error:
+                    _state_write_error(error, "account status")
             payload = {
                 "command": "account status",
                 "status": "connected",
                 "email": email,
-                "handle": handle,
+                "handle": remote["handle"],
                 "installation": {
                     "id": installation_id,
-                    "name": installation_name,
+                    "name": remote_installation["name"],
                     "status": "approved",
                     "credential_stored": True,
                     "credential_storage": storage,
                 },
-                "remote_status_checked": False,
+                "remote_status_checked": True,
                 "hint": "Run 'moviestar account open' to manage this connection.",
             }
             if storage == "private_file":
@@ -517,6 +648,7 @@ def status() -> None:
                 connected_state = {
                     "version": 1,
                     "installation_id": installation_id,
+                    "installation_url": state.get("installation_url", _DEFAULT_INSTALLATION_URL),
                     "connection": connection,
                 }
                 try:
@@ -593,28 +725,40 @@ def disconnect() -> None:
     The real command revokes the installation remotely and removes its local
     credential. Projects and local editing remain available afterward.
 
-    \b
-    MOCKED SURFACE
-      Reports the planned revocation without changing remote or local state.
     """
-    _emit(
-        {
-            "command": "account disconnect",
-            "status": "would_disconnect",
-            "installation_id": "ins_mock_current",
-            "revokes_remote_grant": False,
-            "removes_local_credential": False,
+    state = _read_state()
+    if not isinstance(state.get("connection"), dict):
+        _emit({
+            "command": "account disconnect", "status": "not_connected",
             "local_editing_available": True,
-            "mocked_surface_note": (
-                "Surface preview only: nothing was revoked and no local "
-                "credential was removed."
-            ),
-            "hint": (
-                "The real command disconnects only hosted services; local "
-                "editing remains available."
-            ),
-        }
-    )
+            "hint": "No connected installation needs revocation.",
+        })
+        return
+    credential = _credential_for_connection(state)
+    if not credential:
+        _emit({
+            "command": "account disconnect", "status": "error",
+            "error": "The local installation credential is unavailable.",
+            "hint": "Open your MovieStar account to revoke this installation.",
+        })
+        raise click.exceptions.Exit(1)
+    response_status, remote, request_error = _installation_request("DELETE", credential)
+    if request_error or response_status not in {200, 401}:
+        _emit({
+            "command": "account disconnect", "status": "error",
+            "error": request_error or (remote or {}).get("error") or "The account service could not revoke this installation.",
+            "hint": "Retry later; the local credential was kept.",
+        })
+        raise click.exceptions.Exit(1)
+    removed = _forget_connection(state, "account disconnect")
+    _emit({
+        "command": "account disconnect", "status": "disconnected",
+        "remote_grant_revoked": response_status == 200,
+        "local_credential_removed": removed,
+        "local_editing_available": True,
+        "hint": "This installation no longer has access to hosted services.",
+        **({"warning": "The revoked credential could not be removed from the OS store."} if not removed else {}),
+    })
 
 
 @account.command("open")
@@ -624,21 +768,18 @@ def open_account() -> None:
     The account page manages the handle, password, and connected installations.
     It is separate from local MovieStar projects.
 
-    \b
-    MOCKED SURFACE
-      Reports the destination without opening a browser.
     """
+    url = _account_url()
+    try:
+        opened = bool(webbrowser.open(url))
+    except Exception:
+        opened = False
     _emit(
         {
             "command": "account open",
-            "status": "would_open_account",
-            "url": _ACCOUNT_URL,
-            "opened_browser": False,
-            "mocked_surface_note": (
-                "Surface preview only: no browser was opened."
-            ),
-            "hint": (
-                "The real command opens the account page for the connected human."
-            ),
+            "status": "opened" if opened else "browser_unavailable",
+            "url": url,
+            "opened_browser": opened,
+            "hint": "Give this URL to the account owner if a browser did not open.",
         }
     )

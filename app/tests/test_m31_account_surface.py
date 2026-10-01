@@ -1,9 +1,12 @@
 """M31a account-claim surface contracts."""
 
 import hashlib
+import importlib
 import json
 import stat
+import sys
 import uuid
+from types import SimpleNamespace
 
 from click.testing import CliRunner
 
@@ -100,6 +103,7 @@ def test_connect_creates_a_private_claim_and_only_prints_the_public_receipt(
     uuid.UUID(captured[0]["request_id"])
 
     state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["installation_url"] == "https://trymoviestar.com/api/v1/account/installation"
     assert state["installation_id"] == captured[0]["installation_id"]
     assert state["pending_claim"]["request_id"] == captured[0]["request_id"]
     assert state["pending_claim"]["email"] == "human@example.com"
@@ -112,6 +116,43 @@ def test_connect_creates_a_private_claim_and_only_prints_the_public_receipt(
     serialized = json.dumps(data).lower()
     for private_field in ("claim_url", "invitation_url", "password", "token", "secret"):
         assert private_field not in serialized
+
+
+def test_connect_remembers_preview_service_after_environment_is_cleared(monkeypatch, tmp_path):
+    state_path = tmp_path / "account.json"
+    monkeypatch.setattr("moviestar.account._account_state_path", lambda: state_path)
+    monkeypatch.setenv(
+        "MOVIESTAR_ACCOUNT_CLAIM_URL",
+        "https://preview.example/api/v1/account/claims",
+    )
+    monkeypatch.setattr("moviestar.account._send_claim", lambda payload: (None, {
+        "status": "approval_pending",
+        "request_id": payload["request_id"],
+        "expires_at": "2026-10-02T12:00:00Z",
+    }))
+
+    assert _invoke("connect", "human@example.com").exit_code == 0
+    monkeypatch.delenv("MOVIESTAR_ACCOUNT_CLAIM_URL")
+    account_module = importlib.import_module("moviestar.account")
+    assert account_module._installation_url() == "https://preview.example/api/v1/account/installation"
+    assert account_module._account_url() == "https://preview.example/account"
+
+    monkeypatch.setattr("moviestar.account._exchange_claim", lambda *_args: (None, {
+        "status": "connected",
+        "request_id": json.loads(state_path.read_text())["pending_claim"]["request_id"],
+        "email": "h***@example.com",
+        "handle": "@m24",
+        "installation": {
+            "id": json.loads(state_path.read_text())["installation_id"],
+            "name": "Test Mac",
+            "status": "approved",
+        },
+        "credential": "mvs_" + "a" * 43,
+        "device_grant_id": "123e4567-e89b-42d3-a456-426614174004",
+    }))
+    monkeypatch.setattr("moviestar.account._store_device_credential", lambda *_args: ("private_file", "mvs_" + "a" * 43))
+    assert _invoke("status").exit_code == 0
+    assert account_module._installation_url() == "https://preview.example/api/v1/account/installation"
 
 
 def test_connect_failure_is_structured_and_keeps_retryable_private_state(
@@ -234,7 +275,7 @@ def test_connect_does_not_replace_an_existing_connection(monkeypatch, tmp_path):
         "handle": "@m24",
         "hint": (
             "Run 'moviestar account status' to inspect this connection. "
-            "Account switching will land with remote disconnect."
+            "Run 'moviestar account disconnect' before connecting another account."
         ),
     }
 
@@ -519,31 +560,142 @@ def test_status_help_explains_handle_and_credential_boundary():
     assert "project" in compact
 
 
-def test_disconnect_previews_local_and_remote_revocation_without_doing_it():
+def _connected_state(tmp_path, monkeypatch):
+    state_path = tmp_path / "account.json"
+    state_path.write_text(json.dumps({
+        "version": 1,
+        "installation_id": "123e4567-e89b-42d3-a456-426614174000",
+        "connection": {
+            "email": "h***@example.com",
+            "handle": "@m24",
+            "installation_name": "Test Mac",
+            "device_grant_id": "123e4567-e89b-42d3-a456-426614174004",
+            "credential_storage": "private_file",
+            "credential_fallback": "mvs_" + "a" * 43,
+        },
+    }), encoding="utf-8")
+    monkeypatch.setattr("moviestar.account._account_state_path", lambda: state_path)
+    return state_path
+
+
+def test_connected_status_checks_remote_grant_without_printing_credential(monkeypatch, tmp_path):
+    state_path = _connected_state(tmp_path, monkeypatch)
+    calls = []
+    monkeypatch.setattr("moviestar.account._installation_request", lambda method, credential: (
+        calls.append((method, credential)) or (200, {
+            "status": "connected", "handle": "@m24",
+            "installation": {"id": "123e4567-e89b-42d3-a456-426614174000", "name": "Test Mac"},
+        }, None)
+    ))
+
+    result = _invoke("status")
+
+    assert result.exit_code == 0, result.stdout
+    data = json.loads(result.stdout)
+    assert data["status"] == "connected"
+    assert data["remote_status_checked"] is True
+    assert calls == [("GET", "mvs_" + "a" * 43)]
+    assert "mvs_" not in result.stdout
+    assert state_path.exists()
+
+
+def test_status_drops_local_connection_after_human_revocation(monkeypatch, tmp_path):
+    state_path = _connected_state(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "moviestar.account._installation_request",
+        lambda *_args: (401, {"status": "not_connected"}, None),
+    )
+
+    result = _invoke("status")
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["status"] == "not_connected"
+    assert "connection" not in json.loads(state_path.read_text())
+
+
+def test_connected_status_keeps_credential_when_service_is_unavailable(monkeypatch, tmp_path):
+    state_path = _connected_state(tmp_path, monkeypatch)
+    before = state_path.read_text()
+    monkeypatch.setattr(
+        "moviestar.account._installation_request",
+        lambda *_args: (None, None, "Service unavailable."),
+    )
+
+    result = _invoke("status")
+
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["status"] == "error"
+    assert state_path.read_text() == before
+
+
+def test_disconnect_revokes_remote_grant_then_clears_local_credential(monkeypatch, tmp_path):
+    state_path = _connected_state(tmp_path, monkeypatch)
+    calls = []
+    monkeypatch.setattr("moviestar.account._installation_request", lambda method, credential: (
+        calls.append((method, credential)) or (200, {"status": "revoked"}, None)
+    ))
+
     result = _invoke("disconnect")
 
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)
-    assert data["command"] == "account disconnect"
-    assert data["status"] == "would_disconnect"
-    assert data["installation_id"] == "ins_mock_current"
-    assert data["revokes_remote_grant"] is False
-    assert data["removes_local_credential"] is False
+    assert data["status"] == "disconnected"
+    assert data["remote_grant_revoked"] is True
+    assert data["local_credential_removed"] is True
     assert data["local_editing_available"] is True
-    assert "nothing was revoked" in data["mocked_surface_note"]
-    assert "local editing" in data["hint"].lower()
+    assert calls == [("DELETE", "mvs_" + "a" * 43)]
+    assert "connection" not in json.loads(state_path.read_text())
+    assert "mvs_" not in result.stdout
 
 
-def test_open_previews_account_page_without_launching_a_browser():
+def test_disconnect_keeps_state_if_remote_service_fails(monkeypatch, tmp_path):
+    state_path = _connected_state(tmp_path, monkeypatch)
+    before = state_path.read_text()
+    monkeypatch.setattr(
+        "moviestar.account._installation_request",
+        lambda *_args: (None, None, "Service unavailable."),
+    )
+
+    result = _invoke("disconnect")
+
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["status"] == "error"
+    assert state_path.read_text() == before
+
+
+def test_disconnect_removes_os_keyring_credential_after_remote_revocation(monkeypatch, tmp_path):
+    state_path = _connected_state(tmp_path, monkeypatch)
+    state = json.loads(state_path.read_text())
+    state["connection"]["credential_storage"] = "os_keyring"
+    del state["connection"]["credential_fallback"]
+    state_path.write_text(json.dumps(state))
+    keyring_calls = []
+    monkeypatch.setitem(sys.modules, "keyring", SimpleNamespace(
+        get_password=lambda service, installation: keyring_calls.append(("get", service, installation)) or "mvs_" + "a" * 43,
+        delete_password=lambda service, installation: keyring_calls.append(("delete", service, installation)),
+    ))
+    monkeypatch.setattr(
+        "moviestar.account._installation_request",
+        lambda *_args: (200, {"status": "revoked"}, None),
+    )
+
+    result = _invoke("disconnect")
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["local_credential_removed"] is True
+    assert [call[0] for call in keyring_calls] == ["get", "delete"]
+    assert "connection" not in json.loads(state_path.read_text())
+
+
+def test_open_returns_account_url_and_opens_browser(monkeypatch):
+    opened = []
+    monkeypatch.setattr("moviestar.account.webbrowser.open", lambda url: opened.append(url) or True)
+
     result = _invoke("open")
 
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)
-    assert data["command"] == "account open"
-    assert data["status"] == "would_open_account"
+    assert data["status"] == "opened"
     assert data["url"] == "https://trymoviestar.com/account"
-    assert data["opened_browser"] is False
-    assert "no browser was opened" in data["mocked_surface_note"]
-    assert data["hint"] == (
-        "The real command opens the account page for the connected human."
-    )
+    assert data["opened_browser"] is True
+    assert opened == ["https://trymoviestar.com/account"]
