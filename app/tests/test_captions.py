@@ -253,6 +253,41 @@ class TestCaptionRules:
         ]
         assert report["applications_count"] == 2
 
+    @pytest.mark.parametrize(
+        ("rule_type", "texts", "match", "replacement", "expected"),
+        [
+            ("replace", ["AI."], ["AI"], "A.I.", ["A.I."]),
+            ("replace", ["Mister."], ["Mister"], "Mr.", ["Mr."]),
+            ("replace", ['AI."'], ["AI"], "A.I.", ['A.I."']),
+            ("replace", ["Mister,"], ["Mister"], "Mr.", ["Mr.,"]),
+            ("replace", ["(aside"], ["aside"], "(aside", ["(aside"]),
+            ("replace", ['"(aside'], ["aside"], "(aside", ['"(aside']),
+            ("merge", ["A", "I."], ["A", "I"], "A.I.", ["A.I."]),
+            ("split", ["Mrs.Smith."], ["Mrs.Smith"], "Mrs. Smith.", ["Mrs.", "Smith."]),
+            ("split", ["(USA)"], ["USA"], "(U S)", ["(U", "S)"]),
+        ],
+    )
+    def test_kept_punctuation_does_not_duplicate_replacement_punctuation(
+        self, rule_type, texts, match, replacement, expected
+    ):
+        words = [
+            {**_word(text, index * 0.2, index * 0.2 + 0.15), "source": "a"}
+            for index, text in enumerate(texts)
+        ]
+        rules = [
+            {
+                "id": "caption_rule_0001",
+                "type": rule_type,
+                "match": match,
+                "replacement": replacement,
+            }
+        ]
+
+        transformed, report = apply_caption_rules(words, rules)
+
+        assert [word["text"] for word in transformed] == expected
+        assert report["applications_count"] == 1
+
     def test_merge_does_not_drop_punctuation_between_matched_tokens(self):
         words = [
             {**_word("ground,", 0.0, 0.2), "source": "a"},

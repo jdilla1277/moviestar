@@ -179,6 +179,24 @@ def _match_rule_token(
     return None
 
 
+def _keep_punctuation(lead: str, text: str, trail: str) -> str:
+    """Wrap a replacement in kept punctuation without doubling it.
+
+    Punctuation the replacement already carries at that edge is not added
+    again: ``AI.`` with ``AI=A.I.`` becomes ``A.I.``, not ``A.I..``, while
+    ``AI."`` becomes ``A.I."``.
+    """
+    for size in range(min(len(lead), len(text)), 0, -1):
+        if text.startswith(lead[-size:]):
+            lead = lead[:-size]
+            break
+    for size in range(min(len(trail), len(text)), 0, -1):
+        if text.endswith(trail[:size]):
+            trail = trail[size:]
+            break
+    return lead + text + trail
+
+
 def _match_rule(candidate: list[dict], rule: dict) -> list[tuple[str, str]] | None:
     """Match one rule against candidate words, returning per-word punctuation.
 
@@ -241,7 +259,9 @@ def apply_caption_rules(
                 lead, trail = affixes[0][0], affixes[-1][1]
                 if rule["type"] == "merge":
                     replacement = copy.deepcopy(candidate[0])
-                    replacement["text"] = lead + replacement_tokens[0] + trail
+                    replacement["text"] = _keep_punctuation(
+                        lead, replacement_tokens[0], trail
+                    )
                     replacement["end_s"] = candidate[-1]["end_s"]
                     if candidate[-1].get("source_end_s") is not None:
                         replacement["source_end_s"] = candidate[-1][
@@ -262,10 +282,10 @@ def apply_caption_rules(
                         replacement_tokens
                     ):
                         replacement = copy.deepcopy(original)
-                        replacement["text"] = (
-                            (lead if split_index == 0 else "")
-                            + replacement_text
-                            + (trail if split_index == count - 1 else "")
+                        replacement["text"] = _keep_punctuation(
+                            lead if split_index == 0 else "",
+                            replacement_text,
+                            trail if split_index == count - 1 else "",
                         )
                         replacement["start_s"] = result_start + (
                             (result_end - result_start) * split_index / count
@@ -298,8 +318,8 @@ def apply_caption_rules(
                         word_trail,
                     ) in zip(candidate, replacement_tokens, affixes):
                         replacement = copy.deepcopy(original)
-                        replacement["text"] = (
-                            word_lead + replacement_text + word_trail
+                        replacement["text"] = _keep_punctuation(
+                            word_lead, replacement_text, word_trail
                         )
                         output.append(replacement)
                 index += match_len
