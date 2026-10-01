@@ -155,6 +155,21 @@ class TestSpeechCheck:
         assert result["audio"]["speech_check"]["whisper_skipped"] is True
         assert result["duration"]["seconds"] == pytest.approx(20.0, abs=0.1)
 
+    def test_short_clip_that_is_all_speech_still_transcribes(
+        self, speech_wav, words_model, tmp_path
+    ):
+        # A sub-half-second reply is entirely speech; the absolute floor
+        # for "no speech" must not swallow it.
+        short = str(tmp_path / "short.wav")
+        _ffmpeg("-ss", "0.6", "-t", "0.45", "-i", speech_wav, short)
+        words_model.words = [("glad", 0.1, 0.4)]
+
+        result = transcribe_file(short, "src_0", model="tiny", quiet=True)
+
+        assert len(words_model.calls) == 1
+        assert result["no_speech_detected"] is False
+        assert result["audio"]["speech_check"]["whisper_skipped"] is False
+
     def test_speech_check_can_be_disabled(self, media, words_model):
         result = transcribe_file(
             media["clicks"], "src_0", model="tiny", quiet=True, speech_check=False

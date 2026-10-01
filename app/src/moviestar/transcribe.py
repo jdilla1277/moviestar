@@ -94,9 +94,12 @@ WHISPER_SAMPLE_RATE = 16000
 # At or below this left/right correlation a mono mixdown cancels most of
 # what the channels carry, so auto transcribes the louder channel alone.
 OUT_OF_PHASE_CORRELATION = -0.5
-# Less detected speech than this skips Whisper: on non-speech audio it
-# invents fluent, plausible words instead of returning nothing.
+# Whisper is skipped when detected speech is under both of these: on
+# non-speech audio it invents fluent, plausible words instead of returning
+# nothing. The absolute floor ignores stray VAD blips in long recordings;
+# the fraction keeps a short clip that is mostly speech.
 NO_SPEECH_MAX_SECONDS = 0.5
+NO_SPEECH_MAX_FRACTION = 0.5
 # Flag a transcript when at least this many words exist and more than
 # this share of them fall outside detected speech.
 OUTSIDE_SPEECH_MIN_WORDS = 10
@@ -602,7 +605,9 @@ def transcribe_file(
     if speech_check:
         speech_spans = _detect_speech(audio)
         speech_seconds = sum(end - start for start, end in speech_spans)
-        whisper_skipped = speech_seconds < NO_SPEECH_MAX_SECONDS
+        whisper_skipped = speech_seconds == 0 or speech_seconds < min(
+            NO_SPEECH_MAX_SECONDS, NO_SPEECH_MAX_FRACTION * audio_duration
+        )
         audio_report["speech_check"] = {
             "enabled": True,
             "detected_speech": format_timecode(speech_seconds),
