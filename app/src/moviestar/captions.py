@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import copy
 import re
+import unicodedata
 
 from .timecodes import parse_timecode
 
@@ -148,24 +149,100 @@ def next_caption_rule_id(rules: list[dict]) -> str:
     return f"caption_rule_{highest + 1:04d}"
 
 
+def _is_punctuation(text: str) -> bool:
+    return all(unicodedata.category(char).startswith("P") for char in text)
+
+
+def _match_rule_token(
+    text: str, token: str, *, allow_lead: bool, allow_trail: bool
+) -> tuple[str, str] | None:
+    """Return the punctuation around ``token`` in ``text``, or ``None``.
+
+    A word matches when it equals the rule token exactly, or differs only
+    by leading/trailing Unicode punctuation (``Moviestar.`` matches
+    ``Moviestar``). The surrounding punctuation is returned so the
+    replacement can keep it.
+    """
+    if text == token:
+        return "", ""
+    start = text.find(token)
+    while start != -1:
+        lead, trail = text[:start], text[start + len(token) :]
+        if (
+            (allow_lead or not lead)
+            and (allow_trail or not trail)
+            and _is_punctuation(lead)
+            and _is_punctuation(trail)
+        ):
+            return lead, trail
+        start = text.find(token, start + 1)
+    return None
+
+
+def _keep_punctuation(lead: str, text: str, trail: str) -> str:
+    """Wrap a replacement in kept punctuation without doubling it.
+
+    Punctuation the replacement already carries at that edge is not added
+    again: ``AI.`` with ``AI=A.I.`` becomes ``A.I.``, not ``A.I..``, while
+    ``AI."`` becomes ``A.I."``.
+    """
+    for size in range(min(len(lead), len(text)), 0, -1):
+        if text.startswith(lead[-size:]):
+            lead = lead[:-size]
+            break
+    for size in range(min(len(trail), len(text)), 0, -1):
+        if text.endswith(trail[:size]):
+            trail = trail[size:]
+            break
+    return lead + text + trail
+
+
+def _match_rule(candidate: list[dict], rule: dict) -> list[tuple[str, str]] | None:
+    """Match one rule against candidate words, returning per-word punctuation.
+
+    Replace rules keep every word's own punctuation. Merge and split rules
+    collapse or expand tokens, so only the outer edges may carry punctuation;
+    punctuation between merged tokens would otherwise be silently dropped.
+    """
+    match = rule["match"]
+    if len(candidate) != len(match):
+        return None
+    per_word = rule["type"] == "replace"
+    last = len(match) - 1
+    affixes = []
+    for index, (word, token) in enumerate(zip(candidate, match)):
+        found = _match_rule_token(
+            str(word.get("text", "")),
+            token,
+            allow_lead=per_word or index == 0,
+            allow_trail=per_word or index == last,
+        )
+        if found is None:
+            return None
+        affixes.append(found)
+    return affixes
+
+
 def apply_caption_rules(
     words: list[dict], rules: list[dict]
 ) -> tuple[list[dict], dict]:
-    """Apply exact project rules to result-time transcript words.
+    """Apply project rules to result-time transcript words.
 
     Rules run in stored order and each rule scans left-to-right using
-    non-overlapping matches. A match cannot cross a source or speaker boundary.
+    non-overlapping matches. Tokens match case-sensitively but ignore
+    leading/trailing punctuation on the transcript word, which is kept in
+    the output. A match cannot cross a source or speaker boundary.
     Split timing is interpolated evenly in both result and source time. Each
     child keeps the parent transcript token's start as its suppression identity.
     """
     validate_caption_rules(rules)
     transformed = copy.deepcopy(words)
     applied: list[dict] = []
+    per_rule: list[dict] = []
     applications_count = 0
 
     for rule in rules:
-        match = rule["match"]
-        match_len = len(match)
+        match_len = len(rule["match"])
         replacement_tokens = rule["replacement"].split()
         rule_applications = 0
         output: list[dict] = []
@@ -177,14 +254,14 @@ def apply_caption_rules(
                 and word.get("speaker") == candidate[0].get("speaker")
                 for word in candidate
             )
-            if (
-                len(candidate) == match_len
-                and same_boundary
-                and [word.get("text") for word in candidate] == match
-            ):
+            affixes = _match_rule(candidate, rule) if same_boundary else None
+            if affixes is not None:
+                lead, trail = affixes[0][0], affixes[-1][1]
                 if rule["type"] == "merge":
                     replacement = copy.deepcopy(candidate[0])
-                    replacement["text"] = replacement_tokens[0]
+                    replacement["text"] = _keep_punctuation(
+                        lead, replacement_tokens[0], trail
+                    )
                     replacement["end_s"] = candidate[-1]["end_s"]
                     if candidate[-1].get("source_end_s") is not None:
                         replacement["source_end_s"] = candidate[-1][
@@ -205,7 +282,11 @@ def apply_caption_rules(
                         replacement_tokens
                     ):
                         replacement = copy.deepcopy(original)
-                        replacement["text"] = replacement_text
+                        replacement["text"] = _keep_punctuation(
+                            lead if split_index == 0 else "",
+                            replacement_text,
+                            trail if split_index == count - 1 else "",
+                        )
                         replacement["start_s"] = result_start + (
                             (result_end - result_start) * split_index / count
                         )
@@ -232,11 +313,14 @@ def apply_caption_rules(
                             )
                         output.append(replacement)
                 else:
-                    for original, replacement_text in zip(
-                        candidate, replacement_tokens
-                    ):
+                    for original, replacement_text, (
+                        word_lead,
+                        word_trail,
+                    ) in zip(candidate, replacement_tokens, affixes):
                         replacement = copy.deepcopy(original)
-                        replacement["text"] = replacement_text
+                        replacement["text"] = _keep_punctuation(
+                            word_lead, replacement_text, word_trail
+                        )
                         output.append(replacement)
                 index += match_len
                 rule_applications += 1
@@ -244,6 +328,9 @@ def apply_caption_rules(
             output.append(copy.deepcopy(transformed[index]))
             index += 1
         transformed = output
+        per_rule.append(
+            {"id": rule["id"], "applications_count": rule_applications}
+        )
         if rule_applications:
             applied.append(
                 {
@@ -258,6 +345,10 @@ def apply_caption_rules(
         "applied_rules_count": len(applied),
         "applications_count": applications_count,
         "applied": applied,
+        "rules": per_rule,
+        "unmatched_rule_ids": [
+            item["id"] for item in per_rule if not item["applications_count"]
+        ],
     }
 
 
