@@ -15,10 +15,12 @@ def invoke(*args: str):
 def test_share_commands_are_discoverable_and_explain_the_handoff():
     root = CliRunner().invoke(cli, ["--help"])
     share = CliRunner().invoke(cli, ["share", "--help"])
+    download = CliRunner().invoke(cli, ["download", "--help"])
     shares = CliRunner().invoke(cli, ["shares", "--help"])
 
-    assert root.exit_code == share.exit_code == shares.exit_code == 0
+    assert root.exit_code == share.exit_code == download.exit_code == shares.exit_code == 0
     assert "share" in root.output
+    assert "download" in root.output
     assert "shares" in root.output
     assert "unshare" in root.output
     assert "--to" in share.output
@@ -27,6 +29,9 @@ def test_share_commands_are_discoverable_and_explain_the_handoff():
     assert "download" in share.output.lower()
     assert "finished mp4" in share.output.lower()
     assert "exact email address" in share.output.lower()
+    assert "--out" in download.output
+    assert "--dry-run" in download.output
+    assert "account" in download.output.lower()
     assert "delete" in shares.output
     assert "video and all its links" in shares.output.lower()
 
@@ -148,3 +153,54 @@ def test_revoke_and_delete_are_distinct_and_never_mutate_in_surface_preview():
     assert listed.exit_code == 1
     assert listing["status"] == "not_available"
     assert "videos" not in listing
+
+
+def test_download_preflight_resolves_a_safe_default_and_never_fetches(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    url = "https://trymoviestar.com/v/opaque-slug"
+
+    result, payload = invoke("download", url, "--dry-run")
+
+    assert result.exit_code == 0
+    assert payload["command"] == "download"
+    assert payload["status"] == "would_download"
+    assert payload["url"] == url
+    assert payload["out"] == str(tmp_path / "opaque-slug.mp4")
+    assert payload["account_required"] is False
+    assert payload["download_performed"] is False
+    assert not (tmp_path / "opaque-slug.mp4").exists()
+
+
+def test_download_accepts_explicit_destination_but_will_not_overwrite(tmp_path):
+    destination = tmp_path / "project" / "alex.mp4"
+    url = "https://trymoviestar.com/v/opaque-slug"
+
+    preview, payload = invoke("download", url, "--out", str(destination), "--dry-run")
+
+    assert preview.exit_code == 0
+    assert payload["out"] == str(destination)
+    assert not destination.parent.exists()
+
+    destination.parent.mkdir()
+    destination.write_bytes(b"existing edit")
+    collision, error = invoke("download", url, "--out", str(destination), "--dry-run")
+    assert collision.exit_code == 1
+    assert error["status"] == "error"
+    assert error["download_performed"] is False
+    assert destination.read_bytes() == b"existing edit"
+
+
+def test_download_rejects_non_moviestar_links_and_live_download_is_unavailable(tmp_path):
+    invalid, error = invoke("download", "https://example.com/v/opaque-slug", "--dry-run")
+    assert invalid.exit_code == 1
+    assert error["status"] == "error"
+    assert error["download_performed"] is False
+
+    destination = tmp_path / "opaque-slug.mp4"
+    unavailable, payload = invoke(
+        "download", "https://trymoviestar.com/v/opaque-slug", "--out", str(destination)
+    )
+    assert unavailable.exit_code == 1
+    assert payload["status"] == "not_available"
+    assert payload["download_performed"] is False
+    assert not destination.exists()

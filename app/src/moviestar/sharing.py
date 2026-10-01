@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import click
 
@@ -143,6 +145,54 @@ def share(file: Path, recipient: str | None, dry_run: bool) -> None:
             ),
         }
     )
+
+
+@click.command("download")
+@click.argument("url")
+@click.option("--out", type=click.Path(dir_okay=False, path_type=Path), metavar="FILE",
+              help="Save the finished MP4 here; defaults to the link slug plus .mp4.")
+@click.option("--dry-run", is_flag=True, help="Preview the destination without fetching anything.")
+def download(url: str, out: Path | None, dry_run: bool) -> None:
+    """Download a finished MP4 from an unlisted MovieStar watch link.
+
+    Example: moviestar download https://trymoviestar.com/v/SLUG --out alex.mp4
+
+    Anyone with an unlisted link can download; a recipient account is not
+    required. The file is a finished MP4, not the owner's project or sources.
+    This surface preview does not fetch or write a file yet.
+    """
+    parsed = urlsplit(url)
+    slug_match = re.fullmatch(r"/v/([A-Za-z0-9_-]+)", parsed.path)
+    if (parsed.scheme != "https" or parsed.netloc != "trymoviestar.com"
+            or not slug_match or parsed.query or parsed.fragment):
+        _emit({
+            "command": "download", "status": "error", "url": url,
+            "download_performed": False,
+            "error": "Expected an unlisted MovieStar watch URL.",
+            "hint": "Use a link like https://trymoviestar.com/v/SLUG.",
+        })
+        raise click.exceptions.Exit(1)
+
+    destination = (out or Path(f"{slug_match.group(1)}.mp4")).resolve()
+    if destination.exists():
+        _emit({
+            "command": "download", "status": "error", "url": url,
+            "out": str(destination), "download_performed": False,
+            "error": "Destination already exists.",
+            "hint": "Choose another --out path; downloads never overwrite an existing file.",
+        })
+        raise click.exceptions.Exit(1)
+
+    if not dry_run:
+        _unavailable("download", url=url, out=str(destination), download_performed=False)
+
+    _emit({
+        "command": "download", "status": "would_download", "url": url,
+        "out": str(destination), "account_required": False,
+        "download_performed": False,
+        "mocked_surface_note": "No network request or file write was made.",
+        "hint": "Hosted downloads are not enabled yet. The live command will save a finished MP4.",
+    })
 
 
 @click.group("shares", invoke_without_command=True)
