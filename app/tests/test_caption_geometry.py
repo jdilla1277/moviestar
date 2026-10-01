@@ -8,6 +8,7 @@ retained values, --reset, and --dry-run.
 """
 
 import json
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -662,12 +663,14 @@ class TestRegenerateKeepsPlacement:
         )
         assert cleared["placement"]["overrides"] == []
 
-    def test_stale_override_hint_targets_the_regenerated_track(
+    def test_stale_override_command_targets_the_regenerated_track(
         self, runner, tmp_path, monkeypatch
     ):
         _project(runner, tmp_path, monkeypatch, canvas="short", scenes=2)
-        _invoke(runner, ["captions", "generate", "--track", "translation"])
-        for track in ("captions", "translation"):
+        # A track name with a space proves the suggested command is
+        # shell-quoted, not just interpolated.
+        _invoke(runner, ["captions", "generate", "--track", "English captions"])
+        for track in ("captions", "English captions"):
             _invoke(
                 runner,
                 ["captions", "placement", "--track", track,
@@ -683,22 +686,26 @@ class TestRegenerateKeepsPlacement:
             ],
         )
 
-        data = _invoke(runner, ["captions", "generate", "--track", "translation"])
+        data = _invoke(
+            runner, ["captions", "generate", "--track", "English captions"]
+        )
         [warning] = [
             w for w in data["warnings"]
             if w["code"] == "caption_placement_override_unmatched"
         ]
-        command = warning["hint"].split("'")[1]
-        assert "--track translation" in command
+        argv = shlex.split(warning["remove_command"])
+        assert argv[:3] == ["moviestar", "captions", "placement"]
+        assert argv[argv.index("--track") + 1] == "English captions"
+        assert warning["remove_command"] in warning["hint"]
 
-        _invoke(runner, command.split()[1:])
+        _invoke(runner, argv[1:])
         remaining = {
             track: _invoke(runner, ["captions", "placement", "--track", track])[
                 "placement"
             ]["overrides"]
-            for track in ("captions", "translation")
+            for track in ("captions", "English captions")
         }
-        assert remaining["translation"] == []
+        assert remaining["English captions"] == []
         assert remaining["captions"] == [
             {"selector": {"scene": "demo"}, "at": "top"}
         ]

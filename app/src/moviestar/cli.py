@@ -12,6 +12,7 @@ import json
 import math
 import os
 import re
+import shlex
 import shutil
 import sys
 import tempfile
@@ -21895,16 +21896,22 @@ def captions_generate(
             for kind, name in selector.items()
         )
         first_kind, first_name = next(iter(unmatched[0].items()))
+        remove_command = shlex.join(
+            [
+                "moviestar", "captions", "placement", "--track", track,
+                f"--{first_kind}", first_name, "--reset",
+            ]
+        )
         warnings.append(
             _warning(
                 "caption_placement_override_unmatched",
                 f"Kept placement override(s) for {names}, which no scene "
                 "in the current composition matches; they have no effect.",
                 selectors=unmatched,
+                remove_command=remove_command,
                 hint=(
-                    "Remove one with 'moviestar captions placement "
-                    f"--track {track} --{first_kind} {first_name} --reset', "
-                    "or keep it for a scene you plan to restore."
+                    f"Remove one with: {remove_command} "
+                    "(or keep it for a scene you plan to restore)."
                 ),
             )
         )
