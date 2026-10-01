@@ -261,6 +261,12 @@ from moviestar.transcribe import (
 from moviestar.feedback import feedback
 from moviestar.subscribe import subscribe as subscribe_command
 from moviestar.account import account as account_command
+from moviestar.sharing import (
+    download as download_command,
+    share as share_command,
+    shares as shares_command,
+    unshare as unshare_command,
+)
 
 
 CLIPS_DIR = "moviestar-clips"
@@ -1104,6 +1110,10 @@ def cli() -> None:
 cli.add_command(subscribe_command)
 cli.add_command(feedback)
 cli.add_command(account_command)
+cli.add_command(download_command)
+cli.add_command(share_command)
+cli.add_command(shares_command)
+cli.add_command(unshare_command)
 
 
 # ---------- Browsing ----------
