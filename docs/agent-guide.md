@@ -1,7 +1,7 @@
 # Agent guide
 
-MovieStar separates editorial judgment from deterministic execution. The agent
-decides what the edit should communicate; MovieStar stores non-destructive
+Moviestar separates editorial judgment from deterministic execution. The agent
+decides what the edit should communicate; Moviestar stores non-destructive
 state, resolves time mappings, renders through FFmpeg, and returns structured
 evidence.
 
@@ -25,7 +25,7 @@ various `dump`/`list` commands to inspect persisted state before changing it.
 5. Read the JSON response, including paths, ranges, durations, and warnings.
 6. Verify the result visually and, when relevant, audibly.
 
-MovieStar writes JSON to stdout and progress narration to stderr. If a harness
+Moviestar writes JSON to stdout and progress narration to stderr. If a harness
 merges both streams, use `--quiet` on commands that support it. Prefer returned
 file paths over `--inline`; Base64 only helps integrations that convert it into
 an actual image content block.
@@ -68,11 +68,11 @@ listening when subjective balance matters.
 For vertical social delivery, run `moviestar screenshot --at TIMECODE
 --platform tiktok|instagram-reels|youtube-shorts` at representative and
 boundary frames. The returned image shows a versioned player-UI reference mask;
-the JSON warns when active MovieStar-authored text or smaller layout slots
+the JSON warns when active Moviestar-authored text or smaller layout slots
 intersect it. The check is deterministic and performs no OCR or object
 detection, so inspect baked-in source text and important subject matter in the
 image yourself.
 
-The distributable [MovieStar skill](install-skill.md) gives compatible agents
+The distributable [Moviestar skill](install-skill.md) gives compatible agents
 this workflow automatically. The [complete command guide](../app/README.md)
 covers every command family.

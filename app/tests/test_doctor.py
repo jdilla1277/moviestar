@@ -80,7 +80,7 @@ class TestDoctorCommand:
         assert data["ffprobe"]["available"] is True
         assert data.get("warnings", []) == []
         assert all(c["available"] is True for c in data["capabilities"])
-        # Every capability names the MovieStar features it gates, even
+        # Every capability names the Moviestar features it gates, even
         # when present, so agents can read the mapping proactively.
         assert all(c["blocks"] for c in data["capabilities"])
         assert data["writes_spec"] is False

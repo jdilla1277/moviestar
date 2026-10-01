@@ -1,11 +1,11 @@
-# Contributing to MovieStar
+# Contributing to Moviestar
 
 Thank you for helping make video editing easier for agents.
 
 ## Before you start
 
 For bugs and small improvements, open an issue or a focused pull request. For a
-large feature or a change to MovieStar's command or JSON contracts, open an
+large feature or a change to Moviestar's command or JSON contracts, open an
 issue first so maintainers and contributors can agree on the surface before a
 large implementation lands.
 
@@ -22,7 +22,7 @@ Do not put security-sensitive details in a public issue. Follow
 5. Open a focused pull request with the two-sentence plain-language opener
    described in [`CLAUDE.md`](CLAUDE.md).
 
-MovieStar requires Python 3.10 or newer and FFmpeg plus ffprobe on `PATH`.
+Moviestar requires Python 3.10 or newer and FFmpeg plus ffprobe on `PATH`.
 Create a development environment with:
 
 ```bash
@@ -39,7 +39,7 @@ and ffprobe must still be installed on the host.
 
 ## Contribution terms
 
-MovieStar is licensed under the Apache License 2.0. By intentionally submitting
+Moviestar is licensed under the Apache License 2.0. By intentionally submitting
 a contribution for inclusion in this project, you agree that it may be
 distributed under that license and represent that you have the right to submit
 it. Clearly identify third-party code, data, media, fonts, or other assets and

@@ -4,11 +4,11 @@ Do not change the user's Python environment or install a large dependency
 without permission. Prefer a dedicated virtual environment for the editing
 task.
 
-MovieStar needs Python 3.10 or newer, `ffmpeg`, and `ffprobe`. If FFmpeg is
+Moviestar needs Python 3.10 or newer, `ffmpeg`, and `ffprobe`. If FFmpeg is
 missing, identify the platform package-manager command and ask the user before
 installing it.
 
-Install the current MovieStar release from PyPI:
+Install the current Moviestar release from PyPI:
 
 ```bash
 python3 -m venv .venv

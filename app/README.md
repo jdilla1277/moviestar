@@ -25,16 +25,16 @@ Export the result to ~/Desktop/clip.mp4 and tell me how long it is.
 The agent will work through `load → find → trim → export`, returning structured JSON at every step. No GUI, no timeline, no manual scrubbing.
 
 `python -m moviestar` is an equivalent entry point when an agent wants to
-guarantee it is invoking MovieStar from the active Python environment.
+guarantee it is invoking Moviestar from the active Python environment.
 
 For a multi-camera recording, the agent can `load cam1.mp4 cam2.mp4 screenshare.mp4`, `concat` ranges from each into one timeline, pick whose mic plays with `--audio-from`, choose a global layout with `--layout`, or use `scenes set` for layout changes over time. Then `captions generate` burns word-highlighted captions from the transcript into the final render.
 
 For a product demo, `scenes geometry` resizes, places, shapes, borders, or bounces a picture-in-picture slot. `scenes motion` adds source-relative zooms and pans plus speed, target-duration, and hold pacing to individual scene slots. `audio` places voiceover and music on the finished timeline, adjusts gain and fades, loops beds, and ducks one layer under another.
 
-## What's in MovieStar
+## What's in Moviestar
 
 **Browse:**
-- `moviestar load` — index one or more videos, transcribe with local Whisper. `--as <name>` names sources; `--add` appends to an existing project; `--no-download` guarantees a hermetic run. Before transcribing, MovieStar checks the audio: stereo channels that are out of phase (which cancel in a mono mix) are transcribed from the louder channel, and audio with no detected speech skips Whisper instead of receiving invented words. Both report as structured warnings; `--channel auto|mix|left|right` and `--no-speech-check` override them on `load` and `retranscribe`. For long recordings, `--captions FILE.vtt` (or `.srt`) imports existing captions as the transcript in seconds, and `--transcribe-range START END` (`retranscribe --range`) runs Whisper only on that window.
+- `moviestar load` — index one or more videos, transcribe with local Whisper. `--as <name>` names sources; `--add` appends to an existing project; `--no-download` guarantees a hermetic run. Before transcribing, Moviestar checks the audio: stereo channels that are out of phase (which cancel in a mono mix) are transcribed from the louder channel, and audio with no detected speech skips Whisper instead of receiving invented words. Both report as structured warnings; `--channel auto|mix|left|right` and `--no-speech-check` override them on `load` and `retranscribe`. For long recordings, `--captions FILE.vtt` (or `.srt`) imports existing captions as the transcript in seconds, and `--transcribe-range START END` (`retranscribe --range`) runs Whisper only on that window.
 - `moviestar skim` — fast browse: thumbnails + transcript over a range (`--text-only` for transcript alone).
 - `moviestar inspect` — dense thumbnails on demand at a configurable interval.
 - `moviestar activity` — read-only visual-change evidence for silent recordings: per-sample scores plus candidate active, idle, and held-frame ranges (`--dry-run` previews decode cost).
@@ -80,15 +80,15 @@ Every source-specific command takes `--source <id>`, required only when a projec
 - `moviestar clip` — extract one standalone clip to its own MP4 (source-time, leaves the edit spec untouched).
 - `moviestar batch` — extract many standalone clips from a JSON recipe in one atomic, frame-exact pass.
 - `moviestar clean` — preview or delete generated media artifacts.
-- `moviestar screenshot` — single frame at a timecode (project-aware: `--at` is in result-time). Pass `--file export.mp4` to extract directly from a raw or exported file and bypass the loaded project. Add `--platform tiktok`, `--platform instagram-reels`, or `--platform youtube-shorts` to draw a versioned social-player UI reference mask and lint known MovieStar overlay/slot geometry. This check does not use OCR, so baked-in source content remains a visual-review task.
+- `moviestar screenshot` — single frame at a timecode (project-aware: `--at` is in result-time). Pass `--file export.mp4` to extract directly from a raw or exported file and bypass the loaded project. Add `--platform tiktok`, `--platform instagram-reels`, or `--platform youtube-shorts` to draw a versioned social-player UI reference mask and lint known Moviestar overlay/slot geometry. This check does not use OCR, so baked-in source content remains a visual-review task.
 
 **Always-available:**
-- `moviestar doctor` — check FFmpeg/ffprobe availability and the filters and encoders MovieStar needs before authoring. Its structured report names blocked features and exact install fixes.
+- `moviestar doctor` — check FFmpeg/ffprobe availability and the filters and encoders Moviestar needs before authoring. Its structured report names blocked features and exact install fixes.
 - `moviestar probe` — ffprobe metadata as JSON. Add `--loudness` (optionally with `--from` / `--to`) for structured integrated loudness and peak metrics.
 - `moviestar models pull <model>` — pre-download a Whisper model before a load, CI job, or offline session.
-- `moviestar subscribe EMAIL` — sign a human up for MovieStar updates. The human receives a double-opt-in confirmation email and is not activated until they open its link.
+- `moviestar subscribe EMAIL` — sign a human up for Moviestar updates. The human receives a double-opt-in confirmation email and is not activated until they open its link.
 - `moviestar feedback` — print a guided feedback report with required context plus optional diagnostic, positive-feedback, idea, wild-idea, 0–10 recommendation, recommendation-reason, and follow-up email prompts. Save it with `moviestar feedback > feedback.md`, complete it, then submit it with `moviestar feedback --file feedback.md` (`--file -` reads stdin). If an email is provided, it is stored separately and used to send a note when that feedback is addressed; it does not create a general updates subscription. For broader Moviestar update emails, an agent can run `moviestar subscribe EMAIL`, and the human must confirm by email. For a deliberately short anonymous note, use `moviestar feedback --quick "message"`. The payload never automatically includes project files, paths, session logs, account identifiers, or command history.
-- `moviestar account connect EMAIL` — ask MovieStar to email the human a private account claim. The human signs up or signs in, chooses a public handle when needed, and approves the named installation; `moviestar account status` then stores its revocable device credential without exposing the email link or password to the agent. Accounts remain optional for local editing.
+- `moviestar account connect EMAIL` — ask Moviestar to email the human a private account claim. The human signs up or signs in, chooses a public handle when needed, and approves the named installation; `moviestar account status` then stores its revocable device credential without exposing the email link or password to the agent. Accounts remain optional for local editing.
 - **Sharing surface preview:** `moviestar share final.mp4 --to alex@example.com --dry-run` shows the proposed unlisted, downloadable handoff and the exact recipient. A receiving agent can preview `moviestar download https://trymoviestar.com/v/SLUG --out alex.mp4 --dry-run`; it needs no account and defaults to `SLUG.mp4` when `--out` is omitted. No file is uploaded or downloaded, link created, or email sent. `moviestar shares`, `moviestar unshare LINK_ID`, and `moviestar shares delete VIDEO_ID` establish the later management commands; live sharing and download currently return `not_available`.
 - `--dry-run` on every expensive or high-impact command (`load`, `inspect`, `watch`, `export`, `clip`, `batch`, `concat`, `scenes set`, `spec --edit`).
 
@@ -123,12 +123,12 @@ The package weighs ~210MB on install — `faster-whisper` ships local transcript
 
 ## License and status
 
-MovieStar supports multi-source scene composition, authorable slot geometry and
+Moviestar supports multi-source scene composition, authorable slot geometry and
 shapes, per-scene camera and layout motion, derived captions, timed overlays,
 and result-time audio mixing. Every project shape resolves through one compiled
 timeline; caption recipes follow later edits, manual overlays can bind to
 scenes, and undo operates on command revisions.
 
-MovieStar v0.7.0 and later is licensed under the Apache License 2.0. Versions
+Moviestar v0.7.0 and later is licensed under the Apache License 2.0. Versions
 through v0.6.0 were released under the Business Source License 1.1; changing
 the license for newer versions does not relicense those historical releases.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Scan MovieStar's CLI source for stale release-planning wording.
+"""Scan Moviestar's CLI source for stale release-planning wording.
 
 Catches phrases like "coming in M14" and "deferred to M14" that become stale
 when plans change. User-facing help should describe current behavior instead.
