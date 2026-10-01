@@ -65,6 +65,14 @@ dimensions, the intended audio/video streams, and representative frames that
 match the request. Loudness reports help measure a mix but do not replace
 listening when subjective balance matters.
 
+For vertical social delivery, run `moviestar screenshot --at TIMECODE
+--platform tiktok|instagram-reels|youtube-shorts` at representative and
+boundary frames. The returned image shows a versioned player-UI reference mask;
+the JSON warns when active MovieStar-authored text or smaller layout slots
+intersect it. The check is deterministic and performs no OCR or object
+detection, so inspect baked-in source text and important subject matter in the
+image yourself.
+
 The distributable [MovieStar skill](install-skill.md) gives compatible agents
 this workflow automatically. The [complete command guide](../app/README.md)
 covers every command family.

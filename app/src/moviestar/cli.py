@@ -52,6 +52,7 @@ from moviestar.ffmpeg import (
     build_render_layout_video_command,
     build_highlight_ass,
     build_mix_audio_command,
+    build_platform_preview_command,
     compose_storyboard_tiles,
     extract_clip,
     extract_storyboard_frame,
@@ -65,6 +66,7 @@ from moviestar.ffmpeg import (
     render_layout_frame,
     render_layout_frames,
     render_layout_video,
+    render_platform_preview,
     mix_audio,
     probe_last_video_packet_timestamp,
     run_ffprobe,
@@ -191,6 +193,12 @@ from moviestar.overlays import (
     length_px,
     overlay_plan_summary,
     plan_overlays,
+)
+from moviestar.platforms import (
+    PLATFORM_CHOICES,
+    canvas_matches_platform_aspect,
+    lint_platform_targets,
+    resolve_platform_profile,
 )
 from moviestar.audio_surface import (
     AUDIO_DUCKING_PRESETS,
@@ -894,7 +902,8 @@ BROWSING COMMANDS
   inspect      Dense sample — many thumbnails + transcript across a range.
                Use for careful scene-by-scene review.
   watch        Extract a video segment for multimodal model analysis.
-  screenshot   Single frame at a timecode. Applies edits when in a project.
+  screenshot   Single frame at a timecode. Applies project edits; --platform
+               adds TikTok/Reels/Shorts UI masks and geometry warnings.
 
 \b
 EDITING COMMANDS
@@ -6059,6 +6068,175 @@ def batch(recipe: str, dry_run: bool, jobs: int) -> None:
     click.echo(json.dumps(result, indent=2))
 
 
+def _platform_preview_temp_path(output: str) -> str:
+    path = Path(output)
+    suffix = path.suffix or ".jpg"
+    return str(path.with_name(f".{path.stem}.platform-preview{suffix}"))
+
+
+def _platform_preview_targets(
+    planned_overlays: dict | None,
+    slots: list[dict] | None,
+    canvas: tuple[int, int],
+    scene_name: str | None = None,
+) -> list[dict]:
+    """Known canvas-space targets worth checking at one result frame."""
+    targets = [
+        {
+            "id": plan["id"],
+            "type": "overlay",
+            "bounds": dict(plan["estimated_bounds"]),
+        }
+        for plan in (planned_overlays or {}).get("plans", [])
+    ]
+    canvas_area = canvas[0] * canvas[1]
+    for slot in slots or []:
+        bounds = slot.get("region")
+        if not bounds:
+            continue
+        area = bounds["width"] * bounds["height"]
+        # Full-canvas/main video naturally sits behind player UI. Linting it
+        # would be a permanent false positive because MovieStar does not know
+        # which source pixels are important. Small floating/inset slots are
+        # intentional geometry and still actionable; large split-screen cells
+        # stay a visual-review concern for the same reason as the main video.
+        if area > canvas_area * 0.30:
+            continue
+        slot_id = slot["slot"]
+        if scene_name:
+            slot_id = f"{scene_name}:{slot_id}"
+        targets.append(
+            {
+                "id": slot_id,
+                "type": "layout_slot",
+                "bounds": dict(bounds),
+            }
+        )
+    return targets
+
+
+def _plan_platform_preview(
+    platform: str | None,
+    canvas: tuple[int, int],
+    output: str,
+    *,
+    planned_overlays: dict | None = None,
+    slots: list[dict] | None = None,
+    scene_name: str | None = None,
+) -> dict | None:
+    if platform is None:
+        return None
+    profile = resolve_platform_profile(platform, canvas)
+    targets = _platform_preview_targets(
+        planned_overlays, slots, canvas, scene_name=scene_name
+    )
+    collisions = lint_platform_targets(profile, targets)
+    font_path = resolve_font(DEFAULT_FONT_FAMILY, "bold")["path"]
+    temp_output = _platform_preview_temp_path(output)
+    ffmpeg_command = build_platform_preview_command(
+        output, temp_output, profile, font_path
+    )
+    return {
+        "profile": profile,
+        "targets": targets,
+        "collisions": collisions,
+        "font_path": font_path,
+        "input_path": output,
+        "temp_output": temp_output,
+        "ffmpeg_command": ffmpeg_command,
+    }
+
+
+def _platform_preview_warnings(planned: dict) -> list[dict]:
+    profile = planned["profile"]
+    warnings = [
+        _warning(
+            issue["code"],
+            issue["message"],
+            source="platform_preview",
+            **{
+                key: value
+                for key, value in issue.items()
+                if key not in {"code", "message"}
+            },
+        )
+        for issue in planned["collisions"]
+    ]
+    if not canvas_matches_platform_aspect(profile):
+        canvas = profile["canvas"]
+        warnings.append(
+            _warning(
+                "platform_canvas_aspect_mismatch",
+                f"{profile['label']} preview expects a 9:16 canvas, but this "
+                f"frame is {canvas['width']}x{canvas['height']}. The UI mask "
+                "was scaled for reference; compose with --canvas short for "
+                "delivery-shaped verification.",
+                source="platform_preview",
+                platform=profile["platform"],
+                profile_version=profile["version"],
+                canvas=canvas,
+                expected_aspect_ratio="9:16",
+            )
+        )
+    return warnings
+
+
+def _platform_preview_envelope(planned: dict, *, annotated: bool) -> dict:
+    profile = planned["profile"]
+    return {
+        "platform": profile["platform"],
+        "label": profile["label"],
+        "profile_version": profile["version"],
+        "expected_aspect_ratio": profile["expected_aspect_ratio"],
+        "canvas": profile["canvas"],
+        "guidance_url": profile["guidance_url"],
+        "ui_regions": profile["ui_regions"],
+        "known_targets_checked": len(planned["targets"]),
+        "known_targets": planned["targets"],
+        "collisions": planned["collisions"],
+        "annotated": annotated,
+        "ocr_performed": False,
+        "limitations": (
+            "Checks only geometry MovieStar authored and can resolve. No OCR "
+            "or object detection was performed, so text and important content "
+            "already baked-in to source pixels were not checked."
+        ),
+        "ffmpeg_command": planned["ffmpeg_command"],
+    }
+
+
+def _attach_platform_preview(
+    result: dict, planned: dict | None, *, annotated: bool
+) -> None:
+    if planned is None:
+        return
+    result["platform_preview"] = _platform_preview_envelope(
+        planned, annotated=annotated
+    )
+    _add_warnings(result, _platform_preview_warnings(planned))
+
+
+def _render_platform_preview_in_place(command: str, planned: dict | None) -> None:
+    if planned is None:
+        return
+    temp_output = planned["temp_output"]
+    try:
+        render_platform_preview(
+            planned["input_path"],
+            temp_output,
+            planned["profile"],
+            planned["font_path"],
+        )
+        os.replace(temp_output, planned["input_path"])
+    except FFmpegCapabilityError as exc:
+        _ffmpeg_capability_error_exit(command, exc)
+    except (FFmpegNotFoundError, FileNotFoundError, RuntimeError) as exc:
+        _error_exit(command, f"Could not draw platform preview: {exc}")
+    finally:
+        if os.path.exists(temp_output):
+            os.remove(temp_output)
+
+
 @cli.command()
 @project_workspace_option
 @click.argument("video", type=click.Path(), required=False)
@@ -6096,6 +6274,15 @@ def batch(recipe: str, dry_run: bool, jobs: int) -> None:
     "Has no effect in file mode.",
 )
 @click.option(
+    "--platform",
+    type=click.Choice(PLATFORM_CHOICES),
+    default=None,
+    help="Overlay a versioned social-player UI reference mask and lint known "
+    "MovieStar overlay/slot geometry. Choices: tiktok, instagram-reels, "
+    "youtube-shorts. This deterministic check does not use OCR or inspect "
+    "text/content already baked into source pixels.",
+)
+@click.option(
     "--dry-run",
     "dry_run",
     is_flag=True,
@@ -6108,6 +6295,7 @@ def screenshot(
     output: str | None,
     inline: bool,
     source_arg: str | None,
+    platform: str | None,
     dry_run: bool,
 ) -> None:
     """Capture a single frame at a timecode.
@@ -6143,6 +6331,11 @@ def screenshot(
     as base64 under ``image: {format, base64}`` for frameworks that
     convert envelope bytes into image blocks.
 
+    Pass ``--platform tiktok|instagram-reels|youtube-shorts`` to draw a
+    versioned social-player UI reference mask. Project-aware screenshots also
+    warn when active MovieStar text or small slots intersect those regions.
+    The check never runs OCR or object detection on source pixels.
+
     Why JPEG default: at the same 720p frame, JPEG (q=2) is roughly
     5x more token-efficient than PNG once read by a model (and once
     base64-encoded under --inline) — ~16K
@@ -6164,10 +6357,14 @@ def screenshot(
     paths_only = not inline
     input_file = file_path or video
     if input_file is None:
-        _screenshot_in_project(at_seconds, output, paths_only, source_arg, dry_run)
+        _screenshot_in_project(
+            at_seconds, output, paths_only, source_arg, platform, dry_run
+        )
         return
 
-    _screenshot_file_mode(input_file, at_seconds, output, paths_only, dry_run)
+    _screenshot_file_mode(
+        input_file, at_seconds, output, paths_only, platform, dry_run
+    )
 
 
 def _screenshot_file_mode(
@@ -6175,6 +6372,7 @@ def _screenshot_file_mode(
     at_seconds: float,
     output: str | None,
     paths_only: bool,
+    platform: str | None,
     dry_run: bool,
 ) -> None:
     """Render a frame from a raw file without project awareness."""
@@ -6217,6 +6415,18 @@ def _screenshot_file_mode(
         )
     abs_output = os.path.realpath(output)
     _validate_output_parent("screenshot", abs_output)
+    platform_preview = None
+    if platform is not None:
+        frame_width = int((video_stream or {}).get("width") or 0)
+        frame_height = int((video_stream or {}).get("height") or 0)
+        if not frame_width or not frame_height:
+            _error_exit(
+                "screenshot",
+                "Could not determine frame dimensions for --platform preview.",
+            )
+        platform_preview = _plan_platform_preview(
+            platform, (frame_width, frame_height), abs_output
+        )
 
     if dry_run:
         result: dict = {
@@ -6234,6 +6444,7 @@ def _screenshot_file_mode(
                 "--dry-run to capture this frame."
             ),
         }
+        _attach_platform_preview(result, platform_preview, annotated=False)
         click.echo(json.dumps(result, indent=2))
         return
 
@@ -6246,6 +6457,7 @@ def _screenshot_file_mode(
     except RuntimeError as exc:
         _error_exit("screenshot", str(exc))
 
+    _render_platform_preview_in_place("screenshot", platform_preview)
     width, height = _probe_output_dimensions(abs_output)
 
     result: dict = {
@@ -6263,6 +6475,7 @@ def _screenshot_file_mode(
     # matches skim/inspect thumbnail entries.
     if not paths_only:
         result["image"] = _read_image_inline(abs_output)
+    _attach_platform_preview(result, platform_preview, annotated=True)
     click.echo(json.dumps(result, indent=2))
 
 
@@ -6271,6 +6484,7 @@ def _screenshot_in_project(
     output: str | None,
     paths_only: bool,
     source_arg: str | None,
+    platform: str | None,
     dry_run: bool,
 ) -> None:
     """Project mode: --at is in result-time. Resolve through the spec."""
@@ -6303,6 +6517,7 @@ def _screenshot_in_project(
                 at_seconds=at_seconds,
                 output=output,
                 paths_only=paths_only,
+                platform=platform,
                 dry_run=dry_run,
             )
             return
@@ -6345,6 +6560,18 @@ def _screenshot_in_project(
         )
     abs_output = os.path.realpath(output)
     _validate_output_parent("screenshot", abs_output)
+    platform_preview = None
+    if platform is not None:
+        frame_width = int(source.get("width") or 0)
+        frame_height = int(source.get("height") or 0)
+        if not frame_width or not frame_height:
+            _error_exit(
+                "screenshot",
+                "Could not determine frame dimensions for --platform preview.",
+            )
+        platform_preview = _plan_platform_preview(
+            platform, (frame_width, frame_height), abs_output
+        )
 
     if dry_run:
         result = {
@@ -6364,6 +6591,7 @@ def _screenshot_in_project(
                 "--dry-run to capture this project frame."
             ),
         }
+        _attach_platform_preview(result, platform_preview, annotated=False)
         click.echo(json.dumps(result, indent=2))
         return
 
@@ -6376,6 +6604,7 @@ def _screenshot_in_project(
     except RuntimeError as exc:
         _error_exit("screenshot", str(exc))
 
+    _render_platform_preview_in_place("screenshot", platform_preview)
     width, height = _probe_output_dimensions(abs_output)
 
     result: dict = {
@@ -6392,6 +6621,7 @@ def _screenshot_in_project(
     }
     if not paths_only:
         result["image"] = _read_image_inline(abs_output)
+    _attach_platform_preview(result, platform_preview, annotated=True)
     click.echo(json.dumps(result, indent=2))
 
 
@@ -6404,6 +6634,7 @@ def _screenshot_scene_layout_composition(
     at_seconds: float,
     output: str | None,
     paths_only: bool,
+    platform: str | None,
     dry_run: bool,
 ) -> None:
     plan, render_plan = _scene_render_plan_at(
@@ -6468,6 +6699,14 @@ def _screenshot_scene_layout_composition(
         )
     scene_out = dict(active_scene)
     scene_out["slots"] = slots_at_time
+    platform_preview = _plan_platform_preview(
+        platform,
+        render_plan["canvas_tuple"],
+        abs_output,
+        planned_overlays=planned_overlays,
+        slots=slots_at_time,
+        scene_name=active_scene.get("scene") or active_scene.get("name"),
+    )
     base_result = {
         "mode": "scene_composition",
         "composition_type": "scenes",
@@ -6500,6 +6739,7 @@ def _screenshot_scene_layout_composition(
                 "--dry-run to capture this scene frame."
             ),
         }
+        _attach_platform_preview(result, platform_preview, annotated=False)
         click.echo(json.dumps(result, indent=2))
         return
 
@@ -6519,6 +6759,7 @@ def _screenshot_scene_layout_composition(
     except RuntimeError as exc:
         _error_exit("screenshot", str(exc))
 
+    _render_platform_preview_in_place("screenshot", platform_preview)
     width, height = _probe_output_dimensions(abs_output)
     result = {
         **base_result,
@@ -6531,6 +6772,7 @@ def _screenshot_scene_layout_composition(
     }
     if not paths_only:
         result["image"] = _read_image_inline(abs_output)
+    _attach_platform_preview(result, platform_preview, annotated=True)
     click.echo(json.dumps(result, indent=2))
 
 
