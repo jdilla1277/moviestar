@@ -21759,6 +21759,14 @@ def captions_generate(
     # Placement tuned with `captions placement` survives regeneration
     # (#27): agents re-run generate to change style or highlighting, not
     # to throw away layout work.
+    # Validate before layering: retained scene overrides can cover every
+    # cue, so per-cue validation would never see a bad default anchor.
+    if position is not None and position not in OVERLAY_POSITION_PRESETS:
+        _error_exit(
+            "captions generate",
+            f"Unknown overlay position {position!r}. Use one of: "
+            f"{', '.join(sorted(OVERLAY_POSITION_PRESETS))}.",
+        )
     previous = caption_recipe_for_track(spec, track)
     kept = _caption_placement_policy(previous) if previous else None
     if kept is not None and (reset_placement or not (
@@ -21895,8 +21903,8 @@ def captions_generate(
                 selectors=unmatched,
                 hint=(
                     "Remove one with 'moviestar captions placement "
-                    f"--{first_kind} {first_name} --reset', or keep it for a "
-                    "scene you plan to restore."
+                    f"--track {track} --{first_kind} {first_name} --reset', "
+                    "or keep it for a scene you plan to restore."
                 ),
             )
         )

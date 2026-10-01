@@ -661,3 +661,59 @@ class TestRegenerateKeepsPlacement:
             runner, ["captions", "placement", "--scene", "demo", "--reset"]
         )
         assert cleared["placement"]["overrides"] == []
+
+    def test_stale_override_hint_targets_the_regenerated_track(
+        self, runner, tmp_path, monkeypatch
+    ):
+        _project(runner, tmp_path, monkeypatch, canvas="short", scenes=2)
+        _invoke(runner, ["captions", "generate", "--track", "translation"])
+        for track in ("captions", "translation"):
+            _invoke(
+                runner,
+                ["captions", "placement", "--track", track,
+                 "--scene", "demo", "--at", "top"],
+            )
+        _invoke(
+            runner,
+            [
+                "scenes", "set", "--canvas", "short",
+                "--scene", "intro=single",
+                "--slot", "intro:main=src_0", "--from", "0", "--to", "4",
+                "--audio-from", "intro=src_0",
+            ],
+        )
+
+        data = _invoke(runner, ["captions", "generate", "--track", "translation"])
+        [warning] = [
+            w for w in data["warnings"]
+            if w["code"] == "caption_placement_override_unmatched"
+        ]
+        command = warning["hint"].split("'")[1]
+        assert "--track translation" in command
+
+        _invoke(runner, command.split()[1:])
+        remaining = {
+            track: _invoke(runner, ["captions", "placement", "--track", track])[
+                "placement"
+            ]["overrides"]
+            for track in ("captions", "translation")
+        }
+        assert remaining["translation"] == []
+        assert remaining["captions"] == [
+            {"selector": {"scene": "demo"}, "at": "top"}
+        ]
+
+    def test_invalid_position_is_rejected_even_when_overrides_cover_every_cue(
+        self, runner, tmp_path, monkeypatch
+    ):
+        _project(runner, tmp_path, monkeypatch, canvas="short")
+        _invoke(runner, ["captions", "placement", "--scene", "intro", "--at", "top"])
+        before = self._placement(runner)
+
+        result = runner.invoke(cli, ["captions", "generate", "--position", "middle"])
+
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["command"] == "captions generate"
+        assert "'middle'" in data["error"] and "top-left" in data["error"]
+        assert self._placement(runner) == before
