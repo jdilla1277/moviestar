@@ -264,6 +264,42 @@ class TestVideoKey:
         key = real.video_key("https://example.com/talks/keynote")
         assert key.startswith("url-") and len(key) == 20
 
+    def test_ids_that_are_not_globally_unique_keep_the_whole_url(self, real):
+        # LinkedIn Learning's offline ID is the lesson slug alone, so two
+        # courses' "introduction" lessons would otherwise share a key.
+        one = real.video_key("https://www.linkedin.com/learning/course-one/introduction")
+        two = real.video_key("https://www.linkedin.com/learning/course-two/introduction")
+        assert one != two
+        assert one.startswith("linkedinlearning-introduction-")
+        assert one == real.video_key(
+            "https://www.linkedin.com/learning/course-one/introduction"
+        )
+
+    def test_distinct_urls_with_one_temp_id_never_share_a_saved_track(
+        self, real, tmp_path, backend
+    ):
+        class SameTempId(FakeBackend):
+            def video_key(self, url):
+                return real.video_key(url)
+
+        first_url = "https://www.linkedin.com/learning/course-one/introduction"
+        second_url = "https://www.linkedin.com/learning/course-two/introduction"
+        cache = tmp_path / "cache"
+        stage = tmp_path / "stage"
+        backend(SameTempId())
+        first = fetch_captions(first_url, stage, cache_dir=cache)
+        remote_captions.store_captions(first, cache)
+
+        fake = backend(SameTempId(text=YOUTUBE_VTT.replace("roll", "vote")))
+        second = fetch_captions(second_url, stage, cache_dir=cache)
+
+        assert fake.extracted == [second_url]
+        assert second["cached"] is False
+        assert second["url"] == second_url
+        assert second["file"] != first["file"]
+        assert "vote" in Path(second["staged_path"]).read_text()
+        assert "vote" not in Path(first["staged_path"]).read_text()
+
 
 class TestCli:
     @pytest.fixture

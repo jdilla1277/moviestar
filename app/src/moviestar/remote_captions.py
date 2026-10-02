@@ -16,6 +16,12 @@ ID that yt-dlp reads from the URL without a network call::
     moviestar/captions/youtube-jNQXAC9IVRw.en.vtt
     moviestar/captions/youtube-jNQXAC9IVRw.json   # url, track, language
 
+Only sites whose IDs are globally unique (YouTube) key on the ID alone, so
+``youtu.be/X`` and ``watch?v=X`` share one file. Elsewhere an offline ID
+can repeat across pages (LinkedIn Learning's is the lesson slug without
+the course), so the key adds a hash of the whole URL:
+``linkedinlearning-introduction-1a2b3c4d5e``.
+
 ``language`` is a clean code such as ``en`` or ``en-US``. YouTube's raw
 track key can carry a track ID (``en-US-njLgzgtehjs``); it is kept as
 ``track_key``.
@@ -47,6 +53,8 @@ INSTALL_HINT = (
 MANUAL = "manual"
 AUTOMATIC = "automatic"
 _UNSAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+# yt-dlp extractors whose URL-derived ID names one video site-wide.
+GLOBAL_ID_EXTRACTORS = frozenset({"Youtube"})
 
 
 class RemoteCaptionsError(ValueError):
@@ -224,15 +232,23 @@ class YtDlpBackend:
         }
 
     def video_key(self, url: str) -> str:
-        """``<site>-<id>`` read from the URL alone, or a hash of the URL."""
+        """Cache key read from the URL alone, unique to one video.
+
+        ``<site>-<id>`` for sites with global IDs, ``<site>-<id>-<hash>``
+        for other recognized sites, and ``url-<hash>`` otherwise.
+        """
+        url_hash = hashlib.sha256(url.encode()).hexdigest()
         for extractor in self.yt_dlp.extractor.gen_extractor_classes():
             if extractor.ie_key() == "Generic" or not extractor.suitable(url):
                 continue
             video_id = extractor.get_temp_id(url)
             if video_id:
-                return _UNSAFE_NAME_RE.sub("_", f"{extractor.ie_key().lower()}-{video_id}")
+                key = f"{extractor.ie_key().lower()}-{video_id}"
+                if extractor.ie_key() not in GLOBAL_ID_EXTRACTORS:
+                    key = f"{key}-{url_hash[:10]}"
+                return _UNSAFE_NAME_RE.sub("_", key)
             break
-        return "url-" + hashlib.sha256(url.encode()).hexdigest()[:16]
+        return "url-" + url_hash[:16]
 
     def extract(self, url: str) -> dict:
         try:
