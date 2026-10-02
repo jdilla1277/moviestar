@@ -119,7 +119,7 @@ Run `moviestar --help` for the operational contract exposed to agents.
 Run `moviestar doctor` after installation to verify that the FFmpeg build has
 the filters and encoders required by the features you plan to use.
 
-The package weighs ~210MB on install — `faster-whisper` ships local transcription out of the box (no API keys, no cloud round-trip). Diarization is opt-in: `pip install moviestar[diarize]`.
+The package weighs ~210MB on install — `faster-whisper` ships local transcription out of the box (no API keys, no cloud round-trip). Diarization is opt-in: `pip install moviestar[diarize]`. Fetching captions from a video page URL with `load --captions URL` is opt-in too: `pip install 'moviestar[url-captions]'` adds [yt-dlp](https://github.com/yt-dlp/yt-dlp).
 
 ## License and status
 
