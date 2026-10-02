@@ -14,7 +14,7 @@ import webbrowser
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 import click
 
@@ -65,6 +65,22 @@ def _installation_url() -> str:
     return remembered if isinstance(remembered, str) and remembered else _DEFAULT_INSTALLATION_URL
 
 
+def _claim_url() -> str:
+    override = os.environ.get("MOVIESTAR_ACCOUNT_CLAIM_URL")
+    if override:
+        return override
+    state = _read_state()
+    remembered = state.get("claim_url")
+    if isinstance(remembered, str) and remembered:
+        return remembered
+    installation = state.get("installation_url")
+    if isinstance(installation, str) and installation:
+        parsed = urlsplit(installation)
+        if parsed.scheme and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}/api/v1/account/claims"
+    return _DEFAULT_CLAIM_URL
+
+
 def _account_url() -> str:
     override = os.environ.get("MOVIESTAR_ACCOUNT_URL")
     if override:
@@ -113,7 +129,7 @@ def _decode_response(body: bytes) -> dict:
 
 
 def _send_claim(payload: dict) -> tuple[str | None, dict | None]:
-    url = os.environ.get("MOVIESTAR_ACCOUNT_CLAIM_URL", _DEFAULT_CLAIM_URL)
+    url = _claim_url()
     request = Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
@@ -144,7 +160,7 @@ def _send_claim(payload: dict) -> tuple[str | None, dict | None]:
 def _exchange_claim(
     request_id: str, installation_id: str, claim_secret: str
 ) -> tuple[str | None, dict | None]:
-    claims_url = os.environ.get("MOVIESTAR_ACCOUNT_CLAIM_URL", _DEFAULT_CLAIM_URL)
+    claims_url = _claim_url()
     request = Request(
         f"{claims_url.rstrip('/')}/{request_id}/exchange",
         data=json.dumps(
@@ -192,8 +208,24 @@ def _credential_for_connection(state: dict) -> str | None:
     return None
 
 
+class _NoRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        return None
+
+
 def _installation_request(method: str, credential: str) -> tuple[int | None, dict | None, str | None]:
     url = _installation_url()
+    parsed = urlsplit(url)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.fragment
+    ):
+        return None, None, "The account service URL is invalid."
+    if parsed.scheme == "http" and parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
+        return None, None, "The account service URL must use HTTPS outside loopback."
     request = Request(
         url,
         headers={
@@ -203,7 +235,7 @@ def _installation_request(method: str, credential: str) -> tuple[int | None, dic
         method=method,
     )
     try:
-        with urlopen(request, timeout=10) as response:
+        with build_opener(_NoRedirectHandler()).open(request, timeout=10) as response:
             return response.status, _decode_response(response.read()), None
     except HTTPError as error:
         return error.code, _decode_response(error.read()), None
@@ -212,6 +244,7 @@ def _installation_request(method: str, credential: str) -> tuple[int | None, dic
 
 
 def _forget_connection(state: dict, command: str) -> bool:
+    installation_id = state.pop("installation_id", None)
     connection = state.pop("connection", None)
     try:
         _write_state(state)
@@ -221,7 +254,7 @@ def _forget_connection(state: dict, command: str) -> bool:
         try:
             import keyring
 
-            keyring.delete_password(_CREDENTIAL_SERVICE, str(state.get("installation_id")))
+            keyring.delete_password(_CREDENTIAL_SERVICE, str(installation_id))
         except Exception:
             return False
     return True
@@ -277,7 +310,7 @@ def _pending_request(email: str) -> tuple[dict, dict]:
         ).hexdigest(),
         "moviestar_version": __version__,
     }
-    claim_url = os.environ.get("MOVIESTAR_ACCOUNT_CLAIM_URL", _DEFAULT_CLAIM_URL)
+    claim_url = _claim_url()
     claim_origin = urlsplit(claim_url)
     installation_url = os.environ.get("MOVIESTAR_ACCOUNT_INSTALLATION_URL") or (
         f"{claim_origin.scheme}://{claim_origin.netloc}/api/v1/account/installation"
@@ -286,6 +319,7 @@ def _pending_request(email: str) -> tuple[dict, dict]:
         "version": 1,
         "installation_id": installation_id,
         "installation_url": installation_url,
+        "claim_url": claim_url,
         "pending_claim": pending,
     }
 
@@ -453,13 +487,21 @@ def status() -> None:
                 )
             )
         ):
+            if not state.get("installation_url") and not os.environ.get("MOVIESTAR_ACCOUNT_INSTALLATION_URL"):
+                _emit({
+                    "command": "account status",
+                    "status": "error",
+                    "error": "The connected account service origin was not recorded.",
+                    "hint": "Set MOVIESTAR_ACCOUNT_INSTALLATION_URL to the service that approved this installation, then retry.",
+                })
+                raise click.exceptions.Exit(1)
             credential = _credential_for_connection(state)
             if not credential:
                 _emit({
                     "command": "account status",
                     "status": "error",
                     "error": "The local installation credential is unavailable.",
-                    "hint": "Open your MovieStar account to revoke this installation, then connect again.",
+                    "hint": "Unlock the credential store and retry, or revoke it in your account and run 'moviestar account disconnect --local'.",
                 })
                 raise click.exceptions.Exit(1)
             response_status, remote, request_error = _installation_request("GET", credential)
@@ -472,7 +514,7 @@ def status() -> None:
                     "hint": "Retry 'moviestar account status' when the account service is available.",
                 })
                 raise click.exceptions.Exit(1)
-            if response_status == 401:
+            if response_status == 401 and isinstance(remote, dict) and remote.get("status") == "not_connected":
                 _forget_connection(state, "account status")
                 _emit({
                     "command": "account status",
@@ -649,6 +691,7 @@ def status() -> None:
                     "version": 1,
                     "installation_id": installation_id,
                     "installation_url": state.get("installation_url", _DEFAULT_INSTALLATION_URL),
+                    "claim_url": state.get("claim_url") or _claim_url(),
                     "connection": connection,
                 }
                 try:
@@ -719,11 +762,14 @@ def status() -> None:
 
 
 @account.command("disconnect")
-def disconnect() -> None:
+@click.option("--local", "local_only", is_flag=True, help="Forget this installation locally without confirming remote revocation.")
+def disconnect(local_only: bool) -> None:
     """Revoke this installation's account access.
 
-    The real command revokes the installation remotely and removes its local
-    credential. Projects and local editing remain available afterward.
+    Normally this revokes the installation remotely before removing its local
+    credential. If that credential is unreadable, use ``--local`` to forget
+    it locally, then revoke the remaining grant from the human's account page.
+    Projects and local editing remain available afterward.
 
     """
     state = _read_state()
@@ -734,16 +780,35 @@ def disconnect() -> None:
             "hint": "No connected installation needs revocation.",
         })
         return
+    if local_only:
+        removed = _forget_connection(state, "account disconnect")
+        _emit({
+            "command": "account disconnect", "status": "disconnected",
+            "remote_grant_revoked": False,
+            "local_credential_removed": removed,
+            "local_editing_available": True,
+            "warning": "The remote grant may still be active. Revoke this installation from your MovieStar account page.",
+        })
+        return
+    if not state.get("installation_url") and not os.environ.get("MOVIESTAR_ACCOUNT_INSTALLATION_URL"):
+        _emit({
+            "command": "account disconnect", "status": "error",
+            "error": "The connected account service origin was not recorded.",
+            "hint": "Set MOVIESTAR_ACCOUNT_INSTALLATION_URL to the service that approved this installation, then retry.",
+        })
+        raise click.exceptions.Exit(1)
     credential = _credential_for_connection(state)
     if not credential:
         _emit({
             "command": "account disconnect", "status": "error",
             "error": "The local installation credential is unavailable.",
-            "hint": "Open your MovieStar account to revoke this installation.",
+            "hint": "Unlock the credential store and retry, or revoke it in your account and run 'moviestar account disconnect --local'.",
         })
         raise click.exceptions.Exit(1)
     response_status, remote, request_error = _installation_request("DELETE", credential)
-    if request_error or response_status not in {200, 401}:
+    revoked = response_status == 200 and isinstance(remote, dict) and remote.get("status") == "revoked"
+    already_revoked = response_status == 401 and isinstance(remote, dict) and remote.get("status") == "not_connected"
+    if request_error or not (revoked or already_revoked):
         _emit({
             "command": "account disconnect", "status": "error",
             "error": request_error or (remote or {}).get("error") or "The account service could not revoke this installation.",
@@ -753,7 +818,7 @@ def disconnect() -> None:
     removed = _forget_connection(state, "account disconnect")
     _emit({
         "command": "account disconnect", "status": "disconnected",
-        "remote_grant_revoked": response_status == 200,
+        "remote_grant_revoked": revoked,
         "local_credential_removed": removed,
         "local_editing_available": True,
         "hint": "This installation no longer has access to hosted services.",

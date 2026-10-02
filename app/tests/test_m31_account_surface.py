@@ -565,6 +565,8 @@ def _connected_state(tmp_path, monkeypatch):
     state_path.write_text(json.dumps({
         "version": 1,
         "installation_id": "123e4567-e89b-42d3-a456-426614174000",
+        "installation_url": "https://trymoviestar.com/api/v1/account/installation",
+        "claim_url": "https://trymoviestar.com/api/v1/account/claims",
         "connection": {
             "email": "h***@example.com",
             "handle": "@m24",
