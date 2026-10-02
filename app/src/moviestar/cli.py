@@ -12,6 +12,7 @@ import json
 import math
 import os
 import re
+import shlex
 import shutil
 import sys
 import tempfile
@@ -19884,6 +19885,23 @@ def _parse_legacy_placement_overrides(override_args: tuple[str, ...]) -> list[di
     return overrides
 
 
+def _unmatched_placement_selectors(spec: dict, recipe: dict) -> list[dict]:
+    """Override selectors naming a scene or layout the composition lacks."""
+    composition = spec.get("composition") or []
+    scenes = {
+        scene.get("name", f"scene_{i + 1}") for i, scene in enumerate(composition)
+    }
+    layouts = {scene.get("layout", {}).get("preset") for scene in composition}
+    return [
+        override["selector"]
+        for override in _caption_placement_policy(recipe)["overrides"]
+        if ("scene" in override["selector"]
+            and override["selector"]["scene"] not in scenes)
+        or ("layout" in override["selector"]
+            and override["selector"]["layout"] not in layouts)
+    ]
+
+
 def _upsert_caption_override(policy: dict, selector: dict, controls: dict) -> None:
     """Layer controls onto the override for ``selector``, adding it if new."""
     for index, override in enumerate(policy["overrides"]):
@@ -21015,7 +21033,15 @@ def captions_placement(
         selectors.append({"scene": scene_name})
     if layout_name:
         selectors.append({"layout": layout_name})
+    stored_selectors = [
+        override["selector"]
+        for override in _caption_placement_policy(recipe)["overrides"]
+    ]
     for selector in selectors:
+        if reset and selector in stored_selectors:
+            # Removing an override for a scene or layout that no longer
+            # exists is exactly how a stale override gets cleaned up.
+            continue
         if "scene" in selector and selector["scene"] not in scene_names:
             _error_exit_with_hint(
                 command,
@@ -22113,10 +22139,12 @@ def _derive_caption_records(
 )
 @click.option(
     "--position",
-    default="bottom",
-    help="Starting anchor: bottom, top, center, a corner or side "
-    "(top-left ... bottom-right), or lower-third-left/right. Fine-tune "
-    "size and placement later with 'moviestar captions placement'.",
+    default=None,
+    help="Default anchor: bottom, top, center, a corner or side "
+    "(top-left ... bottom-right), or lower-third-left/right. A new track "
+    "defaults to bottom; re-running generate keeps the track's stored "
+    "placement and changes only its default anchor. Fine-tune size and "
+    "placement with 'moviestar captions placement'.",
 )
 @click.option("--style", default="social-bold", help="Caption style preset.")
 @click.option("--css", default=None, help="CSS-like declaration subset.")
@@ -22141,17 +22169,25 @@ def _derive_caption_records(
     help="Active word color. Requires --highlight spoken-word. "
     "Default #ffe94a.",
 )
+@click.option(
+    "--reset-placement",
+    is_flag=True,
+    default=False,
+    help="Discard the track's stored placement (sizes, anchors, scene and "
+    "layout overrides) instead of keeping it.",
+)
 def captions_generate(
     track: str,
     source_id: str | None,
     from_tc: str | None,
     to_tc: str | None,
-    position: str,
+    position: str | None,
     style: str,
     css: str | None,
     style_for_args: tuple[str, ...],
     highlight: str,
     highlight_color: str | None,
+    reset_placement: bool,
 ) -> None:
     """Generate a derived caption track from the project's transcript.
 
@@ -22173,7 +22209,8 @@ def captions_generate(
     Verify cues without rendering via 'moviestar captions dump'. To
     hand-edit cues as plain overlays instead, freeze the track with
     'moviestar captions materialize' (it stops following timeline
-    edits). Re-running generate replaces the track and its recipe.
+    edits). Re-running generate replaces the track and its recipe but
+    keeps its placement (pass --reset-placement to start fresh).
     """
     if highlight_color is not None and highlight != "spoken-word":
         _error_exit(
@@ -22230,6 +22267,36 @@ def captions_generate(
             f"{', '.join(sorted(known_sources))}.",
         )
 
+    # Placement tuned with `captions placement` survives regeneration
+    # (#27): agents re-run generate to change style or highlighting, not
+    # to throw away layout work.
+    # Validate before layering: retained scene overrides can cover every
+    # cue, so per-cue validation would never see a bad default anchor.
+    if position is not None and position not in OVERLAY_POSITION_PRESETS:
+        _error_exit(
+            "captions generate",
+            f"Unknown overlay position {position!r}. Use one of: "
+            f"{', '.join(sorted(OVERLAY_POSITION_PRESETS))}.",
+        )
+    previous = caption_recipe_for_track(spec, track)
+    kept = _caption_placement_policy(previous) if previous else None
+    if kept is not None and (reset_placement or not (
+        kept["default"] or kept["overrides"]
+    )):
+        kept = None
+    if kept is not None:
+        placement_status = "kept"
+        if position is not None:
+            kept["default"] = _layer_caption_geometry(
+                kept["default"], {"at": position}
+            )
+        position = kept["default"].get("at", "bottom")
+    else:
+        placement_status = (
+            "reset" if reset_placement and previous is not None else "default"
+        )
+        position = position or "bottom"
+
     # The recipe is the authoritative caption state for this track;
     # cues are derived from it now and re-derived whenever the compiled
     # timeline, recipe, or rules change (see _refresh_caption_tracks).
@@ -22246,7 +22313,7 @@ def captions_generate(
         "css": css,
         "style_for": style_for,
         "highlight": {"mode": highlight, "color": active_color},
-        "placement": None,
+        "placement": kept,
         "edits": [],
         "cache_fingerprint": None,
     }
@@ -22333,6 +22400,36 @@ def captions_generate(
     }
     result["highlight"] = {"mode": highlight, "color": active_color}
     result["caption_rules"] = caption_rules_report
+    result["placement"] = {
+        "status": placement_status,
+        "policy": _caption_placement_policy(recipe),
+    }
+    unmatched = _unmatched_placement_selectors(spec, recipe)
+    if unmatched:
+        names = ", ".join(
+            f"{kind}:{name}" for selector in unmatched
+            for kind, name in selector.items()
+        )
+        first_kind, first_name = next(iter(unmatched[0].items()))
+        remove_command = shlex.join(
+            [
+                "moviestar", "captions", "placement", "--track", track,
+                f"--{first_kind}", first_name, "--reset",
+            ]
+        )
+        warnings.append(
+            _warning(
+                "caption_placement_override_unmatched",
+                f"Kept placement override(s) for {names}, which no scene "
+                "in the current composition matches; they have no effect.",
+                selectors=unmatched,
+                remove_command=remove_command,
+                hint=(
+                    f"Remove one with: {remove_command} "
+                    "(or keep it for a scene you plan to restore)."
+                ),
+            )
+        )
     if style_for:
         counts_by_source: dict[str, int] = {}
         for record in records:
