@@ -11,10 +11,11 @@ import secrets
 import tempfile
 import uuid
 import webbrowser
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 import click
 
@@ -81,6 +82,15 @@ def _claim_url() -> str:
     return _DEFAULT_CLAIM_URL
 
 
+def _new_claim_url() -> str:
+    return os.environ.get("MOVIESTAR_ACCOUNT_CLAIM_URL") or _DEFAULT_CLAIM_URL
+
+
+def _installation_url_for_claim(claim_url: str) -> str:
+    parsed = urlsplit(claim_url)
+    return f"{parsed.scheme}://{parsed.netloc}/api/v1/account/installation"
+
+
 def _account_url() -> str:
     override = os.environ.get("MOVIESTAR_ACCOUNT_URL")
     if override:
@@ -128,8 +138,35 @@ def _decode_response(body: bytes) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+class _NoRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        return None
+
+
+def _service_url_error(url: str) -> str | None:
+    try:
+        parsed = urlsplit(url)
+        host = parsed.hostname
+    except ValueError:
+        return "The account service URL is invalid."
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not host
+        or parsed.username
+        or parsed.password
+        or parsed.fragment
+    ):
+        return "The account service URL is invalid."
+    if parsed.scheme == "http" and host not in {"localhost", "127.0.0.1", "::1"}:
+        return "The account service URL must use HTTPS outside loopback."
+    return None
+
+
 def _send_claim(payload: dict) -> tuple[str | None, dict | None]:
     url = _claim_url()
+    url_error = _service_url_error(url)
+    if url_error:
+        return url_error, None
     request = Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
@@ -140,13 +177,15 @@ def _send_claim(payload: dict) -> tuple[str | None, dict | None]:
         method="POST",
     )
     try:
-        with urlopen(request, timeout=10) as response:
+        with build_opener(_NoRedirectHandler()).open(request, timeout=10) as response:
             body = _decode_response(response.read())
             if response.status >= 400:
                 message = body.get("error") or f"Server returned HTTP {response.status}."
                 return str(message), body
             return None, body
     except HTTPError as error:
+        if 300 <= error.code < 400:
+            return f"Server returned HTTP {error.code}.", None
         body = _decode_response(error.read())
         return str(body.get("error") or f"Server returned HTTP {error.code}."), body
     except URLError as error:
@@ -161,6 +200,9 @@ def _exchange_claim(
     request_id: str, installation_id: str, claim_secret: str
 ) -> tuple[str | None, dict | None]:
     claims_url = _claim_url()
+    url_error = _service_url_error(claims_url)
+    if url_error:
+        return url_error, None
     request = Request(
         f"{claims_url.rstrip('/')}/{request_id}/exchange",
         data=json.dumps(
@@ -176,12 +218,14 @@ def _exchange_claim(
         method="POST",
     )
     try:
-        with urlopen(request, timeout=10) as response:
+        with build_opener(_NoRedirectHandler()).open(request, timeout=10) as response:
             body = _decode_response(response.read())
             if response.status >= 400:
                 return str(body.get("error") or f"Server returned HTTP {response.status}."), body
             return None, body
     except HTTPError as error:
+        if 300 <= error.code < 400:
+            return f"Server returned HTTP {error.code}.", None
         body = _decode_response(error.read())
         return str(body.get("error") or f"Server returned HTTP {error.code}."), body
     except URLError as error:
@@ -208,24 +252,11 @@ def _credential_for_connection(state: dict) -> str | None:
     return None
 
 
-class _NoRedirectHandler(HTTPRedirectHandler):
-    def redirect_request(self, request, fp, code, msg, headers, newurl):
-        return None
-
-
 def _installation_request(method: str, credential: str) -> tuple[int | None, dict | None, str | None]:
     url = _installation_url()
-    parsed = urlsplit(url)
-    if (
-        parsed.scheme not in {"http", "https"}
-        or not parsed.hostname
-        or parsed.username
-        or parsed.password
-        or parsed.fragment
-    ):
-        return None, None, "The account service URL is invalid."
-    if parsed.scheme == "http" and parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
-        return None, None, "The account service URL must use HTTPS outside loopback."
+    url_error = _service_url_error(url)
+    if url_error:
+        return None, None, url_error
     request = Request(
         url,
         headers={
@@ -246,6 +277,8 @@ def _installation_request(method: str, credential: str) -> tuple[int | None, dic
 def _forget_connection(state: dict, command: str) -> bool:
     installation_id = state.pop("installation_id", None)
     connection = state.pop("connection", None)
+    state.pop("installation_url", None)
+    state.pop("claim_url", None)
     try:
         _write_state(state)
     except OSError as error:
@@ -290,6 +323,10 @@ def _pending_request(email: str) -> tuple[dict, dict]:
                 isinstance(pending.get("claim_secret"), str)
                 and len(pending["claim_secret"]) >= 32
             )
+            expires_at = pending.get("expires_at")
+            if valid_pending and expires_at is not None:
+                expiry = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+                valid_pending = expiry.tzinfo is not None and expiry > datetime.now(timezone.utc)
         except (ValueError, TypeError, AttributeError):
             valid_pending = False
     if not valid_pending:
@@ -310,10 +347,9 @@ def _pending_request(email: str) -> tuple[dict, dict]:
         ).hexdigest(),
         "moviestar_version": __version__,
     }
-    claim_url = _claim_url()
-    claim_origin = urlsplit(claim_url)
+    claim_url = _claim_url() if valid_pending else _new_claim_url()
     installation_url = os.environ.get("MOVIESTAR_ACCOUNT_INSTALLATION_URL") or (
-        f"{claim_origin.scheme}://{claim_origin.netloc}/api/v1/account/installation"
+        _installation_url_for_claim(claim_url)
     )
     return payload, {
         "version": 1,
@@ -690,7 +726,9 @@ def status() -> None:
                 connected_state = {
                     "version": 1,
                     "installation_id": installation_id,
-                    "installation_url": state.get("installation_url", _DEFAULT_INSTALLATION_URL),
+                    "installation_url": os.environ.get("MOVIESTAR_ACCOUNT_INSTALLATION_URL")
+                    or state.get("installation_url")
+                    or _installation_url_for_claim(_claim_url()),
                     "claim_url": state.get("claim_url") or _claim_url(),
                     "connection": connection,
                 }
