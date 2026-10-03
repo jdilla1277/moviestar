@@ -1,4 +1,4 @@
-"""Agent-fillable double-opt-in signup for MovieStar updates."""
+"""Agent-fillable double-opt-in signup for Moviestar updates."""
 
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ def _send_remote(payload: dict) -> tuple[str | None, dict | None]:
 def subscribe(email: str) -> None:
     """Sign EMAIL up for updates via a confirmation email.
 
-    This command is safe for an agent to run on a human's behalf. MovieStar
+    This command is safe for an agent to run on a human's behalf. Moviestar
     sends the address a confirmation link and does not activate the
     subscription until the human opens it.
     """

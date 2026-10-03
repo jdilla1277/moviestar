@@ -1,4 +1,4 @@
-"""Contracts that keep MovieStar releases deliberate and reproducible."""
+"""Contracts that keep Moviestar releases deliberate and reproducible."""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ def test_publish_workflow_is_release_only_and_uses_trusted_publishing() -> None:
 def test_v070_release_notes_capture_the_open_source_transition() -> None:
     notes = RELEASE_NOTES.read_text(encoding="utf-8")
 
-    assert "MovieStar v0.7.0" in notes.splitlines()[0]
+    assert "Moviestar v0.7.0" in notes.splitlines()[0]
     assert "Apache License 2.0" in notes
     assert "v0.6.0" in notes
     assert "pip install --upgrade \"moviestar==0.7.0\"" in notes
@@ -128,7 +128,7 @@ def test_package_ci_caches_pip_downloads() -> None:
 def test_v071_hotfix_notes_explain_the_transcription_fix() -> None:
     notes = HOTFIX_NOTES.read_text(encoding="utf-8")
 
-    assert "MovieStar v0.7.1" in notes.splitlines()[0]
+    assert "Moviestar v0.7.1" in notes.splitlines()[0]
     assert "PyAV 19" in notes
     assert "metadata_errors" in notes
     assert "pip install --upgrade \"moviestar==0.7.1\"" in notes

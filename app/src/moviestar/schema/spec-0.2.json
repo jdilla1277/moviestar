@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://trymoviestar.com/schema/spec-0.2.json",
-  "title": "MovieStar Edit Spec v0.2",
+  "title": "Moviestar Edit Spec v0.2",
   "description": "Multi-source declarative edit spec. Each source carries its own operations stack (independent edit history). The optional `composition` block stitches per-source edits into a unified result; null means no stitching (single-source export only). Trim timecodes are interpreted in result-time per source — a subsequent trim on a source narrows that source's current result, not its original media.",
   "type": "object",
   "required": ["version", "sources", "revisions"],

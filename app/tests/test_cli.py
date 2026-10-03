@@ -562,7 +562,7 @@ class TestHelp:
         assert "TIMECODE FORMATS" in result.output
 
     def test_help_mentions_agents(self, runner):
-        """Help must identify MovieStar as an agent-facing tool."""
+        """Help must identify Moviestar as an agent-facing tool."""
         result = runner.invoke(cli, ["--help"])
         assert "AI agents" in result.output
 

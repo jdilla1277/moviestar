@@ -1,4 +1,4 @@
-"""Contracts for MovieStar's first Apache-2.0 package release."""
+"""Contracts for Moviestar's first Apache-2.0 package release."""
 
 from __future__ import annotations
 

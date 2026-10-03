@@ -17,7 +17,7 @@ successfully.
 5. For TikTok, Instagram Reels, or YouTube Shorts delivery, capture important
    frames with `screenshot --platform PLATFORM`. Review both the annotated
    image and structured `platform_ui_occlusion` warnings. This checks only
-   MovieStar-authored overlay/slot geometry; no OCR or object detection is run
+   Moviestar-authored overlay/slot geometry; no OCR or object detection is run
    on source pixels.
 
 ## After the final render
@@ -30,7 +30,7 @@ successfully.
 - Check that captions are readable and synchronized, subjects remain framed,
   overlays are not clipped, and the final frame is intentional.
 - When audio matters, inspect or listen to representative sections. Use
-  `probe --loudness` or a MovieStar loudness report for measurable levels and
+  `probe --loudness` or a Moviestar loudness report for measurable levels and
   clipping risk.
 - Compare actual duration with the intended result. A frame of container drift
   can be normal for re-encoded output; larger unexplained drift needs review.

@@ -153,7 +153,7 @@ def share(file: Path, recipient: str | None, dry_run: bool) -> None:
               help="Save the finished MP4 here; defaults to the link slug plus .mp4.")
 @click.option("--dry-run", is_flag=True, help="Preview the destination without fetching anything.")
 def download(url: str, out: Path | None, dry_run: bool) -> None:
-    """Download a finished MP4 from an unlisted MovieStar watch link.
+    """Download a finished MP4 from an unlisted Moviestar watch link.
 
     Example: moviestar download https://trymoviestar.com/v/SLUG --out alex.mp4
 
@@ -168,7 +168,7 @@ def download(url: str, out: Path | None, dry_run: bool) -> None:
         _emit({
             "command": "download", "status": "error", "url": url,
             "download_performed": False,
-            "error": "Expected an unlisted MovieStar watch URL.",
+            "error": "Expected an unlisted Moviestar watch URL.",
             "hint": "Use a link like https://trymoviestar.com/v/SLUG.",
         })
         raise click.exceptions.Exit(1)

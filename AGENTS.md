@@ -1,4 +1,4 @@
-# MovieStar agent instructions
+# Moviestar agent instructions
 
 Read and follow [`CLAUDE.md`](CLAUDE.md). Its development rules apply to every
 coding agent, regardless of product or model.

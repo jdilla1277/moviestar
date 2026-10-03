@@ -576,7 +576,7 @@ def transcribe_file(
         from faster_whisper import WhisperModel
     except ImportError as exc:
         raise TranscriptionError(
-            "faster-whisper is not installed. Reinstall MovieStar: pip install -e app/"
+            "faster-whisper is not installed. Reinstall Moviestar: pip install -e app/"
         ) from exc
 
     cached_model = resolve_cached_model(model)

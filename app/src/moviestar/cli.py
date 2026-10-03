@@ -1,4 +1,4 @@
-"""MovieStar CLI — deterministic video editing for AI agents."""
+"""Moviestar CLI — deterministic video editing for AI agents."""
 
 from __future__ import annotations
 
@@ -981,7 +981,7 @@ OUTPUT COMMANDS
 ACCOUNT COMMANDS
 
 \b
-  account connect EMAIL  Ask MovieStar to email the human an account claim.
+  account connect EMAIL  Ask Moviestar to email the human an account claim.
   account status         Show approval or connection state for this install.
   account disconnect     Revoke this install; local editing keeps working.
   account open           Open the human's account page in a browser.
@@ -1104,7 +1104,7 @@ class _UsageErrorEnvelopeGroup(click.Group):
 )
 @click.version_option(__version__, "--version", message="%(version)s")
 def cli() -> None:
-    """MovieStar — video editing CLI for AI agents.
+    """Moviestar — video editing CLI for AI agents.
 
     Requires: FFmpeg on PATH (`brew install ffmpeg` / `apt install ffmpeg`).
 
@@ -1463,13 +1463,13 @@ def doctor() -> None:
     """Check FFmpeg environment readiness before building a project.
 
     Read-only and project-independent: reports ffmpeg/ffprobe
-    availability and version plus the build capabilities MovieStar
+    availability and version plus the build capabilities Moviestar
     relies on (drawtext, libass, output encoders), naming the exact
     features each missing capability blocks and how to fix it.
 
     \b
     Exit policy:
-      0  status "ready"     everything MovieStar needs is present
+      0  status "ready"     everything Moviestar needs is present
       0  status "degraded"  ffmpeg runs but optional capabilities are
                             missing; blocked features are listed as
                             warnings with install hints
@@ -4151,7 +4151,7 @@ def activity(
     hint = (
         "Use active_ranges as evidence-backed candidates, then inspect a "
         "candidate with 'moviestar inspect --from <start> --to <end>'. "
-        "MovieStar has not decided which changes are editorially important."
+        "Moviestar has not decided which changes are editorially important."
         if active_ranges else
         "No comparisons reached the active threshold. Lower --threshold, "
         "sample more finely with --interval, or inspect frames directly; a "
@@ -6424,7 +6424,7 @@ def _platform_preview_targets(
             continue
         area = bounds["width"] * bounds["height"]
         # Full-canvas/main video naturally sits behind player UI. Linting it
-        # would be a permanent false positive because MovieStar does not know
+        # would be a permanent false positive because Moviestar does not know
         # which source pixels are important. Small floating/inset slots are
         # intentional geometry and still actionable; large split-screen cells
         # stay a visual-review concern for the same reason as the main video.
@@ -6525,7 +6525,7 @@ def _platform_preview_envelope(planned: dict, *, annotated: bool) -> dict:
         "annotated": annotated,
         "ocr_performed": False,
         "limitations": (
-            "Checks only geometry MovieStar authored and can resolve. No OCR "
+            "Checks only geometry Moviestar authored and can resolve. No OCR "
             "or object detection was performed, so text and important content "
             "already baked-in to source pixels were not checked."
         ),
@@ -6606,7 +6606,7 @@ def _render_platform_preview_in_place(command: str, planned: dict | None) -> Non
     type=click.Choice(PLATFORM_CHOICES),
     default=None,
     help="Overlay a versioned social-player UI reference mask and lint known "
-    "MovieStar overlay/slot geometry. Choices: tiktok, instagram-reels, "
+    "Moviestar overlay/slot geometry. Choices: tiktok, instagram-reels, "
     "youtube-shorts. This deterministic check does not use OCR or inspect "
     "text/content already baked into source pixels.",
 )
@@ -6661,7 +6661,7 @@ def screenshot(
 
     Pass ``--platform tiktok|instagram-reels|youtube-shorts`` to draw a
     versioned social-player UI reference mask. Project-aware screenshots also
-    warn when active MovieStar text or small slots intersect those regions.
+    warn when active Moviestar text or small slots intersect those regions.
     The check never runs OCR or object detection on source pixels.
 
     Why JPEG default: at the same 720p frame, JPEG (q=2) is roughly
@@ -12515,7 +12515,7 @@ def scenes_inset(
     \b
     With no options, reports the current inset placement and regions.
     With --corner / --width / --height, stores the new placement;
-    unspecified values keep their current setting. MovieStar never
+    unspecified values keep their current setting. Moviestar never
     moves an inset on its own — camera preview warns when the inset
     covers selected content and names this command as the fix.
 
@@ -14114,7 +14114,7 @@ def _motion_preview(
                         "mode": None,
                         "values": "calculated",
                         "note": (
-                            "unbound: MovieStar calculated matching pacing "
+                            "unbound: Moviestar calculated matching pacing "
                             "for each resolved segment so this slot keeps "
                             "the same scene duration; see resolved_timeline "
                             "for the numeric speeds and hold durations"
@@ -15165,7 +15165,7 @@ def _build_zoom_candidate(
         warnings.append(
             _warning(
                 "crop_shifted_at_edge",
-                "The selection sits near a source edge; MovieStar shifted "
+                "The selection sits near a source edge; Moviestar shifted "
                 "the crop inside the frame instead of cutting the box "
                 "off. The selection image shows the final crop.",
                 severity="info",
@@ -15700,7 +15700,7 @@ def _selection_coverage_warnings(
                     f"content in the final frame (it covers canvas region "
                     f"{peer_region['x']},{peer_region['y']} "
                     f"{peer_region['width']}x{peer_region['height']}). "
-                    "MovieStar never moves an inset automatically.",
+                    "Moviestar never moves an inset automatically.",
                     covering_slot=peer_name,
                     covering_region=peer_region,
                     **_fields(suggestion),
@@ -15987,7 +15987,7 @@ def scenes_motion_camera_preview(
 
     \b
     Renders three images:
-      - selection: your box/point and MovieStar's final crop drawn on
+      - selection: your box/point and Moviestar's final crop drawn on
         the source frame
       - from: the full final composition as the move starts
       - to: the full final composition once the zoom arrives
@@ -15997,7 +15997,7 @@ def scenes_motion_camera_preview(
 
     \b
     The box is the important content, not a crop to calculate.
-    MovieStar expands it with --padding, matches the slot's aspect
+    Moviestar expands it with --padding, matches the slot's aspect
     ratio, keeps it inside the source frame, and shifts near edges so
     the box always stays visible. --at is the moment the camera is
     fully zoomed: the move runs [at - move-in, at], holds --hold
@@ -17110,7 +17110,7 @@ def scenes_motion_set(motion_file: str, dry_run: bool) -> None:
       }
 
     \b
-    Omitted slot pacing is unbound: MovieStar calculates the matching
+    Omitted slot pacing is unbound: Moviestar calculates the matching
     speed, duration, or hold so every slot in a scene keeps the same
     resolved duration. A camera move with "at" instead of "range" runs
     for 0.5s with in-out easing; "ease": "cut" switches instantly. The
@@ -18084,7 +18084,7 @@ def audio_add(
     adding it to music means "turn music down while this speech layer is
     audible."
 
-    MovieStar probes and validates the real file, then persists canonical
+    Moviestar probes and validates the real file, then persists canonical
     intent in spec.json. Watch/export consume gain, mute, fades, placement,
     looping, and signal-driven ducking now.
     """
@@ -19477,7 +19477,7 @@ def fonts_list() -> None:
     help="Install into the current project or user font directory.",
 )
 def fonts_add(font_file: str, name: str | None, scope: str | None) -> None:
-    """Install a font without modifying MovieStar's package files."""
+    """Install a font without modifying Moviestar's package files."""
     selected_scope = scope or default_font_scope()
     try:
         font = add_font(font_file, name=name, scope=selected_scope)
