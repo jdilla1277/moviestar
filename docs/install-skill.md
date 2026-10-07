@@ -27,6 +27,25 @@ The plugin supplies instructions only. The target environment still needs the
 `moviestar` Python package, Python 3.10+, FFmpeg, and ffprobe; follow
 [getting started](getting-started.md).
 
+## ChatGPT desktop from a checkout
+
+To try the plugin in ChatGPT before a directory listing exists, register a
+local checkout as a development marketplace:
+
+```bash
+git clone https://github.com/jdilla1277/moviestar.git
+cd moviestar
+codex plugin marketplace add .
+```
+
+Restart the ChatGPT desktop app, open the Plugins Directory, select the
+**MovieStar** marketplace, and install **MovieStar**. Start a new task after
+installing. The task still needs a shell, Python 3.10+, FFmpeg, and ffprobe.
+Editing inside hosted ChatGPT environments has not been validated yet.
+
+To build the archive used for directory submission, see
+[plugin submission](plugin-submission.md).
+
 ## Standalone skill
 
 For Codex skill installation without the plugin wrapper, ask the built-in
