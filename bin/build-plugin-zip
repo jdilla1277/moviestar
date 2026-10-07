@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""Build the reproducible skills-only MovieStar plugin archive.
+
+The archive is the upload artifact for OpenAI directory submission. Its root
+contains the portable `plugin.json`, the Codex compatibility manifest, skills,
+listing assets, and the repository's license and trademark terms.
+
+Usage:
+    bin/build-plugin-zip                  # writes dist/moviestar-plugin-X.Y.Z.zip
+    bin/build-plugin-zip --output DIR
+    bin/build-plugin-zip --plugin PATH    # package another plugin directory
+
+Prints a JSON summary (path, sha256, version, files) to stdout.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import sys
+import tempfile
+import zipfile
+
+
+ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_PLUGIN = ROOT / "plugins" / "moviestar"
+SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+NAME = re.compile(r"(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?")
+REPOSITORY_FILES = ("LICENSE", "TRADEMARKS.md")
+NOT_SKILLS_ONLY = ("mcp.json", ".mcp.json", ".app.json", "hooks")
+IGNORED_NAMES = {".DS_Store"}
+IGNORED_PARTS = {"__pycache__"}
+# ZIP cannot represent dates before 1980; a fixed stamp keeps bytes stable.
+FIXED_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
+
+
+class PackageError(Exception):
+    pass
+
+
+def plugin_files(plugin: Path) -> list[Path]:
+    return sorted(
+        path
+        for path in plugin.rglob("*")
+        if path.is_file()
+        and path.name not in IGNORED_NAMES
+        and not IGNORED_PARTS.intersection(path.relative_to(plugin).parts)
+    )
+
+
+def validate(plugin: Path) -> dict[str, object]:
+    manifest_path = plugin / "plugin.json"
+    if not manifest_path.is_file():
+        raise PackageError(f"missing portable manifest: {manifest_path}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    if manifest.get("$schema") != SCHEMA:
+        raise PackageError(f"plugin.json must declare $schema {SCHEMA}")
+    if not NAME.fullmatch(str(manifest.get("name", ""))) or len(manifest["name"]) > 64:
+        raise PackageError(f"invalid plugin name: {manifest.get('name')!r}")
+    if not manifest.get("version"):
+        raise PackageError("plugin.json must declare a version")
+
+    for name in NOT_SKILLS_ONLY:
+        if (plugin / name).exists():
+            raise PackageError(
+                f"{name} found; this package must stay skills-only "
+                "(no MCP server, app, or hook configuration)"
+            )
+    if not list(plugin.glob("skills/*/SKILL.md")):
+        raise PackageError("no skills/*/SKILL.md found")
+
+    interface = manifest.get("extensions", {}).get("com.openai", {}).get("interface", {})
+    referenced = [interface.get("logo"), interface.get("composerIcon")]
+    referenced += list(interface.get("screenshots", []))
+    for relative in filter(None, referenced):
+        target = (plugin / relative).resolve()
+        if not target.is_relative_to(plugin.resolve()) or not target.is_file():
+            raise PackageError(f"listing asset not found inside the plugin: {relative}")
+    return manifest
+
+
+def write_archive(destination: Path, entries: list[tuple[str, Path]]) -> None:
+    with zipfile.ZipFile(destination, "w") as bundle:
+        for name, source in sorted(entries):
+            info = zipfile.ZipInfo(name, date_time=FIXED_TIMESTAMP)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            info.create_system = 3
+            bundle.writestr(info, source.read_bytes(), compresslevel=9)
+
+
+def build(plugin: Path, output: Path) -> dict[str, object]:
+    manifest = validate(plugin)
+    entries = [(path.relative_to(plugin).as_posix(), path) for path in plugin_files(plugin)]
+    entries += [(name, ROOT / name) for name in REPOSITORY_FILES]
+
+    output.mkdir(parents=True, exist_ok=True)
+    archive = output / f"{manifest['name']}-plugin-{manifest['version']}.zip"
+    fd, partial = tempfile.mkstemp(dir=output, suffix=".zip.partial")
+    os.close(fd)
+    try:
+        write_archive(Path(partial), entries)
+        os.replace(partial, archive)
+    finally:
+        if os.path.exists(partial):
+            os.unlink(partial)
+
+    return {
+        "path": str(archive),
+        "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+        "version": manifest["version"],
+        "files": sorted(name for name, _ in entries),
+    }
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--plugin", type=Path, default=DEFAULT_PLUGIN)
+    parser.add_argument("--output", type=Path, default=ROOT / "dist")
+    args = parser.parse_args(argv)
+
+    try:
+        summary = build(args.plugin, args.output)
+    except PackageError as error:
+        print(f"build-plugin-zip: {error}", file=sys.stderr)
+        return 1
+    print(json.dumps(summary, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

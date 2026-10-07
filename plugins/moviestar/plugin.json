@@ -1,0 +1,44 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "moviestar",
+  "version": "0.7.0",
+  "description": "Plan, execute, and verify deterministic video edits with the MovieStar CLI.",
+  "author": {
+    "name": "James Dillard",
+    "url": "https://github.com/jdilla1277"
+  },
+  "homepage": "https://trymoviestar.com/docs",
+  "repository": "https://github.com/jdilla1277/moviestar",
+  "license": "Apache-2.0",
+  "keywords": [
+    "video-editing",
+    "ffmpeg",
+    "agents",
+    "captions",
+    "multicam"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "MovieStar",
+        "shortDescription": "Edit and verify videos",
+        "longDescription": "Use the open-source MovieStar CLI to inspect footage, author non-destructive edits, compose scenes, add captions and audio, and verify final renders. Requires a shell-capable environment with Python 3.10 or newer, FFmpeg, and ffprobe. The skill guides installation of the MovieStar package from PyPI.",
+        "developerName": "James Dillard",
+        "category": "Productivity",
+        "capabilities": [
+          "Write"
+        ],
+        "websiteURL": "https://trymoviestar.com",
+        "supportURL": "https://github.com/jdilla1277/moviestar/issues",
+        "defaultPrompt": [
+          "Use MovieStar to edit this video into a concise clip and verify the export.",
+          "Use MovieStar to turn this recording into a captioned vertical short.",
+          "Use MovieStar to compose these camera angles into a polished scene edit."
+        ],
+        "brandColor": "#16307d",
+        "composerIcon": "./assets/logo.svg",
+        "logo": "./assets/logo.png"
+      }
+    }
+  }
+}
