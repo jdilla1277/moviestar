@@ -7005,6 +7005,61 @@ class TestConcat:
         assert "scenes motion dump" in data["hint"]
         assert "scenes motion set" in data["hint"]
 
+    def _two_up_after_cut(self, runner, holden_to, jdilla_to):
+        result = runner.invoke(
+            cli, ["cut", "--source", "holden", "--from", "0.5", "--to", "1.0"]
+        )
+        assert result.exit_code == 0, result.stdout
+        return runner.invoke(
+            cli,
+            [
+                "scenes",
+                "set",
+                "--canvas",
+                "short",
+                "--scene",
+                "conversation=two-up",
+                "--slot",
+                "conversation:top=holden",
+                "--from",
+                "0.2",
+                "--to",
+                holden_to,
+                "--slot",
+                "conversation:bottom=jdilla",
+                "--from",
+                "0",
+                "--to",
+                jdilla_to,
+                "--audio-from",
+                "conversation=holden",
+            ],
+        )
+
+    def test_scenes_set_accepts_slot_ending_on_cut_boundary(
+        self, runner, test_video, tmp_path, monkeypatch
+    ):
+        """Issue #7: a slot that ends exactly on a cut is valid."""
+        self._multi_audio_load(runner, test_video, tmp_path, monkeypatch)
+        result = self._two_up_after_cut(runner, "0.5", "0.3")
+        assert result.exit_code == 0, result.stdout
+        spec = json.loads((tmp_path / "moviestar" / "spec.json").read_text())
+        top = spec["composition"][0]["slots"][0]
+        assert (top["source_from"], top["source_to"]) == (
+            "0:00:00.200",
+            "0:00:00.500",
+        )
+
+    def test_scenes_set_names_the_cut_a_slot_spans(
+        self, runner, test_video, tmp_path, monkeypatch
+    ):
+        self._multi_audio_load(runner, test_video, tmp_path, monkeypatch)
+        result = self._two_up_after_cut(runner, "0.8", "0.6")
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert "spans the cut at 0.5s" in data["error"]
+        assert "equal duration" not in data["error"]
+
     def test_scenes_set_rejects_invalid_slot_with_valid_alternatives(
         self, runner, test_video, tmp_path, monkeypatch
     ):

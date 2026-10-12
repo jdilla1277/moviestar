@@ -33,9 +33,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # Cache pip downloads (~150MB of wheels: PyAV, CTranslate2, ONNX
+      # Runtime, NumPy) so install time doesn't depend on PyPI throughput;
+      # a slow mirror once stretched install to 18 minutes and timed out
+      # the job. The venv's pip shares this ~/.cache/pip.
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: app/pyproject.toml
 
       # Moviestar shells out to FFmpeg and ffprobe for media operations.
       - name: Install ffmpeg
@@ -65,6 +71,14 @@ jobs:
         run: |
           source app/.venv/bin/activate
           bin/check-dependency-licenses
+
+      # --captions URL needs the url-captions extra (yt-dlp). Install it
+      # after the core check so the fast tests cover the real backend too.
+      - name: Check url-captions extra license policy
+        run: |
+          source app/.venv/bin/activate
+          pip install -e "./app[url-captions]"
+          bin/check-dependency-licenses --extra url-captions
 
       # Fast path: everything except slow (whisper) tests. Gives quick
       # signal on most failures even if the slow path breaks.

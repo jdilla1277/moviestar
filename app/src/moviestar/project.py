@@ -493,6 +493,7 @@ def _build_source_entry(
     thumb_width: int = DEFAULT_THUMB_WIDTH,
     captions_path: str | None = None,
     transcribe_windows: list[tuple[float, float]] | None = None,
+    captions_provenance: dict | None = None,
 ) -> dict:
     """Probe, extract frames, transcribe one source. Returns the source
     entry dict for project.json. Used by create_workspace.
@@ -503,6 +504,8 @@ def _build_source_entry(
     ``captions_path`` imports a caption file as the transcript instead of
     running Whisper. ``transcribe_windows`` runs Whisper on those windows
     only, laid over the imported captions when both are given.
+    ``captions_provenance`` (the URL a caption file came from, issue #39)
+    is recorded in the transcript's ``captions`` block.
     """
     _log(f"  [{source_id}] Probing metadata...", quiet=quiet)
     probe = run_ffprobe(abs_source)
@@ -578,6 +581,7 @@ def _build_source_entry(
                 source_duration=duration_seconds,
                 source_path=abs_source,
             )
+            transcript["captions"].update(captions_provenance or {})
         if transcribe_windows and audio_stream is not None:
             transcript = merge_range_transcript(
                 transcript,
@@ -622,6 +626,7 @@ def create_workspace(
     thumb_width: int = DEFAULT_THUMB_WIDTH,
     captions: list[str | None] | None = None,
     transcribe_windows: list[tuple[float, float]] | None = None,
+    captions_provenance: list[dict | None] | None = None,
 ) -> dict:
     """Create or extend a multi-source moviestar/ workspace.
 
@@ -643,7 +648,8 @@ def create_workspace(
 
     ``captions`` pairs a caption file (or None) with each path by position;
     ``transcribe_windows`` limits Whisper to those windows for every new
-    source (issue #29).
+    source (issue #29). ``captions_provenance`` pairs the same way and
+    records where a fetched caption file came from (issue #39).
 
     Returns the (possibly extended) project dict that was written.
     """
@@ -667,6 +673,8 @@ def create_workspace(
     padded_offsets.extend([None] * (len(source_paths) - len(padded_offsets)))
     padded_captions = list(captions) if captions else []
     padded_captions.extend([None] * (len(source_paths) - len(padded_captions)))
+    padded_provenance = list(captions_provenance) if captions_provenance else []
+    padded_provenance.extend([None] * (len(source_paths) - len(padded_provenance)))
 
     ms_dir = get_project_dir(cwd, walk=False)
     frames_dir = ms_dir / FRAMES_DIR
@@ -705,8 +713,8 @@ def create_workspace(
             )
 
     new_sources: list[dict] = []
-    for path, override_name, start_offset_seconds, captions_path in zip(
-        source_paths, padded_names, padded_offsets, padded_captions
+    for path, override_name, start_offset_seconds, captions_path, provenance in zip(
+        source_paths, padded_names, padded_offsets, padded_captions, padded_provenance
     ):
         abs_source = os.path.realpath(path)
         # Derive IDs from the user-facing argument, not the resolved
@@ -732,6 +740,7 @@ def create_workspace(
             allow_model_download=allow_model_download,
             captions_path=captions_path,
             transcribe_windows=transcribe_windows,
+            captions_provenance=provenance,
         )
         sources.append(entry)
         new_sources.append(entry)

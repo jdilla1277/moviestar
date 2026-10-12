@@ -12,6 +12,7 @@ import json
 import math
 import os
 import re
+import shlex
 import shutil
 import sys
 import tempfile
@@ -107,6 +108,14 @@ from moviestar.caption_import import (
     CaptionImportError,
     import_caption_transcript,
     parse_caption_file,
+)
+from moviestar.remote_captions import (
+    CAPTIONS_DIR,
+    RemoteCaptionsError,
+    fetch_captions,
+    is_caption_url,
+    provenance as caption_provenance_of,
+    store_captions,
 )
 from moviestar.find import (
     STRONG_WARNING_THRESHOLD,
@@ -2186,7 +2195,7 @@ def _skip_reason_prose(enum_value: str | None) -> str:
 
 CAPTIONS_HINT = (
     "Pass a WebVTT (.vtt) or SRT (.srt) caption file, such as YouTube "
-    "captions saved alongside the video."
+    "captions saved alongside the video, or the video page URL."
 )
 RANGE_HINT = (
     "Give each range as START END in seconds or [HH:]MM:SS, e.g. "
@@ -2196,13 +2205,46 @@ RANGE_HINT = (
 
 
 def _checked_caption_path(command: str, path: str) -> str:
-    """Absolute caption path, or a structured error if it can't be read."""
+    """Absolute caption path, or a structured error if it can't be read.
+
+    Video page URLs pass through unchanged; ``_fetch_caption_urls``
+    resolves them once no earlier check can fail (issue #39).
+    """
+    if is_caption_url(path):
+        return path
     abs_path = os.path.realpath(path)
     try:
         parse_caption_file(abs_path)
     except CaptionImportError as exc:
         _error_exit_with_hint(command, str(exc), CAPTIONS_HINT)
     return abs_path
+
+
+def _fetch_caption_urls(
+    command: str,
+    captions: list[str],
+    staging_dir: Path,
+    cache_dir: Path,
+    *,
+    quiet: bool,
+) -> list[dict | None]:
+    """Fetch each caption URL into ``staging_dir`` (None for files).
+
+    Reuses tracks saved in ``cache_dir``. Exits with a structured error,
+    before the workspace changes, when a URL has no usable track.
+    """
+    fetched: list[dict | None] = []
+    for value in captions:
+        if not is_caption_url(value):
+            fetched.append(None)
+            continue
+        try:
+            fetched.append(
+                fetch_captions(value, staging_dir, cache_dir=cache_dir, quiet=quiet)
+            )
+        except RemoteCaptionsError as exc:
+            _error_exit_with_hint(command, str(exc), exc.hint, **exc.details)
+    return fetched
 
 
 def _checked_transcribe_windows(
@@ -2219,8 +2261,18 @@ def _checked_transcribe_windows(
 def _transcript_summary(transcript: dict) -> dict:
     """Backend and range coverage for load / retranscribe / status output."""
     summary: dict = {"backend": transcript.get("backend")}
-    if transcript.get("captions"):
-        summary["captions"] = transcript["captions"].get("path")
+    captions = transcript.get("captions")
+    if captions:
+        summary["captions"] = captions.get("path")
+        # Fetched tracks name their language and kind (issue #39); local
+        # files report the language their header declares, if any.
+        if captions.get("url"):
+            summary["captions_url"] = captions["url"]
+        language = captions.get("language") or transcript.get("language")
+        if language:
+            summary["captions_language"] = language
+        if captions.get("track"):
+            summary["captions_track"] = captions["track"]
     if transcript.get("transcribed_ranges"):
         summary["coverage"] = transcript.get("coverage", "full")
         summary["transcribed_ranges"] = [
@@ -2702,7 +2754,9 @@ def probe(video: str, loudness: bool, from_tc: str | None, to_tc: str | None) ->
     help="Import a WebVTT or SRT caption file as the transcript instead of "
     "running Whisper. Takes seconds on hours of footage. YouTube word "
     "timing tags time each word; otherwise words are spread across each "
-    "cue. Repeat once per video, in order.",
+    "cue. A video page URL (YouTube or any yt-dlp site) fetches its "
+    "English captions into moviestar/captions/; needs "
+    "'pip install moviestar[url-captions]'. Repeat once per video, in order.",
 )
 @click.option(
     "--transcribe-range",
@@ -2796,7 +2850,13 @@ def load(
 
     Long sources often ship with captions. Pass --captions FILE.vtt (or
     .srt) to import them as the transcript in seconds; the transcript
-    records backend "imported-captions". Pass --transcribe-range START END
+    records backend "imported-captions". Pass --captions URL to fetch the
+    video page's English captions with yt-dlp (uploaded captions first,
+    then auto-captions; never machine translations). The track is saved
+    in moviestar/captions/ and reused offline when the same URL is passed
+    again. The transcript summary reports captions_url, captions_language
+    (e.g. "en-US"), and captions_track ("manual" uploaded captions or
+    "automatic" speech recognition). Pass --transcribe-range START END
     to run Whisper on just that window; transcripts record
     ``transcribed_ranges``.
 
@@ -3034,8 +3094,20 @@ def load(
                     err=True,
                 )
 
-    if should_reset_workspace:
-        reset_workspace()
+    # Fetch caption URLs last, so no earlier check wastes the network call,
+    # and before the reset, so a missing track leaves the workspace alone.
+    captions_provenance: list[dict | None] = [None] * len(abs_captions)
+    with tempfile.TemporaryDirectory(prefix="moviestar-captions-") as staging:
+        captions_dir = get_project_dir(walk=False) / CAPTIONS_DIR
+        fetched = _fetch_caption_urls(
+            "load", abs_captions, Path(staging), captions_dir, quiet=quiet
+        )
+        if should_reset_workspace:
+            reset_workspace()
+        for index, item in enumerate(fetched):
+            if item is not None:
+                abs_captions[index] = store_captions(item, captions_dir)
+                captions_provenance[index] = caption_provenance_of(item)
 
     # First line the user sees — prints IMMEDIATELY so there's no silent window
     # while probe/frames/model-load run.
@@ -3076,6 +3148,7 @@ def load(
             thumb_width=thumb_width,
             captions=abs_captions or None,
             transcribe_windows=transcribe_windows or None,
+            captions_provenance=captions_provenance or None,
         )
     except WorkspaceConflictError as exc:
         _error_exit("load", str(exc))
@@ -3289,8 +3362,9 @@ def load(
     "--captions",
     "captions",
     default=None,
-    help="Replace the transcript with a WebVTT or SRT caption file instead "
-    "of running Whisper.",
+    help="Replace the transcript with a WebVTT or SRT caption file, or a "
+    "video page URL whose English captions yt-dlp fetches, instead of "
+    "running Whisper.",
 )
 @click.option(
     "--range",
@@ -3333,9 +3407,11 @@ def retranscribe(
     Use ``--no-download`` for hermetic runs. Pre-warm a missing model with
     ``moviestar models pull MODEL``.
 
-    Pass ``--captions FILE.vtt`` to replace the transcript with imported
-    captions, and ``--range START END`` to run Whisper on just that window
-    of a long source. A ranged run merges into the existing transcript:
+    Pass ``--captions FILE.vtt`` (or a video page URL) to replace the
+    transcript with imported captions, and ``--range START END`` to run
+    Whisper on just that window of a long source. A URL's track is saved
+    in moviestar/captions/ and reused offline next time. A ranged run
+    merges into the existing transcript:
     words inside the window are replaced and the rest are kept, so windows
     can be added one at a time.
 
@@ -3386,6 +3462,16 @@ def retranscribe(
             requires_download=requirement,
         )
 
+    fetched_captions = None
+    if caption_path and is_caption_url(caption_path):
+        captions_dir = get_project_dir() / CAPTIONS_DIR
+        with tempfile.TemporaryDirectory(prefix="moviestar-captions-") as staging:
+            [fetched_captions] = _fetch_caption_urls(
+                "retranscribe", [caption_path], Path(staging), captions_dir,
+                quiet=quiet,
+            )
+            caption_path = store_captions(fetched_captions, captions_dir)
+
     if not quiet:
         action = (
             f"with {model!r}"
@@ -3415,6 +3501,8 @@ def retranscribe(
                 source_duration=float(source["duration"]["seconds"]),
                 source_path=source_path,
             )
+            if fetched_captions is not None:
+                transcript["captions"].update(caption_provenance_of(fetched_captions))
         elif windows:
             try:
                 transcript = load_transcript(source)
@@ -19884,6 +19972,23 @@ def _parse_legacy_placement_overrides(override_args: tuple[str, ...]) -> list[di
     return overrides
 
 
+def _unmatched_placement_selectors(spec: dict, recipe: dict) -> list[dict]:
+    """Override selectors naming a scene or layout the composition lacks."""
+    composition = spec.get("composition") or []
+    scenes = {
+        scene.get("name", f"scene_{i + 1}") for i, scene in enumerate(composition)
+    }
+    layouts = {scene.get("layout", {}).get("preset") for scene in composition}
+    return [
+        override["selector"]
+        for override in _caption_placement_policy(recipe)["overrides"]
+        if ("scene" in override["selector"]
+            and override["selector"]["scene"] not in scenes)
+        or ("layout" in override["selector"]
+            and override["selector"]["layout"] not in layouts)
+    ]
+
+
 def _upsert_caption_override(policy: dict, selector: dict, controls: dict) -> None:
     """Layer controls onto the override for ``selector``, adding it if new."""
     for index, override in enumerate(policy["overrides"]):
@@ -21015,7 +21120,15 @@ def captions_placement(
         selectors.append({"scene": scene_name})
     if layout_name:
         selectors.append({"layout": layout_name})
+    stored_selectors = [
+        override["selector"]
+        for override in _caption_placement_policy(recipe)["overrides"]
+    ]
     for selector in selectors:
+        if reset and selector in stored_selectors:
+            # Removing an override for a scene or layout that no longer
+            # exists is exactly how a stale override gets cleaned up.
+            continue
         if "scene" in selector and selector["scene"] not in scene_names:
             _error_exit_with_hint(
                 command,
@@ -22113,10 +22226,12 @@ def _derive_caption_records(
 )
 @click.option(
     "--position",
-    default="bottom",
-    help="Starting anchor: bottom, top, center, a corner or side "
-    "(top-left ... bottom-right), or lower-third-left/right. Fine-tune "
-    "size and placement later with 'moviestar captions placement'.",
+    default=None,
+    help="Default anchor: bottom, top, center, a corner or side "
+    "(top-left ... bottom-right), or lower-third-left/right. A new track "
+    "defaults to bottom; re-running generate keeps the track's stored "
+    "placement and changes only its default anchor. Fine-tune size and "
+    "placement with 'moviestar captions placement'.",
 )
 @click.option("--style", default="social-bold", help="Caption style preset.")
 @click.option("--css", default=None, help="CSS-like declaration subset.")
@@ -22141,17 +22256,25 @@ def _derive_caption_records(
     help="Active word color. Requires --highlight spoken-word. "
     "Default #ffe94a.",
 )
+@click.option(
+    "--reset-placement",
+    is_flag=True,
+    default=False,
+    help="Discard the track's stored placement (sizes, anchors, scene and "
+    "layout overrides) instead of keeping it.",
+)
 def captions_generate(
     track: str,
     source_id: str | None,
     from_tc: str | None,
     to_tc: str | None,
-    position: str,
+    position: str | None,
     style: str,
     css: str | None,
     style_for_args: tuple[str, ...],
     highlight: str,
     highlight_color: str | None,
+    reset_placement: bool,
 ) -> None:
     """Generate a derived caption track from the project's transcript.
 
@@ -22173,7 +22296,8 @@ def captions_generate(
     Verify cues without rendering via 'moviestar captions dump'. To
     hand-edit cues as plain overlays instead, freeze the track with
     'moviestar captions materialize' (it stops following timeline
-    edits). Re-running generate replaces the track and its recipe.
+    edits). Re-running generate replaces the track and its recipe but
+    keeps its placement (pass --reset-placement to start fresh).
     """
     if highlight_color is not None and highlight != "spoken-word":
         _error_exit(
@@ -22230,6 +22354,36 @@ def captions_generate(
             f"{', '.join(sorted(known_sources))}.",
         )
 
+    # Placement tuned with `captions placement` survives regeneration
+    # (#27): agents re-run generate to change style or highlighting, not
+    # to throw away layout work.
+    # Validate before layering: retained scene overrides can cover every
+    # cue, so per-cue validation would never see a bad default anchor.
+    if position is not None and position not in OVERLAY_POSITION_PRESETS:
+        _error_exit(
+            "captions generate",
+            f"Unknown overlay position {position!r}. Use one of: "
+            f"{', '.join(sorted(OVERLAY_POSITION_PRESETS))}.",
+        )
+    previous = caption_recipe_for_track(spec, track)
+    kept = _caption_placement_policy(previous) if previous else None
+    if kept is not None and (reset_placement or not (
+        kept["default"] or kept["overrides"]
+    )):
+        kept = None
+    if kept is not None:
+        placement_status = "kept"
+        if position is not None:
+            kept["default"] = _layer_caption_geometry(
+                kept["default"], {"at": position}
+            )
+        position = kept["default"].get("at", "bottom")
+    else:
+        placement_status = (
+            "reset" if reset_placement and previous is not None else "default"
+        )
+        position = position or "bottom"
+
     # The recipe is the authoritative caption state for this track;
     # cues are derived from it now and re-derived whenever the compiled
     # timeline, recipe, or rules change (see _refresh_caption_tracks).
@@ -22246,7 +22400,7 @@ def captions_generate(
         "css": css,
         "style_for": style_for,
         "highlight": {"mode": highlight, "color": active_color},
-        "placement": None,
+        "placement": kept,
         "edits": [],
         "cache_fingerprint": None,
     }
@@ -22333,6 +22487,36 @@ def captions_generate(
     }
     result["highlight"] = {"mode": highlight, "color": active_color}
     result["caption_rules"] = caption_rules_report
+    result["placement"] = {
+        "status": placement_status,
+        "policy": _caption_placement_policy(recipe),
+    }
+    unmatched = _unmatched_placement_selectors(spec, recipe)
+    if unmatched:
+        names = ", ".join(
+            f"{kind}:{name}" for selector in unmatched
+            for kind, name in selector.items()
+        )
+        first_kind, first_name = next(iter(unmatched[0].items()))
+        remove_command = shlex.join(
+            [
+                "moviestar", "captions", "placement", "--track", track,
+                f"--{first_kind}", first_name, "--reset",
+            ]
+        )
+        warnings.append(
+            _warning(
+                "caption_placement_override_unmatched",
+                f"Kept placement override(s) for {names}, which no scene "
+                "in the current composition matches; they have no effect.",
+                selectors=unmatched,
+                remove_command=remove_command,
+                hint=(
+                    f"Remove one with: {remove_command} "
+                    "(or keep it for a scene you plan to restore)."
+                ),
+            )
+        )
     if style_for:
         counts_by_source: dict[str, int] = {}
         for record in records:

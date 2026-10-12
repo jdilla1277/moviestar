@@ -1015,6 +1015,15 @@ class TestResultToSourceTime:
         # Last possible result time: cumulative duration 25s = source 30.
         assert result_to_source_time(segments, 25.0) == 30.0
 
+    def test_range_end_on_seam_maps_to_earlier_segment(self):
+        """A range that ends at a seam stops at the end of the earlier
+        segment instead of jumping over the cut hole."""
+        segments = ((0.0, 10.0), (15.0, 30.0))
+        assert result_to_source_time(segments, 10.0, at_end=True) == 10.0
+        assert result_to_source_time(segments, 5.0, at_end=True) == 5.0
+        assert result_to_source_time(segments, 20.0, at_end=True) == 25.0
+        assert result_to_source_time(segments, 25.0, at_end=True) == 30.0
+
     def test_negative_result_time_raises(self):
         with pytest.raises(SpecValidationError, match="negative"):
             result_to_source_time(((0.0, 10.0),), -1.0)
@@ -2351,6 +2360,105 @@ class TestSetSceneComposition:
         ]
         assert report["removed"][0]["slot_id"] == "slot_0002"
         assert report["removed"][0]["motion_ids"] == ["drop"]
+
+
+class TestCompositionRangesAtCutSeams:
+    """Issue #7: a range that ends exactly on a cut seam is valid, and
+    one that spans a seam is rejected by naming the cut."""
+
+    _durations = {"spk": 160.0, "clip": 60.0}
+
+    def _cut_speaker(self):
+        # Mirrors the report: result 0..1.46 is source 2.70..4.16, and
+        # result 1.46 onward is source 6.20 onward.
+        spec = empty_spec(
+            [
+                {"id": "spk", "path": "/spk.mp4"},
+                {"id": "clip", "path": "/clip.mp4"},
+            ]
+        )
+        spec = append_trim(spec, "spk", 2.70, 156.2, source_duration=160.0)
+        return append_cut(spec, "spk", 1.46, 3.50, source_duration=160.0)
+
+    def _short_canvas(self):
+        return {
+            "preset": "short",
+            "width": 1080,
+            "height": 1920,
+            "aspect_ratio": "9:16",
+        }
+
+    def _two_up_scene(self, bottom_from, bottom_to, top_from, top_to):
+        return {
+            "name": "conversation",
+            "layout": "two-up",
+            "slots": [
+                ("top", "clip", top_from, top_to, None),
+                ("bottom", "spk", bottom_from, bottom_to, None),
+            ],
+        }
+
+    def test_scene_slot_ending_on_cut_seam_is_valid(self):
+        new_spec = set_scene_composition(
+            self._cut_speaker(),
+            scenes=[self._two_up_scene(0.50, 1.46, 1.00, 1.96)],
+            source_durations=self._durations,
+            canvas=self._short_canvas(),
+        )
+        bottom = new_spec["composition"][0]["slots"][1]
+        assert bottom["source_from"] == "0:00:03.200"
+        assert bottom["source_to"] == "0:00:04.160"
+
+    def test_scene_slot_spanning_cut_seam_names_the_cut(self):
+        with pytest.raises(SceneValidationError) as excinfo:
+            set_scene_composition(
+                self._cut_speaker(),
+                scenes=[self._two_up_scene(0.50, 2.00, 1.00, 2.50)],
+                source_durations=self._durations,
+                canvas=self._short_canvas(),
+            )
+        assert excinfo.value.path == "scenes[0].slots[1]"
+        assert "cut" in excinfo.value.message
+        assert "1.46" in excinfo.value.message
+        assert "equal duration" not in str(excinfo.value)
+
+    def test_layout_slot_ending_on_cut_seam_is_valid(self):
+        new_spec = set_layout_composition(
+            self._cut_speaker(),
+            layout="two-up",
+            slots=[
+                ("top", "clip", 1.00, 1.96, None),
+                ("bottom", "spk", 0.50, 1.46, None),
+            ],
+            source_durations=self._durations,
+            audio_from=None,
+            canvas=self._short_canvas(),
+        )
+        bottom = new_spec["composition"][0]["slots"][1]
+        assert bottom["source_to"] == "0:00:04.160"
+
+    def test_layout_slot_spanning_cut_seam_names_the_cut(self):
+        with pytest.raises(SpecValidationError, match=r"cut at 1\.46s"):
+            set_layout_composition(
+                self._cut_speaker(),
+                layout="two-up",
+                slots=[
+                    ("top", "clip", 1.00, 2.50, None),
+                    ("bottom", "spk", 0.50, 2.00, None),
+                ],
+                source_durations=self._durations,
+                audio_from=None,
+                canvas=self._short_canvas(),
+            )
+
+    def test_concat_segment_ending_on_cut_seam_stops_before_the_hole(self):
+        new_spec = set_composition(
+            self._cut_speaker(),
+            [("spk", 0.50, 1.46)],
+            source_durations=self._durations,
+        )
+        [segment] = new_spec["composition"]
+        assert segment["source_to"] == "0:00:04.160"
 
 
 class TestPopLastOp:

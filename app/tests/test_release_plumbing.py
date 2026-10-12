@@ -114,6 +114,17 @@ def test_docs_ci_runs_both_public_documentation_contracts() -> None:
     assert "app/tests/test_release_plumbing.py" in workflow
 
 
+def test_package_ci_caches_pip_downloads() -> None:
+    # A slow PyPI mirror once stretched dependency install to 18 minutes and
+    # the job hit its 25-minute timeout before the tests finished. Caching
+    # pip downloads keeps install time independent of PyPI throughput.
+    workflow = TEST_WORKFLOW.read_text(encoding="utf-8")
+    test_job = workflow.split("\n  test:\n", 1)[1]
+
+    assert "cache: pip" in test_job
+    assert "cache-dependency-path: app/pyproject.toml" in test_job
+
+
 def test_v071_hotfix_notes_explain_the_transcription_fix() -> None:
     notes = HOTFIX_NOTES.read_text(encoding="utf-8")
 

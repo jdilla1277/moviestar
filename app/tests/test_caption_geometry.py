@@ -8,6 +8,7 @@ retained values, --reset, and --dry-run.
 """
 
 import json
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -565,3 +566,161 @@ class TestReviewRegressions:
         assert data["command"] == f"captions {command}"
         assert "'middle'" in data["error"]
         assert "bottom" in data["error"] and "top-left" in data["error"]
+
+
+class TestRegenerateKeepsPlacement:
+    """#27: re-running `captions generate` must not silently discard
+    placement tuned with `captions placement`."""
+
+    def _placement(self, runner):
+        return _invoke(runner, ["captions", "placement"])["placement"]
+
+    def test_regenerate_keeps_placement_and_says_so(
+        self, runner, tmp_path, monkeypatch
+    ):
+        _project(runner, tmp_path, monkeypatch, canvas="short", scenes=2)
+        _invoke(runner, ["captions", "placement", "--size", "large", "--width", "0.7"])
+        _invoke(runner, ["captions", "placement", "--scene", "demo", "--at", "top"])
+        before = self._placement(runner)
+
+        data = _invoke(runner, ["captions", "generate", "--style", "caption-default"])
+
+        assert data["placement"]["status"] == "kept"
+        assert data["placement"]["policy"] == before
+        assert self._placement(runner) == before
+        items = _render_items(runner)
+        assert {item["font_size"] for item in items} == {90}
+        demo = [item for item in items if item["from"]["seconds"] >= 2.0]
+        assert demo and {item["anchor"] for item in demo} == {"top-center"}
+
+    def test_explicit_position_layers_over_kept_placement(
+        self, runner, tmp_path, monkeypatch
+    ):
+        _project(runner, tmp_path, monkeypatch, canvas="short", scenes=2)
+        _invoke(runner, ["captions", "placement", "--x", "0.5", "--y", "0.5",
+                         "--size", "small"])
+        _invoke(runner, ["captions", "placement", "--scene", "demo", "--at", "top"])
+
+        data = _invoke(runner, ["captions", "generate", "--position", "bottom"])
+
+        assert data["placement"]["status"] == "kept"
+        assert self._placement(runner) == {
+            "default": {"size": "small", "at": "bottom"},
+            "overrides": [{"selector": {"scene": "demo"}, "at": "top"}],
+        }
+
+    def test_reset_placement_starts_fresh(self, runner, tmp_path, monkeypatch):
+        _project(runner, tmp_path, monkeypatch, canvas="short")
+        _invoke(runner, ["captions", "placement", "--size", "small"])
+
+        data = _invoke(runner, ["captions", "generate", "--reset-placement"])
+
+        assert data["placement"]["status"] == "reset"
+        assert self._placement(runner) == {"default": {}, "overrides": []}
+        assert {item["font_size"] for item in _render_items(runner)} == {
+            DEFAULT_FONT_AT_1080
+        }
+
+    def test_first_generate_reports_default_placement(
+        self, runner, tmp_path, monkeypatch
+    ):
+        _project(runner, tmp_path, monkeypatch, canvas="short")
+        data = _invoke(runner, ["captions", "generate", "--track", "second"])
+        assert data["placement"] == {
+            "status": "default",
+            "policy": {"default": {}, "overrides": []},
+        }
+
+    def test_overrides_for_removed_scenes_are_reported_and_removable(
+        self, runner, tmp_path, monkeypatch
+    ):
+        _project(runner, tmp_path, monkeypatch, canvas="short", scenes=2)
+        _invoke(runner, ["captions", "placement", "--scene", "demo", "--at", "top"])
+        _invoke(
+            runner,
+            [
+                "scenes", "set", "--canvas", "short",
+                "--scene", "intro=single",
+                "--slot", "intro:main=src_0", "--from", "0", "--to", "4",
+                "--audio-from", "intro=src_0",
+            ],
+        )
+
+        data = _invoke(runner, ["captions", "generate"])
+
+        [warning] = [
+            w for w in data["warnings"]
+            if w["code"] == "caption_placement_override_unmatched"
+        ]
+        assert warning["selectors"] == [{"scene": "demo"}]
+        assert "--scene demo --reset" in warning["hint"]
+        assert data["placement"]["policy"]["overrides"] == [
+            {"selector": {"scene": "demo"}, "at": "top"}
+        ]
+
+        cleared = _invoke(
+            runner, ["captions", "placement", "--scene", "demo", "--reset"]
+        )
+        assert cleared["placement"]["overrides"] == []
+
+    def test_stale_override_command_targets_the_regenerated_track(
+        self, runner, tmp_path, monkeypatch
+    ):
+        _project(runner, tmp_path, monkeypatch, canvas="short", scenes=2)
+        # A track name with a space proves the suggested command is
+        # shell-quoted, not just interpolated.
+        _invoke(runner, ["captions", "generate", "--track", "English captions"])
+        for track in ("captions", "English captions"):
+            _invoke(
+                runner,
+                ["captions", "placement", "--track", track,
+                 "--scene", "demo", "--at", "top"],
+            )
+        _invoke(
+            runner,
+            [
+                "scenes", "set", "--canvas", "short",
+                "--scene", "intro=single",
+                "--slot", "intro:main=src_0", "--from", "0", "--to", "4",
+                "--audio-from", "intro=src_0",
+            ],
+        )
+
+        data = _invoke(
+            runner, ["captions", "generate", "--track", "English captions"]
+        )
+        [warning] = [
+            w for w in data["warnings"]
+            if w["code"] == "caption_placement_override_unmatched"
+        ]
+        argv = shlex.split(warning["remove_command"])
+        assert argv[:3] == ["moviestar", "captions", "placement"]
+        assert argv[argv.index("--track") + 1] == "English captions"
+        assert warning["remove_command"] in warning["hint"]
+
+        _invoke(runner, argv[1:])
+        remaining = {
+            track: _invoke(runner, ["captions", "placement", "--track", track])[
+                "placement"
+            ]["overrides"]
+            for track in ("captions", "English captions")
+        }
+        assert remaining["English captions"] == []
+        assert remaining["captions"] == [
+            {"selector": {"scene": "demo"}, "at": "top"}
+        ]
+
+    def test_invalid_position_is_rejected_even_when_overrides_cover_every_cue(
+        self, runner, tmp_path, monkeypatch
+    ):
+        _project(runner, tmp_path, monkeypatch, canvas="short")
+        _invoke(runner, ["captions", "placement", "--scene", "intro", "--at", "top"])
+        before = self._placement(runner)
+
+        result = runner.invoke(cli, ["captions", "generate", "--position", "middle"])
+
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["command"] == "captions generate"
+        assert "'middle'" in data["error"] and "top-left" in data["error"]
+        assert self._placement(runner) == before

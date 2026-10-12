@@ -2221,6 +2221,8 @@ def resolve_source(
 def result_to_source_time(
     segments: tuple[tuple[float, float], ...],
     result_seconds: float,
+    *,
+    at_end: bool = False,
 ) -> float:
     """Map a result-time second back to source-time given a segment list.
 
@@ -2229,6 +2231,10 @@ def result_to_source_time(
     stitched segments cumulatively; the seam between segments is
     invisible to the agent, but the source-time jumps across it
     (skipping the dropped cut hole).
+
+    Pass ``at_end=True`` when ``result_seconds`` ends a range: a seam
+    then maps to the end of the earlier segment, so a range that stops
+    at a cut does not reach across the hole.
 
     Raises :class:`SpecValidationError` if ``result_seconds`` is
     negative or past the total result duration. A small float-rounding
@@ -2246,13 +2252,15 @@ def result_to_source_time(
         seg_end = cursor + seg_len
         # Non-last segment: prefer the *next* segment at the exact seam
         # so result-time 10 in [(0,10), (15,30)] maps to source 15, not
-        # source 10. The last segment includes its right edge so the
-        # final result-time (== total duration) is reachable.
-        owns = (
-            result_seconds < seg_end
-            if i < last_idx
-            else result_seconds <= seg_end + 0.001
-        )
+        # source 10 — unless the time ends a range. The last segment
+        # includes its right edge so the final result-time (== total
+        # duration) is reachable.
+        if i == last_idx:
+            owns = result_seconds <= seg_end + 0.001
+        elif at_end:
+            owns = result_seconds <= seg_end + 0.0005
+        else:
+            owns = result_seconds < seg_end
         if owns:
             offset = max(0.0, result_seconds - cursor)
             return round(seg_from + offset, 3)
@@ -2261,6 +2269,24 @@ def result_to_source_time(
         f"result_seconds {result_seconds}s exceeds total result duration "
         f"({round(cursor, 3)}s)"
     )
+
+
+def cut_seams_within(
+    segments: tuple[tuple[float, float], ...],
+    result_from: float,
+    result_to: float,
+) -> list[float]:
+    """Return the result-time seams strictly inside ``result_from`` and
+    ``result_to``. A range that touches a seam only at an edge plays one
+    contiguous source range, so it reports no seams."""
+    seams: list[float] = []
+    cursor = 0.0
+    for seg_from, seg_to in segments[:-1]:
+        cursor += seg_to - seg_from
+        seam = round(cursor, 3)
+        if result_from + 0.0005 < seam < result_to - 0.0005:
+            seams.append(seam)
+    return seams
 
 
 def source_range_in_result(
@@ -2767,7 +2793,9 @@ def set_composition(
         src_from = result_to_source_time(
             timeline.source_segments, result_from
         )
-        src_to = result_to_source_time(timeline.source_segments, result_to)
+        src_to = result_to_source_time(
+            timeline.source_segments, result_to, at_end=True
+        )
         segment_record = {
             "source": sid,
             "source_from": _format_timecode_string(src_from),
@@ -2893,8 +2921,17 @@ def set_layout_composition(
                 f"{loc} ({sid}): range {result_from}s-{result_to}s exceeds "
                 f"result duration of {timeline.effective_duration}s"
             )
+        seams = cut_seams_within(timeline.source_segments, result_from, result_to)
+        if seams:
+            raise SpecValidationError(
+                f"{loc} ({sid}): range {result_from}s-{result_to}s spans "
+                f"the cut at {seams[0]}s; a slot plays one continuous "
+                f"source range, so end it at or start it from the cut"
+            )
         src_from = result_to_source_time(timeline.source_segments, result_from)
-        src_to = result_to_source_time(timeline.source_segments, result_to)
+        src_to = result_to_source_time(
+            timeline.source_segments, result_to, at_end=True
+        )
         source_ranges_by_slot[slot_name] = (src_from, src_to)
         duration = round(result_to - result_from, 3)
         durations.add(duration)
@@ -3151,8 +3188,21 @@ def set_scene_composition(
                     f"range {result_from}s-{result_to}s for {sid!r} exceeds "
                     f"result duration of {timeline.effective_duration}s"
                 )
+            seams = cut_seams_within(
+                timeline.source_segments, result_from, result_to
+            )
+            if seams:
+                raise SceneValidationError(
+                    slot_path,
+                    f"range {result_from}s-{result_to}s for {sid!r} spans "
+                    f"the cut at {seams[0]}s; a slot plays one continuous "
+                    f"source range, so end the slot at {seams[0]}s and "
+                    f"continue in a new scene"
+                )
             src_from = result_to_source_time(timeline.source_segments, result_from)
-            src_to = result_to_source_time(timeline.source_segments, result_to)
+            src_to = result_to_source_time(
+                timeline.source_segments, result_to, at_end=True
+            )
             source_ranges_by_slot[slot_name] = (src_from, src_to)
             duration = round(result_to - result_from, 3)
             durations.add(duration)
