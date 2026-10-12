@@ -1,7 +1,7 @@
 """Audio checks before transcription (issues #18 and #19).
 
 Out-of-phase stereo cancels speech when Whisper's input is mixed down to
-mono, and Whisper invents words on audio without speech. MovieStar now
+mono, and Whisper invents words on audio without speech. Moviestar now
 measures stereo phase and voice activity first: it transcribes one channel
 when the mix would cancel, skips Whisper when there is no speech, and warns
 when most transcript words land outside detected speech.

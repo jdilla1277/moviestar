@@ -55,7 +55,7 @@ def build_ffmpeg_encoders_command() -> list[str]:
 
 # Issue #358: the single catalog behind 'moviestar doctor' and the
 # author-time/render preflights. Each entry maps one FFmpeg build
-# capability to a stable code, the MovieStar features it gates, and a
+# capability to a stable code, the Moviestar features it gates, and a
 # platform-specific remediation. Codes are part of the agent contract —
 # never rename one that has shipped.
 FFMPEG_FEATURE_REQUIREMENTS: tuple[dict, ...] = (
@@ -1543,7 +1543,7 @@ def build_selection_frame_command(
 
     Each box is ``{"rect": {x,y,w,h}, "color": str, "thickness": int}``
     in source pixels. Used by camera preview so the agent sees its own
-    box and MovieStar's final crop on the same frame.
+    box and Moviestar's final crop on the same frame.
     """
     filters = []
     for box in boxes:
@@ -3183,7 +3183,7 @@ def build_render_segments_command(
     visual transition handles without changing the authored result or audio
     timeline. Video clips may be longer than their matching ``segments`` entry;
     audio is still trimmed to the original segment duration. Each transition
-    names the incoming clip index, MovieStar transition type, and duration.
+    names the incoming clip index, Moviestar transition type, and duration.
 
     ``audio_from_input``: when set, replaces per-segment
     audio with a single audio track sourced from one named source. The

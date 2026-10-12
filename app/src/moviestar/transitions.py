@@ -1,7 +1,7 @@
 """Pure transition boundary, window, and source-handle resolution.
 
 This module deliberately stops before persistence or rendering. It consumes
-MovieStar's canonical resolved project so scene pacing and multi-slot layouts
+Moviestar's canonical resolved project so scene pacing and multi-slot layouts
 have already collapsed onto one result timeline, then answers whether the
 requested visual transition can be produced without changing that timeline.
 """

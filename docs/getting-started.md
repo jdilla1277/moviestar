@@ -1,6 +1,6 @@
 # Getting started
 
-MovieStar requires Python 3.10 or newer plus FFmpeg and ffprobe. Install FFmpeg
+Moviestar requires Python 3.10 or newer plus FFmpeg and ffprobe. Install FFmpeg
 with your system package manager, then create an isolated Python environment:
 
 ```bash
@@ -8,7 +8,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-Install the current MovieStar release from PyPI:
+Install the current Moviestar release from PyPI:
 
 ```bash
 python -m pip install --upgrade moviestar
@@ -27,7 +27,7 @@ moviestar --help
 ## Make a first edit
 
 Create a dedicated working directory. The source video can live elsewhere;
-MovieStar records a pointer and never modifies it.
+Moviestar records a pointer and never modifies it.
 
 ```bash
 mkdir first-moviestar-edit

@@ -52,7 +52,7 @@ def test_feedback_defaults_to_template_with_required_and_optional_agent_prompts(
     assert "## Why or why not? (optional)" in result.stdout
     assert "## Follow-up email (optional)" in result.stdout
     assert "when this feedback has been addressed" in result.stdout
-    assert "MovieStar" not in result.output
+    assert "Movie" + "Star" not in result.output
 
 
 def test_feedback_template_prints_submission_handoff_outside_the_report(monkeypatch):

@@ -77,7 +77,7 @@ def test_plugin_manifest_matches_package_identity() -> None:
 def test_repository_marketplace_exposes_moviestar_plugin() -> None:
     marketplace = _json(ROOT / ".agents" / "plugins" / "marketplace.json")
     assert marketplace["name"] == "moviestar"
-    assert marketplace["interface"]["displayName"] == "MovieStar"
+    assert marketplace["interface"]["displayName"] == "Moviestar"
 
     assert marketplace["plugins"] == [
         {
@@ -104,7 +104,7 @@ def test_skill_has_portable_metadata_and_resolvable_references() -> None:
         assert target.is_relative_to(SKILL), f"skill reference escapes plugin: {target}"
 
     openai_yaml = (SKILL / "agents" / "openai.yaml").read_text()
-    assert 'display_name: "MovieStar"' in openai_yaml
+    assert 'display_name: "Moviestar"' in openai_yaml
     assert "$moviestar" in openai_yaml
 
 

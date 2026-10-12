@@ -1,6 +1,6 @@
 """Font resolution for the overlay renderer.
 
-MovieStar bundles Inter (SIL OFL 1.1 — see fonts/OFL-LICENSE.txt) so the
+Moviestar bundles Inter (SIL OFL 1.1 — see fonts/OFL-LICENSE.txt) so the
 built-in style presets render identically on every machine. Any other
 family resolves against system fonts; a family that can't be found is a
 structured failure, never a silent substitution — exported video must
@@ -440,7 +440,7 @@ def resolve_font(family: str, weight: object = "normal") -> dict:
         }
 
     raise FontResolutionError(
-        f"Font family {family!r} was not found on this system. MovieStar "
+        f"Font family {family!r} was not found on this system. Moviestar "
         f"bundles '{DEFAULT_FONT_FAMILY}' for deterministic rendering — "
         f"drop the font-family override, or set "
         f"\"font-family: {DEFAULT_FONT_FAMILY}\" in --css."

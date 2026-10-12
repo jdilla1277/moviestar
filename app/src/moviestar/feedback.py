@@ -48,7 +48,6 @@ Concrete improvements suggested by this experience.
 
 ## Wild idea (optional)
 If Moviestar could change more fundamentally, what would you try?
-
 ## Likelihood to recommend Moviestar (optional)
 On a scale from 0 (not at all likely) to 10 (extremely likely), how likely are you to recommend Moviestar to others?
 
