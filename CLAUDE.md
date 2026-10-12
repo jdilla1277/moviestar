@@ -1,12 +1,12 @@
-# MovieStar development guide
+# Moviestar development guide
 
-MovieStar is a Python CLI for deterministic, agent-driven video editing. The
+Moviestar is a Python CLI for deterministic, agent-driven video editing. The
 package lives in `app/`, tests live in `app/tests/`, and repository helpers live
 in `bin/`.
 
 ## Setup
 
-MovieStar requires Python 3.10 or newer and FFmpeg plus ffprobe on `PATH`.
+Moviestar requires Python 3.10 or newer and FFmpeg plus ffprobe on `PATH`.
 
 ```bash
 python3 -m venv app/.venv

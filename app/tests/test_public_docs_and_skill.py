@@ -87,7 +87,7 @@ def test_plugin_manifest_matches_package_identity() -> None:
 def test_repository_marketplace_exposes_moviestar_plugin() -> None:
     marketplace = _json(ROOT / ".agents" / "plugins" / "marketplace.json")
     assert marketplace["name"] == "moviestar"
-    assert marketplace["interface"]["displayName"] == "MovieStar"
+    assert marketplace["interface"]["displayName"] == "Moviestar"
 
     assert marketplace["plugins"] == [
         {
@@ -114,7 +114,7 @@ def test_skill_has_portable_metadata_and_resolvable_references() -> None:
         assert target.is_relative_to(SKILL), f"skill reference escapes plugin: {target}"
 
     openai_yaml = (SKILL / "agents" / "openai.yaml").read_text()
-    assert 'display_name: "MovieStar"' in openai_yaml
+    assert 'display_name: "Moviestar"' in openai_yaml
     assert "$moviestar" in openai_yaml
 
 
@@ -198,7 +198,7 @@ def test_root_manifest_is_a_portable_agent_plugins_manifest() -> None:
 def test_openai_listing_metadata_fits_directory_limits() -> None:
     interface = _openai_interface(_json(PLUGIN / "plugin.json"))
 
-    assert interface["displayName"] == "MovieStar"
+    assert interface["displayName"] == "Moviestar"
     assert 0 < len(interface["shortDescription"]) <= 30
     assert 0 < len(interface["longDescription"]) <= 4000
     assert 0 < len(interface["developerName"]) <= 80

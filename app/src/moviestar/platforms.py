@@ -1,7 +1,7 @@
 """Versioned social-platform UI occlusion profiles and geometry linting.
 
 The profiles are intentionally conservative reference masks, not pixel-perfect
-copies of a particular app build.  They let MovieStar compare geometry it
+copies of a particular app build.  They let Moviestar compare geometry it
 already knows (timed overlays and composed layout slots) with the parts of a
 vertical player commonly occupied by navigation, actions, descriptions, and
 bottom chrome.  This module never inspects rendered pixels or runs OCR.
@@ -18,7 +18,7 @@ PLATFORM_CHOICES = ("tiktok", "instagram-reels", "youtube-shorts")
 # Bounds are normalized to the output canvas.  Profiles use broad, stable UI
 # families rather than pretending one phone/app state has universal pixels.
 # The source URLs are surfaced in the command envelope so agents can distinguish
-# MovieStar's versioned reference masks from a platform guarantee.
+# Moviestar's versioned reference masks from a platform guarantee.
 _PLATFORM_PROFILES = {
     "tiktok": {
         "label": "TikTok",

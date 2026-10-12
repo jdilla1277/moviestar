@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail closed when MovieStar's resolved dependency licenses need review."""
+"""Fail closed when Moviestar's resolved dependency licenses need review."""
 
 from __future__ import annotations
 
@@ -165,7 +165,7 @@ def resolved_dependency_records(
         if installed_key == root_key:
             provided = set(dist.metadata.get_all("Provides-Extra", []))
             for extra in sorted(unknown_extras(provided, requested_extras)):
-                errors.append(f"MovieStar does not declare requested extra: {extra}")
+                errors.append(f"Moviestar does not declare requested extra: {extra}")
         if installed_key != root_key:
             records[installed_key] = record
 
@@ -184,7 +184,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "--extra",
         action="append",
         default=[],
-        help="Resolve an installed MovieStar extra, such as diarize (repeatable).",
+        help="Resolve an installed Moviestar extra, such as diarize (repeatable).",
     )
     parser.add_argument("--policy", type=Path, default=DEFAULT_POLICY)
     return parser.parse_args(argv)

@@ -1,6 +1,6 @@
 ---
 name: moviestar
-description: Edit and verify videos with the MovieStar CLI. Use for trimming, transcript search, multicamera composition, scene layout and motion, captions, overlays, audio mixing, rendering, or inspecting MovieStar projects and exports. Do not use for image-only editing or unrelated FFmpeg administration.
+description: Edit and verify videos with the Moviestar CLI. Use for trimming, transcript search, multicamera composition, scene layout and motion, captions, overlays, audio mixing, rendering, or inspecting Moviestar projects and exports. Do not use for image-only editing or unrelated FFmpeg administration.
 metadata:
   openclaw:
     requires:
@@ -11,15 +11,15 @@ metadata:
     homepage: https://trymoviestar.com
 ---
 
-# MovieStar
+# Moviestar
 
-Use MovieStar as the deterministic editing layer. Make editorial decisions from
+Use Moviestar as the deterministic editing layer. Make editorial decisions from
 the user's request and inspected media; let the CLI own project state,
 time-mapping, rendering, and structured verification data.
 
 ## Start safely
 
-1. Work in a dedicated task directory. MovieStar creates a `moviestar/`
+1. Work in a dedicated task directory. Moviestar creates a `moviestar/`
    project there and stores absolute pointers to source media; it never copies
    or modifies the source files.
 2. Run `moviestar doctor`. If the command is missing or the environment is not

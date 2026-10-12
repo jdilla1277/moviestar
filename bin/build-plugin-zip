@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the reproducible skills-only MovieStar plugin archive.
+"""Build the reproducible skills-only Moviestar plugin archive.
 
 The archive is the upload artifact for OpenAI directory submission. Its root
 contains the portable `plugin.json`, the Codex compatibility manifest, skills,

@@ -1,4 +1,4 @@
-"""Agent-first MovieStar account connection commands."""
+"""Agent-first Moviestar account connection commands."""
 
 from __future__ import annotations
 
@@ -100,7 +100,7 @@ def _account_url() -> str:
 
 
 def _write_state(state: dict) -> None:
-    """Atomically save private installation state outside MovieStar projects."""
+    """Atomically save private installation state outside Moviestar projects."""
     path = _account_state_path()
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(path.parent, 0o700)
@@ -127,7 +127,7 @@ def _write_state(state: dict) -> None:
 
 def _installation_name() -> str:
     name = platform.node().strip()
-    return name[:100] if name else f"MovieStar CLI on {platform.system() or 'computer'}"
+    return name[:100] if name else f"Moviestar CLI on {platform.system() or 'computer'}"
 
 
 def _decode_response(body: bytes) -> dict:
@@ -377,7 +377,7 @@ def _state_write_error(error: OSError, command: str = "account connect") -> None
 
 @click.group()
 def account() -> None:
-    """Connect this installation to its human-owned MovieStar account.
+    """Connect this installation to its human-owned Moviestar account.
 
     The agent starts the request with the human's email. The human approves
     the installation in a private browser flow; the agent never receives the
@@ -391,7 +391,7 @@ def account() -> None:
 @account.command("connect")
 @click.argument("email")
 def connect(email: str) -> None:
-    """Ask MovieStar to email an account claim to EMAIL.
+    """Ask Moviestar to email an account claim to EMAIL.
 
     The request returns immediately. It gives the agent the same response
     whether the human is new or already has an account, so account existence
@@ -402,7 +402,7 @@ def connect(email: str) -> None:
     email link or password. Run ``moviestar account status`` afterward.
 
     A retryable private claim secret is saved with user-only permissions in
-    MovieStar's user config directory, never in a MovieStar project. Set
+    Moviestar's user config directory, never in a Moviestar project. Set
     MOVIESTAR_ACCOUNT_CLAIM_URL to target a preview or self-hosted control plane.
     """
     normalized = email.strip().lower()
@@ -480,7 +480,7 @@ def connect(email: str) -> None:
             "request_id": payload["request_id"],
             "expires_at": remote["expires_at"],
             "hint": (
-                "Ask the recipient to open the MovieStar email, then run "
+                "Ask the recipient to open the Moviestar email, then run "
                 "'moviestar account status'."
             ),
         }
@@ -494,8 +494,8 @@ def status() -> None:
     The completed flow reports ``approval_pending``, ``connected``, ``denied``,
     or ``expired``. A connected result includes the human's public ``@handle``.
 
-    On first connection, MovieStar stores the revocable installation
-    credential in the OS credential store, never in a MovieStar project.
+    On first connection, Moviestar stores the revocable installation
+    credential in the OS credential store, never in a Moviestar project.
 
     A pending claim is checked remotely. The private claim secret is exchanged
     for a device credential only after the human approves this installation.
@@ -602,7 +602,7 @@ def status() -> None:
             if storage == "private_file":
                 payload["warning"] = (
                     "The OS credential store was unavailable, so the credential "
-                    "is in MovieStar's user-only account state file."
+                    "is in Moviestar's user-only account state file."
                 )
             _emit(payload)
             return
@@ -754,7 +754,7 @@ def status() -> None:
                 if fallback:
                     payload["warning"] = (
                         "The OS credential store was unavailable, so the credential "
-                        "is in MovieStar's user-only account state file."
+                        "is in Moviestar's user-only account state file."
                     )
                 _emit(payload)
                 return
@@ -779,7 +779,7 @@ def status() -> None:
                     "expires_at": remote_expiry,
                     "remote_status_checked": True,
                     "hint": (
-                        "Ask the recipient to open the MovieStar email, then retry "
+                        "Ask the recipient to open the Moviestar email, then retry "
                         "'moviestar account status'."
                     ),
                 }
@@ -825,7 +825,7 @@ def disconnect(local_only: bool) -> None:
             "remote_grant_revoked": False,
             "local_credential_removed": removed,
             "local_editing_available": True,
-            "warning": "The remote grant may still be active. Revoke this installation from your MovieStar account page.",
+            "warning": "The remote grant may still be active. Revoke this installation from your Moviestar account page.",
         })
         return
     if not state.get("installation_url") and not os.environ.get("MOVIESTAR_ACCOUNT_INSTALLATION_URL"):
@@ -866,10 +866,10 @@ def disconnect(local_only: bool) -> None:
 
 @account.command("open")
 def open_account() -> None:
-    """Open the human's MovieStar account page.
+    """Open the human's Moviestar account page.
 
     The account page shows the human's handle and lets them revoke connected
-    installations. It is separate from local MovieStar projects.
+    installations. It is separate from local Moviestar projects.
 
     """
     url = _account_url()

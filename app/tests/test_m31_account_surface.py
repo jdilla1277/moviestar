@@ -72,7 +72,7 @@ def test_connect_creates_a_private_claim_and_only_prints_the_public_receipt(
                 "email": "h***@example.com",
                 "expires_at": "2026-09-06T12:00:00.000Z",
                 "hint": (
-                    "Ask the recipient to open the MovieStar email, then run "
+                    "Ask the recipient to open the Moviestar email, then run "
                     "'moviestar account status'."
                 ),
             },
@@ -93,7 +93,7 @@ def test_connect_creates_a_private_claim_and_only_prints_the_public_receipt(
         "request_id": captured[0]["request_id"],
         "expires_at": "2026-09-06T12:00:00.000Z",
         "hint": (
-            "Ask the recipient to open the MovieStar email, then run "
+            "Ask the recipient to open the Moviestar email, then run "
             "'moviestar account status'."
         ),
     }
@@ -349,7 +349,7 @@ def test_status_checks_the_pending_claim_remotely_without_exposing_its_secret(
         "expires_at": "2026-09-06T12:00:00.000Z",
         "remote_status_checked": True,
         "hint": (
-            "Ask the recipient to open the MovieStar email, then retry "
+            "Ask the recipient to open the Moviestar email, then retry "
             "'moviestar account status'."
         ),
     }

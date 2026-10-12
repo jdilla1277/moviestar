@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify that a GitHub release tag matches MovieStar's package version."""
+"""Verify that a GitHub release tag matches Moviestar's package version."""
 
 from __future__ import annotations
 

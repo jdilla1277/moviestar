@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "moviestar",
   "version": "0.7.0",
-  "description": "Plan, execute, and verify deterministic video edits with the MovieStar CLI.",
+  "description": "Plan, execute, and verify deterministic video edits with the Moviestar CLI.",
   "author": {
     "name": "James Dillard",
     "url": "https://github.com/jdilla1277"
@@ -20,9 +20,9 @@
   "extensions": {
     "com.openai": {
       "interface": {
-        "displayName": "MovieStar",
+        "displayName": "Moviestar",
         "shortDescription": "Edit and verify videos",
-        "longDescription": "Use the open-source MovieStar CLI to inspect footage, author non-destructive edits, compose scenes, add captions and audio, and verify final renders. Requires a shell-capable environment with Python 3.10 or newer, FFmpeg, and ffprobe. The skill guides installation of the MovieStar package from PyPI.",
+        "longDescription": "Use the open-source Moviestar CLI to inspect footage, author non-destructive edits, compose scenes, add captions and audio, and verify final renders. Requires a shell-capable environment with Python 3.10 or newer, FFmpeg, and ffprobe. The skill guides installation of the Moviestar package from PyPI.",
         "developerName": "James Dillard",
         "category": "Productivity",
         "capabilities": [
@@ -31,9 +31,9 @@
         "websiteURL": "https://trymoviestar.com",
         "supportURL": "https://github.com/jdilla1277/moviestar/issues",
         "defaultPrompt": [
-          "Use MovieStar to edit this video into a concise clip and verify the export.",
-          "Use MovieStar to turn this recording into a captioned vertical short.",
-          "Use MovieStar to compose these camera angles into a polished scene edit."
+          "Use Moviestar to edit this video into a concise clip and verify the export.",
+          "Use Moviestar to turn this recording into a captioned vertical short.",
+          "Use Moviestar to compose these camera angles into a polished scene edit."
         ],
         "brandColor": "#16307d",
         "composerIcon": "./assets/logo.svg",

@@ -1,4 +1,4 @@
-# MovieStar skill validation
+# Moviestar skill validation
 
 Validation performed 2026-09-14 against the public v0.7.0 candidate.
 

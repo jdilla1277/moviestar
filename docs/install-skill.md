@@ -1,4 +1,4 @@
-# Install the MovieStar skill
+# Install the Moviestar skill
 
 The repository contains a portable skill at
 [`plugins/moviestar/skills/moviestar`](../plugins/moviestar/skills/moviestar)
@@ -8,7 +8,7 @@ and a Codex plugin wrapper at
 ## Codex plugin from GitHub
 
 With a Codex CLI version that supports plugins, add this repository as a Git
-marketplace and install MovieStar:
+marketplace and install Moviestar:
 
 ```bash
 codex plugin marketplace add jdilla1277/moviestar --ref main
@@ -39,7 +39,7 @@ codex plugin marketplace add .
 ```
 
 Restart the ChatGPT desktop app, open the Plugins Directory, select the
-**MovieStar** marketplace, and install **MovieStar**. Start a new task after
+**Moviestar** marketplace, and install **Moviestar**. Start a new task after
 installing. The task still needs a shell, Python 3.10+, FFmpeg, and ffprobe.
 Editing inside hosted ChatGPT environments has not been validated yet.
 
@@ -61,5 +61,5 @@ session after installation.
 
 Review the skill source before installation when operating in a sensitive
 environment. It does not bundle credentials, services, or executable hooks;
-it teaches the agent how to use the local MovieStar CLI and when to request
+it teaches the agent how to use the local Moviestar CLI and when to request
 permission for optional downloads or external actions.

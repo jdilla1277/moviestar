@@ -1,7 +1,7 @@
 {
   "name": "moviestar",
   "interface": {
-    "displayName": "MovieStar"
+    "displayName": "Moviestar"
   },
   "plugins": [
     {

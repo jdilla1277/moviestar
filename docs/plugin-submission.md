@@ -1,6 +1,6 @@
 # Package the plugin for the OpenAI directory
 
-MovieStar ships as a skills-only plugin: instructions and references that teach
+Moviestar ships as a skills-only plugin: instructions and references that teach
 an agent to use the open-source CLI. It declares no MCP server, app, or hooks.
 The execution environment supplies Python, FFmpeg, and the `moviestar`
 package.
@@ -19,10 +19,10 @@ package.
 - `assets/logo.png` (512×512) and `assets/logo.svg`: the listing logo and
   composer icon.
 
-The logo is original MovieStar artwork, also used as the trymoviestar.com site
+The logo is original Moviestar artwork, also used as the trymoviestar.com site
 icon. Redistribution inside the plugin is covered by the
 [trademark policy](../TRADEMARKS.md); the Apache License does not grant use of
-the MovieStar name or logo for other products.
+the Moviestar name or logo for other products.
 
 ## Build the archive
 
