@@ -1,0 +1,8 @@
+__pycache__/
+frames/
+masks/
+*.html
+*.mp4
+*.png
+*.json
+title.txt
