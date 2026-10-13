@@ -23,6 +23,7 @@ from pathlib import Path
 import click
 
 from moviestar import __version__
+from moviestar.composition_mock import composition
 from moviestar.activity import (
     ACTIVITY_ANALYSIS_WIDTH,
     ACTIVITY_PIXEL_DELTA,
@@ -1123,6 +1124,7 @@ cli.add_command(download_command)
 cli.add_command(share_command)
 cli.add_command(shares_command)
 cli.add_command(unshare_command)
+cli.add_command(composition)
 
 
 # ---------- Browsing ----------
