@@ -62,6 +62,12 @@ shown on surfaces that do not use Codex syntax. The skill's own
 4. Complete the policy attestations and submit. Approval does not publish the
    listing automatically.
 
+The portal requires `privacyPolicyURL` and `termsOfServiceURL` for skills-only
+plugins, although the submission guide says skills-only metadata validation
+does not need them. Both point at trymoviestar.com and must be reachable
+before upload. On October 13, 2026 the portal also reported that it was not
+accepting more skills-only submissions; a draft can be uploaded and kept ready.
+
 Record any requirement that appears only in the portal, together with the date
 and the archive digest that was submitted. Any later change to the skill or
 metadata needs a rebuilt archive and a fresh scan.

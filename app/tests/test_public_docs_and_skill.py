@@ -205,6 +205,9 @@ def test_openai_listing_metadata_fits_directory_limits() -> None:
     assert interface["category"] == "Productivity"
     assert interface["capabilities"]
     assert interface["supportURL"] == "https://github.com/jdilla1277/moviestar/issues"
+    # The submission portal blocks skills-only drafts without both URLs.
+    assert interface["privacyPolicyURL"] == "https://trymoviestar.com/privacy"
+    assert interface["termsOfServiceURL"] == "https://trymoviestar.com/terms"
 
     prompts = interface["defaultPrompt"]
     assert 1 <= len(prompts) <= 3
