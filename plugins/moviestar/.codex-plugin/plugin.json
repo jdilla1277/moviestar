@@ -28,6 +28,8 @@
     ],
     "websiteURL": "https://trymoviestar.com",
     "supportURL": "https://github.com/jdilla1277/moviestar/issues",
+    "privacyPolicyURL": "https://trymoviestar.com/privacy",
+    "termsOfServiceURL": "https://trymoviestar.com/terms",
     "defaultPrompt": [
       "Use Moviestar to edit this video into a concise clip and verify the export.",
       "Use Moviestar to turn this recording into a captioned vertical short.",
