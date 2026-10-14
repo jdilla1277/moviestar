@@ -1,12 +1,12 @@
 # Spatial composition renderer spike (milestone 0.2)
 
-**Decision:** use a constrained CSS-style layout vocabulary in the JSON project
-document. Resolve layout and rasterize text, shapes, and images with a browser;
-place source video and encode final frames with FFmpeg. A single resolved frame
-description supplies the browser's rendered and labeled views, FFmpeg placement,
-and inspection. This is a renderer decision, not a production schema or renderer
-implementation. The [reproducible experiment](../../experiments/spatial_scene_spike/README.md)
-contains synthetic assets and measurement scripts.
+**Provisional direction:** use a constrained CSS-style layout vocabulary in the
+JSON project document. Resolve layout and rasterize text, shapes, and images
+with a browser; place source video and encode final frames with FFmpeg. The
+renderer decision remains open until the temporal parity gate below passes.
+The [reproducible experiment](../../experiments/spatial_scene_spike/README.md)
+contains synthetic assets and measurement scripts. It does not implement a
+production schema or renderer.
 
 ## Authoring and frame boundary
 
@@ -50,15 +50,16 @@ remote URLs, scripts, and CSS animations are outside the initial authoring
 surface. Movement of an element or component subtree is included.
 
 At a requested canvas and result time, the browser computes boxes, text lines,
-paint order, and a raster layer for text, images, shapes, and caption treatment.
+paint order, and raster layers for text, images, shapes, and caption treatment.
 It can replace asset pixels with labeled placeholders without changing layout.
-FFmpeg reads the same measured media boxes and scene-time motion, composites
-video with browser-derived rounded masks in RGB, then encodes. Screenshot is a
-single frame of this composite. Watch and export use the same video graph and
-the existing timeline's source mapping and transition timing. A transition
-frame carries outgoing and incoming trees; the prototype exercises both
-structured/structured and structured/legacy fades. Audio routing remains the
-timeline's decision, independent of visual placement.
+For each video node, browser paint must be split at that node: ancestor and
+earlier-sibling graphics behind it, then clipped video pixels, then later
+siblings and foreground graphics. A parent background cannot be flattened over
+its own video child. FFmpeg should consume measured boxes, clip masks, source
+positions, and scene-time motion from the same frame description as preview and
+inspection. Watch and export must consume this description too. A transition
+frame needs outgoing and incoming trees. Audio routing remains the timeline's
+decision, independent of visual placement.
 
 ## Measurement
 
@@ -76,11 +77,21 @@ performance guarantee.
 
 | Gate | Budget | Browser full-frame path | Browser layout + FFmpeg path |
 | --- | ---: | ---: | ---: |
-| Fresh single-frame preview, five-run P95 | <=3.0 s | 0.602 s browser capture | **1.148 s** end to end |
+| Fresh single-frame preview, five-run P95 | <=3.0 s | 0.602 s browser capture | **0.991–1.544 s** across two focused contract-probe runs |
 | Warm preview, 20-run P95 | <=0.70 s | 0.050–0.122 s by composition | **0.359 s** end to end |
-| Six-second, 180-frame export | <=6 s | **15.492 s capture** before encoding | **0.989 s** single-pass GOP export |
+| Six-second, 180-frame export | <=6 s | **15.492 s capture** before encoding | **0.989 s** FFmpeg encode stage after setup; no end-to-end result yet |
 | Peak renderer RSS | <=2 GiB | 1,304 MiB browser process tree under export load | 612 MiB FFmpeg; browser and encoder run sequentially in the measured path |
 | Export size at 1280x720 | recorded | browser capture frames not retained in Git | **2,000,588 bytes** GOP; 6,978,410 bytes all-intra |
+
+The cold probe regenerates a frame description in a fresh browser process for
+each run at scene time 3 s, then passes that exact JSON file to the preview
+renderer. Each description has a unique measurement ID, and the runner asserts
+that all five IDs are distinct. The old 1.148 s number used a stale media-layout
+result and is not acceptance evidence. The 0.989 s GOP number measures only an
+FFmpeg stage after
+the graphics and source clips existed. It does not establish the six-second
+end-to-end export budget. Warm preview and memory figures also come from the
+earlier benchmark path and need an integrated measurement before acceptance.
 
 The full-frame browser path misses the export throughput gate. An FFmpeg-only
 text path misses text parity: even after manually tuning the vertical position
@@ -100,8 +111,16 @@ podcast scene proves component reuse with new media bindings.
 
 Across the eight composition/canvas pairs, the lossless assembled frame's
 non-video pixels differed from the browser reference by at most 2/255 per RGB
-channel; no such pixel exceeded 8/255. The fixed-color rounded-clip calibration
-had edge P95 difference 2/255, maximum 4/255, and zero outside-clip pixels
+channel; no such pixel exceeded 8/255. That comparison excluded media regions
+and therefore missed a parent background painted over video. A focused
+counterexample puts an orange parent background, clipped red video, and a
+yellow foreground badge in one component. The flat graphics overlay differs
+from the browser by 102/255 at a fiducial inside the video. Splitting browser
+paint into backplate and foreground, with masked video between them, yields
+2/255 inside-video error and zero error at the parent background, foreground,
+and outside-clip fiducials. This validates the counterexample; arbitrary DOM
+overlap still needs a general layer compiler. The fixed-color rounded-clip
+calibration had edge P95 difference 2/255, maximum 4/255, and zero outside-clip pixels
 above 2/255. A normal H.264 export compared to a separately encoded one-frame
 preview had rounded-edge P95 difference 12/255, maximum 20/255. The title's
 white-glyph bounds in both decoded outputs were exactly `(35, 42)–(674, 82)`.
@@ -111,13 +130,29 @@ export; their line groups were unchanged.
 Decoded video pixels can differ between Chrome and FFmpeg because of independent
 decoding and frame seeking; the fixed-color calibration isolates clipping.
 
+The fresh frame-description probe samples 1280x720 at 1.25 s and 720x1280 at
+4.5 s with a 100 px layout shift. It reads responsive browser boxes and an
+authored translation track from one JSON description, then renders a preview
+and a multi-frame export. Both paths use the same description hash. At the
+sample times, their red video edges are within 0.39 and 0.26 output pixels of
+the measured box. The source range has a nonzero 1 s start, but this red clip
+does not prove which source frame was decoded.
+
 At 0, 3, and 5.9 seconds, the encoded moving `ListenerPair` top edge and civic
 tag left edge differed from browser-reported positions by at most 0.94 pixel.
 Both types of transition produced a combined encoded video; the fade midpoint
-was visually checked at 5.75 seconds, with source-frame selection within one
-30 fps frame. The structured/structured and structured/legacy transition
-encode steps took 0.887 s and 0.908 s respectively for the already rendered
-clips. No unchanged-clip reuse was attempted.
+was visually checked at 5.75 seconds. The structured/structured and
+structured/legacy transition encode steps took 0.887 s and 0.908 s
+respectively for the already rendered
+clips. These checks do not establish temporal parity: the source clips lack
+machine-readable frame identities, the transition probe does not assert both
+source positions around the cut, and the caption probe has no cue-boundary
+assertions. The acceptance test still needs identifiable source frames with
+nonzero trims, outgoing/incoming source positions before, at, and after a
+transition, and one-line/two-line caption cues checked by inspection, browser
+screenshot, and encoded export on both sides of a cue boundary. Target
+tolerance is one frame with stable text geometry. Until that passes, the hybrid
+architecture is provisional. No unchanged-clip reuse was attempted.
 
 ## Delivery implications
 
@@ -125,6 +160,9 @@ Milestone 1 can implement the JSON tree and compiler without baking preset
 names into the schema. Milestone 2 should produce a stable frame description
 with box, clip, line-break, draw-order, binding, rule-source, and occurrence-path
 data, then make preview, labeled inspection, watch, and export consume it.
+The focused probe demonstrates this shared description for one video box,
+motion track, and two canvases; it does not yet validate the full composition
+set.
 Browser raster layers should be cacheable when content is static within a
 scene; declarative translate/opacity tracks can move a layer or media subtree
 without capturing every frame in Chrome. Reflowing text or arbitrary effects

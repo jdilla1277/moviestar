@@ -1,6 +1,7 @@
 import {spawn, execFileSync} from 'node:child_process';
+import {randomUUID} from 'node:crypto';
 import {mkdtempSync, readFileSync, existsSync, writeFileSync, mkdirSync, rmSync} from 'node:fs';
-import {tmpdir} from 'node:os';
+import {tmpdir, cpus, totalmem} from 'node:os';
 import {join, resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {performance} from 'node:perf_hooks';
@@ -9,7 +10,8 @@ const root = resolve(import.meta.dirname);
 const out = join(root, 'frames'); mkdirSync(out,{recursive:true});
 const profile = mkdtempSync(join(tmpdir(),'spatial-chrome-'));
 const processStart = performance.now();
-const chrome = spawn(process.env.MOVIESTAR_CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', [
+const chromePath = process.env.MOVIESTAR_CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const chrome = spawn(chromePath, [
   '--headless','--no-sandbox','--disable-gpu','--hide-scrollbars','--force-device-scale-factor=1',
   '--autoplay-policy=no-user-gesture-required','--remote-allow-origins=*','--remote-debugging-port=0',
   `--user-data-dir=${profile}`,'about:blank'
@@ -21,32 +23,56 @@ function send(method,params={}){return new Promise((resolve,reject)=>{const k=++
 async function evaluate(expression){const r=await send('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(r.error||r.result?.exceptionDetails)throw new Error(JSON.stringify(r));return r.result.result.value}
 async function navigate(file,width,height){await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:false});await send('Page.navigate',{url:pathToFileURL(join(root,`${file}.html`)).href});for(let i=0;i<100;i++){try{if(await evaluate('document.readyState')){if(await evaluate('document.readyState')==='complete')break}}catch{}await sleep(30)}await evaluate('document.fonts.ready.then(()=>true)')}
 async function frame(scene,width,height,time,view,save){const t=performance.now();const call=scene.startsWith('transition_')?'setTransition':'setMoment';const boxes=await evaluate(`window.${call}(${time},${JSON.stringify(view)})`);const transparent=['hybrid','hybrid-static','tag-only'].includes(view);if(transparent)await send('Emulation.setDefaultBackgroundColorOverride',{color:{r:0,g:0,b:0,a:0}});const s=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false,fromSurface:true});if(transparent)await send('Emulation.setDefaultBackgroundColorOverride',{});if(save)writeFileSync(save,Buffer.from(s.result.data,'base64'));return {latency_ms:performance.now()-t,boxes}}
-const results={machine:'Apple M4, 24 GiB',chrome:'155.0.8059.40',scenes:{}};
+const firstLine=(command,args)=>execFileSync(command,args,{encoding:'utf8'}).split('\n')[0].trim();
+const results={
+ machine:`${cpus()[0]?.model || 'unknown CPU'} ${process.arch}, ${Math.round(totalmem()/2**30)} GiB`,
+ chrome:firstLine(chromePath,['--version']),
+ ffmpeg:firstLine('ffmpeg',['-version']),
+ node:process.version,
+ scenes:{}
+};
 try{
  const port=await waitPort();let pages;for(let i=0;i<100;i++){pages=await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();if(pages.find(p=>p.type==='page'))break;await sleep(50)}
  ws=new WebSocket(pages.find(p=>p.type==='page').webSocketDebuggerUrl);await new Promise((r,j)=>{ws.addEventListener('open',r,{once:true});ws.addEventListener('error',j,{once:true})});ws.addEventListener('message',e=>{const m=JSON.parse(e.data);if(m.id&&waiting.has(m.id)){const p=waiting.get(m.id);waiting.delete(m.id);m.error?p.reject(new Error(JSON.stringify(m.error))):p.resolve(m)}});
  await send('Page.enable');await send('Runtime.enable');
- if(process.argv.includes('--warm-hybrid')){
-  await navigate('podcast',1280,720);
-  await frame('podcast',1280,720,3,'hybrid',join(out,'podcast-1280x720-hybrid.png'));
-  const times=[];
-  for(let i=0;i<20;i++){
-   const started=performance.now();
-   await frame('podcast',1280,720,3,'hybrid',join(out,'podcast-1280x720-hybrid.png'));
-   execFileSync(process.env.MOVIESTAR_PYTHON || 'python3',[join(root,'singleframe_preview.py')],{stdio:'ignore'});
-   times.push(performance.now()-started);
-  }
-  times.sort((a,b)=>a-b);
-  console.log(JSON.stringify({warm_hybrid_p95_ms:Math.round(times[18]),min_ms:Math.round(times[0]),max_ms:Math.round(times[19])}));
- }else if(process.argv.includes('--cold-hybrid')){
-  await navigate('podcast',1280,720);
-  const result=await frame('podcast',1280,720,3,'hybrid',join(out,'podcast-1280x720-hybrid.png'));
-  writeFileSync(join(root,'cold_hybrid_boxes.json'),JSON.stringify(result.boxes));
-  console.log(JSON.stringify({cold_hybrid_ms:performance.now()-processStart,frame_ms:result.latency_ms}));
- }else if(process.argv.includes('--cold-only')){
+ if(process.argv.includes('--cold-only')){
   await navigate('podcast',1280,720);
   await frame('podcast',1280,720,3,'rendered',null);
   console.log(JSON.stringify({cold_process_ms:performance.now()-processStart}));
+ }else if(process.argv.includes('--frame-contract')){
+  const value=(flag,defaultValue)=>{const i=process.argv.indexOf(flag);return i<0?defaultValue:process.argv[i+1]};
+  const name=value('--name','default'),width=Number(value('--width','1280')),
+        height=Number(value('--height','720')),time=Number(value('--time','1.25')),
+        shift=Number(value('--shift','0'));
+  await navigate('frame_contract',width,height);
+  const base=await evaluate(`window.describeFrame(0,${shift})`);
+  const sample=await evaluate(`window.describeFrame(${time},${shift})`);
+  const shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false,fromSurface:true});
+  const reference=join(out,`frame-contract-${name}-reference.png`);
+  writeFileSync(reference,Buffer.from(shot.result.data,'base64'));
+  await evaluate('window.showGraphics()');
+  await send('Emulation.setDefaultBackgroundColorOverride',{color:{r:0,g:0,b:0,a:0}});
+  const graphicsShot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false,fromSurface:true});
+  const graphics=join(out,`frame-contract-${name}-graphics.png`);
+  writeFileSync(graphics,Buffer.from(graphicsShot.result.data,'base64'));
+  const contract=await evaluate('window.contract');
+  const description={measurement_id:randomUUID(),name,canvas:{width,height},scene_time_s:time,base_box:base.box,
+    sample_box:sample.box,motion:contract.motion,source_start_s:contract.sourceStart,
+    source_time_s:sample.sourceTime,duration_s:contract.duration,asset:contract.asset,
+    graphics,reference};
+  writeFileSync(join(root,`frame_contract_${name}.json`),JSON.stringify(description,null,2));
+  console.log(JSON.stringify({name,box:sample.box,source_time_s:sample.sourceTime}));
+ }else if(process.argv.includes('--layer-order')){
+  await navigate('layer_order',1280,720);
+  for(const view of ['rendered','backplate','foreground','mask','flat']){
+   const boxes=await evaluate(`window.setLayerView(${JSON.stringify(view)})`);
+   if(view==='rendered')writeFileSync(join(root,'layer_order_boxes.json'),JSON.stringify(boxes));
+   if(view==='foreground'||view==='mask')await send('Emulation.setDefaultBackgroundColorOverride',{color:{r:0,g:0,b:0,a:0}});
+   const shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false,fromSurface:true});
+   writeFileSync(join(out,`layer-order-${view}.png`),Buffer.from(shot.result.data,'base64'));
+   if(view==='foreground'||view==='mask')await send('Emulation.setDefaultBackgroundColorOverride',{});
+  }
+  console.log('layer-order screenshots and boxes saved');
  }else if(process.argv.includes('--calibration')){
   await navigate('calibration',1280,720);
   const shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false,fromSurface:true});

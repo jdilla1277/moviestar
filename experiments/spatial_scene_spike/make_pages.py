@@ -25,6 +25,19 @@ style = f'''@font-face{{font-family:Inter;src:url("{font}")}}@font-face{{font-fa
 .without-tag .civic-tag{{visibility:hidden}}.tag-only .root > *:not(.civic-tag){{visibility:hidden}}
 '''
 script = '''<script>
+function seekVideo(video, target) {
+  if (Math.abs(video.currentTime-target)<1/1000 && video.readyState>=2) return Promise.resolve();
+  return new Promise((resolve,reject) => {
+    const cleanup=()=>{clearTimeout(timer);video.removeEventListener('seeked',done);video.removeEventListener('loadeddata',done);video.removeEventListener('error',fail)};
+    const done=()=>{if (Math.abs(video.currentTime-target)>1/1000) return;cleanup();resolve()};
+    const fail=()=>{cleanup();reject(new Error('video seek failed at '+target))};
+    const timer=setTimeout(()=>{cleanup();reject(new Error('video seek timed out at '+target))},2000);
+    video.addEventListener('seeked',done);
+    video.addEventListener('loadeddata',done);
+    video.addEventListener('error',fail);
+    video.currentTime=target;
+  });
+}
 function measuredLines(e) {
   const grouped=new Map(); const walker=document.createTreeWalker(e,NodeFilter.SHOW_TEXT); let n;
   while(n=walker.nextNode()) for(const m of n.textContent.matchAll(/\\S+/g)) {
@@ -44,7 +57,7 @@ window.setMoment = async function(t, view) {
   document.body.style.background = transparent ? 'transparent' : '#101b2b';
   document.documentElement.style.setProperty('--pair-y', (Math.sin(t/6*Math.PI)*18).toFixed(2)+'px');
   document.documentElement.style.setProperty('--tag-x', (t*12).toFixed(2)+'px');
-  await Promise.all([...document.querySelectorAll('video')].map(v => new Promise(resolve => { const done=()=>resolve(); v.addEventListener('seeked',done,{once:true}); v.currentTime=Math.min(t,5.9); setTimeout(done,1000); })));
+  await Promise.all([...document.querySelectorAll('video')].map(v => seekVideo(v,Math.min(t,5.9))));
   await document.fonts.ready;
   return [...document.querySelectorAll('[data-node]')].map(e => {const r=e.getBoundingClientRect(); return {id:e.dataset.node, x:r.x,y:r.y,width:r.width,height:r.height, text:e.innerText||'',lines:measuredLines(e)};});
 };
@@ -59,6 +72,19 @@ background:#f23e45;border-radius:16px}
 </style></head><body><div class="box"></div></body></html>''')
 
 transition_script = '''<script>
+function seekVideo(video, target) {
+  if (Math.abs(video.currentTime-target)<1/1000 && video.readyState>=2) return Promise.resolve();
+  return new Promise((resolve,reject) => {
+    const cleanup=()=>{clearTimeout(timer);video.removeEventListener('seeked',done);video.removeEventListener('loadeddata',done);video.removeEventListener('error',fail)};
+    const done=()=>{if (Math.abs(video.currentTime-target)>1/1000) return;cleanup();resolve()};
+    const fail=()=>{cleanup();reject(new Error('video seek failed at '+target))};
+    const timer=setTimeout(()=>{cleanup();reject(new Error('video seek timed out at '+target))},2000);
+    video.addEventListener('seeked',done);
+    video.addEventListener('loadeddata',done);
+    video.addEventListener('error',fail);
+    video.currentTime=target;
+  });
+}
 window.setTransition = async function(t, view) {
   document.body.classList.toggle('layout', view === 'layout');
   const p=Math.max(0,Math.min(1,(t-5.5)/0.5));
@@ -67,7 +93,7 @@ window.setTransition = async function(t, view) {
   document.querySelector('#outgoing').style.setProperty('--pair-y',(Math.sin(Math.min(t,6)/6*Math.PI)*18).toFixed(2)+'px');
   document.querySelector('#outgoing').style.setProperty('--tag-x',(t*12).toFixed(2)+'px');
   document.querySelector('#incoming').style.setProperty('--tag-x',((t-5.5)*12).toFixed(2)+'px');
-  await Promise.all([...document.querySelectorAll('video')].map(v => new Promise(resolve => {const done=()=>resolve();v.addEventListener('seeked',done,{once:true});v.currentTime=Math.max(0,Math.min(v.closest('#incoming') ? t-5.5 : t,5.9));setTimeout(done,1000)})));
+  await Promise.all([...document.querySelectorAll('video')].map(v => seekVideo(v,Math.max(0,Math.min(v.closest('#incoming') ? t-5.5 : t,5.9)))));
   await document.fonts.ready;
   return [...document.querySelectorAll('[data-node]')].map(e => {const r=e.getBoundingClientRect();return {tree:e.closest('#incoming')?'incoming':'outgoing',id:e.dataset.node,x:r.x,y:r.y,width:r.width,height:r.height}});
 };

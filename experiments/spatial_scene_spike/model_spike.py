@@ -28,6 +28,17 @@ DEFINITIONS = {
             },
         },
     },
+    "VideoCard": {
+        "origin": "custom",
+        "tree": {
+            "tag": "div", "class": "card", "id": "card",
+            "children": [
+                {"tag": "video", "id": "video", "asset": {"input": "source"}},
+                {"tag": "div", "class": "badge", "id": "badge",
+                 "text": {"input": "badge"}},
+            ],
+        },
+    },
 }
 
 
@@ -55,7 +66,9 @@ def expand(node, inputs=None, path=()):
     if tag == "video":
         name = resolve(node["asset"], inputs)
         uri = (ROOT / f"{name}.mp4").as_uri()
+        occurrence = "/".join((*path, node_id))
         return (f'<div class="media" data-node="{escape(node_id)}" '
+                f'data-path="{escape(occurrence)}" '
                 f'data-label="VIDEO: {escape(name.upper())}"><video muted '
                 f'playsinline preload="auto" src="{uri}"></video></div>')
     children = resolve(node.get("children", []), inputs)

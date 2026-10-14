@@ -5,8 +5,6 @@ Node 24+, and a local Chrome or Chromium binary. The measured FFmpeg build
 included `libx264`. Install the MovieStar package in the Python environment
 or set `PYTHONPATH=app/src`. Set `MOVIESTAR_CHROME_PATH` if Chrome is not at
 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`.
-`MOVIESTAR_PYTHON` selects the Python interpreter used by the warm preview
-probe; it defaults to `python3`.
 
 The scripts create synthetic test videos, a transparent logo, HTML pages,
 browser masks, PNG frames, and encoded results in this directory. Those
@@ -33,18 +31,25 @@ python3 experiments/spatial_scene_spike/text_parity_probe.py
 python3 experiments/spatial_scene_spike/transition_probe.py
 python3 experiments/spatial_scene_spike/singlepass_probe.py --gop
 python3 experiments/spatial_scene_spike/singlepass_probe.py
-python3 experiments/spatial_scene_spike/singleframe_preview.py
 python3 experiments/spatial_scene_spike/codec_compare.py
 python3 experiments/spatial_scene_spike/motion_compare.py
+python3 experiments/spatial_scene_spike/layer_order_probe.py
+python3 experiments/spatial_scene_spike/frame_contract_probe.py
 python3 experiments/spatial_scene_spike/cold_hybrid_probe.py
-node experiments/spatial_scene_spike/browser_probe.mjs --warm-hybrid
 ```
 
 `browser_probe.mjs --export` captures 180 full browser frames and takes about
 30 seconds including the other compositions. Use `browser_probe.mjs` without
 `--export` for the shorter geometry/text run. Each run writes ignored JSON
-records, PNGs, and clips that can be inspected locally. The decision and
-measured gate are in [the design record](../../docs/design/spatial-render-spike.md).
+records, PNGs, and clips that can be inspected locally. The provisional
+direction and measurements are in [the design record](../../docs/design/spatial-render-spike.md).
+The cold probe uses the frame contract fixture, regenerates a measured JSON
+description in a fresh browser process for every run, and passes that exact
+description to `singleframe_preview.py`. The focused layer probe tests paint
+order inside the media region and ancestor clipping. The frame contract probe
+tests preview/export geometry on two canvases and result times. Temporal
+source-frame and caption-cue parity remain unproven; the design record lists
+the missing acceptance test.
 
 This is a disposable benchmark, not a supported MovieStar command. It uses
 the existing FFmpeg layout builder as a convenient media compositor and
