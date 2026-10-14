@@ -10,12 +10,17 @@ JSON object and returns a canned example for its `op` without applying it.
 `composition check --example CASE` returns sample
 readiness or conflict diagnostics; `composition inspect SCENE --at TIME --canvas
 WIDTHxHEIGHT --view layout|rendered` returns a sample frame description.
+`composition fixture` returns the complete canned project behind the examples.
 Every response says `status: "mock_only"` and `writes_spec: false`.
 
 ## The worked project
 
 An interview starts from a built-in scene layout. The project defines one
 `ListenerPair` component with two required video inputs and two video elements.
+The built-in layout captures `Badge` and `TextPanel` definitions into the
+project. `ListenerPair` also contains a `Badge` instance: its optional tag is
+forwarded to the badge's label input, giving the nested address
+`scene_interview_a / inst_listeners_a / inst_pair_badge / el_badge_text`.
 Scene A places an instance beside the host. Scene B places another instance of
 the *same definition* and binds different footage and source ranges. Scene A
 customizes its left frame, then the project updates the shared definition. The
@@ -26,6 +31,7 @@ relinking any use implicitly.
 The mock sequence is:
 
 ```text
+composition fixture
 composition edit --example start
 composition edit --example define
 composition edit --example place
@@ -42,13 +48,23 @@ composition edit --example duplicate
 composition edit --example clear
 composition edit --example draft
 composition check --example draft
+composition edit --example repair
+composition check --example static_only
+composition check --example unequal_media
+composition check --example missing_media
+composition check --example explicit_duration
+composition check --example with_caption
+composition check --example without_caption
 composition check --example conflict
 composition check --example referenced
 composition inspect scene_interview_a --at 00:03.000 --canvas 1080x1920 --view layout
 ```
 
 `scene_explainer` has an explicit six-second duration, a headline, and a logo
-image; no video is required. It is saved with an unfilled required image input.
+image inside `inst_text_panel`; no video is required. It is saved with an
+unfilled required image input. `edit --example repair` binds `asset_logo` to
+that instance. The fixture shows the draft before repair, so its diagnostic
+addresses an actual node in the returned graph.
 Reloading the draft must preserve its IDs, content, and diagnostics. Binding the
 image later makes the selected scene exportable. A project may retain unrelated
 incomplete drafts while exporting ready scenes.
@@ -95,13 +111,36 @@ the declared media type. Text and image elements need no video asset.
 
 Source ranges are half-open `[start, end)` seconds on the asset's source clock.
 The canonical result timeline remains the authority for scene order,
-transitions, and audio. A scene may set an explicit duration. Without one, a
-video scene infers duration from its bound media ranges; a scene containing only
-static elements needs an explicit duration. Longer media stops at the scene
-boundary. Shorter media shows no frames beyond its range and reports a
-diagnostic; it never silently loops or stretches. Video placement does not
-implicitly add that video's audio. The scene's audio selection is explicit.
-Format selection and layout rules do not change scene duration.
+transitions, and audio. A positive explicit scene duration wins; longer media
+is cut at that boundary. Without an explicit duration, take the **maximum**
+length (`end - start`) across every valid bound video range in the scene,
+including nested component uses. An 8-second range beside a 5-second range
+therefore makes an 8-second scene. A shorter video element is transparent after
+its range ends; its parent background remains visible. It produces a
+`media_ends_before_scene` **warning** and does not block export. It never loops,
+stretches, or extends the following scene. If a required media binding or
+referenced asset is missing, save the draft with an **error** and block export;
+without an explicit duration, inferred duration remains unresolved even when
+other media are bound. Optional unbound media are ignored for inference.
+With no bound video, a positive explicit duration is required. A text/image-only
+scene with that duration and all required content bound can export. The mock's
+`unequal_media`, `missing_media`, `explicit_duration`, and `static_only` check
+cases show each result and diagnostic severity.
+
+Placing a video element does not implicitly add its audio. The scene's audio
+selection is explicit. Format selection and layout rules do not change scene
+duration. These rules extend the current timeline resolver for structured
+scenes; legacy scene timing remains as it is.
+
+Generated captions in a structured scene appear **only** through a declared
+caption element, either directly in its layout or inside a component. Project
+or transcript caption settings supply that element's content; they do not inject
+a second visual layer. A built-in layout or an add-captions action may insert
+the element. Without one, the structured scene has no generated captions.
+Legacy preset scenes retain their current caption behavior. The fixture's
+`scene_interview_a` contains `el_caption_a`; `scene_interview_b` has none.
+`check --example with_caption` and `without_caption` make the difference
+explicit.
 
 ## Edits, history, and deletion
 

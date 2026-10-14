@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+from copy import deepcopy
 from pathlib import Path
 
 import click
@@ -25,6 +26,94 @@ SCENE_A = "scene_interview_a"
 SCENE_B = "scene_interview_b"
 PAIR = "cmp_listener_pair"
 LEFT_A = _target(SCENE_A, "inst_listeners_a", "el_left_frame")
+EXPLAINER = "scene_explainer"
+
+
+# This is one coherent illustrative snapshot after the draft edit. It is not
+# loaded from a project or accepted as a production document.
+PROJECT_FIXTURE = {
+    "revision": 15,
+    "assets": {
+        "asset_host": {"type": "video", "duration_seconds": 20},
+        "asset_alice": {"type": "video", "duration_seconds": 20},
+        "asset_bob": {"type": "video", "duration_seconds": 20},
+        "asset_carol": {"type": "video", "duration_seconds": 20},
+        "asset_dan": {"type": "video", "duration_seconds": 20},
+        "asset_logo": {"type": "image"},
+    },
+    "definitions": {
+        "cmp_badge": {
+            "origin": "captured_builtin", "name": "Badge",
+            "inputs": [{"name": "label", "type": "text", "required": False}],
+            "children": [{"id": "el_badge_text", "type": "text", "content": {"input": "label"}}],
+        },
+        PAIR: {
+            "origin": "user", "name": "ListenerPair",
+            "inputs": [{"name": "left", "type": "video", "required": True},
+                       {"name": "right", "type": "video", "required": True},
+                       {"name": "optional_tag", "type": "text", "required": False,
+                        "default": "Listener"}],
+            "children": [
+                {"id": "el_left_frame", "type": "video", "content": {"input": "left"},
+                 "style": {"border_width": 3}},
+                {"id": "el_right_frame", "type": "video", "content": {"input": "right"}},
+                {"instance_id": "inst_pair_badge", "definition_id": "cmp_badge",
+                 "bindings": {"label": {"forward": "optional_tag"}}},
+            ],
+        },
+        "cmp_text_panel": {
+            "origin": "captured_builtin", "name": "TextPanel",
+            "inputs": [{"name": "headline", "type": "text", "required": True},
+                       {"name": "image", "type": "image", "required": True}],
+            "children": [
+                {"id": "el_headline", "type": "text", "content": {"input": "headline"}},
+                {"id": "el_logo", "type": "image", "content": {"input": "image"}},
+            ],
+        },
+    },
+    "scenes": {
+        SCENE_A: {
+            "duration_seconds": 8,
+            "layout": {"children": [
+                {"id": "el_host", "type": "video",
+                 "content": {"asset_id": "asset_host", "source": {"start": 0, "end": 8}}},
+                {"instance_id": "inst_listeners_a", "definition_id": PAIR,
+                 "bindings": {
+                     "left": {"asset_id": "asset_alice", "source": {"start": 10, "end": 18}},
+                     "right": {"asset_id": "asset_bob", "source": {"start": 4, "end": 12}},
+                     "optional_tag": {"empty": True},
+                 }},
+                {"instance_id": "inst_listeners_a_copy", "definition_id": PAIR,
+                 "bindings": {
+                     "left": {"asset_id": "asset_alice", "source": {"start": 10, "end": 18}},
+                     "right": {"asset_id": "asset_bob", "source": {"start": 4, "end": 12}},
+                 }},
+                {"id": "el_caption_a", "type": "caption", "content": {"transcript": "project"}},
+            ]},
+        },
+        SCENE_B: {
+            "duration_seconds": 8,
+            "layout": {"children": [
+                {"instance_id": "inst_listeners_b", "definition_id": PAIR,
+                 "bindings": {
+                     "left": {"asset_id": "asset_carol", "source": {"start": 2, "end": 10}},
+                     "right": {"asset_id": "asset_dan", "source": {"start": 5, "end": 13}},
+                 }},
+            ]},
+        },
+        EXPLAINER: {
+            "duration_seconds": 6,
+            "layout": {"children": [
+                {"instance_id": "inst_text_panel", "definition_id": "cmp_text_panel",
+                 "bindings": {"headline": {"text": "A static explainer can contain text and images"}}},
+            ]},
+        },
+    },
+}
+PROJECT_FIXTURE["definitions"]["cmp_listener_pair_blue"] = deepcopy(PROJECT_FIXTURE["definitions"][PAIR])
+PROJECT_FIXTURE["definitions"]["cmp_listener_pair_blue"]["name"] = "ListenerPairBlue"
+PROJECT_FIXTURE["definitions"]["cmp_listener_pair_blue"]["variation_of"] = PAIR
+PROJECT_FIXTURE["definitions"]["cmp_listener_pair_blue"]["children"][0]["style"]["border_color"] = "#1E90FF"
 
 
 # Each operation shows a canonical request and response shape. These are sample
@@ -33,22 +122,22 @@ EDIT_CASES: dict[str, dict] = {
     "start": {
         "example_request": {"scope": "scene", "op": "scene.create", "scene_id": SCENE_A,
                             "from_layout": "builtin:interview", "duration": {"seconds": 8}},
-        "example_result": {"affected": [SCENE_A], "created": [SCENE_A], "revision": 1},
+        "example_result": {"affected": [SCENE_A], "created": [SCENE_A], "revision": 1,
+                           "captured_definitions": ["cmp_badge", "cmp_text_panel"]},
     },
     "define": {
         "example_request": {"scope": "definition", "op": "component.define",
                             "definition_id": PAIR, "name": "ListenerPair",
-                            "inputs": [{"name": "left", "type": "video", "required": True},
-                                       {"name": "right", "type": "video", "required": True},
-                                       {"name": "optional_tag", "type": "text", "required": False,
-                                        "default": "Listener"}],
-                            "children": ["el_left_frame", "el_right_frame"]},
+                            "inputs": PROJECT_FIXTURE["definitions"][PAIR]["inputs"],
+                            "children": PROJECT_FIXTURE["definitions"][PAIR]["children"]},
         "example_result": {"affected": [], "created": [PAIR], "revision": 2},
     },
     "place": {
         "example_request": {"scope": "scene", "op": "instance.place",
                             "scene_id": SCENE_A, "instance_id": "inst_listeners_a",
                             "definition_id": PAIR,
+                            "bindings": {"right": {"asset_id": "asset_bob",
+                                                   "source": {"start": 4, "end": 12}}},
                             "layout": {"grid_area": "listeners", "min_width": "35%"}},
         "example_result": {"affected": [SCENE_A],
                            "created": [_target(SCENE_A, "inst_listeners_a")], "revision": 3},
@@ -136,16 +225,24 @@ EDIT_CASES: dict[str, dict] = {
                            "inheritance": "explicit empty overrides default"},
     },
     "draft": {
-        "example_request": {"scope": "scene", "op": "scene.create", "scene_id": "scene_explainer",
+        "example_request": {"scope": "scene", "op": "scene.create", "scene_id": EXPLAINER,
                             "duration": {"seconds": 6},
-                            "layout": {"children": ["el_headline", "el_logo"]}},
-        "example_result": {"affected": ["scene_explainer"], "revision": 15,
+                            "layout": PROJECT_FIXTURE["scenes"][EXPLAINER]["layout"]},
+        "example_result": {"affected": [EXPLAINER], "revision": 15,
                            "saved": True, "render_ready": False,
-                           "hint": "Run 'moviestar composition check draft' for missing bindings."},
+                           "hint": "Run 'moviestar composition check --example draft' for missing bindings."},
+    },
+    "repair": {
+        "example_request": {"scope": "occurrence", "op": "input.bind",
+                            "target": _target(EXPLAINER, "inst_text_panel"),
+                            "input": "image", "value": {"asset_id": "asset_logo"}},
+        "example_result": {"affected": [EXPLAINER], "revision": 16,
+                           "render_ready": True,
+                           "hint": "Run 'moviestar composition check --example static_only' for the repaired scene."},
     },
     "undo": {
-        "example_request": {"scope": "project", "op": "revision.undo", "revision": 15},
-        "example_result": {"affected": ["scene_explainer"], "restored_revision": 14},
+        "example_request": {"scope": "project", "op": "revision.undo", "revision": 16},
+        "example_result": {"affected": [EXPLAINER], "restored_revision": 15},
     },
 }
 
@@ -162,12 +259,25 @@ def composition(ctx: click.Context) -> None:
     Start with `composition edit --example start`, then `--example define`,
     `--example place`, `--example bind`, `--example customize`,
     `--example update`, and `--example vary`.
-    `composition check --example draft` and `composition inspect scene_interview_a`
-    show proposed diagnostics and frame inspection.
+    `composition fixture` shows the complete canned graph.
+    `composition check --example draft` shows proposed diagnostics.
+    `composition inspect scene_interview_a --at 00:03.000 --canvas 1080x1920 --view layout`
+    shows proposed frame inspection.
     """
     if ctx.invoked_subcommand is None:
         _emit({"cases": list(EDIT_CASES),
                "hint": "Run 'moviestar composition edit --help' for the worked edit sequence and JSON request form."})
+
+
+@composition.command("fixture")
+def fixture() -> None:
+    """MOCK: show the canonical project graph behind the worked examples.
+
+    This is an illustrative snapshot before the repair operation. It remains
+    read-only and is not a valid persisted project document.
+    """
+    _emit({"project": PROJECT_FIXTURE,
+           "hint": "Run 'moviestar composition check --example draft' to inspect its missing image binding."})
 
 
 @composition.command("edit")
@@ -223,6 +333,7 @@ CHECK_CASES = {
                                "target": _target("scene_explainer", "inst_text_panel", "el_logo"),
                                "input": "image", "message": "Bind a logo asset or set an explicit empty value if optional."}]},
     "conflict": {"can_save": True, "can_apply": False, "can_export": True,
+                 "scenario": "Propose removing the left definition child before the local override is reset.",
                  "diagnostics": [{"code": "shared_edit_conflict", "severity": "error",
                                   "target": LEFT_A, "definition_id": PAIR,
                                   "message": "This definition child has a local customization; resolve before deleting it."}]},
@@ -231,8 +342,40 @@ CHECK_CASES = {
                    "diagnostics": [{"code": "referenced_definition", "severity": "error",
                                     "target": {"definition_id": PAIR},
                                     "uses": [_target(SCENE_A, "inst_listeners_a"),
+                                             _target(SCENE_A, "inst_listeners_a_copy"),
                                              _target(SCENE_B, "inst_listeners_b")],
                                     "message": "Replace or remove every use before deleting this definition."}]},
+    "unequal_media": {
+        "example_scene_id": SCENE_A, "scenario": "Remove the explicit duration; bind left for 8 s and right for 5 s.",
+        "resolved_duration_seconds": 8, "can_save": True, "can_export": True,
+        "diagnostics": [{"code": "media_ends_before_scene", "severity": "warning",
+                         "target": _target(SCENE_A, "inst_listeners_a", "el_right_frame"),
+                         "last_frame_before_seconds": 5,
+                         "message": "The right video becomes transparent after 5 s; the scene continues to 8 s."}]},
+    "missing_media": {
+        "example_scene_id": SCENE_A, "scenario": "Remove the explicit duration and the required left binding.",
+        "resolved_duration_seconds": None, "can_save": True, "can_export": False,
+        "diagnostics": [{"code": "required_input_missing", "severity": "error",
+                         "target": LEFT_A, "input": "left",
+                         "message": "Bind the missing required video before inferring duration or exporting."}]},
+    "explicit_duration": {
+        "example_scene_id": SCENE_A, "scenario": "Set duration to 8 s; bind left for 12 s and right for 5 s.",
+        "resolved_duration_seconds": 8, "can_save": True, "can_export": True,
+        "diagnostics": [{"code": "media_ends_before_scene", "severity": "warning",
+                         "target": _target(SCENE_A, "inst_listeners_a", "el_right_frame"),
+                         "last_frame_before_seconds": 5,
+                         "message": "The right video becomes transparent after 5 s; left video is cut at 8 s."}]},
+    "static_only": {
+        "example_scene_id": EXPLAINER, "scenario": "Apply the repair binding for the logo image.",
+        "resolved_duration_seconds": 6, "can_save": True, "can_export": True,
+        "diagnostics": []},
+    "with_caption": {
+        "example_scene_id": SCENE_A, "can_save": True, "can_export": True,
+        "generated_captions": True,
+        "caption_occurrences": [_target(SCENE_A, "el_caption_a")], "diagnostics": []},
+    "without_caption": {
+        "example_scene_id": SCENE_B, "can_save": True, "can_export": True,
+        "generated_captions": False, "caption_occurrences": [], "diagnostics": []},
 }
 
 
@@ -250,6 +393,9 @@ def check(scene_id: str | None, example: str) -> None:
     Example envelope: {"status":"mock_only","writes_spec":false,
     "can_save":true,"can_export":false,"diagnostics":[...],"hint":"..."}.
     """
+    example_scene_id = CHECK_CASES[example].get("example_scene_id")
+    if scene_id is not None and example_scene_id is not None and scene_id != example_scene_id:
+        raise click.BadParameter(f"{example} is a canned case for {example_scene_id}", param_hint="--scene")
     _emit({"case": example, "scene_id": scene_id, **CHECK_CASES[example],
            "hint": "Run 'moviestar composition inspect scene_interview_a --at 00:03.000 --canvas 1080x1920 --view layout'."})
 
@@ -276,11 +422,40 @@ def inspect(scene_id: str, timecode: str, canvas: str, view: str) -> None:
         raise click.BadParameter("use WIDTHxHEIGHT, for example 1080x1920", param_hint="--canvas")
     if re.fullmatch(r"(?:[0-9]{2}:)?[0-9]{2}:[0-9]{2}\.[0-9]{3}", timecode) is None:
         raise click.BadParameter("use MM:SS.mmm or HH:MM:SS.mmm", param_hint="--at")
+    if scene_id not in PROJECT_FIXTURE["scenes"]:
+        raise click.BadParameter("use a scene from 'moviestar composition fixture'", param_hint="SCENE_ID")
     width, height = map(int, match.groups())
+    if scene_id in (SCENE_A, SCENE_B):
+        instance_id = "inst_listeners_a" if scene_id == SCENE_A else "inst_listeners_b"
+        asset_id = "asset_alice" if scene_id == SCENE_A else "asset_carol"
+        boxes = [
+            {"occurrence_path": [scene_id, instance_id, "el_left_frame"],
+             "rect": {"x": 48, "y": 320, "width": 470, "height": 300},
+             "content": asset_id if view == "rendered" else "VIDEO: left",
+             "source": "scene layout + ListenerPair definition + local overrides"},
+            {"occurrence_path": [scene_id, instance_id, "inst_pair_badge", "el_badge_text"],
+             "rect": {"x": 48, "y": 280, "width": 160, "height": 32},
+             "content": ("" if scene_id == SCENE_A else "Listener") if view == "rendered"
+                        else "TEXT: optional_tag",
+             "source": "ListenerPair.optional_tag forwarded to Badge.label"},
+        ]
+        if scene_id == SCENE_A:
+            boxes.append({"occurrence_path": [scene_id, "el_caption_a"],
+                          "rect": {"x": 48, "y": 1720, "width": 984, "height": 120},
+                          "content": "transcript cue" if view == "rendered" else "CAPTIONS",
+                          "source": "declared caption element"})
+    else:
+        boxes = [
+            {"occurrence_path": [EXPLAINER, "inst_text_panel", "el_headline"],
+             "rect": {"x": 48, "y": 320, "width": 600, "height": 160},
+             "content": "A static explainer can contain text and images" if view == "rendered" else "TEXT: headline",
+             "source": "TextPanel.headline binding"},
+            {"occurrence_path": [EXPLAINER, "inst_text_panel", "el_logo"],
+             "rect": {"x": 48, "y": 520, "width": 160, "height": 160},
+             "content": "MISSING IMAGE" if view == "rendered" else "IMAGE: unbound",
+             "source": "TextPanel.image missing required binding"},
+        ]
     _emit({"scene_id": scene_id, "view": view, "artifact": None,
            "frame": {"time": timecode, "canvas": {"width": width, "height": height},
-                     "boxes": [{"occurrence_path": [scene_id, "inst_listeners_a", "el_left_frame"],
-                                "rect": {"x": 48, "y": 320, "width": 470, "height": 300},
-                                "content": "asset_alice" if view == "rendered" else "VIDEO: left",
-                                "source": "scene layout + ListenerPair definition + local overrides"}]},
+                     "boxes": boxes},
            "hint": "Run 'moviestar composition check --example draft' for addressable readiness diagnostics."})
