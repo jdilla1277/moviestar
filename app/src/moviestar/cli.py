@@ -30,6 +30,8 @@ from moviestar.activity import (
 )
 from moviestar.masks import ensure_mask
 from moviestar.ffmpeg import (
+    resolve_video_encoder,
+    select_video_encoder,
     FFMPEG_FEATURE_REQUIREMENTS,
     check_ffmpeg_ass_filter_available,
     check_ffmpeg_drawtext_filter_available,
@@ -1139,8 +1141,46 @@ def _parse_fps(rate_str: str | None) -> float | None:
 
 
 def _error_exit(command: str, message: str) -> None:
-    click.echo(json.dumps({"error": message, "command": command}, indent=2))
+    _echo_render_result({"error": message, "command": command})
     sys.exit(1)
+
+
+def _video_encoder_option(f):
+    return click.option(
+        "--video-encoder", type=click.Choice(["auto", "x264", "videotoolbox"]),
+        default="auto", show_default=True,
+        help="H.264 encoder. Auto prefers x264, then VideoToolbox on macOS. "
+        "Explicit choices require re-encoding and never silently fall back. "
+        "Dry-run may list FFmpeg encoders but does not encode media.",
+    )(f)
+
+
+def _resolve_video_encoder(command: str, requested: str, *, reencode: bool = True):
+    try:
+        selected = resolve_video_encoder(requested, reencode=reencode)
+    except FFmpegCapabilityError as exc:
+        _ffmpeg_capability_error_exit(command, exc)
+    # Context is used only for reporting. Builders and workers receive the
+    # resolved value explicitly, so they never probe or depend on Click state.
+    ctx = click.get_current_context()
+    ctx.meta["video_encoder"] = selected
+    ctx.meta["video_encoder_fallback"] = requested == "auto" and selected == "videotoolbox"
+    return selected
+
+
+def _echo_render_result(result: dict) -> None:
+    ctx = click.get_current_context(silent=True)
+    if ctx is not None and "video_encoder" in ctx.meta:
+        result["video_encoder"] = ctx.meta["video_encoder"]
+        if ctx.meta.get("video_encoder_fallback"):
+            note = "Auto selected VideoToolbox because FFmpeg does not advertise libx264."
+            result["note"] = (result.get("note", "") + " " + note).strip()
+        if "error" in result and "hint" not in result:
+            result["hint"] = (
+                "Run 'moviestar doctor' and inspect the FFmpeg error. "
+                "The selected encoder was not retried or substituted."
+            )
+    click.echo(json.dumps(result, indent=2))
 
 
 def _quiet_option(f):
@@ -1369,11 +1409,8 @@ def _error_exit_with_hint(
     envelopes) across every command. ``error`` describes what went
     wrong; ``hint`` says what to do about it.
     """
-    click.echo(
-        json.dumps(
-            {"error": message, "command": command, "hint": hint, **details},
-            indent=2,
-        )
+    _echo_render_result(
+        {"error": message, "command": command, "hint": hint, **details}
     )
     sys.exit(1)
 
@@ -1483,6 +1520,12 @@ def doctor() -> None:
     listings = {"filter": report["filters"], "encoder": report["encoders"]}
     capabilities = []
     warnings = []
+    auto_encoder = None
+    if report["encoders"] is not None:
+        try:
+            auto_encoder = select_video_encoder("auto", report["encoders"])
+        except FFmpegCapabilityError as exc:
+            warnings.append(_warning(exc.code, str(exc), hint=exc.hint))
     for requirement in FFMPEG_FEATURE_REQUIREMENTS:
         listing = listings[requirement["kind"]]
         available = (
@@ -1497,16 +1540,19 @@ def doctor() -> None:
         if available is False:
             entry["code"] = requirement["code"]
             entry["hint"] = requirement["hint"]
-            warnings.append(
-                _warning(
-                    requirement["code"],
-                    requirement["message"]
-                    + " Blocked: "
-                    + "; ".join(requirement["blocks"])
-                    + ".",
-                    hint=requirement["hint"],
+            if requirement["capability"] not in {"libx264", "h264_videotoolbox"}:
+                warnings.append(
+                    _warning(
+                        requirement["code"],
+                        requirement["message"]
+                        + " Blocked: "
+                        + "; ".join(requirement["blocks"])
+                        + ".",
+                        hint=requirement["hint"],
+                    )
                 )
-            )
+        if requirement["capability"] == "h264_videotoolbox":
+            entry["platform_supported"] = sys.platform == "darwin"
         capabilities.append(entry)
     for probe_error in report["probe_errors"]:
         warnings.append(
@@ -1524,6 +1570,9 @@ def doctor() -> None:
         "ffmpeg": report["ffmpeg"],
         "ffprobe": report["ffprobe"],
         "capabilities": capabilities,
+        "video_encoder": auto_encoder,
+        "encoder_detection": "Advertised FFmpeg support only; hardware/session "
+                             "initialization can still fail during rendering.",
     }
     missing_tools = [
         tool for tool in ("ffmpeg", "ffprobe") if not report[tool]["available"]
@@ -4664,7 +4713,7 @@ def inspect(
     is_flag=True,
     help="Validate everything the real call would (project loaded, "
     "range parses + within source, output path resolves) but skip "
-    "running ffmpeg and writing the output file. Returns the same "
+    "encoding media and writing the output file. May list FFmpeg encoders. Returns the same "
     "envelope with status: 'would_extract', dry_run: true, "
     "would_extract_to (the resolved output path *after* auto-suffix "
     "resolution, so it matches what the real call would use), and "
@@ -4686,6 +4735,7 @@ def inspect(
     "plus the final mix over the requested --from/--to window. Uses the "
     "authored watch mix and reports coverage relative to that window.",
 )
+@_video_encoder_option
 def watch(
     from_tc: str,
     to_tc: str,
@@ -4694,6 +4744,7 @@ def watch(
     dry_run: bool,
     source_arg: str | None,
     loudness_report: bool,
+    video_encoder: str = "auto",
 ) -> None:
     """Extract a video segment from the loaded project as MP4.
 
@@ -4765,6 +4816,7 @@ def watch(
                 preview=False,
                 dry_run=dry_run,
                 loudness_report=loudness_report,
+                video_encoder=video_encoder,
             )
             return
 
@@ -4785,6 +4837,7 @@ def watch(
             f"Range {from_s}s-{to_s}s exceeds video duration of {duration_seconds}s",
         )
 
+    video_encoder = _resolve_video_encoder("watch", video_encoder, reencode=precise)
     range_duration = to_s - from_s
     resolved_audio_mix = None
     # Issue #381: the default single-source analysis path previews the
@@ -4831,6 +4884,7 @@ def watch(
             range_duration,
             abs_output,
             precise=precise,
+            video_encoder=video_encoder,
         )
         result: dict = {
             "dry_run": True,
@@ -4880,7 +4934,7 @@ def watch(
             result,
             _dry_run_setup_commands_for_outputs([abs_output]),
         )
-        click.echo(json.dumps(result, indent=2))
+        _echo_render_result(result)
         return
 
     # Extract
@@ -4891,6 +4945,7 @@ def watch(
             range_duration,
             abs_output,
             precise=precise,
+            video_encoder=video_encoder,
         )
     except FFmpegNotFoundError as exc:
         _error_exit("watch", str(exc))
@@ -4949,7 +5004,7 @@ def watch(
             loudness_report=loudness_report,
         )
 
-    click.echo(json.dumps(result, indent=2))
+    _echo_render_result(result)
 
 
 def _scene_inspect_samples(
@@ -5235,6 +5290,7 @@ def _watch_scene_layout_composition(
     preview: bool,
     dry_run: bool,
     loudness_report: bool = False,
+    video_encoder: str = "auto",
 ) -> None:
     plan, render_plans = _scene_render_plans_for_range(
         project=project,
@@ -5269,6 +5325,7 @@ def _watch_scene_layout_composition(
     )
     artifacts = _scene_video_render_artifacts(
         command="watch",
+        video_encoder=video_encoder,
         project=project,
         spec=spec,
         render_plans=render_plans,
@@ -5333,7 +5390,7 @@ def _watch_scene_layout_composition(
             resolved_audio_mix=resolved_audio_mix,
             loudness_report=loudness_report,
         )
-        click.echo(json.dumps(result, indent=2))
+        _echo_render_result(result)
         return
 
     try:
@@ -5383,7 +5440,7 @@ def _watch_scene_layout_composition(
         resolved_audio_mix=resolved_audio_mix,
         loudness_report=loudness_report,
     )
-    click.echo(json.dumps(result, indent=2))
+    _echo_render_result(result)
 
 
 def _scene_video_render_artifacts(
@@ -5396,7 +5453,9 @@ def _scene_video_render_artifacts(
     work_dir: Path,
     preview: bool,
     audio_join_fade: float | None = None,
+    video_encoder: str = "auto",
 ) -> dict:
+    video_encoder = _resolve_video_encoder(command, video_encoder)
     render_plans, transition_render_plan = _apply_internal_transition_rendering(
         command=command,
         project=project,
@@ -5447,6 +5506,7 @@ def _scene_video_render_artifacts(
                 render_plan["canvas_tuple"],
                 render_plan["video_duration"],
                 preview=preview,
+                video_encoder=video_encoder,
                 audio_from_input=render_plan["audio_from_input"],
                 audio_speed=render_plan.get("audio_speed", 1.0),
                 output_fps=render_plan.get("output_fps"),
@@ -5478,6 +5538,7 @@ def _scene_video_render_artifacts(
         concat_segments,
         abs_output,
         precise=True,
+        video_encoder=video_encoder,
         preview=False,
         segment_has_audio=segment_has_audio,
         fill_missing_audio_with_silence=True,
@@ -5500,6 +5561,7 @@ def _scene_video_render_artifacts(
             "render keeps routed audio and fills unrouted windows with silence."
         )
     return {
+        "video_encoder": video_encoder,
         "work_dir": work_dir,
         "render_plans": render_plans,
         "scene_clip_paths": scene_clip_paths,
@@ -5697,6 +5759,7 @@ def _render_scene_video_artifacts(
     audio_join_fade: float | None = None,
     quiet: bool = False,
 ) -> list[str]:
+    video_encoder = artifacts["video_encoder"]
     work_dir: Path = artifacts["work_dir"]
     if work_dir.exists():
         shutil.rmtree(work_dir)
@@ -5712,6 +5775,7 @@ def _render_scene_video_artifacts(
             render_plan["canvas_tuple"],
             render_plan.get("video_duration", render_plan["duration"]),
             preview=preview,
+            video_encoder=video_encoder,
             audio_from_input=render_plan["audio_from_input"],
             audio_speed=render_plan.get("audio_speed", 1.0),
             output_fps=render_plan.get("output_fps"),
@@ -5726,6 +5790,7 @@ def _render_scene_video_artifacts(
         artifacts["concat_segments"],
         abs_output,
         precise=True,
+        video_encoder=video_encoder,
         preview=False,
         segment_has_audio=artifacts["segment_has_audio"],
         fill_missing_audio_with_silence=True,
@@ -5848,12 +5913,14 @@ def _clip_entry_envelope(
     abs_output: str,
     *,
     precise: bool = True,
+    video_encoder: str | None = "x264",
 ) -> dict:
     """The per-clip envelope shared by the extraction engine (clip /
     batch), so both arities report identically."""
     range_duration = to_s - from_s
     return {
         "out": abs_output,
+        "video_encoder": video_encoder,
         "source": source_id,
         "range": {
             "requested": {
@@ -5864,7 +5931,8 @@ def _clip_entry_envelope(
         },
         "mode": "re-encode" if precise else "stream-copy",
         "ffmpeg_command": build_extract_clip_command(
-            source_path, from_s, range_duration, abs_output, precise=precise
+            source_path, from_s, range_duration, abs_output, precise=precise,
+            video_encoder=video_encoder
         ),
     }
 
@@ -5936,12 +6004,13 @@ def _resolve_clip_out(
     is_flag=True,
     help="Validate everything the real call would (project loaded, "
     "range parses + within source, output path resolved including "
-    "auto-suffixing) but skip running ffmpeg and writing the output "
+    "auto-suffixing) but skip encoding media and writing the output "
     "file. Returns the same envelope shape with status: "
     "'would_extract', dry_run: true, would_extract_to, and "
     "ffmpeg_command; range.actual and file_size_bytes are dropped "
     "(post-execution measurements).",
 )
+@_video_encoder_option
 def clip(
     from_tc: str,
     to_tc: str,
@@ -5949,6 +6018,7 @@ def clip(
     source_arg: str | None,
     fast: bool,
     dry_run: bool,
+    video_encoder: str = "auto",
 ) -> None:
     """Extract one independent clip from a source to its own MP4.
 
@@ -5989,6 +6059,7 @@ def clip(
     from_s, to_s = _validate_clip_range("clip", source, from_tc, to_tc)
     range_duration = to_s - from_s
 
+    video_encoder = _resolve_video_encoder("clip", video_encoder, reencode=not fast)
     abs_output = _resolve_clip_out(
         "clip",
         output,
@@ -6003,6 +6074,7 @@ def clip(
         to_s,
         abs_output,
         precise=not fast,
+        video_encoder=video_encoder,
     )
     keyframe_note = (
         "stream-copy snaps to nearest keyframe; actual duration may differ "
@@ -6028,12 +6100,13 @@ def clip(
         }
         if fast:
             result["note"] = keyframe_note
-        click.echo(json.dumps(result, indent=2))
+        _echo_render_result(result)
         return
 
     try:
         ffmpeg_cmd = extract_clip(
-            source_path, from_s, range_duration, abs_output, precise=not fast
+            source_path, from_s, range_duration, abs_output, precise=not fast,
+            video_encoder=video_encoder,
         )
     except FFmpegNotFoundError as exc:
         _error_exit("clip", str(exc))
@@ -6063,7 +6136,7 @@ def clip(
     }
     if fast:
         result["note"] = keyframe_note
-    click.echo(json.dumps(result, indent=2))
+    _echo_render_result(result)
 
 
 @cli.command()
@@ -6075,7 +6148,7 @@ def clip(
     is_flag=True,
     help="Validate the whole recipe (every entry — all failures "
     "reported at once) and resolve every output path including "
-    "auto-names, but skip running ffmpeg and writing any files. "
+    "auto-names, but skip encoding media and writing any files. "
     "Returns the same envelope shape with status: 'would_extract', "
     "dry_run: true, and would_extract_to per clip; range.actual and "
     "file_size_bytes are dropped (post-execution measurements).",
@@ -6089,7 +6162,8 @@ def clip(
     "sequential behavior; larger values run independent clips in "
     "parallel while preserving recipe order in the JSON response.",
 )
-def batch(recipe: str, dry_run: bool, jobs: int) -> None:
+@_video_encoder_option
+def batch(recipe: str, dry_run: bool, jobs: int, video_encoder: str = "auto") -> None:
     """Extract a batch of independent clips described by a JSON recipe.
 
     \b
@@ -6248,9 +6322,10 @@ def batch(recipe: str, dry_run: bool, jobs: int) -> None:
                 "all-or-nothing, so nothing was extracted."
             ),
         }
-        click.echo(json.dumps(payload, indent=2))
+        _echo_render_result(payload)
         sys.exit(1)
 
+    video_encoder = _resolve_video_encoder("batch", video_encoder)
     entries: list[dict] = []
     reserved_auto_paths: set[str] = set()
     for i, (source_id, source_path, from_s, to_s, out) in enumerate(resolved):
@@ -6263,7 +6338,8 @@ def batch(recipe: str, dry_run: bool, jobs: int) -> None:
         )
         reserved_auto_paths.add(abs_output)
         entry_env = _clip_entry_envelope(
-            source_id, source_path, from_s, to_s, abs_output
+            source_id, source_path, from_s, to_s, abs_output,
+            video_encoder=video_encoder,
         )
 
         if dry_run:
@@ -6277,7 +6353,8 @@ def batch(recipe: str, dry_run: bool, jobs: int) -> None:
         _source_id, source_path, from_s, to_s, _out = resolved[i]
         abs_output = entry_env["out"]
         ffmpeg_cmd = extract_clip(
-            source_path, from_s, to_s - from_s, abs_output, precise=True
+            source_path, from_s, to_s - from_s, abs_output, precise=True,
+            video_encoder=video_encoder,
         )
         try:
             out_probe = run_ffprobe(abs_output)
@@ -6307,7 +6384,7 @@ def batch(recipe: str, dry_run: bool, jobs: int) -> None:
                 "--dry-run to extract."
             ),
         }
-        click.echo(json.dumps(result, indent=2))
+        _echo_render_result(result)
         return
 
     if jobs == 1:
@@ -6377,7 +6454,7 @@ def batch(recipe: str, dry_run: bool, jobs: int) -> None:
                     "entries and re-run."
                 ),
             }
-            click.echo(json.dumps(payload, indent=2))
+            _echo_render_result(payload)
             sys.exit(1)
         entries = [entry for entry in completed if entry is not None]
 
@@ -6393,7 +6470,7 @@ def batch(recipe: str, dry_run: bool, jobs: int) -> None:
             "Clean up auto-named outputs with 'moviestar clean'."
         ),
     }
-    click.echo(json.dumps(result, indent=2))
+    _echo_render_result(result)
 
 
 def _platform_preview_temp_path(output: str) -> str:
@@ -25672,6 +25749,7 @@ def _export_scene_layout_composition(
     audio_join_fade: float | None,
     loudness_report: bool = False,
     quiet: bool = False,
+    video_encoder: str = "auto",
 ) -> None:
     plan, render_plans = _scene_render_plans_for_range(
         project=project,
@@ -25713,6 +25791,7 @@ def _export_scene_layout_composition(
     )
     artifacts = _scene_video_render_artifacts(
         command="export",
+        video_encoder=video_encoder,
         project=project,
         spec=spec,
         render_plans=render_plans,
@@ -25936,7 +26015,7 @@ def _export_scene_layout_composition(
             loudness_report=loudness_report,
         )
         _add_loudness_result(result, loudness_target, dry_run=True)
-        click.echo(json.dumps(result, indent=2))
+        _echo_render_result(result)
         return
 
     if not quiet:
@@ -26008,7 +26087,7 @@ def _export_scene_layout_composition(
     _finalize_loudness_normalization(
         "export", result, loudness_target, abs_output
     )
-    click.echo(json.dumps(result, indent=2))
+    _echo_render_result(result)
 
 
 def _export_composition(
@@ -26024,6 +26103,7 @@ def _export_composition(
     audio_join_fade: float | None,
     loudness_report: bool = False,
     quiet: bool = False,
+    video_encoder: str = "auto",
 ) -> None:
     """Render a populated composition to one MP4.
 
@@ -26055,6 +26135,7 @@ def _export_composition(
                 audio_join_fade=audio_join_fade,
                 loudness_report=loudness_report,
                 quiet=quiet,
+                video_encoder=video_encoder,
             )
             return
 
@@ -26086,7 +26167,7 @@ def _export_composition(
 @click.option(
     "--preview",
     is_flag=True,
-    help="Re-encode at 480p ultrafast for fast verification renders.",
+    help="Re-encode at 480p with the selected encoder's preview profile.",
 )
 @click.option(
     "--dry-run",
@@ -26094,7 +26175,7 @@ def _export_composition(
     is_flag=True,
     help="Validate everything the real call would (project loaded, "
     "spec resolves, output path resolves, flag combination valid) "
-    "but skip running ffmpeg and writing the output file. Returns "
+    "but skip encoding media and writing the output file. May list FFmpeg encoders. Returns "
     "the same envelope as the real call with status: 'would_render', "
     "dry_run: true, would_render_to (the resolved output path), and "
     "ffmpeg_command — the agent sees exactly what would run. Scene "
@@ -26138,6 +26219,7 @@ def _export_composition(
     "(e.g. music drowning dialogue) without listening to the export.",
 )
 @_quiet_option
+@_video_encoder_option
 def export_cmd(
     output: str | None,
     fast: bool,
@@ -26148,17 +26230,18 @@ def export_cmd(
     audio_join_fade: float | None,
     loudness_report: bool,
     quiet: bool,
+    video_encoder: str = "auto",
 ) -> None:
     """Render the current edit spec to a final MP4.
 
     Reads the current ``moviestar/spec.json``, composes the operation
     stack via the resolver, and renders the resulting source range.
 
-    Default is **frame-exact re-encode** (libx264 -preset fast -crf 18) —
+    Default is **frame-exact re-encode** (auto prefers x264, then VideoToolbox on macOS) —
     "what you asked for == what you got". For long renders where the
     re-encode time matters, ``--fast`` opts into stream-copy (sub-second
     on any clip but snaps to the nearest keyframe). ``--preview``
-    re-encodes at 480p ultrafast for fast verification renders.
+    re-encodes at 480p with the selected encoder's preview profile.
 
     ``actual_duration`` is probed from the rendered file and may drift
     ±1 frame from ``result_duration`` due to container framing on
@@ -26173,7 +26256,8 @@ def export_cmd(
     exists, --fast/--preview not both) and emits the same envelope
     shape with ``dry_run: true``, ``status: "would_render"``, and
     ``would_render_to`` (the resolved output path) — but **does not run
-    ffmpeg or write the file**. ``ffmpeg_command`` is included so the
+    media encoding or write the file**. A read-only FFmpeg encoder listing
+    is allowed. ``ffmpeg_command`` is included so the
     agent sees exactly what would run; ``actual_duration`` and
     ``file_size_bytes`` are dropped (post-execution measurements that
     don't exist in dry-run).
@@ -26230,6 +26314,7 @@ def export_cmd(
             audio_join_fade=audio_join_fade,
             loudness_report=loudness_report,
             quiet=quiet,
+            video_encoder=video_encoder,
         )
         return
 
@@ -26347,6 +26432,10 @@ def export_cmd(
         preview_arg = False
         mode = "re-encode"
 
+    video_encoder = _resolve_video_encoder(
+        "export", video_encoder, reencode=precise_arg or preview_arg
+    )
+
     # Issue #36 stage 2: dry-run forks at the side-effect boundary.
     # Everything above (project loaded, spec parses, mode chosen,
     # output path resolves) ran identically. Below is
@@ -26358,6 +26447,7 @@ def export_cmd(
             render_inputs,
             abs_output,
             precise=precise_arg,
+            video_encoder=video_encoder,
             preview=preview_arg,
             segment_has_audio=[bool(source.get("audio_codec"))] * len(render_inputs),
             segment_fps=[float(source.get("fps") or 30.0)] * len(render_inputs),
@@ -26445,7 +26535,7 @@ def export_cmd(
             result,
             _dry_run_setup_commands_for_outputs([abs_output]),
         )
-        click.echo(json.dumps(result, indent=2))
+        _echo_render_result(result)
         return
 
     # Stderr progress mirrors load's pattern — humans + h-in-the-loop
@@ -26463,6 +26553,7 @@ def export_cmd(
             render_inputs,
             abs_output,
             precise=precise_arg,
+            video_encoder=video_encoder,
             preview=preview_arg,
             segment_has_audio=[bool(source.get("audio_codec"))] * len(render_inputs),
             segment_fps=[float(source.get("fps") or 30.0)] * len(render_inputs),
@@ -26576,7 +26667,7 @@ def export_cmd(
         "export", result, loudness_target, abs_output
     )
 
-    click.echo(json.dumps(result, indent=2))
+    _echo_render_result(result)
 
 
 if __name__ == "__main__":

@@ -24,6 +24,11 @@ moviestar doctor
 moviestar --help
 ```
 
+Video renders prefer x264 automatically and can fall back to Apple's
+VideoToolbox on macOS when x264 is absent. Use `--video-encoder videotoolbox`
+to select it explicitly. See [video encoders](video-encoders.md) for fallback,
+stream-copy, dry-run, and quality behavior.
+
 ## Make a first edit
 
 Create a dedicated working directory. The source video can live elsewhere;

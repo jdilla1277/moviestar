@@ -79,7 +79,9 @@ class TestDoctorCommand:
         assert data["ffmpeg"]["version"] == "7.1.1"
         assert data["ffprobe"]["available"] is True
         assert data.get("warnings", []) == []
-        assert all(c["available"] is True for c in data["capabilities"])
+        assert all(c["available"] is True for c in data["capabilities"]
+                   if c["capability"] != "h264_videotoolbox")
+        assert data["video_encoder"] == "x264"
         # Every capability names the Moviestar features it gates, even
         # when present, so agents can read the mapping proactively.
         assert all(c["blocks"] for c in data["capabilities"])

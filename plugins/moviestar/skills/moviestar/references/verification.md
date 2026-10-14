@@ -8,7 +8,14 @@ successfully.
 1. Run `status` and inspect the resolved duration, source selection,
    composition, captions/overlays, and audio configuration.
 2. Run `export --dry-run --out PATH`. Review the resolved output path, render
-   status, warnings, and FFmpeg plan.
+   status, warnings, `video_encoder`, and FFmpeg plan. `export`, `watch`, `clip`,
+   and `batch` accept `--video-encoder auto|x264|videotoolbox`. Auto prefers x264
+   and falls back to VideoToolbox on macOS; explicit selections never silently
+   substitute. Re-encoding dry-runs may list FFmpeg encoders without encoding
+   media. Stream-copy reports `video_encoder: null` and rejects explicit
+   encoders; use `watch --precise` or drop `--fast` to re-encode. All scene
+   stages and batch clips share one choice. Hardware initialization can still
+   fail at render time; inspect the error and run `doctor` before retrying.
 3. Make a quick `export --preview` or one or more short `watch --precise`
    renders when framing, motion, transitions, captions, or audio need review.
 4. View returned image paths with the available image tool. Read video files
