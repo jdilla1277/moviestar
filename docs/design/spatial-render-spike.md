@@ -1,9 +1,11 @@
 # Spatial composition renderer spike (milestone 0.2)
 
-**Provisional direction:** use a constrained CSS-style layout vocabulary in the
-JSON project document. Resolve layout and rasterize text, shapes, and images
+**Decision for the tested layout subset:** use a constrained CSS-style layout
+vocabulary in the JSON project document. Resolve layout and rasterize text, shapes, and images
 with a browser; place source video and encode final frames with FFmpeg. The
-renderer decision remains open until the temporal parity gate below passes.
+temporal parity and integrated performance gate now passes on the reference
+machine. General browser paint-order compilation and production integration
+remain separate implementation work.
 The [reproducible experiment](../../experiments/spatial_scene_spike/README.md)
 contains synthetic assets and measurement scripts. It does not implement a
 production schema or renderer.
@@ -77,21 +79,21 @@ performance guarantee.
 
 | Gate | Budget | Browser full-frame path | Browser layout + FFmpeg path |
 | --- | ---: | ---: | ---: |
-| Fresh single-frame preview, five-run P95 | <=3.0 s | 0.602 s browser capture | **0.991–1.544 s** across two focused contract-probe runs |
-| Warm preview, 20-run P95 | <=0.70 s | 0.050–0.122 s by composition | **0.359 s** end to end |
-| Six-second, 180-frame export | <=6 s | **15.492 s capture** before encoding | **0.989 s** FFmpeg encode stage after setup; no end-to-end result yet |
-| Peak renderer RSS | <=2 GiB | 1,304 MiB browser process tree under export load | 612 MiB FFmpeg; browser and encoder run sequentially in the measured path |
-| Export size at 1280x720 | recorded | browser capture frames not retained in Git | **2,000,588 bytes** GOP; 6,978,410 bytes all-intra |
+| Fresh single-frame preview, five-run P95 | <=3.0 s | 0.602 s browser capture | **1.298 s** integrated temporal gate |
+| Warm preview, 20-run P95 | <=0.70 s | 0.050–0.122 s by composition | **0.142 s** integrated temporal gate |
+| Six-second, 180-frame export | <=6 s | **15.492 s capture** before encoding | **1.361 s** from fresh browser launch through completed encode |
+| Peak renderer RSS | <=2 GiB | 1,304 MiB browser process tree under export load | **1,253 MiB** complete export process tree |
+| Earlier export size at 1280x720 | recorded | browser capture frames not retained in Git | **2,000,588 bytes** GOP; 6,978,410 bytes all-intra |
 
 The cold probe regenerates a frame description in a fresh browser process for
 each run at scene time 3 s, then passes that exact JSON file to the preview
 renderer. Each description has a unique measurement ID, and the runner asserts
 that all five IDs are distinct. The old 1.148 s number used a stale media-layout
-result and is not acceptance evidence. The 0.989 s GOP number measures only an
-FFmpeg stage after
-the graphics and source clips existed. It does not establish the six-second
-end-to-end export budget. Warm preview and memory figures also come from the
-earlier benchmark path and need an integrated measurement before acceptance.
+result and is not acceptance evidence. The earlier 0.989 s GOP number measured
+only an FFmpeg stage after the graphics and source clips existed. The temporal
+gate below supersedes it for end-to-end export acceptance, warm preview, and
+memory. Synthetic source generation remains outside the export clock because
+those files stand in for existing user media.
 
 The full-frame browser path misses the export throughput gate. An FFmpeg-only
 text path misses text parity: even after manually tuning the vertical position
@@ -143,16 +145,46 @@ tag left edge differed from browser-reported positions by at most 0.94 pixel.
 Both types of transition produced a combined encoded video; the fade midpoint
 was visually checked at 5.75 seconds. The structured/structured and
 structured/legacy transition encode steps took 0.887 s and 0.908 s
-respectively for the already rendered
-clips. These checks do not establish temporal parity: the source clips lack
+respectively for the already rendered clips. Those earlier checks did not
+establish temporal parity: the source clips lacked
 machine-readable frame identities, the transition probe does not assert both
 source positions around the cut, and the caption probe has no cue-boundary
-assertions. The acceptance test still needs identifiable source frames with
-nonzero trims, outgoing/incoming source positions before, at, and after a
-transition, and one-line/two-line caption cues checked by inspection, browser
-screenshot, and encoded export on both sides of a cue boundary. Target
-tolerance is one frame with stable text geometry. Until that passes, the hybrid
-architecture is provisional. No unchanged-clip reuse was attempted.
+assertions. The following gate addresses those gaps. No unchanged-clip reuse was
+attempted.
+
+### Temporal and integrated gate
+
+Run `python3 experiments/spatial_scene_spike/temporal_gate.py --verify` from
+the repository root. It generates two numbered, machine-readable source clips,
+trims them at source frames 30 and 15, and tests scene frames 44–46 around a
+caption cue change and 74–76, 82, 89–90 around a 15-frame dissolve. Browser
+inspection records both source times and caption line positions; screenshots
+capture the actual media and text; the same frame description supplies browser
+graphics and media positions to FFmpeg preview and export. Encoded frame markers
+are compared with browser screenshots, including the blended transition. The
+one-line caption becomes two lines at frame 45 with its reserved box unchanged.
+At frame 44, the gate also compares the FFmpeg single-frame preview with the
+encoded export for source marker pixels and caption glyph bounds.
+
+| Measure | 1280×720 | 720×1280 | Budget |
+| --- | ---: | ---: | ---: |
+| Maximum source-frame error, inspection and pixels | 0 frames | 0 frames | 1 frame |
+| Transition barcode pixel error | 2/255 | 2/255 | 20/255 |
+| Transition color error | 3/255 | 3/255 | 20/255 |
+| Media edge error | 0.20 px | 0.19 px | 1 px |
+| Caption glyph-bound error | 0 px | 0 px | 2 px |
+| Caption region P95 channel error | 1/255 | 2/255 | 20/255 |
+| Caption lines before/at/after cue | 1/2/2 | 1/2/2 | exact |
+| Caption box movement | 0 px | 0 px | 0 px |
+
+Measured on Apple M4 arm64, 24 GiB RAM, Chrome 155.0.8059.40, FFmpeg 9.0.1,
+Node 24.5.0, Inter Bold, 30 fps, six-second H.264 exports. The 1280×720 export
+was 1,232,426 bytes and the 720×1280 export was 1,199,280 bytes. Fresh preview
+P95 was 1.298 s over five browser launches; warm preview P95 was 0.142 s over
+20 browser-description-plus-FFmpeg frames; export took 1.361 s from browser
+launch through encoded file completion; peak process-tree RSS was 1,253 MiB.
+These are local measurements, not cross-device guarantees. The automated
+unittest reruns the assertions rather than relying on these recorded values.
 
 ## Delivery implications
 
@@ -160,9 +192,12 @@ Milestone 1 can implement the JSON tree and compiler without baking preset
 names into the schema. Milestone 2 should produce a stable frame description
 with box, clip, line-break, draw-order, binding, rule-source, and occurrence-path
 data, then make preview, labeled inspection, watch, and export consume it.
-The focused probe demonstrates this shared description for one video box,
-motion track, and two canvases; it does not yet validate the full composition
-set.
+The focused probes demonstrate this shared description for one video box,
+motion track, caption cue, transition, and two canvases. The broader composition
+set was checked with earlier probes; a general paint-order compiler is still
+needed for arbitrary overlapping element and component trees. The first product
+renderer should only accept a documented subset that its compiler can place
+faithfully, then expand that subset with parity tests.
 Browser raster layers should be cacheable when content is static within a
 scene; declarative translate/opacity tracks can move a layer or media subtree
 without capturing every frame in Chrome. Reflowing text or arbitrary effects
