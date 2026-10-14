@@ -62,6 +62,61 @@ try{
     graphics,reference};
   writeFileSync(join(root,`frame_contract_${name}.json`),JSON.stringify(description,null,2));
   console.log(JSON.stringify({name,box:sample.box,source_time_s:sample.sourceTime}));
+ }else if(process.argv.includes('--temporal')||process.argv.includes('--temporal-warm')){
+  const value=(flag,fallback)=>{const i=process.argv.indexOf(flag);return i<0?fallback:process.argv[i+1]};
+  const warm=process.argv.includes('--temporal-warm');
+  const name=value('--name',warm?'warm':'landscape');
+  const width=Number(value('--width','1280')),height=Number(value('--height','720'));
+  const sampleArg=value('--samples','44,45,46,74,75,76,82,89,90');
+  const sampleFrames=sampleArg==='none'?[]:sampleArg.split(',').map(Number);
+  await navigate('temporal_gate',width,height);
+  const config=await evaluate('window.temporalConfig');
+  const graphics={};
+  for(const [cue,frameNumber] of [[1,30],[2,45]]){
+   await evaluate(`window.describeTemporalFrame(${frameNumber})`);
+   await evaluate('window.showTemporalGraphics(true)');
+   await send('Emulation.setDefaultBackgroundColorOverride',{color:{r:0,g:0,b:0,a:0}});
+   const shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false,fromSurface:true});
+   graphics[cue]=join(out,`temporal-${name}-cue-${cue}.png`);
+   writeFileSync(graphics[cue],Buffer.from(shot.result.data,'base64'));
+   await send('Emulation.setDefaultBackgroundColorOverride',{});
+   await evaluate('window.showTemporalGraphics(false)');
+  }
+  const base=await evaluate('window.describeTemporalFrame(0)');
+  const descriptionFile=join(root,`temporal_${name}.json`);
+  const makeDescription=samples=>({measurement_id:randomUUID(),name,canvas:{width,height},
+   config,media_box:base.media_box,caption_box:base.caption_box,graphics,samples});
+  if(warm){
+   const times=[];
+   for(let i=0;i<20;i++){
+    const frameNumber=15+i*8;
+    const started=performance.now();
+    const sample=await evaluate(`window.describeTemporalFrame(${frameNumber})`);
+    writeFileSync(descriptionFile,JSON.stringify(makeDescription({[frameNumber]:sample})));
+    execFileSync(process.env.MOVIESTAR_PYTHON||'python3',
+     [join(root,'temporal_gate.py'),'--render-preview',descriptionFile],{stdio:'ignore'});
+    times.push(performance.now()-started);
+   }
+   times.sort((a,b)=>a-b);
+   console.log(JSON.stringify({warm_preview_p95_ms:Math.round(times[18]),
+    min_ms:Math.round(times[0]),max_ms:Math.round(times[19]),sample_count:times.length}));
+  }else{
+   const samples={};
+   for(const frameNumber of sampleFrames){
+    samples[frameNumber]=await evaluate(`window.describeTemporalFrame(${frameNumber})`);
+    const shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false,fromSurface:true});
+    writeFileSync(join(out,`temporal-${name}-${frameNumber}-browser.png`),Buffer.from(shot.result.data,'base64'));
+    if([74,75,76,82,89,90].includes(frameNumber))for(const source of ['a','b']){
+     await evaluate(`window.showTemporalSource(${JSON.stringify(source)})`);
+     const isolated=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false,fromSurface:true});
+     writeFileSync(join(out,`temporal-${name}-${frameNumber}-${source}.png`),Buffer.from(isolated.result.data,'base64'));
+     await evaluate(`window.describeTemporalFrame(${frameNumber})`);
+    }
+   }
+   writeFileSync(descriptionFile,JSON.stringify(makeDescription(samples),null,2));
+   console.log(JSON.stringify({description:descriptionFile,browser_ms:Math.round(performance.now()-processStart),
+    versions:{machine:results.machine,chrome:results.chrome,ffmpeg:results.ffmpeg,node:results.node}}));
+  }
  }else if(process.argv.includes('--layer-order')){
   await navigate('layer_order',1280,720);
   for(const view of ['rendered','backplate','foreground','mask','flat']){
