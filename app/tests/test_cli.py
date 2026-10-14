@@ -19144,9 +19144,10 @@ class TestBatch:
         lock = threading.Lock()
         both_started = threading.Event()
 
-        def fake_extract_clip(_src, _start, _duration, output, precise):
+        def fake_extract_clip(_src, _start, _duration, output, precise, video_encoder):
             nonlocal in_flight, max_in_flight
             assert precise is True
+            assert video_encoder in {"x264", "videotoolbox"}
             with lock:
                 in_flight += 1
                 max_in_flight = max(max_in_flight, in_flight)

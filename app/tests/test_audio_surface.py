@@ -1300,4 +1300,4 @@ class TestLoudnessReport:
         assert result.exit_code == 0
         assert "--loudness-report" in result.output
         assert "--from/--to" in result.output
-        assert "coverage relative to that window" in result.output
+        assert "coverage relative to that window" in " ".join(result.output.split())

@@ -53,6 +53,70 @@ def build_ffmpeg_encoders_command() -> list[str]:
     return ["ffmpeg", "-hide_banner", "-encoders"]
 
 
+def probe_video_encoders() -> set[str]:
+    """Read the advertised encoders once, without decoding or encoding media."""
+    try:
+        result = subprocess.run(
+            build_ffmpeg_encoders_command(), capture_output=True, text=True,
+            timeout=15,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(_failure_message("ffmpeg", result))
+        return _parse_ffmpeg_encoder_names(result.stdout)
+    except (OSError, subprocess.TimeoutExpired, RuntimeError) as exc:
+        raise FFmpegCapabilityError(
+            "ffmpeg_capability_probe_failed",
+            f"Could not list FFmpeg video encoders: {exc}",
+            "Check that 'ffmpeg -hide_banner -encoders' succeeds, then run "
+            "'moviestar doctor'. No encoder was selected.",
+        ) from exc
+
+
+def select_video_encoder(
+    requested: str, encoders: set[str] | list[str], *, platform: str | None = None,
+) -> str:
+    """Pure selection from advertised capabilities; never initialize hardware."""
+    platform = sys.platform if platform is None else platform
+    if requested not in {"auto", "x264", "videotoolbox"}:
+        raise ValueError(f"Unknown video encoder: {requested}")
+    if requested in {"auto", "x264"} and "libx264" in encoders:
+        return "x264"
+    if requested == "x264":
+        raise missing_capability_error("libx264")
+    if platform == "darwin" and "h264_videotoolbox" in encoders:
+        return "videotoolbox"
+    if requested == "videotoolbox":
+        if platform != "darwin":
+            code = "ffmpeg_videotoolbox_unsupported_platform"
+            message = "VideoToolbox video encoding requires macOS."
+        else:
+            code = "ffmpeg_missing_videotoolbox_encoder"
+            message = "FFmpeg does not advertise the h264_videotoolbox encoder."
+    else:
+        code = "ffmpeg_no_supported_h264_encoder"
+        message = "FFmpeg has no supported H.264 encoder on this platform."
+    raise FFmpegCapabilityError(
+        code, message,
+        "Install FFmpeg with libx264, or h264_videotoolbox on macOS. "
+        "Run 'moviestar doctor' to inspect capabilities; an explicit encoder "
+        "choice is never substituted.",
+    )
+
+
+def resolve_video_encoder(requested: str, *, reencode: bool = True) -> str | None:
+    """Resolve one invocation after its actual render mode is known."""
+    if not reencode:
+        if requested != "auto":
+            raise FFmpegCapabilityError(
+                "video_encoder_requires_reencode",
+                "An explicit video encoder cannot be used with stream-copy.",
+                "Drop --fast (clip/export), add --precise (watch), or use "
+                "--video-encoder auto to retain stream-copy.",
+            )
+        return None
+    return select_video_encoder(requested, probe_video_encoders())
+
+
 # Issue #358: the single catalog behind 'moviestar doctor' and the
 # author-time/render preflights. Each entry maps one FFmpeg build
 # capability to a stable code, the Moviestar features it gates, and a
@@ -143,16 +207,25 @@ FFMPEG_FEATURE_REQUIREMENTS: tuple[dict, ...] = (
         "code": "ffmpeg_missing_libx264_encoder",
         "message": (
             "FFmpeg is missing the 'libx264' encoder required for "
-            "re-encoded video output."
+            "explicit x264 video output."
         ),
         "blocks": [
-            "export, clip, batch, and watch video re-encoding",
+            "explicit x264 export, clip, batch, and watch video re-encoding",
         ],
         "hint": (
             "Install an FFmpeg build with libx264 enabled (macOS/"
             "Homebrew: brew reinstall ffmpeg) and confirm "
             "'ffmpeg -encoders' lists 'libx264'."
         ),
+    },
+    {
+        "capability": "h264_videotoolbox",
+        "kind": "encoder",
+        "code": "ffmpeg_missing_videotoolbox_encoder",
+        "message": "FFmpeg is missing the macOS VideoToolbox H.264 encoder.",
+        "blocks": ["explicit VideoToolbox export, clip, batch, and watch re-encoding"],
+        "hint": "On macOS, install FFmpeg with h264_videotoolbox support. "
+                "Other platforms can use libx264. Run 'moviestar doctor'.",
     },
     {
         "capability": "aac",
@@ -1916,13 +1989,21 @@ def compose_storyboard_tiles(
     return cmd
 
 
-def _h264_video_args(preview: bool) -> list[str]:
-    """libx264 encoder argv for preview and full-quality renders.
+def _h264_video_args(preview: bool, video_encoder: str = "x264") -> list[str]:
+    """Encoder-specific quality controls for preview and full-quality renders.
 
     Pins yuv420p: filters such as xfade and alpha masks negotiate 4:4:4
     formats, and x264 would otherwise encode High 4:4:4 Predictive, which
     QuickTime, iOS, and many browsers cannot play.
     """
+    if video_encoder == "videotoolbox":
+        # Independent bitrate targets, not an approximation of x264 CRF.
+        return [
+            "-c:v", "h264_videotoolbox", "-b:v", "2M" if preview else "12M",
+            "-profile:v", "high", "-pix_fmt", "yuv420p",
+        ]
+    if video_encoder != "x264":
+        raise ValueError(f"Expected a resolved video encoder, got {video_encoder!r}")
     if preview:
         quality = ["-preset", "ultrafast", "-crf", "28"]
     else:
@@ -1952,6 +2033,7 @@ def build_extract_clip_command(
     output_path: str,
     precise: bool = False,
     preview: bool = False,
+    video_encoder: str = "x264",
 ) -> list[str]:
     """Return the argv used to extract a video segment.
 
@@ -1960,10 +2042,10 @@ def build_extract_clip_command(
     - **Stream copy** (default — both flags False): ``-c copy``. Fast
       but snaps to nearest keyframe; actual duration may differ by up
       to a few seconds.
-    - **Precise** (``precise=True``): re-encodes with libx264 (preset
-      fast, crf 18) + aac. Frame-accurate boundaries.
-    - **Preview** (``preview=True``): re-encodes at 480p with libx264
-      ultrafast (crf 28). Fast verification renders.
+    - **Precise** (``precise=True``): re-encodes with the resolved
+      video encoder + aac. Frame-accurate boundaries.
+    - **Preview** (``preview=True``): re-encodes at 480p with the
+      resolved encoder's preview profile.
 
     If both flags are True, ``preview`` wins (it already implies a
     re-encode, so the precise boundary semantic comes for free). The
@@ -1976,10 +2058,10 @@ def build_extract_clip_command(
         "-t", str(duration),
     ]
     if preview:
-        cmd += ["-vf", "scale=-2:480", *_h264_video_args(True), "-c:a", "aac"]
+        cmd += ["-vf", "scale=-2:480", *_h264_video_args(True, video_encoder), "-c:a", "aac"]
     elif precise:
         cmd += [
-            "-vf", _EVEN_DIMENSIONS_FILTER, *_h264_video_args(False),
+            "-vf", _EVEN_DIMENSIONS_FILTER, *_h264_video_args(False, video_encoder),
             "-c:a", "aac",
         ]
     else:
@@ -1998,6 +2080,7 @@ def extract_clip(
     output_path: str,
     precise: bool = False,
     preview: bool = False,
+    video_encoder: str = "x264",
 ) -> list[str]:
     """Extract a video segment. Returns the ffmpeg argv that was run.
 
@@ -2016,7 +2099,7 @@ def extract_clip(
 
     cmd = build_extract_clip_command(
         video_path, start_time, duration, output_path,
-        precise=precise, preview=preview,
+        precise=precise, preview=preview, video_encoder=video_encoder,
     )
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
@@ -2965,6 +3048,7 @@ def build_render_layout_video_command(
     highlight_ass: tuple[str, str] | None = None,
     audio_speed: float = 1.0,
     output_fps: float | None = None,
+    video_encoder: str = "x264",
 ) -> list[str]:
     """Render simultaneous layout slots composited onto one canvas."""
     _validate_layout_slots(layout_slots, canvas, duration)
@@ -3013,7 +3097,7 @@ def build_render_layout_video_command(
     cmd += ["-filter_complex", ";".join(filter_parts), "-map", "[outv]"]
     if audio_label is not None:
         cmd += ["-map", audio_label]
-    cmd += _h264_video_args(preview)
+    cmd += _h264_video_args(preview, video_encoder)
     if audio_label is not None:
         cmd += ["-c:a", "aac"]
     cmd.append(output_path)
@@ -3144,6 +3228,7 @@ def build_render_segments_command(
     output_fps: float | None = None,
     video_segment_durations: list[float] | None = None,
     video_transitions: list[dict] | None = None,
+    video_encoder: str = "x264",
 ) -> list[str]:
     """Render multiple source-time ranges concatenated to one output.
 
@@ -3403,7 +3488,7 @@ def build_render_segments_command(
         path, src_from, src_to = segments[0]
         return build_extract_clip_command(
             path, src_from, src_to - src_from, output_path,
-            precise=precise, preview=preview,
+            precise=precise, preview=preview, video_encoder=video_encoder,
         )
 
     # Multi-segment path. One -i per segment so each decoder fast-
@@ -3647,7 +3732,7 @@ def build_render_segments_command(
     # fallback both land here; the caller's intent of "fast" can't be
     # honored across a filter graph, so the envelope layer is responsible
     # for surfacing the override in the response.
-    cmd += _h264_video_args(preview)
+    cmd += _h264_video_args(preview, video_encoder)
     if use_audio:
         cmd += ["-c:a", "aac"]
     cmd.append(output_path)
@@ -3698,6 +3783,7 @@ def render_segments(
     video_segment_durations: list[float] | None = None,
     video_transitions: list[dict] | None = None,
     progress_cb=None,
+    video_encoder: str = "x264",
 ) -> list[str]:
     """Render multiple source-time ranges concatenated to one output.
 
@@ -3735,7 +3821,7 @@ def render_segments(
 
     cmd = build_render_segments_command(
         segments, output_path,
-        precise=precise, preview=preview,
+        precise=precise, preview=preview, video_encoder=video_encoder,
         segment_has_audio=segment_has_audio,
         segment_fps=segment_fps,
         fill_missing_audio_with_silence=fill_missing_audio_with_silence,
@@ -3830,6 +3916,7 @@ def render_layout_video(
     highlight_ass: tuple[str, str] | None = None,
     audio_speed: float = 1.0,
     output_fps: float | None = None,
+    video_encoder: str = "x264",
 ) -> list[str]:
     """Render simultaneous layout slots composited onto one MP4."""
     for slot in layout_slots:
@@ -3849,6 +3936,7 @@ def render_layout_video(
         canvas,
         duration,
         preview=preview,
+        video_encoder=video_encoder,
         audio_from_input=audio_from_input,
         overlay_plans=overlay_plans,
         highlight_ass=highlight_ass,
