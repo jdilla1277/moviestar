@@ -128,6 +128,8 @@ def upload(file: Path, idempotency_key: str | None, resume: str | None, dry_run:
     ``moviestar account connect EMAIL`` and confirm with account status.
     If transfer fails, retry with the reported idempotency key. If completion
     fails, retry with ``--resume`` and the reported reservation ID.
+    The retry key is printed to stderr before any network request so an
+    interrupted command can reuse it.
 
     Example: moviestar upload final.mp4
     """
@@ -171,6 +173,10 @@ def upload(file: Path, idempotency_key: str | None, resume: str | None, dry_run:
         _complete_and_emit(endpoint, credential, resume, file, size, None)
         return
 
+    click.echo(json.dumps({
+        "command": "upload", "status": "retry_key", "idempotency_key": key,
+        "hint": "If interrupted, retry the same file with --idempotency-key KEY.",
+    }), err=True)
     status, initiation = _json_request(endpoint, credential, {
         "filename": file.name, "size_bytes": size, "idempotency_key": key,
     })

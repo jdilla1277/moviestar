@@ -206,3 +206,42 @@ def test_upload_dry_run_reports_target_and_quota_without_network(tmp_path, monke
     assert payload["quota"]["would_use_bytes"] == video.stat().st_size
     assert payload["quota"]["free_limits"]["stored_videos"] == 3
     assert payload["quota"]["current_usage"] == "unavailable"
+
+
+def test_interrupted_upload_reports_generated_key_before_network_and_reuses_it(tmp_path, monkeypatch):
+    import moviestar.upload as upload_module
+
+    video = tmp_path / "short.mp4"
+    video.write_bytes(b"\x00\x00\x00\x18ftypisom")
+    state = tmp_path / "account.json"
+    state.write_text(json.dumps({
+        "installation_url": "https://preview.example/api/v1/account/installation",
+        "connection": {"credential_storage": "private_file", "credential_fallback": CREDENTIAL},
+    }))
+    monkeypatch.setenv("MOVIESTAR_ACCOUNT_STATE", str(state))
+    reservation = "123e4567-e89b-42d3-a456-426614174000"
+    seen_keys = []
+
+    def request(url, _credential, payload=None):
+        if url.endswith("/uploads"):
+            seen_keys.append(payload["idempotency_key"])
+            if len(seen_keys) == 1:
+                raise KeyboardInterrupt()
+            return 200, {"status": "already_completed", "reservation_id": reservation}
+        return 200, {"status": "stored_unverified", "video_id": reservation}
+
+    monkeypatch.setattr(upload_module, "_json_request", request)
+    monkeypatch.setattr(upload_module, "_put_file", lambda *_args: (_ for _ in ()).throw(AssertionError("unexpected PUT")))
+
+    interrupted = CliRunner().invoke(cli, ["upload", str(video)])
+    assert interrupted.exit_code != 0
+    announced = json.loads(interrupted.stderr.splitlines()[0])
+    assert announced["status"] == "retry_key"
+    assert announced["idempotency_key"] == seen_keys[0]
+    assert "signed" not in interrupted.stderr.lower()
+
+    recovered = CliRunner().invoke(cli, ["upload", str(video),
+                                         "--idempotency-key", announced["idempotency_key"]])
+    assert recovered.exit_code == 0, recovered.output
+    assert json.loads(recovered.stdout)["video_id"] == reservation
+    assert seen_keys == [announced["idempotency_key"]] * 2
