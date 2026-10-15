@@ -33,7 +33,7 @@ def test_upload_streams_mp4_then_completes_without_exposing_secrets(tmp_path, mo
                 }
                 self.send_response(201)
             else:
-                payload = {"status": "ready", "video_id": "vid_test", "filename": video.name,
+                payload = {"status": "stored_unverified", "video_id": "vid_test", "filename": video.name,
                            "size_bytes": video.stat().st_size}
                 self.send_response(201)
             self.send_header("Content-Type", "application/json")
@@ -68,7 +68,7 @@ def test_upload_streams_mp4_then_completes_without_exposing_secrets(tmp_path, mo
 
     assert result.exit_code == 0, result.output
     payload = json.loads(result.stdout)
-    assert payload["status"] == "ready"
+    assert payload["status"] == "stored_unverified"
     assert payload["video_id"] == "vid_test"
     assert payload["idempotency_key"] == "test-key"
     assert "secret=private" not in result.output
@@ -117,7 +117,7 @@ def test_upload_resume_retries_completion_without_putting_file_again(tmp_path, m
 
     def request(url, credential, payload=None):
         calls.append((url, payload))
-        return 200, {"status": "ready", "video_id": "vid_test"}
+        return 200, {"status": "stored_unverified", "video_id": "vid_test"}
 
     monkeypatch.setattr(upload_module, "_json_request", request)
     result = CliRunner().invoke(cli, ["upload", str(video), "--resume",
@@ -128,3 +128,81 @@ def test_upload_resume_retries_completion_without_putting_file_again(tmp_path, m
         "https://preview.example/api/v1/videos/uploads/123e4567-e89b-42d3-a456-426614174000/complete",
         None,
     )]
+
+
+def test_upload_uses_legacy_installation_url_override(tmp_path, monkeypatch):
+    import moviestar.upload as upload_module
+
+    video = tmp_path / "short.mp4"
+    video.write_bytes(b"\x00\x00\x00\x18ftypisom")
+    state = tmp_path / "account.json"
+    state.write_text(json.dumps({"connection": {
+        "credential_storage": "private_file", "credential_fallback": CREDENTIAL,
+    }}))
+    monkeypatch.setenv("MOVIESTAR_ACCOUNT_STATE", str(state))
+    monkeypatch.setenv("MOVIESTAR_ACCOUNT_INSTALLATION_URL",
+                       "https://preview.example/api/v1/account/installation")
+    urls = []
+
+    def request(url, *_args):
+        urls.append(url)
+        return 503, {"status": "upload_unavailable"}
+
+    monkeypatch.setattr(upload_module, "_json_request", request)
+    result = CliRunner().invoke(cli, ["upload", str(video)])
+    assert result.exit_code == 1
+    assert urls == ["https://preview.example/api/v1/videos/uploads"]
+
+
+def test_completed_idempotency_key_recovers_lost_completion_response(tmp_path, monkeypatch):
+    import moviestar.upload as upload_module
+
+    video = tmp_path / "short.mp4"
+    video.write_bytes(b"\x00\x00\x00\x18ftypisom")
+    state = tmp_path / "account.json"
+    state.write_text(json.dumps({
+        "installation_url": "https://preview.example/api/v1/account/installation",
+        "connection": {"credential_storage": "private_file", "credential_fallback": CREDENTIAL},
+    }))
+    monkeypatch.setenv("MOVIESTAR_ACCOUNT_STATE", str(state))
+    reservation = "123e4567-e89b-42d3-a456-426614174000"
+    calls = []
+
+    def request(url, *_args):
+        calls.append(url)
+        if url.endswith("/uploads"):
+            return 200, {"status": "already_completed", "reservation_id": reservation}
+        return 200, {"status": "stored_unverified", "video_id": reservation}
+
+    monkeypatch.setattr(upload_module, "_json_request", request)
+    monkeypatch.setattr(upload_module, "_put_file", lambda *_args: (_ for _ in ()).throw(AssertionError("unexpected PUT")))
+    result = CliRunner().invoke(cli, ["upload", str(video), "--idempotency-key", "test-key"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["video_id"] == reservation
+    assert len(calls) == 2
+
+
+def test_upload_dry_run_reports_target_and_quota_without_network(tmp_path, monkeypatch):
+    import moviestar.upload as upload_module
+
+    video = tmp_path / "short.mp4"
+    video.write_bytes(b"\x00\x00\x00\x18ftypisom")
+    state = tmp_path / "account.json"
+    state.write_text(json.dumps({
+        "installation_url": "https://preview.example/api/v1/account/installation",
+        "connection": {"handle": "@editor", "email": "e***@example.com",
+                       "credential_storage": "private_file", "credential_fallback": CREDENTIAL},
+    }))
+    monkeypatch.setenv("MOVIESTAR_ACCOUNT_STATE", str(state))
+    monkeypatch.setattr(upload_module, "_json_request", lambda *_args: (_ for _ in ()).throw(AssertionError("unexpected API call")))
+    monkeypatch.setattr(upload_module, "_put_file", lambda *_args: (_ for _ in ()).throw(AssertionError("unexpected PUT")))
+    result = CliRunner().invoke(cli, ["upload", str(video), "--dry-run"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "would_upload"
+    assert payload["file"]["size_bytes"] == video.stat().st_size
+    assert payload["account"]["handle"] == "@editor"
+    assert payload["account"]["service_origin"] == "https://preview.example"
+    assert payload["quota"]["would_use_bytes"] == video.stat().st_size
+    assert payload["quota"]["free_limits"]["stored_videos"] == 3
+    assert payload["quota"]["current_usage"] == "unavailable"

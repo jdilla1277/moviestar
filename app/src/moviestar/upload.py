@@ -16,12 +16,14 @@ from moviestar.account import (
     _CLIENT_MARKER,
     _NoRedirectHandler,
     _credential_for_connection,
+    _installation_url,
     _read_state,
     _service_url_error,
 )
 
 
 MAX_FILE_BYTES = 500_000_000
+FREE_LIMITS = {"stored_videos": 3, "total_bytes": 1_000_000_000, "per_video_bytes": MAX_FILE_BYTES}
 _KEY_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _RESERVATION_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", re.I)
 
@@ -35,9 +37,9 @@ def _fail(status: str, hint: str, **fields: object) -> None:
     raise click.exceptions.Exit(1)
 
 
-def _upload_url(state: dict) -> str | None:
-    installation = state.get("installation_url")
-    if not isinstance(installation, str) or _service_url_error(installation):
+def _upload_url() -> str | None:
+    installation = _installation_url()
+    if _service_url_error(installation):
         return None
     parsed = urlsplit(installation)
     if parsed.path != "/api/v1/account/installation" or parsed.query:
@@ -99,11 +101,27 @@ def _put_file(url: str, headers: dict[str, str], file: Path) -> bool:
         return False
 
 
+def _complete_and_emit(endpoint: str, credential: str, reservation_id: str,
+                       file: Path, size: int, key: str | None) -> None:
+    status, completion = _json_request(f"{endpoint}/{reservation_id}/complete", credential)
+    if status not in {200, 201} or completion.get("status") != "stored_unverified" or not isinstance(completion.get("video_id"), str):
+        _fail(
+            completion.get("status", "upload_unavailable") if status else "upload_unavailable",
+            "Retry 'moviestar upload FILE --resume RESERVATION_ID' with the reported reservation ID.",
+            reservation_id=reservation_id, **({"idempotency_key": key} if key else {}),
+        )
+    _emit("stored_unverified", video_id=completion["video_id"], filename=file.name,
+          size_bytes=completion.get("size_bytes", size), reservation_id=reservation_id,
+          **({"idempotency_key": key} if key else {}),
+          hint="The file is stored privately. It cannot be shared until media validation is available.")
+
+
 @click.command("upload")
 @click.argument("file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--idempotency-key", metavar="KEY", help="Reuse KEY when retrying an interrupted upload of this same file.")
 @click.option("--resume", metavar="RESERVATION_ID", help="Retry completion of a transferred file without uploading it again.")
-def upload(file: Path, idempotency_key: str | None, resume: str | None) -> None:
+@click.option("--dry-run", is_flag=True, help="Preview file size, account target, and Free limits without reserving or uploading.")
+def upload(file: Path, idempotency_key: str | None, resume: str | None, dry_run: bool) -> None:
     """Store a finished MP4 privately in your MovieStar account.
 
     Upload does not create or send a share link. Connect first with
@@ -121,34 +139,47 @@ def upload(file: Path, idempotency_key: str | None, resume: str | None) -> None:
         _fail("invalid_file", "The video file cannot be read.")
     if size < 1 or size > MAX_FILE_BYTES:
         _fail("invalid_file", "Use an MP4 between 1 byte and 500 MB.", size_bytes=size)
+    state = _read_state()
+    credential = _credential_for_connection(state)
+    endpoint = _upload_url()
+    if not credential or not endpoint:
+        _fail("not_connected", "Run 'moviestar account connect EMAIL', then 'moviestar account status'.")
+
+    if dry_run:
+        if resume is not None:
+            _fail("invalid_request", "Use --dry-run for a new upload, or --resume to retry completion.")
+        connection = state.get("connection")
+        owner = connection if isinstance(connection, dict) else {}
+        parsed = urlsplit(endpoint)
+        _emit("would_upload", file={"path": str(file.resolve()), "size_bytes": size},
+              account={"handle": owner.get("handle"), "email": owner.get("email"),
+                       "service_origin": f"{parsed.scheme}://{parsed.netloc}"},
+              quota={"free_limits": FREE_LIMITS, "would_use_videos": 1,
+                     "would_use_bytes": size, "current_usage": "unavailable",
+                     "projected_usage": "unavailable"},
+              upload_performed=False, reservation_created=False,
+              hint="Current usage is checked by the service when the upload starts.")
+        return
+
     key = idempotency_key or uuid.uuid4().hex
     if not _KEY_RE.fullmatch(key):
         _fail("invalid_request", "Use 1–128 letters, digits, underscores, or hyphens for the idempotency key.")
 
-    state = _read_state()
-    credential = _credential_for_connection(state)
-    endpoint = _upload_url(state)
-    if not credential or not endpoint:
-        _fail("not_connected", "Run 'moviestar account connect EMAIL', then 'moviestar account status'.")
-
     if resume is not None:
         if not _RESERVATION_RE.fullmatch(resume):
             _fail("invalid_request", "Use the reservation ID reported by the failed upload.")
-        status, completion = _json_request(f"{endpoint}/{resume}/complete", credential)
-        if status not in {200, 201} or completion.get("status") != "ready" or not isinstance(completion.get("video_id"), str):
-            _fail(
-                completion.get("status", "upload_unavailable") if status else "upload_unavailable",
-                "Retry completion with the same reservation ID. If the uploaded object is missing, restart using the original idempotency key.",
-                reservation_id=resume,
-            )
-        _emit("ready", video_id=completion["video_id"], filename=file.name,
-              size_bytes=completion.get("size_bytes", size), reservation_id=resume,
-              hint="The video is private. Sharing it is a separate step.")
+        _complete_and_emit(endpoint, credential, resume, file, size, None)
         return
 
     status, initiation = _json_request(endpoint, credential, {
         "filename": file.name, "size_bytes": size, "idempotency_key": key,
     })
+    if status == 200 and initiation.get("status") == "already_completed":
+        reservation_id = initiation.get("reservation_id")
+        if not isinstance(reservation_id, str) or not _RESERVATION_RE.fullmatch(reservation_id):
+            _fail("upload_unavailable", "The upload service returned an invalid reservation.", idempotency_key=key)
+        _complete_and_emit(endpoint, credential, reservation_id, file, size, key)
+        return
     if status not in {200, 201} or initiation.get("status") != "upload_pending":
         _fail(
             initiation.get("status", "upload_unavailable") if status else "upload_unavailable",
@@ -172,12 +203,4 @@ def upload(file: Path, idempotency_key: str | None, resume: str | None) -> None:
             idempotency_key=key, reservation_id=reservation_id,
         )
 
-    status, completion = _json_request(f"{endpoint}/{reservation_id}/complete", credential)
-    if status not in {200, 201} or completion.get("status") != "ready" or not isinstance(completion.get("video_id"), str):
-        _fail(
-            completion.get("status", "upload_unavailable") if status else "upload_unavailable",
-            "Retry 'moviestar upload FILE --resume RESERVATION_ID' with the reported reservation ID.",
-            idempotency_key=key, reservation_id=reservation_id,
-        )
-    _emit("ready", video_id=completion["video_id"], filename=file.name, size_bytes=size,
-          idempotency_key=key, hint="The video is private. Sharing it is a separate step.")
+    _complete_and_emit(endpoint, credential, reservation_id, file, size, key)
