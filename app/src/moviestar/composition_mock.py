@@ -250,11 +250,10 @@ EDIT_CASES: dict[str, dict] = {
 @click.group("composition", invoke_without_command=True)
 @click.pass_context
 def composition(ctx: click.Context) -> None:
-    """MOCK: explore scene layouts and reusable component editing.
+    """Explore spatial composition and persist reusable visual models.
 
-    This milestone-zero surface returns fixed worked examples. Every response
-    has status=mock_only and writes_spec=false. It never reads project state,
-    saves changes, resolves geometry, or renders pixels.
+    The worked examples in edit/check/inspect remain fixed milestone-zero
+    examples. The `model` commands persist and expand real project data.
 
     Start with `composition edit --example start`, then `--example define`,
     `--example place`, `--example bind`, `--example customize`,
@@ -266,7 +265,7 @@ def composition(ctx: click.Context) -> None:
     """
     if ctx.invoked_subcommand is None:
         _emit({"cases": list(EDIT_CASES),
-               "hint": "Run 'moviestar composition edit --help' for the worked edit sequence and JSON request form."})
+               "hint": "Run 'moviestar composition model --help' for real project data, or 'composition edit --help' for worked examples."})
 
 
 @composition.command("fixture")
@@ -459,3 +458,65 @@ def inspect(scene_id: str, timecode: str, canvas: str, view: str) -> None:
            "frame": {"time": timecode, "canvas": {"width": width, "height": height},
                      "boxes": boxes},
            "hint": "Run 'moviestar composition check --example draft' for addressable readiness diagnostics."})
+
+
+@composition.group("model")
+def model() -> None:
+    """Save and inspect real reusable components and scene visual trees.
+
+    These structural trees are stored in spec.json. Existing scene order and
+    timing stay authoritative. Pixel layout and export are not yet connected.
+    """
+
+
+@model.command("apply")
+@click.argument("document", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+def model_apply(document: Path) -> None:
+    """Replace the spatial document with a JSON file, recording one undo step.
+
+    DOCUMENT contains definitions, scenes, and optional image assets. A scene
+    key must be an existing ID in the composition timeline. Incomplete input
+    bindings may be saved and diagnosed by `model inspect`.
+    """
+    from moviestar.spec import SpecValidationError, load_spec, save_spec
+
+    try:
+        spatial = json.loads(document.read_text())
+    except (OSError, ValueError) as exc:
+        raise click.BadParameter(f"cannot read JSON: {exc}", param_hint="DOCUMENT") from exc
+    if not isinstance(spatial, dict):
+        raise click.BadParameter("must contain a JSON object", param_hint="DOCUMENT")
+    spec = load_spec()
+    if spec is None:
+        raise click.ClickException("No spec.json found. Load a project first.")
+    spec["spatial"] = spatial
+    try:
+        saved = save_spec(spec, command="composition model apply")
+    except SpecValidationError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(json.dumps({"status": "saved", "writes_spec": True,
+                           "revision": len(saved["revisions"]),
+                           "definitions": sorted(spatial.get("definitions", {})),
+                           "scenes": sorted(spatial.get("scenes", {}))}, indent=2))
+
+
+@model.command("inspect")
+@click.argument("scene_id")
+def model_inspect(scene_id: str) -> None:
+    """Expand a saved scene tree with current definitions and bindings.
+
+    This reports structure and content references, without pixel geometry.
+    Diagnostics identify incomplete bindings, unknown assets, and cycles.
+    """
+    from moviestar.spatial_model import SpatialModelError, expand_spatial_scene
+    from moviestar.spec import load_spec
+
+    spec = load_spec()
+    if spec is None:
+        raise click.ClickException("No spec.json found. Load a project first.")
+    try:
+        expanded = expand_spatial_scene(spec, scene_id)
+    except SpatialModelError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(json.dumps({"status": "expanded", "renders_pixels": False,
+                           "scene": expanded}, indent=2))

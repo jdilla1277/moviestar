@@ -834,6 +834,12 @@ def validate_spec(spec: dict) -> None:
     if composition is not None:
         _validate_composition(composition, seen_ids, canvas=canvas)
 
+    from moviestar.spatial_model import SpatialModelError, validate_spatial_model
+    try:
+        validate_spatial_model(spec)
+    except SpatialModelError as exc:
+        raise SpecValidationError(str(exc)) from exc
+
     for field in ("opening_transition", "closing_transition"):
         transition = spec.get(field)
         if transition is not None:
@@ -3415,6 +3421,7 @@ def remove_caption_recipe(spec: dict, track: str) -> dict:
 REVISION_FIELDS = (
     "sources",
     "composition",
+    "spatial",
     "composition_audio_from",
     "composition_canvas",
     "composition_authored_as",

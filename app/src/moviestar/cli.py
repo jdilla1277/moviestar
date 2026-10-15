@@ -26297,6 +26297,15 @@ def export_cmd(
 
     composition = spec.get("composition")
 
+    if source_arg is None and (spec.get("spatial") or {}).get("scenes"):
+        _error_exit_with_hint(
+            "export",
+            "Spatial scene trees are saved but pixel rendering is not connected yet.",
+            "Inspect the visual tree with 'moviestar composition model inspect "
+            "<scene-id>'. Export individual sources with --source until "
+            "spatial rendering is available.",
+        )
+
     # M13b step 5 dispatch:
     #   --source set        → per-source path (existing M13a behavior).
     #   no flag + composition populated → render the composition.
