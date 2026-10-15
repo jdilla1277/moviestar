@@ -272,6 +272,7 @@ from moviestar.transcribe import (
 from moviestar.feedback import feedback
 from moviestar.subscribe import subscribe as subscribe_command
 from moviestar.account import account as account_command
+from moviestar.upload import upload as upload_command
 from moviestar.sharing import (
     download as download_command,
     share as share_command,
@@ -987,6 +988,7 @@ ACCOUNT COMMANDS
   account status         Show approval or connection state for this install.
   account disconnect     Revoke this install; local editing keeps working.
   account open           Open the human's account page in a browser.
+  upload FILE            Store a finished MP4 privately when hosting is enabled.
 
 \b
 TIMECODE FORMATS
@@ -1121,6 +1123,7 @@ def cli() -> None:
 cli.add_command(subscribe_command)
 cli.add_command(feedback)
 cli.add_command(account_command)
+cli.add_command(upload_command)
 cli.add_command(download_command)
 cli.add_command(share_command)
 cli.add_command(shares_command)
