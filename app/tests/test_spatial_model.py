@@ -317,3 +317,40 @@ def test_model_commands_report_expected_errors_as_json(tmp_path, monkeypatch):
         error = json.loads(result.output)
         assert error["command"] == command
         assert "unknown timeline scene" in error["error"]
+
+
+@pytest.mark.parametrize(
+    ("case", "path"),
+    [
+        ("input_type", "spatial.definitions.pair.inputs[0].type"),
+        ("element_type", "spatial.definitions.pair.children[0].type"),
+        ("later_null_definition", "spatial.definitions.broken"),
+        ("huge_number", "spatial.definitions.pair.inputs[3].default"),
+    ],
+)
+def test_malformed_spatial_shapes_return_json_and_leave_spec_intact(
+    tmp_path, monkeypatch, case, path
+):
+    spec = _project()
+    save_spec(spec, cwd=tmp_path)
+    monkeypatch.chdir(tmp_path)
+    document = deepcopy(spec["spatial"])
+    pair = document["definitions"]["pair"]
+    if case == "input_type":
+        pair["inputs"][0]["type"] = []
+    elif case == "element_type":
+        pair["children"][0]["type"] = {}
+    elif case == "huge_number":
+        pair["inputs"].append({"name": "huge", "type": "number", "default": 10**1000})
+    else:
+        pair["children"].append({"instance_id": "bad_use", "definition_id": "broken"})
+        document["definitions"]["broken"] = None
+    document_path = tmp_path / "malformed-spatial.json"
+    document_path.write_text(json.dumps(document))
+
+    result = CliRunner().invoke(cli, ["composition", "model", "apply", str(document_path)])
+    assert result.exit_code == 1
+    error = json.loads(result.output)
+    assert error["command"] == "composition model apply"
+    assert path in error["error"]
+    assert load_spec(cwd=tmp_path)["spatial"] == spec["spatial"]

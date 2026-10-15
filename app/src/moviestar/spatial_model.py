@@ -30,6 +30,15 @@ def _identifier(value: object, path: str) -> str:
     return value
 
 
+def _finite_number(value: object) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return isfinite(value)
+    except OverflowError:
+        return False
+
+
 def _binding(value: object, kind: str, path: str, *, forward: bool = False) -> None:
     if forward and isinstance(value, dict) and set(value) == {"forward"}:
         _identifier(value["forward"], f"{path}.forward")
@@ -47,7 +56,7 @@ def _binding(value: object, kind: str, path: str, *, forward: bool = False) -> N
             if not isinstance(source, dict) or set(source) != {"start", "end"}:
                 _fail(f"{path}.source", "needs numeric start and end")
             start, end = source["start"], source["end"]
-            if any(isinstance(n, bool) or not isinstance(n, (int, float)) or not isfinite(n) for n in (start, end)) or start < 0 or end <= start:
+            if not _finite_number(start) or not _finite_number(end) or start < 0 or end <= start:
                 _fail(f"{path}.source", "needs finite 0 <= start < end")
         return
     key = {"text": "text", "number": "number", "color": "color", "boolean": "boolean"}.get(kind)
@@ -57,11 +66,13 @@ def _binding(value: object, kind: str, path: str, *, forward: bool = False) -> N
         _fail(path, f"{kind} binding needs {key!r}")
     item = value[key]
     expected = {"text": str, "number": (int, float), "color": str, "boolean": bool}[kind]
-    if not isinstance(item, expected) or (kind == "number" and (isinstance(item, bool) or not isfinite(item))):
+    if not isinstance(item, expected) or (kind == "number" and not _finite_number(item)):
         _fail(path, f"{kind} binding has wrong value type")
 
 
 def _inputs(definition: dict, path: str) -> dict[str, dict]:
+    if not isinstance(definition, dict):
+        _fail(path, "must be an object")
     inputs = definition.get("inputs", [])
     if not isinstance(inputs, list):
         _fail(f"{path}.inputs", "must be an array")
@@ -72,7 +83,7 @@ def _inputs(definition: dict, path: str) -> dict[str, dict]:
             _fail(here, "must be an object")
         name = _identifier(item.get("name"), f"{here}.name")
         kind = item.get("type")
-        if kind not in _INPUT_TYPES:
+        if not isinstance(kind, str) or kind not in _INPUT_TYPES:
             _fail(f"{here}.type", f"must be one of {', '.join(sorted(_INPUT_TYPES))}")
         if name in result:
             _fail(f"{here}.name", f"duplicate input {name!r}")
@@ -112,6 +123,8 @@ def _children(children: object, path: str, definitions: dict, inputs: dict[str, 
             bindings = node.get("bindings", {})
             if not isinstance(bindings, dict):
                 _fail(f"{here}.bindings", "must be an object")
+            if target in definitions and not isinstance(definitions[target], dict):
+                _fail(f"spatial.definitions.{target}", "must be an object")
             target_inputs = _inputs(definitions[target], f"spatial.definitions.{target}") if target in definitions else {}
             for name, value in bindings.items():
                 _identifier(name, f"{here}.bindings key")
@@ -127,7 +140,7 @@ def _children(children: object, path: str, definitions: dict, inputs: dict[str, 
                             _fail(f"{here}.bindings.{name}", "forwarded input type differs")
         else:
             kind = node.get("type")
-            if kind not in _ELEMENT_TYPES:
+            if not isinstance(kind, str) or kind not in _ELEMENT_TYPES:
                 _fail(f"{here}.type", f"unknown element type {kind!r}")
             content = node.get("content")
             if isinstance(content, dict) and set(content) == {"input"}:
