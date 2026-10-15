@@ -77,3 +77,7 @@ own ID and content. `inspect` reports nested `occurrence_path` values for
 addressing individual uses. Shared and local structural editing commands,
 layout measurement, static-only scenes, and rendered inspection are subsequent
 implementation steps.
+
+Replacing the timeline with `moviestar scenes set` retains visual trees for
+scene IDs that remain and removes trees owned by deleted scenes in the same
+undoable revision.

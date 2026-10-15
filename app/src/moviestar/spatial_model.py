@@ -201,12 +201,14 @@ def expand_spatial_scene(spec: dict, scene_id: str) -> dict:
     diagnostics = []
 
     def resolve_value(value: object, inputs: dict, path: list[str], kind: str,
-                      required: set[str]) -> object:
+                      required: set[str], reported: set[str]) -> object:
         if isinstance(value, dict) and "input" in value:
             name = value["input"]
             value = inputs.get(name)
-            if value is None or (name in required and isinstance(value, dict) and value.get("empty") is True):
-                diagnostics.append({"code": "missing_binding", "path": path, "input": name})
+            if name in required and (value is None or (isinstance(value, dict) and value.get("empty") is True)):
+                if name not in reported:
+                    diagnostics.append({"code": "missing_binding", "path": path, "input": name})
+                reported.add(name)
                 return None
         if isinstance(value, dict) and value.get("empty") is True:
             return None
@@ -217,7 +219,8 @@ def expand_spatial_scene(spec: dict, scene_id: str) -> dict:
         return deepcopy(value)
 
     def expand_nodes(nodes: list, path: list[str], inputs: dict,
-                     required: set[str], ancestry: tuple[str, ...]) -> list[dict]:
+                     required: set[str], reported: set[str],
+                     ancestry: tuple[str, ...]) -> list[dict]:
         expanded = []
         for node in nodes:
             identity = node.get("id", node.get("instance_id"))
@@ -226,10 +229,12 @@ def expand_spatial_scene(spec: dict, scene_id: str) -> dict:
                       "style": deepcopy(node.get("style", {}))}
             if "id" in node:
                 kind = node["type"]
-                content = resolve_value(node.get("content"), inputs, address, kind, required)
+                content = resolve_value(node.get("content"), inputs, address,
+                                        kind, required, reported)
                 item = {**common, "type": kind, "content": content}
                 if "children" in node:
-                    item["children"] = expand_nodes(node["children"], address, inputs, required, ancestry)
+                    item["children"] = expand_nodes(node["children"], address, inputs,
+                                                    required, reported, ancestry)
                 expanded.append(item)
                 continue
             definition_id = node["definition_id"]
@@ -254,19 +259,17 @@ def expand_spatial_scene(spec: dict, scene_id: str) -> dict:
                 bindings[name] = supplied
             declarations = _inputs(definition, f"spatial.definitions.{definition_id}")
             mandatory = {name for name, entry in declarations.items() if entry.get("required")}
+            reported_here: set[str] = set()
             item["children"] = expand_nodes(definition["children"], address, bindings,
-                                            mandatory, (*ancestry, definition_id))
-            used = {child.get("content", {}).get("input") for child in definition["children"] if isinstance(child.get("content"), dict)}
-            used.update(value["forward"] for child in definition["children"]
-                        for value in child.get("bindings", {}).values()
-                        if isinstance(value, dict) and "forward" in value)
+                                            mandatory, reported_here,
+                                            (*ancestry, definition_id))
             for name in mandatory:
                 value = bindings[name]
-                if (value is None or (isinstance(value, dict) and value.get("empty") is True)) and name not in used:
+                if (value is None or (isinstance(value, dict) and value.get("empty") is True)) and name not in reported_here:
                     diagnostics.append({"code": "missing_binding", "path": address, "input": name})
         return expanded
 
     layout = scenes[scene_id]["layout"]
     return {"scene_id": scene_id, **{k: deepcopy(v) for k, v in layout.items() if k != "children"},
-            "children": expand_nodes(layout["children"], [scene_id], {}, set(), ()),
+            "children": expand_nodes(layout["children"], [scene_id], {}, set(), set(), ()),
             "diagnostics": diagnostics}

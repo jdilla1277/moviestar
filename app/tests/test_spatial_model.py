@@ -10,7 +10,8 @@ from moviestar.cli import cli
 from moviestar.project import save_project
 from moviestar.spatial_model import expand_spatial_scene
 from moviestar.spec import (
-    SpecValidationError, empty_spec, load_spec, pop_revision, save_spec, validate_spec,
+    SpecValidationError, empty_spec, load_spec, pop_revision, save_spec,
+    set_scene_composition, validate_spec,
 )
 
 
@@ -161,6 +162,71 @@ def test_spatial_scenes_must_follow_existing_timeline_ids():
         validate_spec(spec)
 
 
+def test_scene_replacement_removes_owned_tree_and_undo_restores_it(tmp_path):
+    spec = _project()
+    save_spec(spec, cwd=tmp_path)
+    updated = set_scene_composition(
+        spec,
+        scenes=[{"id": "scene_a", "name": "scene_a", "layout": "single",
+                 "slots": [("main", "alice", 0.0, 8.0, None)]}],
+        source_durations={source["id"]: 20.0 for source in spec["sources"]},
+        canvas=spec["composition_canvas"],
+    )
+    assert list(updated["spatial"]["scenes"]) == ["scene_a"]
+    assert updated["spatial"]["scenes"]["scene_a"] == spec["spatial"]["scenes"]["scene_a"]
+    assert updated["spatial"]["definitions"] == spec["spatial"]["definitions"]
+    save_spec(updated, cwd=tmp_path, command="scenes set")
+    reloaded = load_spec(cwd=tmp_path)
+    assert set(reloaded["revisions"][-1]["changed"]) == {"composition", "spatial"}
+    restored, _ = pop_revision(reloaded)
+    assert restored["composition"] == spec["composition"]
+    assert restored["spatial"] == spec["spatial"]
+
+
+def test_required_forwarding_cannot_hide_missing_parent_input():
+    spec = _project()
+    pair = spec["spatial"]["definitions"]["pair"]
+    pair["inputs"][2] = {"name": "label", "type": "text", "required": True}
+    pair["children"] = pair["children"][:2]
+    spec["spatial"]["definitions"]["badge"] = {
+        "name": "Badge",
+        "inputs": [{"name": "caption", "type": "text", "default": "fallback"}],
+        "children": [{"id": "words", "type": "text", "content": {"input": "caption"}}],
+    }
+    pair["children"].append({"instance_id": "badge_use", "definition_id": "badge",
+                             "bindings": {"caption": {"forward": "label"}}})
+    instance = spec["spatial"]["scenes"]["scene_a"]["layout"]["children"][0]
+    del instance["bindings"]["label"]
+    validate_spec(spec)
+    missing = expand_spatial_scene(spec, "scene_a")
+    assert missing["diagnostics"] == [{"code": "missing_binding",
+                                       "path": ["scene_a", "listeners"], "input": "label"}]
+    assert missing["children"][0]["children"][-1]["children"][0]["content"] == {"text": "fallback"}
+    instance["bindings"]["label"] = {"empty": True}
+    assert expand_spatial_scene(spec, "scene_a")["diagnostics"] == missing["diagnostics"]
+
+
+def test_omitted_optional_input_and_forwarded_optional_input_are_valid():
+    spec = _project()
+    pair = spec["spatial"]["definitions"]["pair"]
+    del pair["inputs"][2]["default"]
+    spec["spatial"]["definitions"]["badge"] = {
+        "name": "Badge",
+        "inputs": [{"name": "caption", "type": "text", "required": False}],
+        "children": [{"id": "words", "type": "text", "content": {"input": "caption"}}],
+    }
+    pair["children"].append({"instance_id": "badge_use", "definition_id": "badge",
+                             "bindings": {"caption": {"forward": "label"}}})
+    del spec["spatial"]["scenes"]["scene_a"]["layout"]["children"][0]["bindings"]["label"]
+    validate_spec(spec)
+    expanded = expand_spatial_scene(spec, "scene_a")
+    assert expanded["diagnostics"] == []
+    assert expanded["children"][0]["children"][2]["content"] is None
+    assert expanded["children"][0]["children"][3]["children"][0]["content"] is None
+    spec["spatial"]["scenes"]["scene_a"]["layout"]["children"][0]["bindings"]["label"] = {"empty": True}
+    assert expand_spatial_scene(spec, "scene_a")["diagnostics"] == []
+
+
 def test_real_cli_apply_inspect_and_image_asset_diagnostic(tmp_path, monkeypatch):
     spec = _project()
     del spec["spatial"]
@@ -211,4 +277,43 @@ def test_invalid_apply_keeps_previous_spec(tmp_path, monkeypatch):
     document.write_text(json.dumps(invalid))
     result = CliRunner().invoke(cli, ["composition", "model", "apply", str(document)])
     assert result.exit_code != 0
+    assert json.loads(result.output)["command"] == "composition model apply"
     assert load_spec(cwd=tmp_path)["spatial"] == spec["spatial"]
+
+
+def test_model_commands_report_expected_errors_as_json(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    document = tmp_path / "spatial.json"
+    document.write_text("{}")
+    for args, command in [
+        (["apply", str(document)], "composition model apply"),
+        (["inspect", "scene_a"], "composition model inspect"),
+    ]:
+        result = CliRunner().invoke(cli, ["composition", "model", *args])
+        assert result.exit_code == 1
+        assert json.loads(result.output)["command"] == command
+
+    document.write_text("not JSON")
+    malformed = CliRunner().invoke(cli, ["composition", "model", "apply", str(document)])
+    assert malformed.exit_code == 1
+    assert json.loads(malformed.output)["command"] == "composition model apply"
+    document.write_text("{}")
+
+    spec = _project()
+    save_spec(spec, cwd=tmp_path)
+    missing = CliRunner().invoke(cli, ["composition", "model", "inspect", "missing"])
+    assert json.loads(missing.output)["command"] == "composition model inspect"
+
+    stored = tmp_path / "moviestar" / "spec.json"
+    corrupt = deepcopy(spec)
+    corrupt["spatial"]["scenes"]["missing"] = corrupt["spatial"]["scenes"]["scene_a"]
+    stored.write_text(json.dumps(corrupt))
+    for args, command in [
+        (["apply", str(document)], "composition model apply"),
+        (["inspect", "scene_a"], "composition model inspect"),
+    ]:
+        result = CliRunner().invoke(cli, ["composition", "model", *args])
+        assert result.exit_code == 1
+        error = json.loads(result.output)
+        assert error["command"] == command
+        assert "unknown timeline scene" in error["error"]

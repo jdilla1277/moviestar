@@ -3356,6 +3356,13 @@ def set_scene_composition(
     new_spec["composition_audio_from"] = None
     new_spec["composition_canvas"] = canvas
     new_spec["composition_authored_as"] = None
+    spatial = new_spec.get("spatial")
+    if isinstance(spatial, dict) and isinstance(spatial.get("scenes"), dict):
+        retained_ids = {scene["id"] for scene in resolved_scenes if scene.get("id")}
+        spatial["scenes"] = {
+            scene_id: tree for scene_id, tree in spatial["scenes"].items()
+            if scene_id in retained_ids
+        }
     validate_spec(new_spec)
     return new_spec
 

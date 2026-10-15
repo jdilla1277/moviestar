@@ -470,7 +470,7 @@ def model() -> None:
 
 
 @model.command("apply")
-@click.argument("document", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.argument("document", type=click.Path(path_type=Path))
 def model_apply(document: Path) -> None:
     """Replace the spatial document with a JSON file, recording one undo step.
 
@@ -478,22 +478,26 @@ def model_apply(document: Path) -> None:
     key must be an existing ID in the composition timeline. Incomplete input
     bindings may be saved and diagnosed by `model inspect`.
     """
+    from moviestar.cli import _error_exit
     from moviestar.spec import SpecValidationError, load_spec, save_spec
 
     try:
         spatial = json.loads(document.read_text())
     except (OSError, ValueError) as exc:
-        raise click.BadParameter(f"cannot read JSON: {exc}", param_hint="DOCUMENT") from exc
+        _error_exit("composition model apply", f"Cannot read JSON document: {exc}")
     if not isinstance(spatial, dict):
-        raise click.BadParameter("must contain a JSON object", param_hint="DOCUMENT")
-    spec = load_spec()
+        _error_exit("composition model apply", "Document must contain a JSON object")
+    try:
+        spec = load_spec()
+    except SpecValidationError as exc:
+        _error_exit("composition model apply", str(exc))
     if spec is None:
-        raise click.ClickException("No spec.json found. Load a project first.")
+        _error_exit("composition model apply", "No spec.json found. Load a project first.")
     spec["spatial"] = spatial
     try:
         saved = save_spec(spec, command="composition model apply")
     except SpecValidationError as exc:
-        raise click.ClickException(str(exc)) from exc
+        _error_exit("composition model apply", str(exc))
     click.echo(json.dumps({"status": "saved", "writes_spec": True,
                            "revision": len(saved["revisions"]),
                            "definitions": sorted(spatial.get("definitions", {})),
@@ -508,15 +512,19 @@ def model_inspect(scene_id: str) -> None:
     This reports structure and content references, without pixel geometry.
     Diagnostics identify incomplete bindings, unknown assets, and cycles.
     """
+    from moviestar.cli import _error_exit
     from moviestar.spatial_model import SpatialModelError, expand_spatial_scene
-    from moviestar.spec import load_spec
+    from moviestar.spec import SpecValidationError, load_spec
 
-    spec = load_spec()
+    try:
+        spec = load_spec()
+    except SpecValidationError as exc:
+        _error_exit("composition model inspect", str(exc))
     if spec is None:
-        raise click.ClickException("No spec.json found. Load a project first.")
+        _error_exit("composition model inspect", "No spec.json found. Load a project first.")
     try:
         expanded = expand_spatial_scene(spec, scene_id)
     except SpatialModelError as exc:
-        raise click.ClickException(str(exc)) from exc
+        _error_exit("composition model inspect", str(exc))
     click.echo(json.dumps({"status": "expanded", "renders_pixels": False,
                            "scene": expanded}, indent=2))
