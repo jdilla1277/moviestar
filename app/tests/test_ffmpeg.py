@@ -3,6 +3,7 @@
 import os
 import re
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -28,6 +29,7 @@ from moviestar.ffmpeg import (
     extract_frames,
     ffmpeg_filter_available,
     render_layout_frame,
+    render_layout_video,
     mix_audio,
     render_segments,
     probe_last_video_packet_timestamp,
@@ -2406,6 +2408,121 @@ def _overlay_plan(**kwargs) -> dict:
     }
     plan.update(kwargs)
     return plan
+
+
+@pytest.mark.parametrize("fail_spawn", [False, True])
+def test_large_caption_graph_uses_temporary_filter_script(
+    test_video, tmp_path, monkeypatch, fail_spawn
+):
+    """Long caption tracks must launch FFmpeg below the OS argv limit."""
+    from moviestar import ffmpeg as ffmpeg_mod
+
+    plans = [
+        _overlay_plan(
+            id=f"cap_{i:04d}",
+            from_result=0.0,
+            to_result=0.5,
+            enable_from=0.0,
+            enable_to=0.5,
+        )
+        for i in range(800)
+    ]
+    command = build_render_segments_command(
+        [(test_video, 0.0, 0.5)],
+        str(tmp_path / "long-captions.mp4"),
+        overlay_plans=plans,
+        overlay_canvas=(320, 240),
+    )
+    graph = command[command.index("-filter_complex") + 1]
+    assert len(graph.encode()) > 128 * 1024
+
+    seen = {}
+
+    class FakeProcess:
+        stderr = iter(())
+        returncode = 0
+
+        def wait(self):
+            pass
+
+    def fake_popen(argv, **_kwargs):
+        options = ("-filter_complex_script", "-/filter_complex")
+        option = next((name for name in options if name in argv), None)
+        assert option is not None
+        path = Path(argv[argv.index(option) + 1])
+        seen["path"] = path
+        assert path.read_text() == graph
+        assert path.stat().st_mode & 0o777 == 0o600
+        assert "-filter_complex" not in argv
+        if fail_spawn:
+            raise OSError("simulated FFmpeg launch failure")
+        return FakeProcess()
+
+    monkeypatch.setattr(ffmpeg_mod, "preflight_overlay_render_capabilities", lambda _: None)
+    monkeypatch.setattr(ffmpeg_mod, "_filter_complex_script_option", lambda: "-/filter_complex")
+    monkeypatch.setattr(ffmpeg_mod.subprocess, "Popen", fake_popen)
+
+    def render():
+        return render_segments(
+            [(test_video, 0.0, 0.5)],
+            str(tmp_path / "long-captions.mp4"),
+            overlay_plans=plans,
+            overlay_canvas=(320, 240),
+            progress_cb=lambda _: None,
+        )
+
+    if fail_spawn:
+        with pytest.raises(OSError, match="simulated FFmpeg launch failure"):
+            render()
+    else:
+        assert render() == command
+    assert not seen["path"].exists()
+
+
+def test_large_layout_caption_graph_uses_temporary_filter_script(
+    test_video, tmp_path, monkeypatch
+):
+    from moviestar import ffmpeg as ffmpeg_mod
+
+    slots = [{
+        "path": test_video,
+        "source_from": 0.0,
+        "source_to": 0.5,
+        "region": {"x": 0, "y": 0, "width": 320, "height": 240},
+    }]
+    plans = [_overlay_plan(id=f"cap_{i:04d}") for i in range(800)]
+    output = str(tmp_path / "long-layout.mp4")
+    command = build_render_layout_video_command(
+        slots, output, (320, 240), 0.5, overlay_plans=plans,
+    )
+    graph = command[command.index("-filter_complex") + 1]
+    assert len(graph.encode()) > 128 * 1024
+    seen = {}
+
+    class FakeProcess:
+        stderr = iter(())
+        returncode = 0
+
+        def wait(self):
+            pass
+
+    def fake_popen(argv, **_kwargs):
+        option = "-/filter_complex"
+        assert option in argv
+        path = Path(argv[argv.index(option) + 1])
+        seen["path"] = path
+        assert path.read_text() == graph
+        return FakeProcess()
+
+    monkeypatch.setattr(ffmpeg_mod, "preflight_overlay_render_capabilities", lambda _: None)
+    monkeypatch.setattr(ffmpeg_mod, "_filter_complex_script_option", lambda: "-/filter_complex")
+    monkeypatch.setattr(ffmpeg_mod.subprocess, "Popen", fake_popen)
+
+    assert render_layout_video(
+        slots, output, (320, 240), 0.5,
+        overlay_plans=plans, progress_cb=lambda _: None,
+    ) == command
+    assert not seen["path"].exists()
 
 
 class TestFiltergraphEscape:
