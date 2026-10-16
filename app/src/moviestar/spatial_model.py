@@ -309,12 +309,32 @@ def compile_spatial_frame(
         _fail("result time", f"must be within 0-{timeline.duration_s} seconds")
     if timeline.shape != "scenes":
         _fail("spatial frame", "requires a scene composition timeline")
-    lookup_time = min(result_time_s, max(0.0, timeline.duration_s - 0.000001))
+    _reject_active_transition(spec, timeline, result_time_s)
+    # The exact project end addresses its last output frame, even when a slow
+    # pacing segment would round a microsecond-before-end sample up to the
+    # half-open media boundary.
+    lookup_time = result_time_s
+    if result_time_s == timeline.duration_s:
+        lookup_time = max(0.0, timeline.duration_s - 1 / timeline.output_fps)
     span = timeline.span_at(lookup_time)
     if span.scene_id is None:
         _fail("spatial frame", "resolved scene has no stable id")
     scene_duration = round(span.scene_end_s - span.scene_start_s, 6)
     scene_time = round(min(scene_duration, lookup_time - span.scene_start_s), 6)
+    from moviestar.spec import parse_timecode_string
+
+    authored_scene = spec["composition"][span.scene_index]
+    first_slot = authored_scene["slots"][0]
+    slot = span.slot(first_slot["slot"])
+    if slot is None:
+        _fail("spatial frame", "resolved scene has no pacing reference slot")
+    source_start = parse_timecode_string(first_slot["source_from"], "slot.source_from")
+    source_end = parse_timecode_string(first_slot["source_to"], "slot.source_to")
+    scene_source_duration = round(source_end - source_start, 6)
+    scene_source_time = round(
+        slot.source_from_s - source_start
+        + (0 if slot.held else (lookup_time - span.start_s) * slot.speed), 6
+    )
     expanded = expand_spatial_scene(spec, span.scene_id)
     diagnostics = expanded["diagnostics"]
     durations = source_durations or {}
@@ -343,14 +363,14 @@ def compile_spatial_frame(
                                             "asset_duration_s": durations[asset_id]})
                     else:
                         duration = round(source["end"] - source["start"], 6)
-                        visible = scene_time < duration
+                        visible = scene_source_time < duration
                         node["media"] = {
                             "asset_id": asset_id,
-                            "source_time_s": round(source["start"] + scene_time, 6) if visible else None,
+                            "source_time_s": round(source["start"] + scene_source_time, 6) if visible else None,
                             "source_range": deepcopy(source),
                             "visible": visible,
                         }
-                        if duration < scene_duration:
+                        if duration < scene_source_duration:
                             diagnostics.append({"code": "media_ends_before_scene",
                                                 "severity": "warning", "path": node["occurrence_path"],
                                                 "media_duration_s": duration,
@@ -363,6 +383,31 @@ def compile_spatial_frame(
         "result_time_s": round(result_time_s, 6),
         "scene_time_s": scene_time,
         "scene_duration_s": scene_duration,
+        "scene_source_time_s": scene_source_time,
+        "scene_source_duration_s": scene_source_duration,
         "canvas": deepcopy(timeline.canvas),
         "pacing_segment_id": span.pacing_segment_id,
     }
+
+
+def _reject_active_transition(spec: dict, timeline: ResolvedProject, at_s: float) -> None:
+    """Do not present a single scene tree as a complete transition frame."""
+    opening = spec.get("opening_transition")
+    if opening and at_s < round(opening["duration"], 6):
+        _fail("opening_transition", f"spatial frame at {at_s}s has an unsupported project-edge transition")
+    closing = spec.get("closing_transition")
+    if closing and at_s >= round(timeline.duration_s - closing["duration"], 6):
+        _fail("closing_transition", f"spatial frame at {at_s}s has an unsupported project-edge transition")
+    starts = {span.scene_index: span.scene_start_s for span in timeline.spans}
+    for index, scene in enumerate(spec["composition"]):
+        transition = scene.get("transition_in")
+        if not transition or index not in starts:
+            continue
+        cut = starts[index]
+        half = transition["duration"] / 2
+        if round(cut - half, 6) <= at_s < round(cut + half, 6):
+            outgoing = spec["composition"][index - 1].get("id")
+            incoming = scene.get("id")
+            _fail(f"composition[{index}].transition_in",
+                  f"spatial frame at {at_s}s has an unsupported {transition['type']} "
+                  f"between {outgoing!r} and {incoming!r}")

@@ -8,7 +8,7 @@ from click.testing import CliRunner
 
 from moviestar.cli import cli
 from moviestar.project import save_project
-from moviestar.spatial_model import compile_spatial_frame, expand_spatial_scene
+from moviestar.spatial_model import SpatialModelError, compile_spatial_frame, expand_spatial_scene
 from moviestar.resolved import resolve_project
 from moviestar.spec import (
     SpecValidationError, empty_spec, load_spec, pop_revision, save_spec,
@@ -166,6 +166,85 @@ def test_model_frame_cli_reports_global_time_and_json_errors(tmp_path, monkeypat
     bad = CliRunner().invoke(cli, ["composition", "model", "frame", "--at", "0:00:17.000"])
     assert bad.exit_code == 1
     assert json.loads(bad.output)["command"] == "composition model frame"
+    spec["opening_transition"] = {"type": "dip-black", "duration": 1}
+    save_spec(spec, cwd=tmp_path)
+    transition = CliRunner().invoke(cli, ["composition", "model", "frame", "--at", "0:00:00.500"])
+    assert transition.exit_code == 1
+    error = json.loads(transition.output)
+    assert error["command"] == "composition model frame"
+    assert "opening_transition" in error["error"]
+
+
+@pytest.mark.parametrize("pacing,at_s,expected_source_time,expected_scene_duration", [
+    ({"id": "slow", "mode": "speed", "range": {
+        "from": "0:00:00.000", "to": "0:00:08.000", "space": "source-local"},
+      "speed": 0.5}, 10, 5, 16),
+    ({"id": "pause", "mode": "hold", "at": "0:00:02.000",
+      "space": "source-local", "duration": "0:00:02.000"}, 3, 2, 10),
+])
+def test_spatial_frame_follows_canonical_speed_and_hold(
+    pacing, at_s, expected_source_time, expected_scene_duration
+):
+    spec = _project()
+    spec["motion"] = {"version": 1, "scenes": [{
+        "scene": "scene_a", "scene_id": "scene_a",
+        "slots": [{"slot": "main", "pacing": [pacing], "camera": []}],
+    }]}
+    validate_spec(spec)
+    timeline = resolve_project(_source_project(spec), spec)
+    frame = compile_spatial_frame(spec, timeline, at_s, source_durations={"alice": 20, "bob": 20})
+    media = frame["children"][0]["children"][0]["media"]
+    assert frame["scene_duration_s"] == expected_scene_duration
+    assert frame["scene_source_time_s"] == expected_source_time
+    assert media["source_time_s"] == expected_source_time
+    assert media["visible"] is True
+    assert not any(item["code"] == "media_ends_before_scene" for item in frame["diagnostics"])
+
+
+def test_spatial_frame_exact_end_samples_last_output_frame_under_slow_pacing():
+    spec = _project()
+    spec["composition"] = spec["composition"][:1]
+    del spec["spatial"]["scenes"]["scene_b"]
+    spec["motion"] = {"version": 1, "scenes": [{"scene": "scene_a", "slots": [{
+        "slot": "main", "pacing": [{"id": "slow", "mode": "speed", "range": {
+            "from": "0:00:00.000", "to": "0:00:08.000", "space": "source-local"},
+            "speed": 0.5}], "camera": [],
+    }]}]}
+    timeline = resolve_project(_source_project(spec), spec)
+    frame = compile_spatial_frame(spec, timeline, timeline.duration_s)
+    assert frame["children"][0]["children"][0]["media"]["visible"] is True
+    assert frame["scene_source_time_s"] < 8
+
+
+def test_spatial_frame_rejects_active_internal_dissolve_without_partial_scene():
+    spec = _project()
+    for scene in spec["composition"]:
+        scene["slots"][0]["source_from"] = "0:00:02.000"
+        scene["slots"][0]["source_to"] = "0:00:10.000"
+    for scene in spec["spatial"]["scenes"].values():
+        for binding in scene["layout"]["children"][0]["bindings"].values():
+            if "source" in binding:
+                binding["source"] = {"start": 2, "end": 10}
+    spec["composition"][1]["transition_in"] = {"type": "dissolve", "duration": 1}
+    validate_spec(spec)
+    timeline = resolve_project(_source_project(spec), spec)
+    for at_s in (7.5, 8, 8.499):
+        with pytest.raises(SpatialModelError, match=r"composition\[1\]\.transition_in.*unsupported"):
+            compile_spatial_frame(spec, timeline, at_s)
+    assert compile_spatial_frame(spec, timeline, 8.5)["scene_id"] == "scene_b"
+
+
+@pytest.mark.parametrize("field,at_s", [
+    ("opening_transition", 0),
+    ("closing_transition", 16),
+])
+def test_spatial_frame_rejects_active_project_edge_transition(field, at_s):
+    spec = _project()
+    spec[field] = {"type": "dip-black", "duration": 1}
+    validate_spec(spec)
+    timeline = resolve_project(_source_project(spec), spec)
+    with pytest.raises(SpatialModelError, match=field + ".*unsupported"):
+        compile_spatial_frame(spec, timeline, at_s)
 
 
 def test_component_is_shared_and_scene_layouts_survive_save_reload_and_undo(tmp_path):

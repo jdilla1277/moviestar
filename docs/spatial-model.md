@@ -77,12 +77,17 @@ The same definition can be instantiated in `scene_b` with different bindings.
 Editing the one definition updates both expansions; each occurrence keeps its
 own ID and content. `inspect` reports nested `occurrence_path` values for
 addressing individual uses. `frame` selects the active scene using the canonical
-result timeline and reports scene-relative time, source time, and visibility for
-each video element. A video range is half-open and starts at scene time zero;
-shorter media becomes transparent after its range ends and produces a warning.
+result timeline and reports scene-relative result and source time, source media
+time, and visibility for each video element. A video range is half-open and
+starts at scene source-local time zero. Authored scene speed and holds use the
+same mapping as the canonical timeline. Shorter media becomes transparent after
+its range ends and produces a warning.
 An omitted range uses the source's full recorded duration. Missing or invalid
 media appears in diagnostics without making the document unreadable. The frame
 result is structural and temporal; it contains no measured boxes or pixels.
+At a time inside an authored scene or project-edge transition, `frame` returns
+an explicit JSON error because a complete transition frame needs both visual
+trees and transition state.
 Shared and local structural editing commands, layout measurement, static-only
 scenes, and rendered inspection are subsequent implementation steps.
 
