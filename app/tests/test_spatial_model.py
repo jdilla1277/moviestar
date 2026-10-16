@@ -8,7 +8,8 @@ from click.testing import CliRunner
 
 from moviestar.cli import cli
 from moviestar.project import save_project
-from moviestar.spatial_model import expand_spatial_scene
+from moviestar.spatial_model import compile_spatial_frame, expand_spatial_scene
+from moviestar.resolved import resolve_project
 from moviestar.spec import (
     SpecValidationError, empty_spec, load_spec, pop_revision, save_spec,
     set_scene_composition, validate_spec,
@@ -62,6 +63,109 @@ def _project():
         },
     }
     return spec
+
+
+def _source_project(spec):
+    return {"sources": [
+        {**source, "duration": {"seconds": 20}, "fps": 30,
+         "width": 1280, "height": 720, "has_audio": False}
+        for source in spec["sources"]
+    ]}
+
+
+def test_spatial_frame_uses_result_clock_and_component_occurrence_paths():
+    spec = _project()
+    spec["spatial"]["scenes"]["scene_a"]["layout"]["children"][0]["bindings"]["left"]["source"] = {
+        "start": 2, "end": 10,
+    }
+    project = _source_project(spec)
+    timeline = resolve_project(project, spec)
+    frame = compile_spatial_frame(spec, timeline, 3, source_durations={
+        source["id"]: 20 for source in project["sources"]
+    })
+    assert frame["scene_id"] == "scene_a"
+    assert frame["result_time_s"] == 3
+    assert frame["scene_time_s"] == 3
+    left, right, _ = frame["children"][0]["children"]
+    assert left["occurrence_path"] == ["scene_a", "listeners", "left_video"]
+    assert left["media"] == {"asset_id": "alice", "source_time_s": 5,
+                             "source_range": {"start": 2, "end": 10}, "visible": True}
+    assert right["media"]["source_time_s"] == 3
+    assert frame["diagnostics"] == []
+
+    next_scene = compile_spatial_frame(spec, timeline, 8, source_durations={
+        source["id"]: 20 for source in project["sources"]
+    })
+    assert next_scene["scene_id"] == "scene_b"
+    assert next_scene["scene_time_s"] == 0
+    assert next_scene["children"][0]["children"][0]["media"]["asset_id"] == "carol"
+    final_frame = compile_spatial_frame(spec, timeline, timeline.duration_s)
+    assert final_frame["scene_id"] == "scene_b"
+    assert final_frame["children"][0]["children"][0]["media"]["visible"] is True
+
+
+def test_short_spatial_video_ends_without_looping_or_changing_scene_duration():
+    spec = _project()
+    spec["spatial"]["scenes"]["scene_a"]["layout"]["children"][0]["bindings"]["right"]["source"]["end"] = 5
+    timeline = resolve_project(_source_project(spec), spec)
+    frame = compile_spatial_frame(spec, timeline, 6, source_durations={"alice": 20, "bob": 20})
+    media = frame["children"][0]["children"][1]["media"]
+    assert media == {"asset_id": "bob", "source_time_s": None,
+                     "source_range": {"start": 0, "end": 5}, "visible": False}
+    assert frame["scene_duration_s"] == 8
+    assert {"code": "media_ends_before_scene", "severity": "warning",
+            "path": ["scene_a", "listeners", "right_video"], "media_duration_s": 5,
+            "scene_duration_s": 8} in frame["diagnostics"]
+
+
+def test_spatial_frame_keeps_missing_media_diagnostic_and_rejects_bad_time():
+    spec = _project()
+    del spec["spatial"]["scenes"]["scene_a"]["layout"]["children"][0]["bindings"]["right"]
+    timeline = resolve_project(_source_project(spec), spec)
+    frame = compile_spatial_frame(spec, timeline, 2, source_durations={"alice": 20})
+    assert frame["children"][0]["children"][1]["media"] is None
+    assert frame["diagnostics"][0]["code"] == "missing_binding"
+    with pytest.raises(ValueError, match="result time"):
+        compile_spatial_frame(spec, timeline, -0.1)
+    with pytest.raises(ValueError, match="result time"):
+        compile_spatial_frame(spec, timeline, 16.1)
+
+
+def test_spatial_frame_resolves_full_asset_range_and_rejects_unknown_media():
+    spec = _project()
+    bindings = spec["spatial"]["scenes"]["scene_a"]["layout"]["children"][0]["bindings"]
+    bindings["left"] = {"asset_id": "alice"}
+    bindings["right"] = {"asset_id": "missing", "source": {"start": 0, "end": 8}}
+    timeline = resolve_project(_source_project(spec), spec)
+    frame = compile_spatial_frame(spec, timeline, 3, source_durations={"alice": 20})
+    left, right, _ = frame["children"][0]["children"]
+    assert left["media"] == {"asset_id": "alice", "source_time_s": 3,
+                             "source_range": {"start": 0, "end": 20}, "visible": True}
+    assert right["media"] is None
+    assert [item["code"] for item in frame["diagnostics"]] == ["unknown_asset"]
+
+    bindings["right"] = {"asset_id": "bob", "source": {"start": 17, "end": 22}}
+    frame = compile_spatial_frame(spec, timeline, 3, source_durations={"alice": 20, "bob": 20})
+    assert frame["children"][0]["children"][1]["media"] is None
+    assert frame["diagnostics"][0]["code"] == "source_range_out_of_bounds"
+
+
+def test_model_frame_cli_reports_global_time_and_json_errors(tmp_path, monkeypatch):
+    spec = _project()
+    save_spec(spec, cwd=tmp_path)
+    save_project(_source_project(spec), cwd=tmp_path)
+    monkeypatch.chdir(tmp_path)
+    rendered = CliRunner().invoke(cli, ["composition", "model", "frame", "--at", "0:00:09.000"])
+    assert rendered.exit_code == 0, rendered.output
+    envelope = json.loads(rendered.output)
+    assert envelope["renders_pixels"] is False
+    assert envelope["frame"]["scene_id"] == "scene_b"
+    assert envelope["frame"]["scene_time_s"] == 1
+    assert envelope["frame"]["children"][0]["children"][0]["media"]["source_time_s"] == 1
+
+    bad = CliRunner().invoke(cli, ["composition", "model", "frame", "--at", "0:00:17.000"])
+    assert bad.exit_code == 1
+    assert json.loads(bad.output)["command"] == "composition model frame"
 
 
 def test_component_is_shared_and_scene_layouts_survive_save_reload_and_undo(tmp_path):

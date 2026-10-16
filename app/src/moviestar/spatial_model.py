@@ -10,6 +10,10 @@ from __future__ import annotations
 
 from copy import deepcopy
 from math import isfinite
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from moviestar.resolved import ResolvedProject
 
 
 class SpatialModelError(ValueError):
@@ -286,3 +290,79 @@ def expand_spatial_scene(spec: dict, scene_id: str) -> dict:
     return {"scene_id": scene_id, **{k: deepcopy(v) for k, v in layout.items() if k != "children"},
             "children": expand_nodes(layout["children"], [scene_id], {}, set(), set(), ()),
             "diagnostics": diagnostics}
+
+
+def compile_spatial_frame(
+    spec: dict,
+    timeline: ResolvedProject,
+    result_time_s: float,
+    *,
+    source_durations: dict[str, float] | None = None,
+) -> dict:
+    """Resolve visual content at one point on the canonical result timeline.
+
+    The caller may reuse ``timeline`` and ``source_durations`` across frames.
+    This resolves content and media clocks; measured boxes and pixels are the
+    next compiler stage. A short media range becomes transparent after its end.
+    """
+    if not _finite_number(result_time_s) or not 0 <= result_time_s <= timeline.duration_s:
+        _fail("result time", f"must be within 0-{timeline.duration_s} seconds")
+    if timeline.shape != "scenes":
+        _fail("spatial frame", "requires a scene composition timeline")
+    lookup_time = min(result_time_s, max(0.0, timeline.duration_s - 0.000001))
+    span = timeline.span_at(lookup_time)
+    if span.scene_id is None:
+        _fail("spatial frame", "resolved scene has no stable id")
+    scene_duration = round(span.scene_end_s - span.scene_start_s, 6)
+    scene_time = round(min(scene_duration, lookup_time - span.scene_start_s), 6)
+    expanded = expand_spatial_scene(spec, span.scene_id)
+    diagnostics = expanded["diagnostics"]
+    durations = source_durations or {}
+    known_sources = {source["id"] for source in spec["sources"]}
+
+    def place_media(nodes: list[dict]) -> None:
+        for node in nodes:
+            if node.get("type") == "video":
+                content = node.get("content")
+                node["media"] = None
+                if isinstance(content, dict) and "asset_id" in content:
+                    asset_id = content["asset_id"]
+                    if asset_id not in known_sources:
+                        place_media(node.get("children", []))
+                        continue
+                    source = content.get("source")
+                    if source is None and asset_id in durations:
+                        source = {"start": 0, "end": durations[asset_id]}
+                    if source is None:
+                        diagnostics.append({"code": "unknown_source_duration",
+                                            "path": node["occurrence_path"], "asset_id": asset_id})
+                    elif asset_id in durations and source["end"] > durations[asset_id]:
+                        diagnostics.append({"code": "source_range_out_of_bounds",
+                                            "path": node["occurrence_path"], "asset_id": asset_id,
+                                            "source_end_s": source["end"],
+                                            "asset_duration_s": durations[asset_id]})
+                    else:
+                        duration = round(source["end"] - source["start"], 6)
+                        visible = scene_time < duration
+                        node["media"] = {
+                            "asset_id": asset_id,
+                            "source_time_s": round(source["start"] + scene_time, 6) if visible else None,
+                            "source_range": deepcopy(source),
+                            "visible": visible,
+                        }
+                        if duration < scene_duration:
+                            diagnostics.append({"code": "media_ends_before_scene",
+                                                "severity": "warning", "path": node["occurrence_path"],
+                                                "media_duration_s": duration,
+                                                "scene_duration_s": scene_duration})
+            place_media(node.get("children", []))
+
+    place_media(expanded["children"])
+    return {
+        **expanded,
+        "result_time_s": round(result_time_s, 6),
+        "scene_time_s": scene_time,
+        "scene_duration_s": scene_duration,
+        "canvas": deepcopy(timeline.canvas),
+        "pacing_segment_id": span.pacing_segment_id,
+    }

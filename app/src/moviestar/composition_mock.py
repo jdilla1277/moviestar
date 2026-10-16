@@ -528,3 +528,38 @@ def model_inspect(scene_id: str) -> None:
         _error_exit("composition model inspect", str(exc))
     click.echo(json.dumps({"status": "expanded", "renders_pixels": False,
                            "scene": expanded}, indent=2))
+
+
+@model.command("frame")
+@click.option("--at", "at_time", required=True, help="Global result time, H:MM:SS.mmm.")
+def model_frame(at_time: str) -> None:
+    """Resolve a saved visual tree and its media positions at result time.
+
+    This is the temporal input for future layout and pixel rendering. It does
+    not measure boxes or draw an image.
+    """
+    from moviestar.cli import _error_exit
+    from moviestar.project import load_project
+    from moviestar.resolved import ResolvedProjectError, resolve_project
+    from moviestar.spatial_model import SpatialModelError, compile_spatial_frame
+    from moviestar.spec import SpecValidationError, load_spec, parse_timecode_string
+
+    try:
+        at_s = parse_timecode_string(at_time, "--at")
+        spec = load_spec()
+        if spec is None:
+            _error_exit("composition model frame", "No spec.json found. Load a project first.")
+        project = load_project()
+        timeline = resolve_project(project, spec)
+        durations = {
+            source["id"]: source["duration"]["seconds"]
+            for source in project.get("sources", [])
+            if isinstance(source.get("duration"), dict)
+            and isinstance(source["duration"].get("seconds"), (int, float))
+        }
+        frame = compile_spatial_frame(spec, timeline, at_s, source_durations=durations)
+    except (OSError, ValueError, KeyError, SpecValidationError,
+            ResolvedProjectError, SpatialModelError) as exc:
+        _error_exit("composition model frame", str(exc))
+    click.echo(json.dumps({"status": "resolved", "renders_pixels": False,
+                           "frame": frame}, indent=2))
