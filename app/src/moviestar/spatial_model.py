@@ -9,7 +9,7 @@ expansion. Malformed structure and ambiguous identities fail validation.
 from __future__ import annotations
 
 from copy import deepcopy
-from math import isfinite
+from math import ceil, isfinite
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -310,12 +310,12 @@ def compile_spatial_frame(
     if timeline.shape != "scenes":
         _fail("spatial frame", "requires a scene composition timeline")
     _reject_active_transition(spec, timeline, result_time_s)
-    # The exact project end addresses its last output frame, even when a slow
-    # pacing segment would round a microsecond-before-end sample up to the
-    # half-open media boundary.
+    # The exact project end addresses its last output-grid frame. Subtracting
+    # one frame duration from a non-aligned end can land in the previous scene.
     lookup_time = result_time_s
     if result_time_s == timeline.duration_s:
-        lookup_time = max(0.0, timeline.duration_s - 1 / timeline.output_fps)
+        frame_count = ceil(round(timeline.duration_s * timeline.output_fps, 9))
+        lookup_time = max(0, frame_count - 1) / timeline.output_fps
     span = timeline.span_at(lookup_time)
     if span.scene_id is None:
         _fail("spatial frame", "resolved scene has no stable id")
@@ -381,6 +381,7 @@ def compile_spatial_frame(
     return {
         **expanded,
         "result_time_s": round(result_time_s, 6),
+        "sample_time_s": round(lookup_time, 6),
         "scene_time_s": scene_time,
         "scene_duration_s": scene_duration,
         "scene_source_time_s": scene_source_time,

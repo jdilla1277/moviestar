@@ -85,6 +85,8 @@ its range ends and produces a warning.
 An omitted range uses the source's full recorded duration. Missing or invalid
 media appears in diagnostics without making the document unreadable. The frame
 result is structural and temporal; it contains no measured boxes or pixels.
+At the exact project end, `frame` samples the last output-grid frame and reports
+that timestamp as `sample_time_s` alongside the requested `result_time_s`.
 At a time inside an authored scene or project-edge transition, `frame` returns
 an explicit JSON error because a complete transition frame needs both visual
 trees and transition state.

@@ -216,6 +216,26 @@ def test_spatial_frame_exact_end_samples_last_output_frame_under_slow_pacing():
     assert frame["scene_source_time_s"] < 8
 
 
+def test_spatial_frame_exact_end_uses_last_grid_time_in_short_final_scene():
+    spec = _project()
+    spec["composition"][1]["slots"][0]["source_to"] = "0:00:00.010"
+    bindings = spec["spatial"]["scenes"]["scene_b"]["layout"]["children"][0]["bindings"]
+    bindings["left"]["source"]["end"] = 0.010
+    bindings["right"]["source"]["end"] = 0.010
+    validate_spec(spec)
+    timeline = resolve_project(_source_project(spec), spec)
+    assert timeline.duration_s == 8.010
+    assert timeline.output_fps == 30
+    for at_s in (8.0, 8.009, timeline.duration_s):
+        frame = compile_spatial_frame(spec, timeline, at_s)
+        assert frame["scene_id"] == "scene_b"
+        assert frame["children"][0]["children"][0]["media"]["visible"] is True
+    assert frame["scene_time_s"] == 0
+    assert frame["result_time_s"] == 8.010
+    assert frame["sample_time_s"] == 8.0
+    assert frame["children"][0]["children"][0]["media"]["source_time_s"] == 0
+
+
 def test_spatial_frame_rejects_active_internal_dissolve_without_partial_scene():
     spec = _project()
     for scene in spec["composition"]:
