@@ -15,6 +15,13 @@
       "minItems": 1,
       "items": { "$ref": "#/$defs/source" }
     },
+    "spatial": {
+      "description": "Reusable component definitions and scene-owned visual trees. Keys in scenes refer to IDs in the composition timeline. These trees can be inspected and edited now; pixel layout and export support are forthcoming.",
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/spatial_document" }
+      ]
+    },
     "composition": {
       "description": "How edited sources stitch into the final result. Null when no concat has been called. Flat concat stores an ordered list of composition segments — each carrying its source id plus a SOURCE-TIME range frozen at concat time. Global layout concat stores one layout scene with slot assignments.",
       "oneOf": [
@@ -91,6 +98,7 @@
               "enum": [
                 "sources",
                 "composition",
+                "spatial",
                 "composition_audio_from",
                 "composition_canvas",
                 "composition_authored_as",
@@ -108,6 +116,98 @@
     }
   },
   "$defs": {
+    "spatial_document": {
+      "type": "object",
+      "properties": {
+        "assets": {
+          "description": "Project-local image references for spatial elements. Video asset IDs refer to top-level sources.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object", "required": ["type", "path"],
+            "properties": {
+              "type": { "const": "image" },
+              "path": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "definitions": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/spatial_definition" }
+        },
+        "scenes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object", "required": ["layout"],
+            "properties": { "layout": { "$ref": "#/$defs/spatial_layout" } }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "spatial_definition": {
+      "type": "object", "required": ["name", "children"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "inputs": { "type": "array", "items": { "$ref": "#/$defs/spatial_input" } },
+        "children": { "type": "array", "items": { "$ref": "#/$defs/spatial_node" } }
+      }
+    },
+    "spatial_input": {
+      "type": "object", "required": ["name", "type"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["video", "image", "text", "number", "color", "boolean"] },
+        "required": { "type": "boolean" },
+        "default": {}
+      }
+    },
+    "spatial_layout": {
+      "description": "Scene-owned arrangement. CSS-like display, position, sizing, and grid properties can be authored here; measurement follows in the renderer milestone.",
+      "type": "object", "required": ["children"],
+      "properties": { "children": { "type": "array", "items": { "$ref": "#/$defs/spatial_node" } } }
+    },
+    "spatial_node": {
+      "oneOf": [
+        { "$ref": "#/$defs/spatial_element" },
+        { "$ref": "#/$defs/spatial_instance" }
+      ]
+    },
+    "spatial_element": {
+      "type": "object", "required": ["id", "type"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["video", "image", "text", "number", "color", "boolean", "caption", "shape"] },
+        "content": { "$ref": "#/$defs/spatial_binding" },
+        "layout": { "type": "object" },
+        "style": { "type": "object" },
+        "children": { "type": "array", "items": { "$ref": "#/$defs/spatial_node" } }
+      }
+    },
+    "spatial_instance": {
+      "type": "object", "required": ["instance_id", "definition_id"],
+      "properties": {
+        "instance_id": { "type": "string", "minLength": 1 },
+        "definition_id": { "type": "string", "minLength": 1 },
+        "bindings": { "type": "object", "additionalProperties": { "$ref": "#/$defs/spatial_binding" } },
+        "layout": { "type": "object" },
+        "style": { "type": "object" }
+      }
+    },
+    "spatial_binding": {
+      "description": "A typed literal, asset reference with optional video source range, forwarded enclosing input, explicit empty value, or element input reference.",
+      "type": "object",
+      "properties": {
+        "input": { "type": "string" },
+        "forward": { "type": "string" },
+        "asset_id": { "type": "string" },
+        "source": { "type": "object" },
+        "text": { "type": "string" },
+        "number": { "type": "number" },
+        "color": { "type": "string" },
+        "boolean": { "type": "boolean" },
+        "empty": { "const": true }
+      }
+    },
     "source": {
       "type": "object",
       "required": ["id", "path", "operations"],
