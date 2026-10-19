@@ -81,7 +81,7 @@ def test_connect_creates_a_private_claim_and_only_prints_the_public_receipt(
 
     result = CliRunner().invoke(
         cli,
-        ["account", "connect", "  Human@Example.COM  "],
+        ["account", "connect", "  Human+Preview@Example.COM  "],
     )
 
     assert result.exit_code == 0, result.stdout
@@ -97,7 +97,7 @@ def test_connect_creates_a_private_claim_and_only_prints_the_public_receipt(
             "'moviestar account status'."
         ),
     }
-    assert captured[0]["email"] == "human@example.com"
+    assert captured[0]["email"] == "human+preview@example.com"
     assert captured[0]["installation_name"] == "James's MacBook"
     uuid.UUID(captured[0]["installation_id"])
     uuid.UUID(captured[0]["request_id"])
@@ -106,7 +106,7 @@ def test_connect_creates_a_private_claim_and_only_prints_the_public_receipt(
     assert state["installation_url"] == "https://trymoviestar.com/api/v1/account/installation"
     assert state["installation_id"] == captured[0]["installation_id"]
     assert state["pending_claim"]["request_id"] == captured[0]["request_id"]
-    assert state["pending_claim"]["email"] == "human@example.com"
+    assert state["pending_claim"]["email"] == "human+preview@example.com"
     assert state["pending_claim"]["expires_at"] == data["expires_at"]
     claim_secret = state["pending_claim"]["claim_secret"]
     assert hashlib.sha256(claim_secret.encode()).hexdigest() == captured[0][
@@ -280,15 +280,21 @@ def test_connect_does_not_replace_an_existing_connection(monkeypatch, tmp_path):
     }
 
 
-def test_connect_rejects_invalid_email_without_claiming_side_effects():
-    result = _invoke("connect", "not-an-email")
+def test_connect_rejects_invalid_email_without_claiming_side_effects(monkeypatch, tmp_path):
+    state_path = tmp_path / "account.json"
+    monkeypatch.setattr("moviestar.account._account_state_path", lambda: state_path)
+    monkeypatch.setattr("moviestar.account._send_claim", lambda _: 1 / 0)
 
-    assert result.exit_code == 1
-    data = json.loads(result.stdout)
-    assert data["command"] == "account connect"
-    assert data["status"] == "error"
-    assert "email" in data["error"].lower()
-    assert "complete email address" in data["hint"].lower()
+    for address in ("not-an-email", 'human@example.com"', "human@example.com~"):
+        result = _invoke("connect", address)
+
+        assert result.exit_code == 1
+        data = json.loads(result.stdout)
+        assert data["command"] == "account connect"
+        assert data["status"] == "error"
+        assert "email" in data["error"].lower()
+        assert "complete email address" in data["hint"].lower()
+        assert not state_path.exists()
 
 
 def test_connect_missing_email_uses_nested_structured_usage_error():

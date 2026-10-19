@@ -31,6 +31,22 @@ _EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _HANDLE_RE = re.compile(r"^@[a-z0-9][a-z0-9_]{2,29}$")
 
 
+def _valid_email(email: str) -> bool:
+    if not _EMAIL_RE.fullmatch(email):
+        return False
+    local, domain = email.rsplit("@", 1)
+    if any(character in local for character in '"<>'):
+        return False
+    labels = domain.split(".")
+    return len(labels) >= 2 and all(
+        label
+        and label[0].isalnum()
+        and label[-1].isalnum()
+        and all(character.isalnum() or character == "-" for character in label)
+        for label in labels
+    )
+
+
 def _emit(payload: dict) -> None:
     click.echo(json.dumps(payload, indent=2))
 
@@ -406,7 +422,7 @@ def connect(email: str) -> None:
     MOVIESTAR_ACCOUNT_CLAIM_URL to target a preview or self-hosted control plane.
     """
     normalized = email.strip().lower()
-    if not _EMAIL_RE.fullmatch(normalized) or len(normalized) > 254:
+    if not _valid_email(normalized) or len(normalized) > 254:
         _emit(
             {
                 "command": "account connect",
@@ -616,7 +632,7 @@ def status() -> None:
         installation_id = state.get("installation_id")
         if (
             isinstance(email, str)
-            and _EMAIL_RE.fullmatch(email)
+            and _valid_email(email)
             and isinstance(request_id, str)
             and isinstance(expires_at, str)
             and isinstance(claim_secret, str)
