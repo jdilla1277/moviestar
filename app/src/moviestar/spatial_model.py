@@ -9,6 +9,8 @@ expansion. Malformed structure and ambiguous identities fail validation.
 from __future__ import annotations
 
 from copy import deepcopy
+from hashlib import sha256
+import json
 from math import ceil, isfinite
 from typing import TYPE_CHECKING
 
@@ -18,6 +20,14 @@ if TYPE_CHECKING:
 
 class SpatialModelError(ValueError):
     """A spatial document cannot be read unambiguously."""
+
+
+def spatial_state_id(spec: dict) -> str:
+    """Fingerprint the editable project state, independent of capped undo history."""
+    state = {key: value for key, value in spec.items() if key != "revisions"}
+    encoded = json.dumps(state, sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=False).encode("utf-8")
+    return f"sha256:{sha256(encoded).hexdigest()}"
 
 
 _INPUT_TYPES = {"video", "image", "text", "number", "color", "boolean"}
@@ -102,6 +112,75 @@ def _inputs(definition: dict, path: str) -> dict[str, dict]:
     return result
 
 
+def _customization_inputs(definitions: dict, definition_id: str,
+                          path: list[str], earlier: list[dict]) -> dict[str, dict]:
+    """Find the input declarations at a structural insertion point."""
+    definition = definitions.get(definition_id)
+    if not isinstance(definition, dict):
+        return {}
+    inputs = _inputs(definition, f"spatial.definitions.{definition_id}")
+    children = definition.get("children", [])
+    prefix: list[str] = []
+    for identity in path:
+        node = None
+        if isinstance(children, list):
+            node = next((item for item in children if isinstance(item, dict)
+                         and item.get("id", item.get("instance_id")) == identity), None)
+        if node is None:
+            node = next((edit["node"] for edit in earlier if edit["op"] == "child_add"
+                         and edit["path"] == prefix and
+                         edit["node"].get("id", edit["node"].get("instance_id")) == identity), None)
+        if node is None:
+            return inputs
+        prefix.append(identity)
+        if "instance_id" in node:
+            definition_id = node["definition_id"]
+            definition = definitions.get(definition_id)
+            if not isinstance(definition, dict):
+                return {}
+            inputs = _inputs(definition, f"spatial.definitions.{definition_id}")
+            children = definition.get("children", [])
+        else:
+            children = node.get("children", [])
+    return inputs
+
+
+def _customizations(value: object, path: str, definitions: dict, definition_id: str) -> None:
+    if not isinstance(value, list):
+        _fail(path, "must be an array")
+    for index, edit in enumerate(value):
+        here = f"{path}[{index}]"
+        if not isinstance(edit, dict):
+            _fail(here, "must be an object")
+        op = edit.get("op")
+        if not isinstance(op, str) or op not in {"property_set", "child_add", "child_remove", "child_move"}:
+            _fail(f"{here}.op", "unknown customization operation")
+        target = edit.get("path")
+        if not isinstance(target, list) or (not target and op != "child_add"):
+            _fail(f"{here}.path", "must be an array of stable IDs")
+        for part in target:
+            _identifier(part, f"{here}.path")
+        allowed = {"op", "path"}
+        if op == "property_set":
+            prop = edit.get("property")
+            if not isinstance(prop, str) or not prop.startswith(("style.", "layout.")) or len(prop.split(".")) != 2:
+                _fail(f"{here}.property", "must be style.KEY or layout.KEY")
+            allowed |= {"property", "value"}
+            if "value" not in edit:
+                _fail(f"{here}.value", "is required")
+        if op == "child_add":
+            allowed |= {"node", "after_id"}
+            inputs = _customization_inputs(definitions, definition_id, target, value[:index])
+            _children([edit.get("node")], f"{here}.node", definitions, inputs)
+        if op == "child_move":
+            allowed.add("after_id")
+        if op in {"child_add", "child_move"}:
+            if "after_id" in edit and edit["after_id"] is not None:
+                _identifier(edit["after_id"], f"{here}.after_id")
+        if set(edit) - allowed:
+            _fail(here, "unexpected customization field")
+
+
 def _children(children: object, path: str, definitions: dict, inputs: dict[str, dict]) -> None:
     if not isinstance(children, list):
         _fail(path, "must be an array")
@@ -130,6 +209,8 @@ def _children(children: object, path: str, definitions: dict, inputs: dict[str, 
             if target in definitions and not isinstance(definitions[target], dict):
                 _fail(f"spatial.definitions.{target}", "must be an object")
             target_inputs = _inputs(definitions[target], f"spatial.definitions.{target}") if target in definitions else {}
+            if "customizations" in node:
+                _customizations(node["customizations"], f"{here}.customizations", definitions, target)
             for name, value in bindings.items():
                 _identifier(name, f"{here}.bindings key")
                 if target in definitions and name not in target_inputs:
@@ -216,6 +297,48 @@ def expand_spatial_scene(spec: dict, scene_id: str) -> dict:
     sources = {item["id"] for item in spec["sources"]}
     images = set(spatial.get("assets", {}))
     diagnostics = []
+    tracked_edits: list[dict] = []
+    applied_edits: set[object] = set()
+
+    def conflict(path: list[str], reason: str) -> None:
+        diagnostics.append({"code": "customization_conflict", "path": path, "reason": reason})
+
+    def apply_child_edits(nodes: list, parent: list[str], edits: list[dict]) -> list:
+        result = deepcopy(nodes)
+        for edit in edits:
+            op, target = edit["op"], edit["path"]
+            if op == "property_set" or (op == "child_add" and target != parent):
+                continue
+            if op != "child_add" and target[:-1] != parent:
+                continue
+            applied_edits.add(edit["_token"])
+            identities = [item.get("id", item.get("instance_id")) for item in result]
+            if op == "child_add":
+                identity = edit["node"].get("id", edit["node"].get("instance_id"))
+                if identity in identities:
+                    conflict([*parent, identity], "local child duplicates a sibling")
+                    continue
+                item = deepcopy(edit["node"])
+            else:
+                identity = target[-1]
+                if identity not in identities:
+                    conflict(target, "customized child no longer exists")
+                    continue
+                index = identities.index(identity)
+                item = result.pop(index)
+                identities.pop(index)
+                if op == "child_remove":
+                    continue
+            after_id = edit.get("after_id")
+            if after_id is None:
+                result.insert(0, item)
+            elif after_id in identities:
+                result.insert(identities.index(after_id) + 1, item)
+            else:
+                conflict([*parent, identity], f"anchor {after_id!r} no longer exists")
+                if op == "child_move":
+                    result.insert(index, item)
+        return result
 
     def resolve_value(value: object, inputs: dict, path: list[str], kind: str,
                       required: set[str], reported: set[str]) -> object:
@@ -237,11 +360,17 @@ def expand_spatial_scene(spec: dict, scene_id: str) -> dict:
 
     def expand_nodes(nodes: list, path: list[str], inputs: dict,
                      required: set[str], reported: set[str],
-                     ancestry: tuple[str, ...]) -> list[dict]:
+                     ancestry: tuple[str, ...], edits: list[dict]) -> list[dict]:
         expanded = []
-        for node in nodes:
+        for original in apply_child_edits(nodes, path, edits):
+            node = deepcopy(original)
             identity = node.get("id", node.get("instance_id"))
             address = [*path, identity]
+            for edit in edits:
+                if edit["op"] == "property_set" and edit["path"] == address:
+                    applied_edits.add(edit["_token"])
+                    group, key = edit["property"].split(".")
+                    node.setdefault(group, {})[key] = deepcopy(edit["value"])
             common = {"occurrence_path": address, "layout": deepcopy(node.get("layout", {})),
                       "style": deepcopy(node.get("style", {}))}
             if "id" in node:
@@ -249,9 +378,10 @@ def expand_spatial_scene(spec: dict, scene_id: str) -> dict:
                 content = resolve_value(node.get("content"), inputs, address,
                                         kind, required, reported)
                 item = {**common, "type": kind, "content": content}
-                if "children" in node:
-                    item["children"] = expand_nodes(node["children"], address, inputs,
-                                                    required, reported, ancestry)
+                if "children" in node or any(edit["op"] == "child_add" and edit["path"] == address
+                                             for edit in edits):
+                    item["children"] = expand_nodes(node.get("children", []), address, inputs,
+                                                    required, reported, ancestry, edits)
                 expanded.append(item)
                 continue
             definition_id = node["definition_id"]
@@ -264,6 +394,9 @@ def expand_spatial_scene(spec: dict, scene_id: str) -> dict:
                 diagnostics.append({"code": "component_cycle", "path": address, "definition_id": definition_id})
                 continue
             definition = definitions[definition_id]
+            local_edits = [{**edit, "path": [*address, *edit["path"]], "_token": object()}
+                           for edit in node.get("customizations", [])]
+            tracked_edits.extend(local_edits)
             bindings = {}
             for name, declaration in _inputs(definition, f"spatial.definitions.{definition_id}").items():
                 supplied = node.get("bindings", {}).get(name)
@@ -279,7 +412,7 @@ def expand_spatial_scene(spec: dict, scene_id: str) -> dict:
             reported_here: set[str] = set()
             item["children"] = expand_nodes(definition["children"], address, bindings,
                                             mandatory, reported_here,
-                                            (*ancestry, definition_id))
+                                            (*ancestry, definition_id), [*local_edits, *edits])
             for name in mandatory:
                 value = bindings[name]
                 if (value is None or (isinstance(value, dict) and value.get("empty") is True)) and name not in reported_here:
@@ -287,9 +420,19 @@ def expand_spatial_scene(spec: dict, scene_id: str) -> dict:
         return expanded
 
     layout = scenes[scene_id]["layout"]
+    children = expand_nodes(layout["children"], [scene_id], {}, set(), set(), (), [])
+    for edit in tracked_edits:
+        if edit["_token"] not in applied_edits:
+            conflict(edit["path"], "customized target no longer exists")
     return {"scene_id": scene_id, **{k: deepcopy(v) for k, v in layout.items() if k != "children"},
-            "children": expand_nodes(layout["children"], [scene_id], {}, set(), set(), ()),
+            "children": children,
             "diagnostics": diagnostics}
+
+
+def edit_spatial_model(spec: dict, request: dict) -> tuple[dict, dict]:
+    """Apply one validated model edit to a copy, returning it and its impact."""
+    from moviestar.spatial_edit import edit_spatial_model as edit
+    return edit(spec, request)
 
 
 def compile_spatial_frame(

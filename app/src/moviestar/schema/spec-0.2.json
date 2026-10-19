@@ -190,8 +190,24 @@
         "definition_id": { "type": "string", "minLength": 1 },
         "bindings": { "type": "object", "additionalProperties": { "$ref": "#/$defs/spatial_binding" } },
         "layout": { "type": "object" },
-        "style": { "type": "object" }
+        "style": { "type": "object" },
+        "customizations": {
+          "description": "Local property and structural edits addressed by stable child ID paths. Replayed over the current shared definition.",
+          "type": "array", "items": { "$ref": "#/$defs/spatial_customization" }
+        }
       }
+    },
+    "spatial_customization": {
+      "type": "object", "required": ["op", "path"],
+      "properties": {
+        "op": { "enum": ["property_set", "child_add", "child_remove", "child_move"] },
+        "path": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "property": { "type": "string" },
+        "value": {},
+        "node": { "$ref": "#/$defs/spatial_node" },
+        "after_id": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
     },
     "spatial_binding": {
       "description": "A typed literal, asset reference with optional video source range, forwarded enclosing input, explicit empty value, or element input reference.",
