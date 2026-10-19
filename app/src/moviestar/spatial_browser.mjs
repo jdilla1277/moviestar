@@ -30,13 +30,14 @@ async function waitForPort() {
     const detail = chromeError.trim().split('\n').filter(Boolean).slice(-2).join(' | ');
     return new Error(detail ? `${reason}: ${detail}` : reason);
   };
-  for (let attempt = 0; attempt < 100; attempt++) {
+  // A cold CI browser launch can take longer than warm scene measurements.
+  for (let attempt = 0; attempt < 300; attempt++) {
     const path = join(profile, 'DevToolsActivePort');
     if (existsSync(path)) return Number(readFileSync(path, 'utf8').split('\n')[0]);
     if (chrome.exitCode !== null) throw startupError('Chrome exited before opening a debugging port');
     await pause(50);
   }
-  throw startupError('Chrome did not open a debugging port within 5 seconds');
+  throw startupError('Chrome did not open a debugging port within 15 seconds');
 }
 
 function send(method, params = {}) {
