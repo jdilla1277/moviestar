@@ -465,7 +465,8 @@ def model() -> None:
     """Save and inspect real reusable components and scene visual trees.
 
     These structural trees are stored in spec.json. Existing scene order and
-    timing stay authoritative. Pixel layout and export are not yet connected.
+    timing stay authoritative. `model layout` measures boxes in local Chrome;
+    source-pixel rendering and export are not yet connected.
     """
 
 
@@ -601,3 +602,48 @@ def model_frame(at_time: str) -> None:
         _error_exit("composition model frame", str(exc))
     click.echo(json.dumps({"status": "resolved", "renders_pixels": False,
                            "frame": frame}, indent=2))
+
+
+@model.command("layout")
+@click.option("--at", "at_time", required=True, help="Global result time, H:MM:SS.mmm.")
+@click.option("--canvas", help="Measure at WIDTHxHEIGHT; defaults to the project canvas.")
+@click.option("--out", type=click.Path(path_type=Path), help="Write a labeled layout PNG.")
+def model_layout(at_time: str, canvas: str | None, out: Path | None) -> None:
+    """Measure identified boxes in local Chrome and optionally draw their labels.
+
+    This view shows layout and text geometry with video/image placeholders.
+    It does not composite source pixels or change the saved project.
+    """
+    from moviestar.cli import _error_exit
+    from moviestar.project import load_project
+    from moviestar.resolved import ResolvedProjectError, resolve_project
+    from moviestar.spatial_layout import SpatialLayoutError, measure_spatial_layout
+    from moviestar.spatial_model import SpatialModelError, compile_spatial_frame
+    from moviestar.spec import SpecValidationError, load_spec, parse_timecode_string
+
+    try:
+        at_s = parse_timecode_string(at_time, "--at")
+        spec = load_spec()
+        if spec is None:
+            _error_exit("composition model layout", "No spec.json found. Load a project first.")
+        project = load_project()
+        timeline = resolve_project(project, spec)
+        dimensions = timeline.canvas
+        if canvas is not None:
+            match = re.fullmatch(r"([0-9]+)x([0-9]+)", canvas)
+            if match is None:
+                raise SpatialLayoutError("canvas: use WIDTHxHEIGHT")
+            dimensions = {"width": int(match[1]), "height": int(match[2])}
+        durations = {
+            source["id"]: source["duration"]["seconds"]
+            for source in project.get("sources", [])
+            if isinstance(source.get("duration"), dict)
+            and isinstance(source["duration"].get("seconds"), (int, float))
+        }
+        frame = compile_spatial_frame(spec, timeline, at_s, source_durations=durations)
+        layout = measure_spatial_layout(frame, dimensions, output_path=out)
+    except (OSError, ValueError, KeyError, SpecValidationError, ResolvedProjectError,
+            SpatialModelError, SpatialLayoutError) as exc:
+        _error_exit("composition model layout", str(exc))
+    click.echo(json.dumps({"status": "measured", "renders_assets": False,
+                           "frame": frame, "layout": layout}, indent=2))
