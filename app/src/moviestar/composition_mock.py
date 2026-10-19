@@ -191,7 +191,7 @@ EDIT_CASES: dict[str, dict] = {
         "example_request": {"scope": "definition", "op": "component.update",
                             "target": {"definition_id": PAIR, "element_id": "el_left_frame"},
                             "property": "style.border_width", "value": 3,
-                            "expected_revision": 9},
+                            "expected_state_id": "sha256:<current-spec-fingerprint>"},
         "example_result": {"affected": [SCENE_A, SCENE_B], "revision": 10,
                            "preserved_local_overrides": [LEFT_A]},
     },
@@ -479,6 +479,7 @@ def model_apply(document: Path) -> None:
     bindings may be saved and diagnosed by `model inspect`.
     """
     from moviestar.cli import _error_exit
+    from moviestar.spatial_model import spatial_state_id
     from moviestar.spec import SpecValidationError, load_spec, save_spec
 
     try:
@@ -500,6 +501,7 @@ def model_apply(document: Path) -> None:
         _error_exit("composition model apply", str(exc))
     click.echo(json.dumps({"status": "saved", "writes_spec": True,
                            "revision": len(saved["revisions"]),
+                           "state_id": spatial_state_id(saved),
                            "definitions": sorted(spatial.get("definitions", {})),
                            "scenes": sorted(spatial.get("scenes", {}))}, indent=2))
 
@@ -513,7 +515,7 @@ def model_inspect(scene_id: str) -> None:
     Diagnostics identify incomplete bindings, unknown assets, and cycles.
     """
     from moviestar.cli import _error_exit
-    from moviestar.spatial_model import SpatialModelError, expand_spatial_scene
+    from moviestar.spatial_model import SpatialModelError, expand_spatial_scene, spatial_state_id
     from moviestar.spec import SpecValidationError, load_spec
 
     try:
@@ -527,7 +529,7 @@ def model_inspect(scene_id: str) -> None:
     except SpatialModelError as exc:
         _error_exit("composition model inspect", str(exc))
     click.echo(json.dumps({"status": "expanded", "renders_pixels": False,
-                           "scene": expanded}, indent=2))
+                           "state_id": spatial_state_id(spec), "scene": expanded}, indent=2))
 
 
 @model.command("edit")
@@ -538,7 +540,8 @@ def model_edit(document: Path, dry_run: bool) -> None:
 
     Targets use the stable occurrence_path shown by `model inspect`, or a
     definition_id and element_id. Shared edits fail before writing if they
-    conflict with an occurrence customization. One edit is one undo revision.
+    conflict with an occurrence customization. Include expected_state_id from
+    inspect to reject a stale edit. One edit is one undo revision.
     """
     from moviestar.cli import _error_exit
     from moviestar.spatial_edit import SpatialEditConflict

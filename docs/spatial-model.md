@@ -128,7 +128,9 @@ that new definition. `instance.duplicate` creates a new scene occurrence ID;
 changes the display name without changing its ID. `component.delete` and
 `asset.delete` reject referenced definitions or image assets, including uses in
 unplaced drafts. Every successful edit saves one project revision, and a request
-may include `expected_revision` to reject a stale edit. The dry run reports
+may include `expected_state_id` from `model inspect` to reject a stale edit.
+The state ID fingerprints the current editable spec and changes even when the
+undo journal is full. The dry run reports its before and after state IDs,
 affected scenes, changed occurrence paths, and created definition IDs without
 writing the spec.
 

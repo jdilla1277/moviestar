@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from moviestar.spatial_model import SpatialModelError, expand_spatial_scene
+from moviestar.spatial_model import SpatialModelError, expand_spatial_scene, spatial_state_id
 
 
 class SpatialEditConflict(SpatialModelError):
@@ -130,7 +130,8 @@ def _local_edit(spatial: dict, request: dict) -> None:
         if "value" not in request:
             _fail("value: required")
         if root is None:
-            direct.setdefault(group, {})[key] = deepcopy(request["value"])
+            target = direct if len(path) == 1 and group == "layout" else direct.setdefault(group, {})
+            target[key] = deepcopy(request["value"])
         else:
             root.setdefault("customizations", []).append({"op": "property_set", "path": relative,
                                                             "property": f"{group}.{key}",
@@ -168,7 +169,8 @@ def _local_edit(spatial: dict, request: dict) -> None:
         if root is None:
             if prop is None:
                 _fail("instance.reset: a direct scene node needs a property")
-            direct.get(group, {}).pop(key, None)
+            target = direct if len(path) == 1 and group == "layout" else direct.get(group, {})
+            target.pop(key, None)
         else:
             edits = root.get("customizations", [])
             if prop is None:
@@ -240,8 +242,9 @@ def _bake_variation(children: list[dict], edits: list[dict], path: list[str]) ->
                     nested.append({**deepcopy(edit), "path": []})
             if nested:
                 node.setdefault("customizations", []).extend(nested)
-        elif "children" in node:
-            node["children"] = _bake_variation(node["children"], edits, node_path)
+        elif "children" in node or any(edit["op"] == "child_add" and edit["path"] == node_path
+                                       for edit in edits):
+            node["children"] = _bake_variation(node.get("children", []), edits, node_path)
     return result
 
 
@@ -361,9 +364,10 @@ def _occurrences(scene: dict) -> dict[tuple[str, ...], dict]:
     result = {}
 
     def walk(children: list[dict]) -> None:
-        for child in children:
+        for index, child in enumerate(children):
             result[tuple(child["occurrence_path"])] = {
-                key: value for key, value in child.items() if key not in {"children", "occurrence_path"}
+                **{key: value for key, value in child.items() if key not in {"children", "occurrence_path"}},
+                "_sibling_index": index,
             }
             walk(child.get("children", []))
 
@@ -375,9 +379,12 @@ def edit_spatial_model(spec: dict, request: dict) -> tuple[dict, dict]:
     """Return a valid edited spec and a JSON-ready impact report, without writing."""
     if not isinstance(request, dict) or not isinstance(request.get("op"), str):
         _fail("request: expected an object with an op string")
-    expected = request.get("expected_revision")
-    if expected is not None and expected != len(spec.get("revisions", [])):
-        _fail(f"expected_revision: current revision is {len(spec.get('revisions', []))}")
+    if "expected_revision" in request:
+        _fail("expected_revision is an undo-history count; use expected_state_id from model inspect")
+    current_state_id = spatial_state_id(spec)
+    expected = request.get("expected_state_id")
+    if expected is not None and expected != current_state_id:
+        _fail(f"expected_state_id: project changed; current state is {current_state_id}")
     spatial = spec.get("spatial")
     if not isinstance(spatial, dict):
         _fail("spatial: apply a spatial document before editing")
@@ -446,4 +453,5 @@ def edit_spatial_model(spec: dict, request: dict) -> tuple[dict, dict]:
                                     if prior.get(path) != current.get(path))
     return result, {"op": op, "affected": sorted(affected), "created": created,
                     "affected_occurrences": affected_occurrences,
-                    "conflicts": [], "writes_spec": False}
+                    "conflicts": [], "writes_spec": False,
+                    "state_id_before": current_state_id, "state_id_after": spatial_state_id(result)}

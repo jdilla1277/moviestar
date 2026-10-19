@@ -156,7 +156,7 @@ definition; relinking the source instance must be explicit.
 A shared edit preview reports all affected scene and occurrence paths. Deleting
 or changing a definition child that a use customizes, or changing an input to
 an incompatible type, is a conflict. It blocks the *whole* proposed revision;
-no local work is silently discarded. A stale `expected_revision` also blocks
+no local work is silently discarded. A stale `expected_state_id` fingerprint also blocks
 the edit. Referenced assets and definitions cannot be deleted, including
 references in drafts. Required-input changes report every affected binding.
 Successful multi-use changes are one project revision; undo restores the

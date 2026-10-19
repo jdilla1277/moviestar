@@ -9,6 +9,8 @@ expansion. Malformed structure and ambiguous identities fail validation.
 from __future__ import annotations
 
 from copy import deepcopy
+from hashlib import sha256
+import json
 from math import ceil, isfinite
 from typing import TYPE_CHECKING
 
@@ -18,6 +20,14 @@ if TYPE_CHECKING:
 
 class SpatialModelError(ValueError):
     """A spatial document cannot be read unambiguously."""
+
+
+def spatial_state_id(spec: dict) -> str:
+    """Fingerprint the editable project state, independent of capped undo history."""
+    state = {key: value for key, value in spec.items() if key != "revisions"}
+    encoded = json.dumps(state, sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=False).encode("utf-8")
+    return f"sha256:{sha256(encoded).hexdigest()}"
 
 
 _INPUT_TYPES = {"video", "image", "text", "number", "color", "boolean"}
@@ -143,7 +153,7 @@ def _customizations(value: object, path: str, definitions: dict, definition_id: 
         if not isinstance(edit, dict):
             _fail(here, "must be an object")
         op = edit.get("op")
-        if op not in {"property_set", "child_add", "child_remove", "child_move"}:
+        if not isinstance(op, str) or op not in {"property_set", "child_add", "child_remove", "child_move"}:
             _fail(f"{here}.op", "unknown customization operation")
         target = edit.get("path")
         if not isinstance(target, list) or (not target and op != "child_add"):
