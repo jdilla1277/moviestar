@@ -1,7 +1,7 @@
-"""Executable, read-only preview of the spatial composition authoring contract.
+"""Spatial composition commands.
 
-Milestone 0 deliberately keeps these responses canned. Nothing in this module
-resolves a project, creates an asset, or persists a composition.
+The original milestone-0 examples remain read-only and canned. The ``model``
+group below reads and edits real project-owned spatial documents.
 """
 
 from __future__ import annotations
@@ -528,6 +528,41 @@ def model_inspect(scene_id: str) -> None:
         _error_exit("composition model inspect", str(exc))
     click.echo(json.dumps({"status": "expanded", "renders_pixels": False,
                            "scene": expanded}, indent=2))
+
+
+@model.command("edit")
+@click.argument("document", type=click.Path(path_type=Path))
+@click.option("--dry-run", is_flag=True, help="Validate and report impact without saving.")
+def model_edit(document: Path, dry_run: bool) -> None:
+    """Apply one local or shared component edit from a JSON request.
+
+    Targets use the stable occurrence_path shown by `model inspect`, or a
+    definition_id and element_id. Shared edits fail before writing if they
+    conflict with an occurrence customization. One edit is one undo revision.
+    """
+    from moviestar.cli import _error_exit
+    from moviestar.spatial_edit import SpatialEditConflict
+    from moviestar.spatial_model import SpatialModelError, edit_spatial_model
+    from moviestar.spec import SpecValidationError, load_spec, save_spec
+
+    try:
+        request = json.loads(document.read_text())
+        spec = load_spec()
+        if spec is None:
+            _error_exit("composition model edit", "No spec.json found. Load a project first.")
+        changed, report = edit_spatial_model(spec, request)
+        if not dry_run:
+            saved = save_spec(changed, command=f"composition model edit {request['op']}")
+            report["writes_spec"] = True
+            report["revision"] = len(saved["revisions"])
+    except SpatialEditConflict as exc:
+        click.echo(json.dumps({"command": "composition model edit", "error": str(exc),
+                               "conflicts": exc.conflicts, "writes_spec": False,
+                               "hint": "Reset the affected customization, or save a separate component variation."}, indent=2))
+        raise SystemExit(1) from exc
+    except (OSError, ValueError, TypeError, KeyError, SpecValidationError, SpatialModelError) as exc:
+        _error_exit("composition model edit", str(exc))
+    click.echo(json.dumps({"status": "preview" if dry_run else "saved", **report}, indent=2))
 
 
 @model.command("frame")

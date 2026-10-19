@@ -8,7 +8,10 @@ from click.testing import CliRunner
 
 from moviestar.cli import cli
 from moviestar.project import save_project
-from moviestar.spatial_model import SpatialModelError, compile_spatial_frame, expand_spatial_scene
+from moviestar.spatial_model import (
+    SpatialModelError, compile_spatial_frame, edit_spatial_model, expand_spatial_scene,
+)
+from moviestar.spatial_edit import SpatialEditConflict
 from moviestar.resolved import resolve_project
 from moviestar.spec import (
     SpecValidationError, empty_spec, load_spec, pop_revision, save_spec,
@@ -289,6 +292,236 @@ def test_component_is_shared_and_scene_layouts_survive_save_reload_and_undo(tmp_
     assert expand_spatial_scene(load_spec(cwd=tmp_path), "scene_b")["children"][0]["children"][0]["layout"] == {"grid_area": "top"}
     restored, _ = pop_revision(load_spec(cwd=tmp_path))
     assert restored["spatial"] == loaded["spatial"]
+
+
+def _edit(spec, op, **fields):
+    return edit_spatial_model(spec, {"op": op, **fields})[0]
+
+
+def test_local_property_inherits_shared_updates_and_reset():
+    spec = _project()
+    alice = ["scene_a", "listeners", "left_video"]
+    spec = _edit(spec, "instance.customize", target={"occurrence_path": alice},
+                 property="style.border_color", value="blue")
+    spec, impact = edit_spatial_model(spec, {"op": "component.update",
+                                      "target": {"definition_id": "pair", "element_id": "left_video"},
+                                      "property": "style.border_color", "value": "green"})
+    assert impact["affected"] == ["scene_b"]
+    assert impact["affected_occurrences"] == [["scene_b", "listeners", "left_video"]]
+    assert expand_spatial_scene(spec, "scene_a")["children"][0]["children"][0]["style"] == {"border_color": "blue"}
+    assert expand_spatial_scene(spec, "scene_b")["children"][0]["children"][0]["style"] == {"border_color": "green"}
+    spec = _edit(spec, "instance.reset", target={"occurrence_path": alice},
+                 property="style.border_color")
+    assert expand_spatial_scene(spec, "scene_a")["children"][0]["children"][0]["style"] == {"border_color": "green"}
+
+
+def test_local_structural_edits_survive_shared_update_and_conflict_atomically():
+    spec = _project()
+    parent = ["scene_a", "listeners"]
+    spec = _edit(spec, "instance.child_insert", target={"occurrence_path": parent},
+                 child={"id": "subtitle", "type": "text", "content": {"text": "Alice"}},
+                 after_id="left_video")
+    spec = _edit(spec, "instance.child_remove",
+                 target={"occurrence_path": [*parent, "right_video"]})
+    spec = _edit(spec, "instance.child_move",
+                 target={"occurrence_path": [*parent, "subtitle"]}, after_id="name")
+    spec = _edit(spec, "component.update",
+                 target={"definition_id": "pair", "element_id": "left_video"},
+                 property="style.border_width", value=3)
+    alice = expand_spatial_scene(spec, "scene_a")["children"][0]["children"]
+    bob = expand_spatial_scene(spec, "scene_b")["children"][0]["children"]
+    assert [child["occurrence_path"][-1] for child in alice] == ["left_video", "name", "subtitle"]
+    assert [child["occurrence_path"][-1] for child in bob] == ["left_video", "right_video", "name"]
+    assert alice[0]["style"] == bob[0]["style"] == {"border_width": 3}
+    before = deepcopy(spec)
+    with pytest.raises(SpatialModelError, match="scene_a.*listeners.*right_video"):
+        _edit(spec, "component.child_remove",
+              target={"definition_id": "pair", "element_id": "right_video"})
+    assert spec == before
+    spec = _edit(spec, "instance.reset",
+                 target={"occurrence_path": [*parent, "right_video"]})
+    spec = _edit(spec, "component.child_remove",
+                 target={"definition_id": "pair", "element_id": "right_video"})
+    assert [child["occurrence_path"][-1] for child in expand_spatial_scene(spec, "scene_a")["children"][0]["children"]] == [
+        "left_video", "name", "subtitle"]
+
+
+def test_nested_occurrence_customization_and_variation_do_not_change_other_uses():
+    spec = _project()
+    spec["spatial"]["definitions"]["badge"] = {"name": "Badge", "inputs": [], "children": [
+        {"id": "words", "type": "text", "content": {"text": "default"}},
+    ]}
+    spec["spatial"]["definitions"]["pair"]["children"].append(
+        {"instance_id": "badge_use", "definition_id": "badge"})
+    target = ["scene_a", "listeners", "badge_use", "words"]
+    spec = _edit(spec, "instance.customize", target={"occurrence_path": target},
+                 property="style.color", value="blue")
+    assert expand_spatial_scene(spec, "scene_a")["children"][0]["children"][-1]["children"][0]["style"] == {"color": "blue"}
+    assert expand_spatial_scene(spec, "scene_b")["children"][0]["children"][-1]["children"][0]["style"] == {}
+    spec = _edit(spec, "component.save_variation",
+                 source={"occurrence_path": ["scene_a", "listeners"]},
+                 new_definition_id="pair_blue", relink_source=True)
+    assert spec["spatial"]["scenes"]["scene_a"]["layout"]["children"][0]["definition_id"] == "pair_blue"
+    assert spec["spatial"]["scenes"]["scene_b"]["layout"]["children"][0]["definition_id"] == "pair"
+    assert expand_spatial_scene(spec, "scene_a")["children"][0]["children"][-1]["children"][0]["style"] == {"color": "blue"}
+    assert expand_spatial_scene(spec, "scene_b")["children"][0]["children"][-1]["children"][0]["style"] == {}
+
+
+def test_model_edit_dry_run_save_reload_and_undo(tmp_path, monkeypatch):
+    spec = _project()
+    save_spec(spec, cwd=tmp_path)
+    monkeypatch.chdir(tmp_path)
+    request = {"op": "instance.child_insert", "target": {"occurrence_path": ["scene_a", "listeners"]},
+               "child": {"id": "subtitle", "type": "text", "content": {"text": "Alice"}},
+               "after_id": "left_video"}
+    document = tmp_path / "edit.json"
+    document.write_text(json.dumps(request))
+    preview = CliRunner().invoke(cli, ["composition", "model", "edit", str(document), "--dry-run"])
+    assert preview.exit_code == 0, preview.output
+    assert json.loads(preview.output)["writes_spec"] is False
+    assert load_spec(cwd=tmp_path)["spatial"] == spec["spatial"]
+    applied = CliRunner().invoke(cli, ["composition", "model", "edit", str(document)])
+    assert applied.exit_code == 0, applied.output
+    assert json.loads(applied.output)["writes_spec"] is True
+    assert expand_spatial_scene(load_spec(cwd=tmp_path), "scene_a")["children"][0]["children"][1]["occurrence_path"][-1] == "subtitle"
+    restored, _ = pop_revision(load_spec(cwd=tmp_path))
+    assert restored["spatial"] == spec["spatial"]
+
+
+def test_shared_removal_reports_every_customized_occurrence_without_writing(tmp_path, monkeypatch):
+    spec = _project()
+    for scene_id in ("scene_a", "scene_b"):
+        spec = _edit(spec, "instance.customize",
+                     target={"occurrence_path": [scene_id, "listeners", "right_video"]},
+                     property="style.border_color", value="blue")
+    save_spec(spec, cwd=tmp_path)
+    monkeypatch.chdir(tmp_path)
+    request = {"op": "component.child_remove",
+               "target": {"definition_id": "pair", "element_id": "right_video"}}
+    document = tmp_path / "edit.json"
+    document.write_text(json.dumps(request))
+    rejected = CliRunner().invoke(cli, ["composition", "model", "edit", str(document), "--dry-run"])
+    assert rejected.exit_code == 1
+    output = json.loads(rejected.output)
+    assert output["writes_spec"] is False
+    assert [conflict["path"] for conflict in output["conflicts"]] == [
+        ["scene_a", "listeners", "right_video"], ["scene_b", "listeners", "right_video"]]
+    assert load_spec(cwd=tmp_path)["spatial"] == spec["spatial"]
+
+
+def test_nested_structure_and_reset_subtree():
+    spec = _project()
+    spec["spatial"]["definitions"]["badge"] = {"name": "Badge", "children": [
+        {"id": "words", "type": "text", "content": {"text": "default"}},
+    ]}
+    spec["spatial"]["definitions"]["pair"]["children"].append(
+        {"instance_id": "badge_use", "definition_id": "badge"})
+    parent = ["scene_a", "listeners", "badge_use"]
+    spec = _edit(spec, "instance.child_insert", target={"occurrence_path": parent},
+                 child={"id": "detail", "type": "text", "content": {"text": "Alice"}},
+                 after_id="words")
+    spec = _edit(spec, "instance.customize", target={"occurrence_path": [*parent, "detail"]},
+                 property="style.color", value="blue")
+    nested = expand_spatial_scene(spec, "scene_a")["children"][0]["children"][-1]["children"]
+    assert [item["occurrence_path"][-1] for item in nested] == ["words", "detail"]
+    assert nested[1]["style"] == {"color": "blue"}
+    spec = _edit(spec, "instance.reset", target={"occurrence_path": [*parent, "detail"]})
+    assert [item["occurrence_path"][-1] for item in expand_spatial_scene(spec, "scene_a")["children"][0]["children"][-1]["children"]] == ["words"]
+    assert expand_spatial_scene(spec, "scene_a")["diagnostics"] == []
+
+
+def test_nested_insert_can_bind_to_nested_component_input():
+    spec = _project()
+    spec["spatial"]["definitions"]["badge"] = {"name": "Badge", "inputs": [
+        {"name": "caption", "type": "text", "default": "hello"}],
+        "children": [{"id": "words", "type": "text", "content": {"input": "caption"}}]}
+    spec["spatial"]["definitions"]["pair"]["children"].append(
+        {"instance_id": "badge_use", "definition_id": "badge"})
+    spec = _edit(spec, "instance.child_insert",
+                 target={"occurrence_path": ["scene_a", "listeners", "badge_use"]},
+                 child={"id": "echo", "type": "text", "content": {"input": "caption"}},
+                 after_id="words")
+    nested = expand_spatial_scene(spec, "scene_a")["children"][0]["children"][-1]["children"]
+    assert nested[1]["content"] == {"text": "hello"}
+
+
+def test_component_and_image_deletion_guard_includes_unused_drafts():
+    spec = _project()
+    spec["spatial"]["definitions"]["draft"] = {"name": "Unplaced draft", "children": [
+        {"instance_id": "nested", "definition_id": "pair"},
+        {"id": "logo", "type": "image", "content": {"asset_id": "logo"}},
+    ]}
+    spec["spatial"]["assets"] = {"logo": {"type": "image", "path": "assets/logo.png"}}
+    with pytest.raises(SpatialModelError, match="referenced.*draft.*nested"):
+        _edit(spec, "component.delete", definition_id="pair")
+    with pytest.raises(SpatialModelError, match="referenced.*definitions.*draft"):
+        _edit(spec, "asset.delete", asset_id="logo")
+    spec = _edit(spec, "component.delete", definition_id="draft")
+    spec = _edit(spec, "asset.delete", asset_id="logo")
+    assert "draft" not in spec["spatial"]["definitions"]
+    assert "logo" not in spec["spatial"]["assets"]
+
+
+def test_shared_edit_checks_customizations_in_unplaced_definition():
+    spec = _project()
+    spec["spatial"]["definitions"]["draft"] = {"name": "Unplaced draft", "children": [
+        {"instance_id": "nested", "definition_id": "pair", "customizations": [
+            {"op": "property_set", "path": ["left_video"],
+             "property": "style.border_color", "value": "blue"}]}]}
+    with pytest.raises(SpatialEditConflict) as rejected:
+        _edit(spec, "component.child_remove",
+              target={"definition_id": "pair", "element_id": "left_video"})
+    assert ["definition:draft", "nested", "left_video"] in [
+        conflict["path"] for conflict in rejected.value.conflicts]
+
+
+def test_shared_insert_and_local_reorder_follow_stable_anchors():
+    spec = _project()
+    spec = _edit(spec, "instance.child_move",
+                 target={"occurrence_path": ["scene_a", "listeners", "name"]},
+                 after_id="left_video")
+    spec = _edit(spec, "component.child_insert", target={"definition_id": "pair"},
+                 child={"id": "divider", "type": "shape"}, after_id="right_video")
+    alice = expand_spatial_scene(spec, "scene_a")["children"][0]["children"]
+    bob = expand_spatial_scene(spec, "scene_b")["children"][0]["children"]
+    assert [item["occurrence_path"][-1] for item in alice] == ["left_video", "name", "right_video", "divider"]
+    assert [item["occurrence_path"][-1] for item in bob] == ["left_video", "right_video", "divider", "name"]
+    with pytest.raises(SpatialEditConflict, match="scene_a/listeners/name"):
+        _edit(spec, "component.child_remove",
+              target={"definition_id": "pair", "element_id": "left_video"})
+
+
+def test_duplicate_rebind_and_rename_preserve_component_identity():
+    spec = _project()
+    spec = _edit(spec, "instance.duplicate", source={"occurrence_path": ["scene_a", "listeners"]},
+                 new_instance_id="listeners_copy")
+    spec = _edit(spec, "input.bind", target={"occurrence_path": ["scene_a", "listeners_copy"]},
+                 input="left", value={"asset_id": "dan", "source": {"start": 3, "end": 11}})
+    spec = _edit(spec, "component.rename", definition_id="pair", name="Two listeners")
+    first, copy = expand_spatial_scene(spec, "scene_a")["children"]
+    assert first["definition_id"] == copy["definition_id"] == "pair"
+    assert first["children"][0]["content"]["asset_id"] == "alice"
+    assert copy["children"][0]["content"]["asset_id"] == "dan"
+    assert first["children"][0]["occurrence_path"] != copy["children"][0]["occurrence_path"]
+    assert spec["spatial"]["definitions"]["pair"]["name"] == "Two listeners"
+
+
+def test_variation_bakes_local_structure_without_losing_nested_references():
+    spec = _project()
+    parent = ["scene_a", "listeners"]
+    spec = _edit(spec, "instance.child_insert", target={"occurrence_path": parent},
+                 child={"id": "subtitle", "type": "text", "content": {"text": "Alice"}},
+                 after_id="left_video")
+    spec = _edit(spec, "instance.child_remove",
+                 target={"occurrence_path": [*parent, "right_video"]})
+    spec = _edit(spec, "component.save_variation", source={"occurrence_path": parent},
+                 new_definition_id="pair_solo", relink_source=True)
+    assert "customizations" not in spec["spatial"]["scenes"]["scene_a"]["layout"]["children"][0]
+    assert [item["id"] for item in spec["spatial"]["definitions"]["pair_solo"]["children"]] == [
+        "left_video", "subtitle", "name"]
+    assert [item["id"] for item in spec["spatial"]["definitions"]["pair"]["children"]] == [
+        "left_video", "right_video", "name"]
+    assert expand_spatial_scene(spec, "scene_a")["diagnostics"] == []
 
 
 def test_incomplete_binding_is_a_repairable_draft():
