@@ -2525,6 +2525,48 @@ def test_large_layout_caption_graph_uses_temporary_filter_script(
     assert not seen["path"].exists()
 
 
+@pytest.mark.parametrize(
+    ("help_text", "expected"),
+    [
+        ("-filter_complex_script filename  read filtergraph from file", "-filter_complex_script"),
+        ("-/filter_complex filename  read filtergraph from file", "-/filter_complex"),
+    ],
+)
+def test_filter_script_option_matches_ffmpeg_help(monkeypatch, help_text, expected):
+    from moviestar import ffmpeg as ffmpeg_mod
+
+    def fake_run(argv, **kwargs):
+        assert argv == ["ffmpeg", "-hide_banner", "-h", "full"]
+        assert kwargs == {"capture_output": True, "text": True, "timeout": 10}
+        return subprocess.CompletedProcess(argv, 0, stdout=help_text, stderr="")
+
+    monkeypatch.setattr(ffmpeg_mod.subprocess, "run", fake_run)
+    assert ffmpeg_mod._filter_complex_script_option() == expected
+
+
+def test_large_filtergraph_file_runs_in_real_ffmpeg():
+    from moviestar.ffmpeg import _command_with_filter_script
+
+    graph = "[0:v]null[v]" + " " * (64 * 1024 + 1)
+    command = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error",
+        "-f", "lavfi", "-i", "color=c=black:s=16x16:r=1:d=1",
+        "-filter_complex", graph, "-map", "[v]",
+        "-frames:v", "1", "-f", "null", "-",
+    ]
+
+    with _command_with_filter_script(command) as execution_command:
+        assert "-filter_complex" not in execution_command
+        option = execution_command[execution_command.index("-map") - 2]
+        assert option in {"-filter_complex_script", "-/filter_complex"}
+        script = Path(execution_command[execution_command.index(option) + 1])
+        assert script.read_text() == graph
+        result = subprocess.run(execution_command, capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+
+    assert not script.exists()
+
+
 class TestFiltergraphEscape:
     """Escaping is two-level: the filter option parser, then the
     filtergraph parser. Verified live against ffmpeg 8 (apostrophes,
