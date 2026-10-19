@@ -145,8 +145,14 @@ async function render(input) {
       label.style.cssText = 'position:absolute;z-index:2147483647;background:#13263a;color:white;'
         + 'font:12px monospace;padding:2px 4px;max-width:95%;white-space:nowrap;'
         + 'overflow:hidden;text-overflow:ellipsis;pointer-events:none';
-      label.style.left = `${Math.max(0, box.rect.x)}px`;
-      label.style.top = `${Math.max(0, box.rect.y)}px`;
+      if (box.kind === 'component') {
+        label.style.left = `${Math.min(width, Math.max(0, box.rect.x + box.rect.width))}px`;
+        label.style.top = `${Math.max(0, box.rect.y + box.rect.height - 18)}px`;
+        label.style.transform = 'translateX(-100%)';
+      } else {
+        label.style.left = `${Math.max(0, box.rect.x)}px`;
+        label.style.top = `${Math.max(0, box.rect.y)}px`;
+      }
       document.body.append(label);
     }
   }

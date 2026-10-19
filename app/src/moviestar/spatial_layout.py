@@ -137,7 +137,16 @@ def _chrome_path() -> str | None:
 
 def browser_available() -> bool:
     """Whether local layout measurement prerequisites can be found."""
-    return _chrome_path() is not None and shutil.which("node") is not None
+    node = shutil.which("node")
+    if _chrome_path() is None or node is None:
+        return False
+    try:
+        check = subprocess.run([node, "-p", "Boolean(globalThis.WebSocket) && "
+                                "Number(process.versions.node.split('.')[0]) >= 22"],
+                               text=True, capture_output=True, timeout=3, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return check.returncode == 0 and check.stdout.strip() == "true"
 
 
 def measure_spatial_layout(frame: dict, canvas: dict, *, output_path: Path | None = None) -> dict:
