@@ -14,7 +14,9 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 
@@ -3763,6 +3765,41 @@ def _format_position(seconds: float) -> str:
     return f"{h}:{m:02d}:{s:02d}"
 
 
+def _filter_complex_script_option() -> str:
+    """Select the file-backed filtergraph flag supported by this FFmpeg."""
+    help_text = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-h", "full"],
+        capture_output=True, text=True, timeout=10,
+    )
+    if "-filter_complex_script" in help_text.stdout + help_text.stderr:
+        return "-filter_complex_script"
+    return "-/filter_complex"
+
+
+@contextmanager
+def _command_with_filter_script(command: list[str]):
+    """Keep a large, private filtergraph off the process argument list."""
+    try:
+        graph_index = command.index("-filter_complex") + 1
+    except ValueError:
+        yield command
+        return
+
+    graph = command[graph_index]
+    if len(graph.encode("utf-8")) <= 64 * 1024:
+        yield command
+        return
+
+    with tempfile.TemporaryDirectory(prefix="moviestar-filter-") as directory:
+        script = Path(directory) / "graph.txt"
+        script.write_text(graph, encoding="utf-8")
+        script.chmod(0o600)
+        execution_command = command.copy()
+        execution_command[graph_index - 1] = _filter_complex_script_option()
+        execution_command[graph_index] = str(script)
+        yield execution_command
+
+
 def render_segments(
     segments: list[tuple[str, float, float]],
     output_path: str,
@@ -3838,69 +3875,72 @@ def render_segments(
         video_transitions=video_transitions,
     )
 
-    # Single-segment stream-copy shortcut skips the progress wiring —
-    # build_extract_clip_command doesn't add `-progress` and the
-    # operation is sub-second anyway. Detect by the absence of the
-    # progress flag we inject in the multi-segment path.
-    if "-progress" not in cmd:
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(_failure_message("ffmpeg", result))
-        return cmd
+    with _command_with_filter_script(cmd) as execution_command:
+        # Single-segment stream-copy shortcut skips the progress wiring —
+        # build_extract_clip_command doesn't add `-progress` and the
+        # operation is sub-second anyway. Detect by the absence of the
+        # progress flag we inject in the multi-segment path.
+        if "-progress" not in cmd:
+            result = subprocess.run(
+                execution_command, capture_output=True, text=True,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(_failure_message("ffmpeg", result))
+            return cmd
 
-    if progress_cb is None:
-        progress_cb = lambda line: sys.stderr.write(line + "\n")
+        if progress_cb is None:
+            progress_cb = lambda line: sys.stderr.write(line + "\n")
 
-    total_duration = sum(src_to - src_from for _, src_from, src_to in segments)
+        total_duration = sum(src_to - src_from for _, src_from, src_to in segments)
 
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+        proc = subprocess.Popen(
+            execution_command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
 
-    start = time.time()
-    last_emit = 0.0
-    error_lines: list[str] = []
-    assert proc.stderr is not None
-    for raw_line in proc.stderr:
-        line = raw_line.rstrip("\n")
-        # Demux: ffmpeg's structured progress is `key=value`; real
-        # errors don't match that shape. Buffer the latter for the
-        # failure message; parse the former for the progress signal.
-        if _PROGRESS_KV_LINE.match(line):
-            if line.startswith("out_time_us="):
-                try:
-                    position = int(line.split("=", 1)[1]) / 1_000_000
-                except ValueError:
-                    continue
-                elapsed = time.time() - start
-                # Throttle to ~1/sec so a fast render doesn't spam the
-                # console; emit immediately on the first sample.
-                if last_emit > 0 and (elapsed - last_emit) < 1.0:
-                    continue
-                last_emit = elapsed
-                if total_duration > 0:
-                    pct = min(100, int(position / total_duration * 100))
-                    pct_text = f" ({pct}%)"
-                else:
-                    pct_text = ""
-                progress_cb(
-                    f"[elapsed {_format_render_elapsed(elapsed)}] "
-                    f"rendered {_format_position(position)} / "
-                    f"{_format_position(total_duration)}{pct_text}"
-                )
-        else:
-            error_lines.append(line)
+        start = time.time()
+        last_emit = 0.0
+        error_lines: list[str] = []
+        assert proc.stderr is not None
+        for raw_line in proc.stderr:
+            line = raw_line.rstrip("\n")
+            # Demux: ffmpeg's structured progress is `key=value`; real
+            # errors don't match that shape. Buffer the latter for the
+            # failure message; parse the former for the progress signal.
+            if _PROGRESS_KV_LINE.match(line):
+                if line.startswith("out_time_us="):
+                    try:
+                        position = int(line.split("=", 1)[1]) / 1_000_000
+                    except ValueError:
+                        continue
+                    elapsed = time.time() - start
+                    # Throttle to ~1/sec so a fast render doesn't spam the
+                    # console; emit immediately on the first sample.
+                    if last_emit > 0 and (elapsed - last_emit) < 1.0:
+                        continue
+                    last_emit = elapsed
+                    if total_duration > 0:
+                        pct = min(100, int(position / total_duration * 100))
+                        pct_text = f" ({pct}%)"
+                    else:
+                        pct_text = ""
+                    progress_cb(
+                        f"[elapsed {_format_render_elapsed(elapsed)}] "
+                        f"rendered {_format_position(position)} / "
+                        f"{_format_position(total_duration)}{pct_text}"
+                    )
+            else:
+                error_lines.append(line)
 
-    proc.wait()
-    if proc.returncode != 0:
-        # Synthesize the same shape _failure_message would produce
-        # from a captured CompletedProcess.
-        stderr_text = "\n".join(error_lines).strip()
-        detail = stderr_text if stderr_text else f"exit code {proc.returncode}"
-        raise RuntimeError(f"ffmpeg failed: {detail}")
+        proc.wait()
+        if proc.returncode != 0:
+            # Synthesize the same shape _failure_message would produce
+            # from a captured CompletedProcess.
+            stderr_text = "\n".join(error_lines).strip()
+            detail = stderr_text if stderr_text else f"exit code {proc.returncode}"
+            raise RuntimeError(f"ffmpeg failed: {detail}")
     return cmd
 
 
@@ -3946,46 +3986,47 @@ def render_layout_video(
     if progress_cb is None:
         progress_cb = lambda line: sys.stderr.write(line + "\n")
 
-    proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    start = time.time()
-    last_emit = 0.0
-    error_lines: list[str] = []
-    assert proc.stderr is not None
-    for raw_line in proc.stderr:
-        line = raw_line.rstrip("\n")
-        if _PROGRESS_KV_LINE.match(line):
-            if line.startswith("out_time_us="):
-                try:
-                    position = int(line.split("=", 1)[1]) / 1_000_000
-                except ValueError:
-                    continue
-                elapsed = time.time() - start
-                if last_emit > 0 and (elapsed - last_emit) < 1.0:
-                    continue
-                last_emit = elapsed
-                if duration > 0:
-                    pct = min(100, int(position / duration * 100))
-                    pct_text = f" ({pct}%)"
-                else:
-                    pct_text = ""
-                progress_cb(
-                    f"[elapsed {_format_render_elapsed(elapsed)}] "
-                    f"rendered {_format_position(position)} / "
-                    f"{_format_position(duration)}{pct_text}"
-                )
-        else:
-            error_lines.append(line)
+    with _command_with_filter_script(cmd) as execution_command:
+        proc = subprocess.Popen(
+            execution_command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        start = time.time()
+        last_emit = 0.0
+        error_lines: list[str] = []
+        assert proc.stderr is not None
+        for raw_line in proc.stderr:
+            line = raw_line.rstrip("\n")
+            if _PROGRESS_KV_LINE.match(line):
+                if line.startswith("out_time_us="):
+                    try:
+                        position = int(line.split("=", 1)[1]) / 1_000_000
+                    except ValueError:
+                        continue
+                    elapsed = time.time() - start
+                    if last_emit > 0 and (elapsed - last_emit) < 1.0:
+                        continue
+                    last_emit = elapsed
+                    if duration > 0:
+                        pct = min(100, int(position / duration * 100))
+                        pct_text = f" ({pct}%)"
+                    else:
+                        pct_text = ""
+                    progress_cb(
+                        f"[elapsed {_format_render_elapsed(elapsed)}] "
+                        f"rendered {_format_position(position)} / "
+                        f"{_format_position(duration)}{pct_text}"
+                    )
+            else:
+                error_lines.append(line)
 
-    proc.wait()
-    if proc.returncode != 0:
-        stderr_text = "\n".join(error_lines).strip()
-        detail = stderr_text if stderr_text else f"exit code {proc.returncode}"
-        raise RuntimeError(f"ffmpeg failed: {detail}")
+        proc.wait()
+        if proc.returncode != 0:
+            stderr_text = "\n".join(error_lines).strip()
+            detail = stderr_text if stderr_text else f"exit code {proc.returncode}"
+            raise RuntimeError(f"ffmpeg failed: {detail}")
     return cmd
 
 
