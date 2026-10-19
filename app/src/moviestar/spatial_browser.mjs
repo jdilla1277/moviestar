@@ -14,21 +14,29 @@ const args = [
   '--force-device-scale-factor=1', '--remote-debugging-port=0',
   `--user-data-dir=${profile}`, 'about:blank',
 ];
-if (process.getuid?.() === 0) args.unshift('--no-sandbox');
-const chrome = spawn(chromePath, args, {stdio: 'ignore'});
+if (process.getuid?.() === 0 || process.env.MOVIESTAR_CHROME_NO_SANDBOX === '1') {
+  args.unshift('--no-sandbox');
+}
+const chrome = spawn(chromePath, args, {stdio: ['ignore', 'ignore', 'pipe']});
+let chromeError = '';
+chrome.stderr.on('data', chunk => { chromeError = (chromeError + chunk.toString()).slice(-8192); });
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 let socket;
 let nextId = 0;
 const pending = new Map();
 
 async function waitForPort() {
+  const startupError = reason => {
+    const detail = chromeError.trim().split('\n').filter(Boolean).slice(-2).join(' | ');
+    return new Error(detail ? `${reason}: ${detail}` : reason);
+  };
   for (let attempt = 0; attempt < 100; attempt++) {
     const path = join(profile, 'DevToolsActivePort');
     if (existsSync(path)) return Number(readFileSync(path, 'utf8').split('\n')[0]);
-    if (chrome.exitCode !== null) throw new Error('Chrome exited before opening a debugging port');
+    if (chrome.exitCode !== null) throw startupError('Chrome exited before opening a debugging port');
     await pause(50);
   }
-  throw new Error('Chrome did not open a debugging port within 5 seconds');
+  throw startupError('Chrome did not open a debugging port within 5 seconds');
 }
 
 function send(method, params = {}) {

@@ -114,7 +114,9 @@ Local measurement needs Node.js 22 or newer and Chrome or
 `chrome-headless-shell`. MovieStar searches common executable names and the
 macOS Chrome application; set `MOVIESTAR_CHROME_PATH` to a specific executable
 when needed. The command does not download a browser or write a project
-revision. Format-specific rules, scene motion, exact paint order, rendered
+revision. In a container where Chrome cannot use its sandbox, set
+`MOVIESTAR_CHROME_NO_SANDBOX=1`; the CI job uses that explicit setting.
+Format-specific rules, scene motion, exact paint order, rendered
 assets, transitions, watch, and export remain later renderer work.
 
 ## Editing a linked use

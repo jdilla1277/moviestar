@@ -29,6 +29,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      MOVIESTAR_CHROME_NO_SANDBOX: '1'
 
     steps:
       - uses: actions/checkout@v6
