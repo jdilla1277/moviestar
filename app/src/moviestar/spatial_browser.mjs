@@ -63,10 +63,11 @@ async function render(input) {
   const {width, height} = input.canvas;
   function applyStyles(element, styles, where) {
     for (const [property, value] of Object.entries(styles)) {
-      element.style.setProperty(property, value);
-      if (!element.style.getPropertyValue(property)) {
+      // Invalid setProperty calls preserve any existing preset declaration.
+      if (!CSS.supports(property, value)) {
         throw new Error(`${where}.${property}: invalid CSS value ${JSON.stringify(value)}`);
       }
+      element.style.setProperty(property, value);
     }
   }
   document.documentElement.style.cssText = 'margin:0;width:100%;height:100%';

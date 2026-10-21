@@ -54,6 +54,12 @@ _FRAME_FIELDS = {
     "scene_source_duration_s", "canvas", "pacing_segment_id",
 }
 _UNSAFE_CSS = re.compile(r"url\s*\(|@import|expression\s*\(|javascript\s*:|[;{}]", re.I)
+_LENGTH_PROPERTIES = {
+    "grid-template-columns", "grid-template-rows", "grid-auto-columns", "grid-auto-rows",
+    "gap", "row-gap", "column-gap", "padding", "margin", "width", "height",
+    "min-width", "max-width", "min-height", "max-height", "top", "right", "bottom", "left",
+    "font-size", "border-width", "border-radius",
+}
 
 
 def _css(properties: dict, allowed: dict[str, str], path: str) -> dict[str, str]:
@@ -76,7 +82,7 @@ def _css(properties: dict, allowed: dict[str, str], path: str) -> dict[str, str]
         value = str(raw_value)
         if not value.strip() or _UNSAFE_CSS.search(value):
             raise SpatialLayoutError(f"{path}.{raw_key}: unsafe or empty CSS value")
-        if isinstance(raw_value, (int, float)) and key not in {"opacity", "font_weight", "z_index", "flex", "line_height"}:
+        if isinstance(raw_value, (int, float)) and css_key in _LENGTH_PROPERTIES:
             value += "px"
         result[css_key] = value
     return result

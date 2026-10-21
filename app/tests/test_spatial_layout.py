@@ -109,6 +109,21 @@ def test_layout_preparation_rejects_bad_canvas_and_invalid_css():
         prepare_layout_frame(frame, {"width": 640, "height": 360})
 
 
+def test_numeric_css_preserves_unitless_values_and_adds_units_to_lengths():
+    frame = _frame()
+    frame["children"][0]["layout"] = {
+        "width": 100, "height": 50, "aspect_ratio": 2,
+        "grid_column": 2, "grid_row": 1, "grid_area": 2, "gap": 8,
+    }
+    frame["children"][0]["style"] = {"font_size": 24, "line_height": 1.5, "opacity": 0.5}
+    prepared = prepare_layout_frame(frame, {"width": 640, "height": 360})
+    assert prepared["nodes"][0]["style"] == {
+        "width": "100px", "height": "50px", "aspect-ratio": "2",
+        "grid-column": "2", "grid-row": "1", "grid-area": "2", "gap": "8px",
+        "font-size": "24px", "line-height": "1.5", "opacity": "0.5",
+    }
+
+
 @pytest.mark.skipif(not browser_available(), reason="local Chrome and Node are required")
 def test_browser_measures_grid_and_writes_labeled_png(tmp_path):
     image = tmp_path / "layout.png"
@@ -160,6 +175,37 @@ def test_browser_rejects_css_values_that_it_cannot_apply():
     frame["display"] = "not-a-display-mode"
     with pytest.raises(SpatialLayoutError, match=r"scene.layout.display.*invalid CSS value"):
         measure_spatial_layout(frame, {"width": 640, "height": 360})
+
+
+@pytest.mark.skipif(not browser_available(), reason="local Chrome and Node are required")
+@pytest.mark.parametrize("target,property_name,value,error_path", [
+    ("child", "position", "not-a-position", "scene_a/left.position"),
+    ("child", "min_width", "not-a-length", "scene_a/left.min-width"),
+    ("scene", "overflow", "not-an-overflow", "scene.layout.overflow"),
+])
+def test_browser_rejects_invalid_values_even_when_property_has_a_preset(
+    target, property_name, value, error_path
+):
+    frame = _frame()
+    properties = frame if target == "scene" else frame["children"][0]["layout"]
+    properties[property_name] = value
+    with pytest.raises(SpatialLayoutError) as error:
+        measure_spatial_layout(frame, {"width": 640, "height": 360})
+    assert f"{error_path}: invalid CSS value" in str(error.value)
+
+
+@pytest.mark.skipif(not browser_available(), reason="local Chrome and Node are required")
+def test_browser_measures_numeric_ratio_and_grid_placement():
+    frame = _frame()
+    frame["columns"] = "1fr 1fr"
+    frame["rows"] = "100px 100px"
+    frame["align_items"] = "start"
+    frame["children"] = frame["children"][:1]
+    frame["children"][0]["layout"] = {
+        "width": 100, "aspect_ratio": 2, "grid_column": 2, "grid_row": 2,
+    }
+    result = measure_spatial_layout(frame, {"width": 640, "height": 360})
+    assert result["boxes"][0]["rect"] == {"x": 328, "y": 116, "width": 100, "height": 50}
 
 
 @pytest.mark.skipif(not browser_available(), reason="local Chrome and Node are required")

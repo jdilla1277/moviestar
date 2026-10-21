@@ -101,7 +101,9 @@ The current subset covers CSS Grid, flex, positioned children, gaps, padding,
 explicit and constrained sizes, alignment, overflow, aspect ratio, background
 color, borders, opacity, and basic text styling. Properties use snake_case or
 CSS hyphen spelling; `columns`/`rows` are aliases for
-`grid-template-columns`/`grid-template-rows`. Numeric lengths are pixels.
+`grid-template-columns`/`grid-template-rows`. Numeric lengths are pixels;
+aspect ratios, grid line numbers, and other unitless CSS values retain their
+numbers (for example, `"width": 100, "aspect_ratio": 2` gives a 100×50 box).
 The requested canvas fixes the outer scene size; root width and height rules
 are rejected.
 Unsupported or unsafe values return an addressable error rather than a guessed
