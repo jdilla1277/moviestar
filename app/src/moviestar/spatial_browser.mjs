@@ -85,7 +85,7 @@ async function render(input) {
   function addNode(node, parent) {
     const element = document.createElement('div');
     element.style.boxSizing = 'border-box';
-    // Every node is a containing block for its own positioned children.
+    // Nodes default to a containing block; explicit static uses CSS ancestry.
     element.style.position = 'relative';
     element.style.minWidth = '0';
     element.style.minHeight = '0';
@@ -105,7 +105,7 @@ async function render(input) {
   await new Promise(resolve => requestAnimationFrame(resolve));
 
   const videoPlanes = [];
-  const mediaWrappers = [];
+  const mediaElements = [];
   if (input.paint_dir) {
     for (const {node, element} of entries) {
       if (!node.video && !node.image) continue;
@@ -113,48 +113,51 @@ async function render(input) {
       const padding = key => parseFloat(computed.getPropertyValue(`padding-${key}`)) || 0;
       const width = Math.max(0, element.clientWidth - padding('left') - padding('right'));
       const height = Math.max(0, element.clientHeight - padding('top') - padding('bottom'));
-      const wrapper = document.createElement('div');
-      wrapper.style.cssText = 'position:absolute;overflow:hidden;pointer-events:none';
-      wrapper.style.left = `${padding('left')}px`;
-      wrapper.style.top = `${padding('top')}px`;
-      wrapper.style.width = `${width}px`;
-      wrapper.style.height = `${height}px`;
-      wrapper.style.borderRadius = computed.borderRadius;
-      element.prepend(wrapper);
-      mediaWrappers.push(wrapper);
+      const box = element.getBoundingClientRect();
+      const left = box.x + (parseFloat(computed.borderLeftWidth) || 0) + padding('left');
+      const top = box.y + (parseFloat(computed.borderTopWidth) || 0) + padding('top');
+      let nativeWidth, nativeHeight;
       if (node.image) {
-        const image = document.createElement('img');
-        image.style.cssText = 'display:block;width:100%;height:100%';
-        image.style.objectFit = node.style['object-fit'] || 'fill';
+        const image = new Image();
         image.src = node.image;
-        wrapper.append(image);
         await image.decode();
+        nativeWidth = image.naturalWidth;
+        nativeHeight = image.naturalHeight;
       } else {
         for (const source of [node.video.black_image, node.video.white_image, node.video.reference_image].filter(Boolean)) {
           const preload = new Image();
           preload.src = source;
           await preload.decode();
         }
-        const fit = node.style['object-fit'] || 'fill';
-        const contain = Math.min(width / node.video.width, height / node.video.height);
-        const cover = Math.max(width / node.video.width, height / node.video.height);
-        const factor = fit === 'contain' ? contain : fit === 'cover' ? cover
-          : fit === 'none' ? 1 : fit === 'scale-down' ? Math.min(1, contain) : null;
-        const fittedWidth = factor === null ? width : node.video.width * factor;
-        const fittedHeight = factor === null ? height : node.video.height * factor;
-        const parent = wrapper.getBoundingClientRect();
-        const x = Math.round(parent.x + (width - fittedWidth) / 2);
-        const y = Math.round(parent.y + (height - fittedHeight) / 2);
-        const plane = document.createElement('div');
-        plane.style.cssText = 'position:absolute;background-size:100% 100%';
-        plane.style.backgroundImage = `url(${JSON.stringify(node.video.black_image)})`;
-        plane.style.left = `${x - parent.x}px`;
-        plane.style.top = `${y - parent.y}px`;
-        plane.style.width = `${Math.round(fittedWidth)}px`;
-        plane.style.height = `${Math.round(fittedHeight)}px`;
-        wrapper.append(plane);
-        videoPlanes.push({node, plane, rect: {x, y, width: Math.round(fittedWidth), height: Math.round(fittedHeight)}});
+        nativeWidth = node.video.width;
+        nativeHeight = node.video.height;
       }
+      const fit = node.style['object-fit'] || 'fill';
+      const contain = Math.min(width / nativeWidth, height / nativeHeight);
+      const cover = Math.max(width / nativeWidth, height / nativeHeight);
+      const factor = fit === 'contain' ? contain : fit === 'cover' ? cover
+        : fit === 'none' ? 1 : fit === 'scale-down' ? Math.min(1, contain) : null;
+      let fittedWidth = factor === null ? width : nativeWidth * factor;
+      let fittedHeight = factor === null ? height : nativeHeight * factor;
+      let x = left + (width - fittedWidth) / 2;
+      let y = top + (height - fittedHeight) / 2;
+      if (node.video) {
+        x = Math.round(x); y = Math.round(y);
+        fittedWidth = Math.round(fittedWidth); fittedHeight = Math.round(fittedHeight);
+        videoPlanes.push({node, plane: element, rect: {x, y, width: fittedWidth, height: fittedHeight}});
+      }
+      // Paint in the media element's content box. Background paint creates no
+      // containing block or flow item, so authored static positioning, z-order,
+      // ancestor clips, and normal-flow geometry remain intact.
+      element.style.backgroundImage = `url(${JSON.stringify(node.image || node.video.black_image)}), none`;
+      // The final empty layer keeps the authored background color over the
+      // padding/border box while only the media layer is clipped to content.
+      element.style.backgroundOrigin = 'content-box, border-box';
+      element.style.backgroundClip = 'content-box, border-box';
+      element.style.backgroundRepeat = 'no-repeat';
+      element.style.backgroundSize = `${fittedWidth}px ${fittedHeight}px`;
+      element.style.backgroundPosition = `${x - left}px ${y - top}px`;
+      mediaElements.push(element);
     }
   }
 
@@ -199,7 +202,10 @@ async function render(input) {
   // Outline and labels are added after measurement, so the layout view cannot
   // move any measured box. It uses the exact page that supplied the rectangles.
   function labelView() {
-    for (const wrapper of mediaWrappers) wrapper.style.visibility = 'hidden';
+    for (const element of mediaElements) {
+      element.style.backgroundImage = 'none';
+      element.style.backgroundClip = 'border-box';
+    }
     for (const {node, element} of entries) {
       element.style.outline = '1px solid #ffb000';
       if (node.kind === 'text') element.style.color = 'transparent';
@@ -235,7 +241,7 @@ async function render(input) {
     for (const entry of videoPlanes) {
       const image = mode === 'reference' ? entry.node.video.reference_image
         : mode === 'white' && entry.node.video.id === id ? entry.node.video.white_image : entry.node.video.black_image;
-      entry.plane.style.backgroundImage = `url(${JSON.stringify(image)})`;
+      entry.plane.style.backgroundImage = `url(${JSON.stringify(image)}), none`;
     }
   };
   if (input.output_path && !input.paint_dir) labelView();

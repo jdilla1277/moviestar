@@ -9,14 +9,31 @@ watch/export, caption, motion, responsive-rule, or static-scene timing gates.
 `compile_spatial_frame` selects the scene, expands linked components, and resolves
 media clocks. `prepare_layout_frame` validates and translates the supported CSS
 rules. One browser page measures the result, paints graphics, and can also draw
-the labeled layout view. Absolute media surfaces never participate in flow, so
+the labeled layout view. Media background paint never participates in flow, so
 adding asset pixels leaves measured element boxes and text lines unchanged.
+Each asset is a content-box background layer on its own element; an empty final
+layer keeps the authored background color over the padding and border box.
+Static positioning needs no extra containing block or positioned wrapper, and
+ancestor clips and stacking keep their normal CSS behavior.
 
 FFmpeg decodes each distinct asset/time pair once, normalizing display aspect
 ratio and orientation into a PNG. Local images become RGBA PNGs painted by the
 browser; videos remain opaque RGB frames composed by FFmpeg. This avoids browser
 video codec and seek differences. The frame response records the source times
 and pixel-aligned sampling rectangles used by FFmpeg.
+
+For video, the existing PyAV dependency seeks to the preceding keyframe and
+walks decoded presentation timestamps until the first frame after the requested
+media position. The selected frame is therefore the one already displayed at
+that time, including a VFR hold or the final frame interval. FFmpeg preserves
+source timestamps and selects that integer PTS without accurate-seek discarding
+the preceding frame. Integer ticks avoid rounding fractional-rate frame times
+forward; source positions remain on the canonical timeline. The timestamp walk
+has a 60-second deadline and stops after passing the requested position.
+
+The alpha guard checks stream pixel format and metadata before decoding RGB.
+VP9/WebM can carry alpha while the default decoder reports `yuv420p`;
+`alpha_mode=1` rejects that source rather than silently flattening it to opaque.
 
 ## Browser paint and video visibility
 
@@ -72,6 +89,11 @@ DOM order. Layout and rendered views must report identical element rectangles.
 Ended clips become transparent; missing bindings/assets and unsupported captions
 or alpha video fail explicitly. CLI coverage checks JSON errors, unchanged project
 state, and preservation of the previous artifact when an asset disappears.
+Regression cases also check between-frame requests at source times 0.65 and
+1.95 seconds, fractional rates with real B-frames and nonzero timestamp origins,
+VFR gaps, rejection past source end, transparent VP9/WebM, and static-positioned
+video/images in padded flex layouts. Those media tests compare actual pixels
+with the measured content box and preserve the authored padding/background.
 
 This establishes still-frame geometry and paint parity on synthetic content.
 It is not evidence for export throughput or every source decoder. Motion, cue

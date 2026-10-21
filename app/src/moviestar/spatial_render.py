@@ -10,6 +10,7 @@ with decoded source frames. No second implementation of CSS stacking is needed.
 from __future__ import annotations
 
 import base64
+from fractions import Fraction
 from functools import lru_cache
 import json
 import os
@@ -19,6 +20,7 @@ import shutil
 import struct
 import subprocess
 from tempfile import NamedTemporaryFile, TemporaryDirectory
+from time import monotonic
 import zlib
 
 from moviestar.spatial_layout import SpatialLayoutError, _run_browser, prepare_layout_frame
@@ -76,10 +78,60 @@ def _asset_path(value: str, root: Path) -> Path:
     return (root / path).resolve() if not path.is_absolute() else path.resolve()
 
 
+def _displayed_frame_pts(path: Path, source_time: float) -> int:
+    """Find the on-screen frame in presentation order, not by nominal FPS.
+
+    PyAV is already a package dependency. Seek to the preceding keyframe and
+    decode only through the first frame after the requested media position.
+    Keep integer timestamps for FFmpeg so fractional frame rates cannot round
+    a seek forward into the next frame.
+    """
+    import av
+
+    deadline = monotonic() + 60
+    try:
+        with av.open(str(path), timeout=60) as container:
+            stream = container.streams.video[0]
+            origin = Fraction(container.start_time or 0, av.time_base)
+            target = origin + Fraction(str(source_time))
+            container.seek(int(target / stream.time_base), stream=stream, backward=True)
+            selected = None
+            selected_end = None
+            for frame in container.decode(stream):
+                if monotonic() > deadline:
+                    raise SpatialRenderError(f'frame timestamp probe timed out in {path.name}')
+                if frame.pts is None:
+                    continue
+                timestamp = frame.pts * frame.time_base
+                if timestamp > target:
+                    break
+                selected = int(timestamp / stream.time_base)
+                duration = getattr(frame, 'duration', None)
+                selected_end = timestamp + duration * frame.time_base if duration else None
+            else:
+                # Do not extend the final frame past its actual display interval.
+                if selected_end is None and container.duration is not None:
+                    selected_end = origin + Fraction(container.duration, av.time_base)
+                if selected_end is not None and target >= selected_end:
+                    selected = None
+    except (av.error.FFmpegError, ValueError, TypeError, IndexError) as exc:
+        raise SpatialRenderError(f'frame timestamp probe failed in {path.name}: {exc}') from exc
+    if selected is None:
+        raise SpatialRenderError(f'no source frame at {source_time}s in {path.name}')
+    return selected
+
+
 def _decode(path: Path, output: Path, *, source_time: float | None = None) -> None:
-    arguments = [] if source_time is None else ['-ss', str(source_time)]
+    arguments = []
+    filters = []
+    if source_time is not None:
+        pts = _displayed_frame_pts(path, source_time)
+        arguments = ['-ss', str(source_time), '-noaccurate_seek', '-copyts']
+        filters.append(f'select=eq(pts\\,{pts})')
+    filters.extend(['scale=trunc(iw*sar):ih', 'setsar=1'])
     _ffmpeg([*arguments, '-i', str(path), '-map', '0:v:0', '-frames:v', '1',
-             '-vf', 'scale=trunc(iw*sar):ih,setsar=1', '-pix_fmt', 'rgba' if source_time is None else 'rgb24',
+             '-vf', ','.join(filters), '-fps_mode', 'vfr',
+             '-pix_fmt', 'rgba' if source_time is None else 'rgb24',
              '-threads', '1', str(output)])
     if not output.is_file():
         raise SpatialRenderError(f"no source frame at {source_time}s in {path.name}")
@@ -115,9 +167,12 @@ def _prepare_assets(spec: dict, frame: dict, prepared: dict, root: Path, tempora
                 continue
             if source not in probed:
                 probe = json.loads(_run(['ffprobe', '-v', 'error', '-select_streams', 'v:0',
-                                         '-show_entries', 'stream=pix_fmt', '-of', 'json', str(source)]))
-                pixel_format = (probe.get('streams') or [{}])[0].get('pix_fmt', '')
-                if pixel_format == 'pal8' or re.match(r'^(yuva|gbrap|rgba|bgra|argb|abgr|ya)', pixel_format):
+                                         '-show_entries', 'stream=pix_fmt:stream_tags', '-of', 'json', str(source)]))
+                stream = (probe.get('streams') or [{}])[0]
+                pixel_format = stream.get('pix_fmt', '')
+                tags = {key.lower(): str(value) for key, value in stream.get('tags', {}).items()}
+                if (tags.get('alpha_mode', '0') != '0' or pixel_format == 'pal8'
+                        or re.match(r'^(yuva|gbrap|rgba|bgra|argb|abgr|ya)', pixel_format)):
                     raise SpatialRenderError(f"{path}: video alpha is not supported by this preview slice")
                 probed.add(source)
             source_time = media['source_time_s']

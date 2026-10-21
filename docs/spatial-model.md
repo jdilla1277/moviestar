@@ -109,7 +109,8 @@ numbers (for example, `"width": 100, "aspect_ratio": 2` gives a 100×50 box).
 The requested canvas fixes the outer scene size; root width and height rules
 are rejected.
 Unsupported or unsafe values return an addressable error rather than a guessed
-box. Each node is a containing block for its positioned children. Zero-size
+box. Nodes default to relative positioning as containing blocks for their
+positioned children; explicit `position: static` uses normal CSS ancestry. Zero-size
 boxes appear as `unresolved_geometry` diagnostics. Image and video intrinsic
 sizes are not used in this placeholder view; give them a size, aspect ratio,
 or a parent layout rule that determines their box.
@@ -146,6 +147,12 @@ Video and image elements use the content box inside their border and padding.
 and `scale-down`, centered in that box. Letterboxes remain transparent to the
 element's background. Images retain their alpha; this slice requires opaque video.
 A shorter video is transparent after its bound range ends and never loops.
+At a position between source timestamps, preview selects the frame already on
+screen, including the final frame's display interval. Variable frame rates use
+presentation timestamps. Static-positioned video and images paint in their own
+measured content boxes, keeping the authored background visible through padding
+and image transparency. Alpha video is detected using both pixel format and
+stream metadata, including WebM's `alpha_mode` tag.
 Local image paths are relative to the project root, including when the command
 runs from a subdirectory. Media must have layout rules determining its box;
 preview does not infer layout size from intrinsic media dimensions.
