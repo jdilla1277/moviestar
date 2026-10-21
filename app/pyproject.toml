@@ -52,7 +52,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "moviestar.schema" = ["*.json"]
-"moviestar" = ["fonts/*.ttf", "fonts/OFL-LICENSE.txt"]
+"moviestar" = ["fonts/*.ttf", "fonts/OFL-LICENSE.txt", "*.mjs"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
