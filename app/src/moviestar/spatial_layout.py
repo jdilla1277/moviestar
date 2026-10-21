@@ -1,8 +1,8 @@
 """Measure the supported spatial layout subset in local Chromium.
 
 This stage consumes the temporal frame without changing its media clock. The
-browser owns CSS layout and text measurement; video/image pixels are placeholders
-until the compositing stage is connected.
+browser owns CSS layout and text measurement. This command uses media
+placeholders; spatial_render fills the same scene geometry with asset pixels.
 """
 
 from __future__ import annotations
@@ -158,6 +158,15 @@ def browser_available() -> bool:
 def measure_spatial_layout(frame: dict, canvas: dict, *, output_path: Path | None = None) -> dict:
     """Return browser-measured boxes and optionally write the labeled layout PNG."""
     prepared = prepare_layout_frame(frame, canvas)
+    request = {**prepared, "output_path": str(output_path.resolve()) if output_path else None}
+    measured = _run_browser(request)
+    return {"view": "layout", "canvas": prepared["canvas"],
+            "boxes": measured["boxes"], "diagnostics": [*prepared["diagnostics"], *measured["diagnostics"]],
+            "artifact": str(output_path.resolve()) if output_path else None}
+
+
+def _run_browser(request: dict) -> dict:
+    """Run the shared page used by measurement and rendered frame preparation."""
     chrome = _chrome_path()
     node = shutil.which("node")
     if chrome is None:
@@ -165,7 +174,6 @@ def measure_spatial_layout(frame: dict, canvas: dict, *, output_path: Path | Non
     if node is None:
         raise SpatialLayoutError("Node.js 22 or newer is required for browser layout measurement")
     script = files("moviestar").joinpath("spatial_browser.mjs")
-    request = {**prepared, "output_path": str(output_path.resolve()) if output_path else None}
     try:
         completed = subprocess.run([node, str(script), chrome], input=json.dumps(request),
                                    text=True, capture_output=True, timeout=30, check=False)
@@ -175,9 +183,6 @@ def measure_spatial_layout(frame: dict, canvas: dict, *, output_path: Path | Non
         detail = completed.stderr.strip().splitlines()[-1] if completed.stderr.strip() else "unknown browser error"
         raise SpatialLayoutError(f"browser layout failed: {detail}")
     try:
-        measured = json.loads(completed.stdout)
+        return json.loads(completed.stdout)
     except ValueError as exc:
         raise SpatialLayoutError("browser layout returned invalid JSON") from exc
-    return {"view": "layout", "canvas": prepared["canvas"],
-            "boxes": measured["boxes"], "diagnostics": [*prepared["diagnostics"], *measured["diagnostics"]],
-            "artifact": str(output_path.resolve()) if output_path else None}

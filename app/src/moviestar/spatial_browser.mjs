@@ -92,7 +92,7 @@ async function render(input) {
     if (node.kind === 'text') {
       element.style.whiteSpace = 'pre-line';
       element.textContent = node.content;
-    } else if (node.kind === 'video' || node.kind === 'image') {
+    } else if (!input.paint_dir && (node.kind === 'video' || node.kind === 'image')) {
       element.style.backgroundColor = '#a9bed0';
     }
     applyStyles(element, node.style, node.path.join('/'));
@@ -103,6 +103,60 @@ async function render(input) {
   for (const node of input.nodes) addNode(node, scene);
   await document.fonts.ready;
   await new Promise(resolve => requestAnimationFrame(resolve));
+
+  const videoPlanes = [];
+  const mediaWrappers = [];
+  if (input.paint_dir) {
+    for (const {node, element} of entries) {
+      if (!node.video && !node.image) continue;
+      const computed = getComputedStyle(element);
+      const padding = key => parseFloat(computed.getPropertyValue(`padding-${key}`)) || 0;
+      const width = Math.max(0, element.clientWidth - padding('left') - padding('right'));
+      const height = Math.max(0, element.clientHeight - padding('top') - padding('bottom'));
+      const wrapper = document.createElement('div');
+      wrapper.style.cssText = 'position:absolute;overflow:hidden;pointer-events:none';
+      wrapper.style.left = `${padding('left')}px`;
+      wrapper.style.top = `${padding('top')}px`;
+      wrapper.style.width = `${width}px`;
+      wrapper.style.height = `${height}px`;
+      wrapper.style.borderRadius = computed.borderRadius;
+      element.prepend(wrapper);
+      mediaWrappers.push(wrapper);
+      if (node.image) {
+        const image = document.createElement('img');
+        image.style.cssText = 'display:block;width:100%;height:100%';
+        image.style.objectFit = node.style['object-fit'] || 'fill';
+        image.src = node.image;
+        wrapper.append(image);
+        await image.decode();
+      } else {
+        for (const source of [node.video.black_image, node.video.white_image, node.video.reference_image].filter(Boolean)) {
+          const preload = new Image();
+          preload.src = source;
+          await preload.decode();
+        }
+        const fit = node.style['object-fit'] || 'fill';
+        const contain = Math.min(width / node.video.width, height / node.video.height);
+        const cover = Math.max(width / node.video.width, height / node.video.height);
+        const factor = fit === 'contain' ? contain : fit === 'cover' ? cover
+          : fit === 'none' ? 1 : fit === 'scale-down' ? Math.min(1, contain) : null;
+        const fittedWidth = factor === null ? width : node.video.width * factor;
+        const fittedHeight = factor === null ? height : node.video.height * factor;
+        const parent = wrapper.getBoundingClientRect();
+        const x = Math.round(parent.x + (width - fittedWidth) / 2);
+        const y = Math.round(parent.y + (height - fittedHeight) / 2);
+        const plane = document.createElement('div');
+        plane.style.cssText = 'position:absolute;background-size:100% 100%';
+        plane.style.backgroundImage = `url(${JSON.stringify(node.video.black_image)})`;
+        plane.style.left = `${x - parent.x}px`;
+        plane.style.top = `${y - parent.y}px`;
+        plane.style.width = `${Math.round(fittedWidth)}px`;
+        plane.style.height = `${Math.round(fittedHeight)}px`;
+        wrapper.append(plane);
+        videoPlanes.push({node, plane, rect: {x, y, width: Math.round(fittedWidth), height: Math.round(fittedHeight)}});
+      }
+    }
+  }
 
   const boxes = [];
   const diagnostics = [];
@@ -144,10 +198,12 @@ async function render(input) {
   }
   // Outline and labels are added after measurement, so the layout view cannot
   // move any measured box. It uses the exact page that supplied the rectangles.
-  if (input.output_path) {
+  function labelView() {
+    for (const wrapper of mediaWrappers) wrapper.style.visibility = 'hidden';
     for (const {node, element} of entries) {
       element.style.outline = '1px solid #ffb000';
       if (node.kind === 'text') element.style.color = 'transparent';
+      if (node.kind === 'video' || node.kind === 'image') element.style.backgroundColor = '#a9bed0';
     }
     for (const box of boxes) {
       const label = document.createElement('div');
@@ -166,7 +222,26 @@ async function render(input) {
       document.body.append(label);
     }
   }
-  return {boxes, diagnostics};
+  window.moviestarLabelView = labelView;
+  window.moviestarRepaint = async () => {
+    // Partial repaint can reuse rounded-clip edge pixels from a prior capture.
+    // Rebuilding paint keeps the black/white calibration and reference aligned.
+    document.body.style.display = 'none';
+    void document.body.offsetHeight;
+    document.body.style.display = 'block';
+    await new Promise(resolve => requestAnimationFrame(resolve));
+  };
+  window.moviestarVideoView = (id, mode) => {
+    for (const entry of videoPlanes) {
+      const image = mode === 'reference' ? entry.node.video.reference_image
+        : mode === 'white' && entry.node.video.id === id ? entry.node.video.white_image : entry.node.video.black_image;
+      entry.plane.style.backgroundImage = `url(${JSON.stringify(image)})`;
+    }
+  };
+  if (input.output_path && !input.paint_dir) labelView();
+  return {boxes, diagnostics, video_planes: videoPlanes.map(entry => ({
+    id: entry.node.video.id, path: entry.node.path, rect: entry.rect,
+  }))};
 }
 
 try {
@@ -202,11 +277,30 @@ try {
     deviceScaleFactor: 1, mobile: false,
   });
   const measured = await evaluate(`(${render.toString()})(${JSON.stringify(request)})`);
-  if (request.output_path) {
+  async function capture(path) {
+    if (request.paint_dir) await evaluate('window.moviestarRepaint()');
     const screenshot = await send('Page.captureScreenshot', {
       format: 'png', captureBeyondViewport: false, fromSurface: true,
     });
-    writeFileSync(request.output_path, Buffer.from(screenshot.result.data, 'base64'));
+    writeFileSync(path, Buffer.from(screenshot.result.data, 'base64'));
+  }
+  if (request.paint_dir) {
+    await capture(join(request.paint_dir, 'base.png'));
+    for (const plane of measured.video_planes) {
+      await evaluate(`window.moviestarVideoView(${JSON.stringify(plane.id)}, 'white')`);
+      await capture(join(request.paint_dir, `${plane.id}-white.png`));
+      await evaluate("window.moviestarVideoView(null, 'black')");
+    }
+    if (request.reference_path) {
+      await evaluate("window.moviestarVideoView(null, 'reference')");
+      await capture(request.reference_path);
+    }
+    if (request.layout_output_path) {
+      await evaluate('window.moviestarLabelView()');
+      await capture(request.layout_output_path);
+    }
+  } else if (request.output_path) {
+    await capture(request.output_path);
   }
   process.stdout.write(JSON.stringify(measured));
 } catch (error) {
