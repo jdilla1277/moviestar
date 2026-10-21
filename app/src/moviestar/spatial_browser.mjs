@@ -31,13 +31,13 @@ async function waitForPort() {
     return new Error(detail ? `${reason}: ${detail}` : reason);
   };
   // A cold CI browser launch can take longer than warm scene measurements.
-  for (let attempt = 0; attempt < 300; attempt++) {
+  for (let attempt = 0; attempt < 600; attempt++) {
     const path = join(profile, 'DevToolsActivePort');
     if (existsSync(path)) return Number(readFileSync(path, 'utf8').split('\n')[0]);
     if (chrome.exitCode !== null) throw startupError('Chrome exited before opening a debugging port');
     await pause(50);
   }
-  throw startupError('Chrome did not open a debugging port within 15 seconds');
+  throw startupError('Chrome did not open a debugging port within 30 seconds');
 }
 
 function send(method, params = {}) {

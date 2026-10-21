@@ -36,6 +36,9 @@ ancestor opacity/clip. These are RGB contribution masks, including antialiased
 text edges. FFmpeg scales each source frame into its measured sampling rectangle,
 multiplies it by its mask, and adds it to the base. Sixteen-bit intermediate planes
 retain fractional contributions until the final RGB PNG conversion.
+The temporary full-canvas video layers use RGB backgrounds, preserving odd
+canvas dimensions on older FFmpeg builds whose
+[`color` source rounds subsampled dimensions down](https://github.com/FFmpeg/FFmpeg/blob/n6.1.1/libavfilter/vsrc_testsrc.c#L232-L246).
 
 Calibration surfaces use opaque PNG textures with the source's intrinsic size,
 matching the browser reference's image path. Every capture forces a complete
@@ -86,3 +89,8 @@ known resampling difference. Do not claim arbitrary scaled footage is pixel
 identical to browser image rendering. This manual check used a 320×180, 10 fps
 source sampled at 0.5/0.7/0.9 seconds on 960×540 and 540×960 canvases, macOS
 arm64, Chrome 155.0.8059.85, FFmpeg 9.0.1, and Node 24.5.0.
+
+The initial Ubuntu CI run passed every renderer case but hit the previous
+15-second Chrome startup limit in two layout tests. Startup now allows 30 seconds,
+with a 60-second overall browser-process timeout. These are bounded failure
+deadlines, not changes to the renderer spike's performance acceptance budgets.

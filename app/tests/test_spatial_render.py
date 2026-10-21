@@ -100,6 +100,7 @@ def _rgb(path):
 
 @pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
 @pytest.mark.parametrize('canvas,opacity', [({'width': 320, 'height': 180}, 1),
+                                           ({'width': 321, 'height': 181}, 1),
                                            ({'width': 180, 'height': 320}, 0.65)])
 def test_hybrid_frame_matches_browser_pixels_and_measured_nested_boxes(project, tmp_path, canvas, opacity):
     spec, metadata = project

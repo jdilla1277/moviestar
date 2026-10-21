@@ -176,7 +176,7 @@ def _run_browser(request: dict) -> dict:
     script = files("moviestar").joinpath("spatial_browser.mjs")
     try:
         completed = subprocess.run([node, str(script), chrome], input=json.dumps(request),
-                                   text=True, capture_output=True, timeout=30, check=False)
+                                   text=True, capture_output=True, timeout=60, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise SpatialLayoutError(f"browser layout failed: {exc}") from exc
     if completed.returncode:

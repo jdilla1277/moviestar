@@ -161,7 +161,7 @@ def _compose(temporary: Path, canvas: dict, planes: list[dict], videos: dict, ou
         full = temporary / f'video-layer-{index}.png'
         # Chrome snaps the media sampling plane to pixels and owns all clipping.
         _ffmpeg(['-i', str(videos[plane['id']]['decoded']), '-f', 'lavfi',
-                 '-i', f'color=c=black:s={width}x{height}:r=1',
+                 '-i', f'color=c=black:s={width}x{height}:r=1,format=rgb24',
                  '-filter_complex',
                  f"[0:v]scale={rect['width']}:{rect['height']}:flags=bilinear,format=rgb24[media];"
                  f"[1:v]format=rgb24[blank];[blank][media]overlay=x={rect['x']}:y={rect['y']}:format=rgb:shortest=1[out]",
