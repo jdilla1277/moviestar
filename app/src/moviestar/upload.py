@@ -101,25 +101,60 @@ def _put_file(url: str, headers: dict[str, str], file: Path) -> bool:
         return False
 
 
+def _validate_and_emit(endpoint: str, credential: str, video_id: str,
+                       reservation_id: str, file: Path, size: int, key: str | None) -> None:
+    validation_url = f"{endpoint.removesuffix('/uploads')}/{video_id}/validate"
+    status, validation = _json_request(validation_url, credential)
+    common = {"video_id": video_id, "filename": file.name, "size_bytes": size,
+              "reservation_id": reservation_id, **({"idempotency_key": key} if key else {})}
+    if status == 200 and validation.get("status") == "ready" and validation.get("video_id") == video_id:
+        media = validation.get("media")
+        audio_codec = media.get("audioCodec") if isinstance(media, dict) else None
+        if (isinstance(media, dict) and "audioCodec" in media
+                and type(media.get("durationMs")) is int and media["durationMs"] > 0
+                and type(media.get("width")) is int and media["width"] > 0
+                and type(media.get("height")) is int and media["height"] > 0
+                and media.get("videoCodec") == "avc" and (audio_codec is None or audio_codec == "aac")):
+            public_media = {field: media[field] for field in ("durationMs", "width", "height", "videoCodec", "audioCodec")}
+            _emit("ready", **common, media=public_media,
+                  hint="The video is stored privately and ready for a share link when sharing is available.")
+            return
+    if status == 422 and validation.get("status") == "invalid_video" and validation.get("video_id") == video_id:
+        reason = validation.get("reason")
+        quota_released = validation.get("quota_released") is True
+        hint = ("Export a browser-compatible H.264/AAC MP4 and upload it again." if quota_released else
+                "Retry 'moviestar upload FILE --resume RESERVATION_ID' to finish deleting the invalid upload.")
+        _fail("invalid_video", hint,
+              **common, reason=reason if isinstance(reason, str) and len(reason) <= 64 else "invalid_mp4",
+              quota_released=quota_released)
+    if status == 401:
+        _fail("not_connected", "Run 'moviestar account status' and reconnect this installation if needed.", **common)
+    _fail("validation_unavailable", "The file is stored privately. Retry 'moviestar upload FILE --resume RESERVATION_ID' to validate it.",
+          **common)
+
+
 def _complete_and_emit(endpoint: str, credential: str, reservation_id: str,
                        file: Path, size: int, key: str | None) -> None:
     status, completion = _json_request(f"{endpoint}/{reservation_id}/complete", credential)
-    if status not in {200, 201} or completion.get("status") != "stored_unverified" or not isinstance(completion.get("video_id"), str):
+    video_id = completion.get("video_id")
+    completed = status in {200, 201} and completion.get("status") in {"stored_unverified", "ready"}
+    rejected = status == 422 and completion.get("status") == "invalid_video"
+    if (not (completed or rejected) or not isinstance(video_id, str) or
+            not _RESERVATION_RE.fullmatch(video_id)):
         _fail(
             completion.get("status", "upload_unavailable") if status else "upload_unavailable",
             "Retry 'moviestar upload FILE --resume RESERVATION_ID' with the reported reservation ID.",
             reservation_id=reservation_id, **({"idempotency_key": key} if key else {}),
         )
-    _emit("stored_unverified", video_id=completion["video_id"], filename=file.name,
-          size_bytes=completion.get("size_bytes", size), reservation_id=reservation_id,
-          **({"idempotency_key": key} if key else {}),
-          hint="The file is stored privately. It cannot be shared until media validation is available.")
+    stored_size = completion.get("size_bytes")
+    _validate_and_emit(endpoint, credential, video_id, reservation_id, file,
+                       stored_size if type(stored_size) is int and stored_size > 0 else size, key)
 
 
 @click.command("upload")
 @click.argument("file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--idempotency-key", metavar="KEY", help="Reuse KEY when retrying an interrupted upload of this same file.")
-@click.option("--resume", metavar="RESERVATION_ID", help="Retry completion of a transferred file without uploading it again.")
+@click.option("--resume", metavar="RESERVATION_ID", help="Retry completion or validation without uploading the file again.")
 @click.option("--dry-run", is_flag=True, help="Preview file size, account target, and Free limits without reserving or uploading.")
 def upload(file: Path, idempotency_key: str | None, resume: str | None, dry_run: bool) -> None:
     """Store a finished MP4 privately in your MovieStar account.
@@ -127,7 +162,7 @@ def upload(file: Path, idempotency_key: str | None, resume: str | None, dry_run:
     Upload does not create or send a share link. Connect first with
     ``moviestar account connect EMAIL`` and confirm with account status.
     If transfer fails, retry with the reported idempotency key. If completion
-    fails, retry with ``--resume`` and the reported reservation ID.
+    or validation fails, retry with ``--resume`` and the reported reservation ID.
     The retry key is printed to stderr before any network request so an
     interrupted command can reuse it.
 
