@@ -83,6 +83,8 @@ def _displayed_frame_pts(path: Path, source_time: float) -> int:
 
     PyAV is already a package dependency. Seek to the preceding keyframe and
     decode only through the first frame after the requested media position.
+    Some demuxers overshoot even a backward seek; reopen without seeking when
+    that yields no preceding frame. Both attempts share the same deadline.
     Keep integer timestamps for FFmpeg so fractional frame rates cannot round
     a seek forward into the next frame.
     """
@@ -90,35 +92,43 @@ def _displayed_frame_pts(path: Path, source_time: float) -> int:
 
     deadline = monotonic() + 60
     try:
-        with av.open(str(path), timeout=60) as container:
-            stream = container.streams.video[0]
-            origin = Fraction(container.start_time or 0, av.time_base)
-            target = origin + Fraction(str(source_time))
-            container.seek(int(target / stream.time_base), stream=stream, backward=True)
-            selected = None
-            selected_end = None
-            for frame in container.decode(stream):
-                if monotonic() > deadline:
-                    raise SpatialRenderError(f'frame timestamp probe timed out in {path.name}')
-                if frame.pts is None:
-                    continue
-                timestamp = frame.pts * frame.time_base
-                if timestamp > target:
-                    break
-                selected = int(timestamp / stream.time_base)
-                duration = getattr(frame, 'duration', None)
-                selected_end = timestamp + duration * frame.time_base if duration else None
-            else:
-                # Do not extend the final frame past its actual display interval.
-                if selected_end is None and container.duration is not None:
-                    selected_end = origin + Fraction(container.duration, av.time_base)
-                if selected_end is not None and target >= selected_end:
-                    selected = None
+        for seek in (True, False):
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                raise SpatialRenderError(f'frame timestamp probe timed out in {path.name}')
+            with av.open(str(path), timeout=remaining) as container:
+                stream = container.streams.video[0]
+                origin = Fraction(container.start_time or 0, av.time_base)
+                target = origin + Fraction(str(source_time))
+                if seek:
+                    try:
+                        container.seek(int(target / stream.time_base), stream=stream, backward=True)
+                    except av.error.FFmpegError:
+                        continue
+                selected = None
+                selected_end = None
+                for frame in container.decode(stream):
+                    if monotonic() > deadline:
+                        raise SpatialRenderError(f'frame timestamp probe timed out in {path.name}')
+                    if frame.pts is None:
+                        continue
+                    timestamp = frame.pts * frame.time_base
+                    if timestamp > target:
+                        break
+                    selected = int(timestamp / stream.time_base)
+                    duration = getattr(frame, 'duration', None)
+                    selected_end = timestamp + duration * frame.time_base if duration else None
+                else:
+                    # Do not extend the final frame past its actual display interval.
+                    if selected_end is None and container.duration is not None:
+                        selected_end = origin + Fraction(container.duration, av.time_base)
+                    if selected_end is not None and target >= selected_end:
+                        selected = None
+                if selected is not None:
+                    return selected
     except (av.error.FFmpegError, ValueError, TypeError, IndexError) as exc:
         raise SpatialRenderError(f'frame timestamp probe failed in {path.name}: {exc}') from exc
-    if selected is None:
-        raise SpatialRenderError(f'no source frame at {source_time}s in {path.name}')
-    return selected
+    raise SpatialRenderError(f'no source frame at {source_time}s in {path.name}')
 
 
 def _decode(path: Path, output: Path, *, source_time: float | None = None) -> None:
@@ -129,12 +139,18 @@ def _decode(path: Path, output: Path, *, source_time: float | None = None) -> No
         arguments = ['-ss', str(source_time), '-noaccurate_seek', '-copyts']
         filters.append(f'select=eq(pts\\,{pts})')
     filters.extend(['scale=trunc(iw*sar):ih', 'setsar=1'])
-    _ffmpeg([*arguments, '-i', str(path), '-map', '0:v:0', '-frames:v', '1',
-             '-vf', ','.join(filters), '-fps_mode', 'vfr',
-             '-pix_fmt', 'rgba' if source_time is None else 'rgb24',
-             '-threads', '1', str(output)])
-    if not output.is_file():
-        raise SpatialRenderError(f"no source frame at {source_time}s in {path.name}")
+    attempts = [arguments] if source_time is None else [arguments, ['-copyts']]
+    for input_arguments in attempts:
+        _ffmpeg([*input_arguments, '-i', str(path), '-map', '0:v:0', '-frames:v', '1',
+                 '-vf', ','.join(filters), '-fps_mode', 'vfr',
+                 '-pix_fmt', 'rgba' if source_time is None else 'rgb24',
+                 '-threads', '1', str(output)])
+        if output.is_file() and output.stat().st_size:
+            return
+        # FFmpeg's independent demuxer seek can also skip the selected PTS.
+        # Keep that exact timestamp, but retry from the start before failing.
+        output.unlink(missing_ok=True)
+    raise SpatialRenderError(f"no source frame at {source_time}s in {path.name}")
 
 
 def _prepare_assets(spec: dict, frame: dict, prepared: dict, root: Path, temporary: Path,

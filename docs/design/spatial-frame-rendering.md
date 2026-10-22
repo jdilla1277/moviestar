@@ -30,6 +30,13 @@ source timestamps and selects that integer PTS without accurate-seek discarding
 the preceding frame. Integer ticks avoid rounding fractional-rate frame times
 forward; source positions remain on the canonical timeline. The timestamp walk
 has a 60-second deadline and stops after passing the requested position.
+Some demuxers, notably H.264 MPEG-TS, can decode only frames after the target or
+no frames after a backward seek. In that case the probe reopens the source and
+walks from the beginning under the same deadline. If FFmpeg's own seek produces
+no PNG for the chosen PTS, it also retries without seeking, preserving source
+timestamps and the exact selected frame. This fallback can require more decoding
+on poorly indexed sources; it never substitutes a later frame or extends a
+frame past source end.
 
 The alpha guard checks stream pixel format and metadata before decoding RGB.
 VP9/WebM can carry alpha while the default decoder reports `yuv420p`;
@@ -94,6 +101,9 @@ Regression cases also check between-frame requests at source times 0.65 and
 VFR gaps, rejection past source end, transparent VP9/WebM, and static-positioned
 video/images in padded flex layouts. Those media tests compare actual pixels
 with the measured content box and preserve the authored padding/background.
+The MPEG-TS regression compares the first, middle, and final displayed frames
+against an independent full decode, including the reported 0.5/1.5-second
+positions and rejection after source end.
 
 This establishes still-frame geometry and paint parity on synthetic content.
 It is not evidence for export throughput or every source decoder. Motion, cue

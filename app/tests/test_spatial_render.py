@@ -260,6 +260,28 @@ def test_decode_holds_preceding_vfr_frame_in_a_timestamp_gap(project, tmp_path):
     assert _rgb(output) == bytes((20 + 8 * 9, 40, 60)) * (160 * 90)
 
 
+@pytest.mark.parametrize('at,expected_frame', [(0.05, 0), (0.5, 5), (1.5, 15),
+                                             (1.95, 19), (2.1, None)])
+def test_decode_recovers_displayed_mpegts_frame_when_backward_seek_overshoots(
+        project, tmp_path, at, expected_frame):
+    video = tmp_path / 'reordered.ts'
+    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi',
+                    '-i', 'testsrc2=s=160x90:r=10:d=2', '-c:v', 'libx264',
+                    '-g', '10', '-bf', '2', str(video)], check=True)
+    reference = subprocess.check_output(['ffmpeg', '-v', 'error', '-i', str(video),
+                      '-fps_mode', 'vfr', '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1'])
+    frame_bytes = 160 * 90 * 3
+    assert len(reference) == 20 * frame_bytes
+    output = tmp_path / 'transport.png'
+    if expected_frame is None:
+        with pytest.raises(SpatialRenderError, match='no source frame at 2.1s'):
+            _decode(video, output, source_time=at)
+        assert not output.exists()
+        return
+    _decode(video, output, source_time=at)
+    assert _rgb(output) == reference[expected_frame * frame_bytes:(expected_frame + 1) * frame_bytes]
+
+
 def test_decode_does_not_extend_final_frame_past_source_end(project, tmp_path):
     spec, _ = project
     with pytest.raises(SpatialRenderError, match='no source frame at 2.1s'):
