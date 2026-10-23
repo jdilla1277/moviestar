@@ -21,3 +21,5 @@ AI agents. Start with the path that matches your task:
 The CLI's built-in help is the authoritative command reference. Run
 `moviestar --help`, then `moviestar COMMAND --help` or nested help such as
 `moviestar scenes motion --help` before using an unfamiliar surface.
+
+- [Accounts from the CLI](accounts.md) — terminal email verification, signup, age and terms consent, and revocable installation approval.
