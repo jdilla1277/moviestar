@@ -8,8 +8,9 @@ named composition scene ID. Older specs without `spatial` continue to work.
 The frame command also resolves the current scene and each video element's
 source position on the existing result clock. `model layout` measures a
 supported CSS layout subset in local Chrome and can draw a labeled layout PNG.
-It does not yet composite asset pixels. To avoid producing a video
-that silently ignores authored visuals, composition export stops when a spatial
+`model preview` fills those positions with real video, images, text, and shapes.
+To avoid producing a video that silently ignores authored visuals, composition
+export stops when a spatial
 scene tree is present. The existing `--source` export remains available.
 
 ## Authoring
@@ -21,6 +22,7 @@ moviestar composition model apply spatial.json
 moviestar composition model inspect scene_a
 moviestar composition model frame --at 0:00:03.000
 moviestar composition model layout --at 0:00:03.000 --canvas 1280x720 --out layout.png
+moviestar composition model preview --at 0:00:03.000 --canvas 1280x720 --out frame.png --layout-out boxes.png
 ```
 
 `apply` validates the document, writes it atomically to `spec.json`, and records
@@ -73,8 +75,8 @@ Video asset IDs refer to spec `sources`. Images may be registered under
 an image element or input binding then uses `{ "asset_id": "logo" }`. An
 instance inside a component can pass an enclosing input with
 `{ "forward": "input_name" }`. Scene layouts and child nodes can carry
-CSS-like `layout` properties. The measurement command accepts the supported
-properties below; movement and asset-pixel rendering belong to later slices.
+CSS-like `layout` properties. Measurement and rendered preview share the
+supported properties below; authored movement belongs to a later slice.
 
 The same definition can be instantiated in `scene_b` with different bindings.
 Editing the one definition updates both expansions; each occurrence keeps its
@@ -107,7 +109,8 @@ numbers (for example, `"width": 100, "aspect_ratio": 2` gives a 100×50 box).
 The requested canvas fixes the outer scene size; root width and height rules
 are rejected.
 Unsupported or unsafe values return an addressable error rather than a guessed
-box. Each node is a containing block for its positioned children. Zero-size
+box. Nodes default to relative positioning as containing blocks for their
+positioned children; explicit `position: static` uses normal CSS ancestry. Zero-size
 boxes appear as `unresolved_geometry` diagnostics. Image and video intrinsic
 sizes are not used in this placeholder view; give them a size, aspect ratio,
 or a parent layout rule that determines their box.
@@ -118,8 +121,55 @@ macOS Chrome application; set `MOVIESTAR_CHROME_PATH` to a specific executable
 when needed. The command does not download a browser or write a project
 revision. In a container where Chrome cannot use its sandbox, set
 `MOVIESTAR_CHROME_NO_SANDBOX=1`; the CI job uses that explicit setting.
-Format-specific rules, scene motion, exact paint order, rendered
-assets, transitions, watch, and export remain later renderer work.
+Format-specific rules, scene motion, transitions, watch, and export remain
+later renderer work.
+
+## Rendered frame preview
+
+`model preview` renders a single PNG at a global result time. FFmpeg decodes the
+video positions selected by `model frame`; Chrome paints text, shapes, and local
+images and measures each video's visibility through foreground graphics and
+clipping. FFmpeg combines those graphics with the source frames. Nested component
+backgrounds, stacking order, rounded clips, and group opacity follow the browser's
+paint. This does not use DOM order as a substitute for paint order.
+
+`--layout-out` saves a labeled view from that exact measured scene. Both views
+keep the same element rectangles and text wrapping. The JSON response reports
+the frame's bindings and clocks, measured boxes, source positions, and the media
+rectangles sampled by FFmpeg. Video sampling rectangles are snapped to output
+pixels; browser masks retain the clipping at fractional parent edges.
+FFmpeg uses bilinear video sampling. Sharp resampled video edges can differ from
+Chrome's image sampling; the browser reference verifies paint composition, not
+pixel-identical video resampling.
+
+Video and image elements use the content box inside their border and padding.
+`style.object_fit` accepts CSS `fill` (the default), `contain`, `cover`, `none`,
+and `scale-down`, centered in that box. Letterboxes remain transparent to the
+element's background. Images retain their alpha; this slice requires opaque video.
+A shorter video is transparent after its bound range ends and never loops.
+At a position between source timestamps, preview selects the frame already on
+screen, including the final frame's display interval. Variable frame rates use
+presentation timestamps. Static-positioned video and images paint in their own
+measured content boxes, keeping the authored background visible through padding
+and image transparency. Alpha video is detected using both pixel format and
+stream metadata, including WebM's `alpha_mode` tag.
+Local image paths are relative to the project root, including when the command
+runs from a subdirectory. Media must have layout rules determining its box;
+preview does not infer layout size from intrinsic media dimensions.
+
+Missing required inputs or assets in the selected scene block preview with a
+path-addressed error. Optional empty media remain transparent. Caption elements
+and alpha video return explicit unsupported errors in this slice. Unplaced draft
+definitions do not block a complete scene. The command needs the same Chrome and
+Node setup as layout inspection, plus FFmpeg/ffprobe. Output paths must be distinct
+PNG files in existing directories and cannot overwrite a project asset. Asset or
+paint failures preserve an existing preview, and no project revision is written.
+
+This is single-frame rendering. It does not implement caption cues, format rules,
+motion, transition frames, static-only scene timing, watch, or export. The browser
+graphics and video visibility masks are temporary artifacts; no unchanged-clip
+cache is introduced. See the [rendering contract](design/spatial-frame-rendering.md)
+for the compositing boundary and parity evidence.
 
 ## Editing a linked use
 
@@ -181,7 +231,7 @@ that timestamp as `sample_time_s` alongside the requested `result_time_s`.
 At a time inside an authored scene or project-edge transition, `frame` returns
 an explicit JSON error because a complete transition frame needs both visual
 trees and transition state.
-Static-only scenes and rendered inspection are subsequent implementation steps.
+Static-only scenes and spatial export are subsequent implementation steps.
 Local editing of an inherited nested instance's input
 bindings still requires editing its enclosing definition or applying a complete
 spatial document; `input.bind` currently targets scene-owned instances. Input

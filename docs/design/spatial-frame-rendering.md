@@ -1,0 +1,128 @@
+# Spatial frame rendering
+
+This slice connects the persisted visual tree and canonical media clock to a
+real still-frame preview. It advances milestone 2; it does not complete the
+watch/export, caption, motion, responsive-rule, or static-scene timing gates.
+
+## Shared boundary
+
+`compile_spatial_frame` selects the scene, expands linked components, and resolves
+media clocks. `prepare_layout_frame` validates and translates the supported CSS
+rules. One browser page measures the result, paints graphics, and can also draw
+the labeled layout view. Media background paint never participates in flow, so
+adding asset pixels leaves measured element boxes and text lines unchanged.
+Each asset is a content-box background layer on its own element; an empty final
+layer keeps the authored background color over the padding and border box.
+Static positioning needs no extra containing block or positioned wrapper, and
+ancestor clips and stacking keep their normal CSS behavior.
+
+FFmpeg decodes each distinct asset/time pair once, normalizing display aspect
+ratio and orientation into a PNG. Local images become RGBA PNGs painted by the
+browser; videos remain opaque RGB frames composed by FFmpeg. This avoids browser
+video codec and seek differences. The frame response records the source times
+and pixel-aligned sampling rectangles used by FFmpeg.
+
+For video, the existing PyAV dependency seeks to the preceding keyframe and
+walks decoded presentation timestamps until the first frame after the requested
+media position. The selected frame is therefore the one already displayed at
+that time, including a VFR hold or the final frame interval. FFmpeg preserves
+source timestamps and selects that integer PTS without accurate-seek discarding
+the preceding frame. Integer ticks avoid rounding fractional-rate frame times
+forward; source positions remain on the canonical timeline. The timestamp walk
+has a 60-second deadline and stops after passing the requested position.
+Some demuxers, notably H.264 MPEG-TS, can decode only frames after the target or
+no frames after a backward seek. In that case the probe reopens the source and
+walks from the beginning under the same deadline. If FFmpeg's own seek produces
+no PNG for the chosen PTS, it also retries without seeking, preserving source
+timestamps and the exact selected frame. This fallback can require more decoding
+on poorly indexed sources; it never substitutes a later frame or extends a
+frame past source end.
+
+The alpha guard checks stream pixel format and metadata before decoding RGB.
+VP9/WebM can carry alpha while the default decoder reports `yuv420p`;
+`alpha_mode=1` rejects that source rather than silently flattening it to opaque.
+
+## Browser paint and video visibility
+
+A flattened graphics image cannot simply be overlaid on every video: it can put
+a parent's background over its own child footage. DOM order also does not account
+for stacking contexts, clipping, or group opacity.
+
+The supported paint vocabulary uses normal source-over composition. For opaque
+video, its contribution to each output channel is linear in its source pixels:
+
+`result = base + sum(video_pixels[i] * visibility[i])`
+
+Chrome first captures the graphics with all video surfaces black. It then captures
+each video surface white, leaving other video surfaces black. Subtracting the base
+from that capture measures the surface's visibility through every foreground and
+ancestor opacity/clip. These are RGB contribution masks, including antialiased
+text edges. FFmpeg scales each source frame into its measured sampling rectangle,
+multiplies it by its mask, and adds it to the base. Sixteen-bit intermediate planes
+retain fractional contributions until the final RGB PNG conversion.
+The temporary full-canvas video layers use RGB backgrounds, preserving odd
+canvas dimensions on older FFmpeg builds whose
+[`color` source rounds subsampled dimensions down](https://github.com/FFmpeg/FFmpeg/blob/n6.1.1/libavfilter/vsrc_testsrc.c#L232-L246).
+
+Calibration surfaces use opaque PNG textures with the source's intrinsic size,
+matching the browser reference's image path. Every capture forces a complete
+repaint: partial repaint can reuse rounded-clip edge pixels from a previous
+calibration. CSS filters, blend modes, transforms, and arbitrary HTML/scripts are
+outside the accepted vocabulary. Video with alpha is rejected because its pixels
+would change the visibility of underlying paint; images with alpha are browser
+graphics and are supported.
+
+This boundary can supply a future export compositor with static graphics and
+masks while FFmpeg supplies changing video frames. The current preview regenerates
+everything and removes its temporary directory. Reusing previously rendered scene
+clips and cache invalidation remain a separate project.
+
+## Verification
+
+`app/tests/test_spatial_render.py` generates a lossless 10 fps clip whose source
+frames have distinct RGB values. Three uses inside nested reusable components
+sample source times 0.5, 0.7, and 0.9 seconds. Their actual pixels identify frames
+5, 7, and 9. A separate two-color source checks orientation and contain/cover
+placement, including transparent letterboxes.
+
+The tests compare every output channel against a browser reference using the
+same decoded source PNGs, with a maximum error budget of 3/255 declared in the
+tests before implementation. This budget checks paint composition on flat-color
+footage and patterned footage at native sampling size. They cover landscape and
+portrait, long text,
+transparent images, parent backgrounds, foreground badges, intersecting rounded
+clips, group opacity, and overlapping video uses whose paint order differs from
+DOM order. Layout and rendered views must report identical element rectangles.
+Ended clips become transparent; missing bindings/assets and unsupported captions
+or alpha video fail explicitly. CLI coverage checks JSON errors, unchanged project
+state, and preservation of the previous artifact when an asset disappears.
+Regression cases also check between-frame requests at source times 0.65 and
+1.95 seconds, fractional rates with real B-frames and nonzero timestamp origins,
+VFR gaps, rejection past source end, transparent VP9/WebM, and static-positioned
+video/images in padded flex layouts. Those media tests compare actual pixels
+with the measured content box and preserve the authored padding/background.
+The MPEG-TS regression compares the first, middle, and final displayed frames
+against an independent full decode, including the reported 0.5/1.5-second
+positions and rejection after source end.
+
+This establishes still-frame geometry and paint parity on synthetic content.
+It is not evidence for export throughput or every source decoder. Motion, cue
+changes, transition frames, and real-content watch/export friction tests remain
+separate delivery gates.
+
+The browser reference is a paint check, not a promise that FFmpeg's video scaler
+matches Chrome's image scaler. A larger manual `testsrc2` example measured mean
+channel differences below 0.4/255, but individual sharp-edge pixels differed by
+69/255 in landscape and 21/255 in portrait when resampled. Those cases do not
+meet the 3/255 paint budget and are not counted as passing that gate. The product
+preview uses FFmpeg's bilinear video sampling; future export must use that same
+sampling path. Native-size patterned coverage isolates paint fidelity from this
+known resampling difference. Do not claim arbitrary scaled footage is pixel
+identical to browser image rendering. This manual check used a 320×180, 10 fps
+source sampled at 0.5/0.7/0.9 seconds on 960×540 and 540×960 canvases, macOS
+arm64, Chrome 155.0.8059.85, FFmpeg 9.0.1, and Node 24.5.0.
+
+The initial Ubuntu CI run passed every renderer case but hit the previous
+15-second Chrome startup limit in two layout tests. Startup now allows 30 seconds,
+with a 60-second overall browser-process timeout. These are bounded failure
+deadlines, not changes to the renderer spike's performance acceptance budgets.
