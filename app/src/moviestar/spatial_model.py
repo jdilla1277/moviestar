@@ -14,12 +14,23 @@ import json
 from math import ceil, isfinite
 from typing import TYPE_CHECKING
 
+from moviestar.spatial_format import canonical_property
+
 if TYPE_CHECKING:
     from moviestar.resolved import ResolvedProject
 
 
 class SpatialModelError(ValueError):
     """A spatial document cannot be read unambiguously."""
+
+
+def _format_rules(owner: dict, path: str) -> None:
+    from moviestar.spatial_format import SpatialFormatError, validate_format_rules
+
+    try:
+        validate_format_rules(owner.get('format_rules', []), f'{path}.format_rules')
+    except SpatialFormatError as exc:
+        raise SpatialModelError(str(exc)) from exc
 
 
 def spatial_state_id(spec: dict) -> str:
@@ -206,6 +217,7 @@ def _children(children: object, path: str, definitions: dict, inputs: dict[str, 
             _fail(f"{here}.layout", "must be an object")
         if "style" in node and not isinstance(node["style"], dict):
             _fail(f"{here}.style", "must be an object")
+        _format_rules(node, here)
         if is_instance:
             target = _identifier(node.get("definition_id"), f"{here}.definition_id")
             bindings = node.get("bindings", {})
@@ -273,6 +285,8 @@ def validate_spatial_model(spec: dict) -> None:
         _identifier(definition_id, path)
         if not isinstance(definition, dict):
             _fail(path, "must be an object")
+        if 'format_rules' in definition:
+            _fail(f'{path}.format_rules', 'place internal rules on a rendered child, or outer rules on an instance')
         _identifier(definition.get("name"), f"{path}.name")
         inputs = _inputs(definition, path)
         _children(definition.get("children"), f"{path}.children", definitions, inputs)
@@ -284,6 +298,7 @@ def validate_spatial_model(spec: dict) -> None:
             _fail(path, "unknown timeline scene id")
         if not isinstance(scene, dict) or not isinstance(scene.get("layout"), dict):
             _fail(f"{path}.layout", "must be an object")
+        _format_rules(scene['layout'], f'{path}.layout')
         _children(scene["layout"].get("children"), f"{path}.layout.children", definitions, {})
 
 
@@ -371,13 +386,25 @@ def expand_spatial_scene(spec: dict, scene_id: str) -> dict:
             node = deepcopy(original)
             identity = node.get("id", node.get("instance_id"))
             address = [*path, identity]
+            base_rules = {group: deepcopy(node.get(group, {})) for group in ('layout', 'style')}
+            local_overrides: dict[str, dict] = {}
             for edit in edits:
                 if edit["op"] == "property_set" and edit["path"] == address:
                     applied_edits.add(edit["_token"])
                     group, key = edit["property"].split(".")
                     node.setdefault(group, {})[key] = deepcopy(edit["value"])
+                    overrides = local_overrides.setdefault(group, {})
+                    for earlier in list(overrides):
+                        if canonical_property(earlier) == canonical_property(key):
+                            del overrides[earlier]
+                    overrides[key] = deepcopy(edit['value'])
             common = {"occurrence_path": address, "layout": deepcopy(node.get("layout", {})),
                       "style": deepcopy(node.get("style", {}))}
+            if 'format_rules' in node:
+                common['format_rules'] = deepcopy(node['format_rules'])
+            if local_overrides:
+                common['base_rules'] = base_rules
+                common['local_overrides'] = local_overrides
             if "id" in node:
                 kind = node["type"]
                 content = resolve_value(node.get("content"), inputs, address,

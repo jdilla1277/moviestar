@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+from moviestar.spatial_format import canonical_property
+
 from moviestar.spatial_model import SpatialModelError, expand_spatial_scene, spatial_state_id
 
 
@@ -232,7 +234,14 @@ def _bake_variation(children: list[dict], edits: list[dict], path: list[str]) ->
         for edit in edits:
             if edit["op"] == "property_set" and edit["path"] == node_path:
                 group, key = _property(edit["property"])
-                node.setdefault(group, {})[key] = deepcopy(edit["value"])
+                # A baked unconditional choice must still win over every format
+                # rule after the occurrence becomes a separate definition.
+                for properties in [node.setdefault(group, {}),
+                                   *(rule.get(group, {}) for rule in node.get('format_rules', []))]:
+                    for earlier in list(properties):
+                        if canonical_property(earlier) == canonical_property(key):
+                            del properties[earlier]
+                node[group][key] = deepcopy(edit["value"])
         if "instance_id" in node:
             nested = []
             for edit in edits:
@@ -375,6 +384,13 @@ def _occurrences(scene: dict) -> dict[tuple[str, ...], dict]:
     return result
 
 
+def _impact_tree(node: dict) -> dict:
+    # Compiler base metadata can change underneath an unchanged local value.
+    # Impact continues to compare the effective expanded properties.
+    return {key: [_impact_tree(child) for child in value] if key == 'children' else value
+            for key, value in node.items() if key != 'base_rules'}
+
+
 def edit_spatial_model(spec: dict, request: dict) -> tuple[dict, dict]:
     """Return a valid edited spec and a JSON-ready impact report, without writing."""
     if not isinstance(request, dict) or not isinstance(request.get("op"), str):
@@ -388,7 +404,7 @@ def edit_spatial_model(spec: dict, request: dict) -> tuple[dict, dict]:
     spatial = spec.get("spatial")
     if not isinstance(spatial, dict):
         _fail("spatial: apply a spatial document before editing")
-    before_scenes = {scene_id: expand_spatial_scene(spec, scene_id)
+    before_scenes = {scene_id: _impact_tree(expand_spatial_scene(spec, scene_id))
                      for scene_id in spatial.get("scenes", {})}
     before = _conflicts(spec)
     result = deepcopy(spec)
@@ -439,7 +455,7 @@ def edit_spatial_model(spec: dict, request: dict) -> tuple[dict, dict]:
         validate_spec(result)
     except SpecValidationError as exc:
         _fail(str(exc))
-    after_scenes = {scene_id: expand_spatial_scene(result, scene_id)
+    after_scenes = {scene_id: _impact_tree(expand_spatial_scene(result, scene_id))
                     for scene_id in spatial.get("scenes", {})}
     new_conflicts = [item for item in _conflicts(result) if item not in before]
     if new_conflicts:
