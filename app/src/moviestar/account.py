@@ -397,7 +397,9 @@ def account() -> None:
 
     The agent starts the request with the human's email. The human approves
     the installation in a private browser flow; the agent never receives the
-    email link or password. Local editing never requires an account.
+    email link or password. Use connect --terminal for email-code setup
+    without a browser. The human must explicitly accept terms, confirm age,
+    and authorize this installation. Local editing never requires an account.
 
     ``connect`` creates an email claim, ``status`` checks the grant, and
     ``disconnect`` revokes it. ``open`` opens the human's account page.
@@ -406,8 +408,12 @@ def account() -> None:
 
 @account.command("connect")
 @click.argument("email")
-def connect(email: str) -> None:
+@click.option("--terminal", is_flag=True, help="Verify an emailed code and finish signup entirely through the CLI.")
+def connect(email: str, terminal: bool) -> None:
     """Ask Moviestar to email an account claim to EMAIL.
+
+    --terminal sends a verification code instead of a browser link. Use
+    account verify to complete signup, consent, and installation approval.
 
     The request returns immediately. It gives the agent the same response
     whether the human is new or already has an account, so account existence
@@ -451,6 +457,8 @@ def connect(email: str) -> None:
             raise click.exceptions.Exit(1)
 
     payload, state = _pending_request(normalized)
+    if terminal:
+        payload["terminal"] = True
     try:
         _write_state(state)
     except OSError as state_error:
@@ -488,6 +496,10 @@ def connect(email: str) -> None:
         _write_state(state)
     except OSError as state_error:
         _state_write_error(state_error)
+    if terminal:
+        from moviestar.account_terminal import begin
+        begin(state, remote)
+        return
     _emit(
         {
             "command": "account connect",
@@ -789,12 +801,13 @@ def status() -> None:
             _emit(
                 {
                     "command": "account status",
-                    "status": "approval_pending",
+                    "status": "verification_pending" if pending.get("terminal_auth") else "approval_pending",
                     "request_id": request_id,
                     "email": _mask_email(email),
                     "expires_at": remote_expiry,
                     "remote_status_checked": True,
                     "hint": (
+                        "Use 'moviestar account verify' to finish terminal setup." if pending.get("terminal_auth") else
                         "Ask the recipient to open the Moviestar email, then retry "
                         "'moviestar account status'."
                     ),
@@ -902,3 +915,11 @@ def open_account() -> None:
             "hint": "Give this URL to the account owner if a browser did not open.",
         }
     )
+
+
+# Imported after the account helpers to avoid a circular command registration.
+from moviestar.account_terminal import resend, terms, verify
+
+account.add_command(verify)
+account.add_command(resend)
+account.add_command(terms)

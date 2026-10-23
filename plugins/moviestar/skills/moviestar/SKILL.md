@@ -70,3 +70,13 @@ Return the final output path, probed duration and streams, the editing choices
 made, and any remaining warning. A successful command is not by itself proof
 that the edit looks or sounds right; inspect representative frames and motion,
 and check audio when the deliverable contains it.
+
+## Hosted account setup
+
+When the human requests hosted services, `moviestar account connect EMAIL --terminal`
+can start email-code signup or sign-in without a browser. Use `account verify --help`
+for verification and installation approval. The human must explicitly confirm
+age, accept the displayed terms, and authorize installation access; never infer
+these decisions. Keep verification codes and passwords out of arguments, project
+files, and logs. Connected accounts can review account-wide consent with
+`moviestar account terms`. Uploads remain private and need no per-video approval.

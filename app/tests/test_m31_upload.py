@@ -351,3 +351,19 @@ def test_interrupted_upload_reports_generated_key_before_network_and_reuses_it(t
     assert recovered.exit_code == 0, recovered.output
     assert json.loads(recovered.stdout)["video_id"] == reservation
     assert seen_keys == [announced["idempotency_key"]] * 2
+
+
+def test_upload_missing_consent_preserves_connection_and_explains_account_setup(tmp_path, monkeypatch):
+    import importlib
+    uploads = importlib.import_module("moviestar.upload")
+    video = tmp_path / "short.mp4"
+    video.write_bytes(b"\x00\x00\x00\x18ftypisom")
+    monkeypatch.setattr(uploads, "_read_state", lambda: {"connection": {}})
+    monkeypatch.setattr(uploads, "_credential_for_connection", lambda state: CREDENTIAL)
+    monkeypatch.setattr(uploads, "_installation_url", lambda: "https://trymoviestar.com/api/v1/account/installation")
+    monkeypatch.setattr(uploads, "_json_request", lambda *args: (409, {"status": "consent_required"}))
+    result = CliRunner().invoke(cli, ["upload", str(video)])
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "consent_required"
+    assert "account terms" in payload["hint"]

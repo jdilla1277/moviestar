@@ -127,6 +127,8 @@ def _validate_and_emit(endpoint: str, credential: str, video_id: str,
         _fail("invalid_video", hint,
               **common, reason=reason if isinstance(reason, str) and len(reason) <= 64 else "invalid_mp4",
               quota_released=quota_released)
+    if status == 409 and validation.get("status") == "consent_required":
+        _fail("consent_required", "Run 'moviestar account terms' to finish account setup, then resume validation.", **common)
     if status == 401:
         _fail("not_connected", "Run 'moviestar account status' and reconnect this installation if needed.", **common)
     _fail("validation_unavailable", "The file is stored privately. Retry 'moviestar upload FILE --resume RESERVATION_ID' to validate it.",
@@ -136,6 +138,8 @@ def _validate_and_emit(endpoint: str, credential: str, video_id: str,
 def _complete_and_emit(endpoint: str, credential: str, reservation_id: str,
                        file: Path, size: int, key: str | None) -> None:
     status, completion = _json_request(f"{endpoint}/{reservation_id}/complete", credential)
+    if status == 409 and completion.get("status") == "consent_required":
+        _fail("consent_required", "Run 'moviestar account terms' to finish account setup, then resume this upload.", reservation_id=reservation_id)
     video_id = completion.get("video_id")
     completed = status in {200, 201} and completion.get("status") in {"stored_unverified", "ready"}
     rejected = status == 422 and completion.get("status") == "invalid_video"
@@ -215,6 +219,8 @@ def upload(file: Path, idempotency_key: str | None, resume: str | None, dry_run:
     status, initiation = _json_request(endpoint, credential, {
         "filename": file.name, "size_bytes": size, "idempotency_key": key,
     })
+    if status == 409 and initiation.get("status") == "consent_required":
+        _fail("consent_required", "Run 'moviestar account terms' to review and accept account terms and age confirmation, then retry with the same idempotency key.", idempotency_key=key)
     if status == 200 and initiation.get("status") == "already_completed":
         reservation_id = initiation.get("reservation_id")
         if not isinstance(reservation_id, str) or not _RESERVATION_RE.fullmatch(reservation_id):
