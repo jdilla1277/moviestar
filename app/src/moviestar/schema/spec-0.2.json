@@ -156,7 +156,7 @@
       "type": "object", "required": ["name", "type"],
       "properties": {
         "name": { "type": "string", "minLength": 1 },
-        "type": { "enum": ["video", "image", "text", "number", "color", "boolean"] },
+        "type": { "enum": ["video", "image", "text", "number", "color", "boolean", "caption"] },
         "required": { "type": "boolean" },
         "default": {}
       }
@@ -216,6 +216,7 @@
         "input": { "type": "string" },
         "forward": { "type": "string" },
         "asset_id": { "type": "string" },
+        "track": { "type": "string", "minLength": 1 },
         "source": { "type": "object" },
         "text": { "type": "string" },
         "number": { "type": "number" },

@@ -118,8 +118,16 @@ def prepare_layout_frame(frame: dict, canvas: dict) -> dict:
         kind = node.get("type", "component")
         content = node.get("content")
         text = content.get("text", "") if kind == "text" and isinstance(content, dict) else ""
-        return {"path": path, "kind": kind, "content": text, "style": style,
-                "children": [prepare_node(child) for child in node.get("children", [])]}
+        caption = node.get("caption") if kind == "caption" else None
+        if kind == "caption":
+            if not isinstance(caption, dict):
+                raise SpatialLayoutError(f"{where}: resolve caption cues with model frame first")
+            text = caption["text"]
+        prepared = {"path": path, "kind": kind, "content": text, "style": style,
+                    "children": [prepare_node(child) for child in node.get("children", [])]}
+        if caption is not None:
+            prepared["caption"] = caption
+        return prepared
 
     return {"scene_id": frame.get("scene_id"), "canvas": size,
             "scene_time_s": frame.get("scene_time_s"),
