@@ -166,7 +166,7 @@ def _prepare_assets(spec: dict, frame: dict, prepared: dict, root: Path, tempora
         path = '/'.join(node['path'])
         original = nodes[tuple(node['path'])]
         kind = node['kind']
-        if kind not in {'component', 'shape', 'text', 'image', 'video'}:
+        if kind not in {'component', 'shape', 'text', 'image', 'video', 'caption'}:
             raise SpatialRenderError(f"{path}: {kind} rendering is not supported by this preview slice")
         content = original.get('content')
         if kind not in {'video', 'image'} or content is None:
@@ -294,6 +294,9 @@ def render_spatial_frame(spec: dict, frame: dict, canvas: dict, *,
                    'reference_path': str(temporary / 'reference.png') if reference_path else None,
                    'layout_output_path': str(temporary / 'layout.png') if layout_output_path else None}
         measured = _run_browser(request)
+        for diagnostic in measured['diagnostics']:
+            if diagnostic.get('severity') == 'error':
+                raise SpatialRenderError(f"{diagnostic['code']} at {'/'.join(diagnostic['path'])}")
         staged = temporary / 'rendered.png'
         _compose(temporary, prepared['canvas'], measured['video_planes'], videos, staged)
         _publish(staged, output_path.resolve())

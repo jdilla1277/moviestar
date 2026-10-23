@@ -158,18 +158,81 @@ runs from a subdirectory. Media must have layout rules determining its box;
 preview does not infer layout size from intrinsic media dimensions.
 
 Missing required inputs or assets in the selected scene block preview with a
-path-addressed error. Optional empty media remain transparent. Caption elements
-and alpha video return explicit unsupported errors in this slice. Unplaced draft
+path-addressed error. Optional empty media remain transparent. Alpha video
+returns an explicit unsupported error in this slice. Unplaced draft
 definitions do not block a complete scene. The command needs the same Chrome and
 Node setup as layout inspection, plus FFmpeg/ffprobe. Output paths must be distinct
 PNG files in existing directories and cannot overwrite a project asset. Asset or
 paint failures preserve an existing preview, and no project revision is written.
 
-This is single-frame rendering. It does not implement caption cues, format rules,
+This is single-frame rendering. It does not implement format rules,
 motion, transition frames, static-only scene timing, watch, or export. The browser
 graphics and video visibility masks are temporary artifacts; no unchanged-clip
 cache is introduced. See the [rendering contract](design/spatial-frame-rendering.md)
 for the compositing boundary and parity evidence.
+
+## Timed caption elements
+
+Generate a caption track with `moviestar captions generate`, or import cues with
+`moviestar captions import`. Place it in a structured scene with an element:
+
+```json
+{
+  "id": "subtitles",
+  "type": "caption",
+  "content": {"track": "captions"},
+  "layout": {
+    "position": "absolute", "left": "8%", "right": "8%", "bottom": 24,
+    "height": 96, "padding": 12
+  },
+  "style": {
+    "font_size": 28, "line_height": 1.3, "color": "#ffffff",
+    "text_align": "center", "background_color": "#13263a"
+  }
+}
+```
+
+The element uses cues from that track on the existing **result clock**. Cue
+intervals include their start and exclude their end; at the exact project end,
+the usual last-output-frame sampling applies. Gaps have no text. Overlapping
+cues appear on separate lines, ordered by start time then cue ID. Authored line
+breaks remain; Chrome also wraps to the element's available width.
+
+Omitting `content` selects the default `captions` track. An explicit
+`{"empty": true}` binding leaves the element empty. A reusable component can
+declare an input such as `{"name": "subtitles", "type": "caption"}` and use
+`{"input": "subtitles"}` on its caption element. Bind that input with
+`{"track": "captions"}` or forward it through another component as usual.
+Different instances can select different tracks.
+
+Placement and typography come from the **element's layout and style**. The
+legacy cue's position, style preset, and spoken-word highlighting are not applied
+by this caption path. This slice displays whole cues; animated word highlighting
+remains later work. Existing preset scenes keep their existing caption renderer.
+Transcript data, project settings, and caption tracks do not inject a caption
+layer into a structured scene without an element. Each authored occurrence
+renders once. An empty caption keeps its authored box and background, allowing
+a reserved region to stay in place as speech changes.
+
+`model frame`, `model layout`, and `model preview` refresh live caption recipes
+in memory using the existing derivation pipeline after timeline edits. They do
+not write cue caches or revisions. Frozen/imported tracks keep their stored
+result-time cues. Direct Python callers of `compile_spatial_frame` supply a spec
+with current cue records, as with other compiler inputs.
+
+Inspection reports `caption.track`, `caption.text`, `caption.visible`, and active
+`caption.cues` with IDs and result-time bounds. Measured caption boxes also expose
+`text_lines` and `overflow`. The rendered and labeled views measure the same
+active text before labels hide it. Give the region sufficient height for its
+font, line height, and padding; one- and two-line cues can then share a stable box.
+
+Unknown tracks produce `unknown_caption_track`; a known recipe with no cues is
+an empty region. A live recipe that cannot refresh produces `stale_caption_track`
+only where that track is placed. Text outside its content box produces an
+addressed `caption_overflow`, even with `overflow: hidden`. Layout inspection
+returns that diagnostic and its measured lines; rendered preview fails and
+preserves any prior artifact. Enlarge the region or reduce the font size before
+rendering again. Unplaced tracks do not add layers or block a scene.
 
 ## Editing a linked use
 

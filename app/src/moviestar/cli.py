@@ -1686,7 +1686,7 @@ def _load_or_init_spec(project: dict) -> dict:
     return _refresh_caption_tracks(project, spec)
 
 
-def _refresh_caption_tracks(project: dict, spec: dict) -> dict:
+def _refresh_caption_tracks(project: dict, spec: dict, *, tracks: set[str] | None = None) -> dict:
     recipes = spec.get("captions") or []
     if not recipes:
         return spec
@@ -1694,6 +1694,8 @@ def _refresh_caption_tracks(project: dict, spec: dict) -> dict:
     import io
 
     for recipe in recipes:
+        if tracks is not None and recipe['track'] not in tracks:
+            continue
         if recipe.get("frozen"):
             continue
         fingerprint = _caption_cache_fingerprint(project, spec, recipe)

@@ -332,16 +332,42 @@ def test_unready_frame_leaves_existing_output_untouched(project, tmp_path):
     assert output.read_bytes() == b'previous result'
 
 
-def test_preview_rejects_unsupported_captions_and_asset_output_paths(project, tmp_path):
+def test_preview_rejects_missing_caption_track_and_asset_output_paths(project, tmp_path):
     spec, metadata = project
     frame = _frame(spec, metadata)
     with pytest.raises(SpatialRenderError, match='cannot overwrite a project asset'):
         render_spatial_frame(spec, frame, {'width': 320, 'height': 180},
                               output_path=tmp_path / 'logo.png', project_root=tmp_path)
     spec['spatial']['scenes']['interview']['layout']['children'].append({'id': 'captions', 'type': 'caption'})
-    with pytest.raises(SpatialRenderError, match='interview/captions.*caption rendering is not supported'):
+    with pytest.raises(SpatialRenderError, match='unknown_caption_track.*interview/captions'):
         render_spatial_frame(spec, _frame(spec, metadata), {'width': 320, 'height': 180},
                               output_path=tmp_path / 'captions.png', project_root=tmp_path)
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
+@pytest.mark.parametrize('at,text', [(0.5, 'First caption'), (1, 'Two lines\nof captions')])
+def test_caption_over_video_matches_browser_paint(project, tmp_path, at, text):
+    spec, metadata = project
+    spec['overlays'] = [
+        {'id': identity, 'kind': 'caption', 'track': 'captions', 'text': words,
+         'from': start, 'to': end, 'position': {}, 'style': {}}
+        for identity, start, end, words in [
+            ('first', '0:00:00.000', '0:00:01.000', 'First caption'),
+            ('second', '0:00:01.000', '0:00:01.500', 'Two lines\nof captions')]]
+    spec['spatial']['definitions']['card']['children'][0]['children'].append({
+        'id': 'captions', 'type': 'caption', 'content': {'track': 'captions'},
+        'layout': {'position': 'absolute', 'left': 6, 'right': 6, 'bottom': 4,
+                   'height': 36, 'z_index': 8},
+        'style': {'font_size': 10, 'line_height': 1.4, 'color': '#ffffff',
+                  'background_color': '#102030', 'opacity': 0.8}})
+    frame = _frame(spec, metadata, at)
+    output, reference = tmp_path / 'captions.png', tmp_path / 'reference.png'
+    result = render_spatial_frame(spec, frame, {'width': 320, 'height': 180}, output_path=output,
+                                 project_root=tmp_path, reference_path=reference)
+    assert max(abs(a - b) for a, b in zip(_rgb(output), _rgb(reference))) <= 3
+    caption_boxes = [box for box in result['boxes'] if box['kind'] == 'caption']
+    assert len(caption_boxes) == 3
+    assert all(box['caption']['text'] == text for box in caption_boxes)
 
 
 def test_preview_rejects_video_alpha_before_painting(project, tmp_path):

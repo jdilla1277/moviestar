@@ -30,7 +30,7 @@ def spatial_state_id(spec: dict) -> str:
     return f"sha256:{sha256(encoded).hexdigest()}"
 
 
-_INPUT_TYPES = {"video", "image", "text", "number", "color", "boolean"}
+_INPUT_TYPES = {"video", "image", "text", "number", "color", "boolean", "caption"}
 _ELEMENT_TYPES = _INPUT_TYPES | {"caption", "shape"}
 
 
@@ -58,6 +58,11 @@ def _binding(value: object, kind: str, path: str, *, forward: bool = False) -> N
         _identifier(value["forward"], f"{path}.forward")
         return
     if isinstance(value, dict) and value.get("empty") is True and len(value) == 1:
+        return
+    if kind == "caption":
+        if (not isinstance(value, dict) or set(value) != {"track"}
+                or not isinstance(value["track"], str) or not value["track"].strip()):
+            _fail(path, "caption binding needs a non-empty track")
         return
     if kind in {"video", "image"}:
         if not isinstance(value, dict) or not isinstance(value.get("asset_id"), str) or not value["asset_id"]:
@@ -377,6 +382,8 @@ def expand_spatial_scene(spec: dict, scene_id: str) -> dict:
                 kind = node["type"]
                 content = resolve_value(node.get("content"), inputs, address,
                                         kind, required, reported)
+                if kind == "caption" and "content" in node and content is None:
+                    content = {"empty": True}
                 item = {**common, "type": kind, "content": content}
                 if "children" in node or any(edit["op"] == "child_add" and edit["path"] == address
                                              for edit in edits):
@@ -521,6 +528,7 @@ def compile_spatial_frame(
             place_media(node.get("children", []))
 
     place_media(expanded["children"])
+    _place_captions(spec, expanded["children"], lookup_time, diagnostics)
     return {
         **expanded,
         "result_time_s": round(result_time_s, 6),
@@ -532,6 +540,41 @@ def compile_spatial_frame(
         "canvas": deepcopy(timeline.canvas),
         "pacing_segment_id": span.pacing_segment_id,
     }
+
+
+def _place_captions(spec: dict, nodes: list[dict], at_s: float, diagnostics: list[dict]) -> None:
+    """Select existing result-time cues; caption elements introduce no new clock."""
+    from moviestar.spec import parse_timecode_string
+
+    tracks = {recipe["track"] for recipe in spec.get("captions", [])}
+    cues_by_track: dict[str, list[dict]] = {}
+    for record in spec.get("overlays", []):
+        if record.get("kind") != "caption":
+            continue
+        track = record["track"]
+        tracks.add(track)
+        start = parse_timecode_string(record["from"], "caption.from")
+        end = parse_timecode_string(record["to"], "caption.to")
+        if start <= at_s < end:
+            cues_by_track.setdefault(track, []).append({
+                "id": record["id"], "text": record["text"], "from_s": start, "to_s": end,
+            })
+
+    def visit(children: list[dict]) -> None:
+        for node in children:
+            if node.get("type") == "caption":
+                content = node.get("content") or {}
+                track = None if content.get("empty") else content.get("track", "captions")
+                cues = sorted(cues_by_track.get(track, []), key=lambda cue: (cue["from_s"], cue["id"]))
+                node["caption"] = {"track": track, "visible": bool(cues),
+                                   "text": "\n".join(cue["text"] for cue in cues),
+                                   "cues": deepcopy(cues)}
+                if track is not None and track not in tracks:
+                    diagnostics.append({"code": "unknown_caption_track", "path": node["occurrence_path"],
+                                        "track": track})
+            visit(node.get("children", []))
+
+    visit(nodes)
 
 
 def _reject_active_transition(spec: dict, timeline: ResolvedProject, at_s: float) -> None:

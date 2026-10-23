@@ -2,7 +2,7 @@
 
 This slice connects the persisted visual tree and canonical media clock to a
 real still-frame preview. It advances milestone 2; it does not complete the
-watch/export, caption, motion, responsive-rule, or static-scene timing gates.
+watch/export, motion, responsive-rule, or static-scene timing gates.
 
 ## Shared boundary
 
@@ -79,6 +79,33 @@ clips and cache invalidation remain a separate project.
 
 ## Verification
 
+### Timed caption elements
+
+Caption elements select existing result-time cue records by track. They do not
+derive speech or introduce an independent media clock. The CLI refreshes live
+recipes through the existing caption pipeline in memory; a failed refresh blocks
+only placed uses of that track. Imported/frozen tracks retain their stored cues.
+No caption element means no generated caption layer in a structured scene.
+Legacy preset scene rendering remains on its existing path.
+
+Chrome lays out active cue text in the caption's authored box using the same
+text path as regular text. A component can accept a typed caption-track binding
+and forward it through nested instances. Line rectangles and active cue IDs,
+text, and bounds are inspection data; the labeled view hides text after measuring
+it. Glyph-line bounds outside the caption content box produce `caption_overflow`.
+Inspection still returns that diagnostic; preview rejects it before publishing
+an artifact. Empty intervals retain the reserved region and its authored paint.
+The element owns typography and placement; legacy cue style/position and
+spoken-word highlighting are not part of this whole-cue rendering slice.
+
+The caption tests exercise exact cue boundaries, gaps, overlapping cues,
+component bindings/defaults/forwarding, portrait and landscape, one/two-line
+regions, overflow, unknown tracks, and read-only CLI behavior. A real generated
+track follows a scene reorder on all three spatial views. Caption text over three
+nested video uses also passes the existing 3/255 browser paint parity budget.
+
+### Media and compositing
+
 `app/tests/test_spatial_render.py` generates a lossless 10 fps clip whose source
 frames have distinct RGB values. Three uses inside nested reusable components
 sample source times 0.5, 0.7, and 0.9 seconds. Their actual pixels identify frames
@@ -93,8 +120,8 @@ portrait, long text,
 transparent images, parent backgrounds, foreground badges, intersecting rounded
 clips, group opacity, and overlapping video uses whose paint order differs from
 DOM order. Layout and rendered views must report identical element rectangles.
-Ended clips become transparent; missing bindings/assets and unsupported captions
-or alpha video fail explicitly. CLI coverage checks JSON errors, unchanged project
+Ended clips become transparent; missing bindings/assets and unsupported
+alpha video fail explicitly. CLI coverage checks JSON errors, unchanged project
 state, and preservation of the previous artifact when an asset disappears.
 Regression cases also check between-frame requests at source times 0.65 and
 1.95 seconds, fractional rates with real B-frames and nonzero timestamp origins,
@@ -106,8 +133,8 @@ against an independent full decode, including the reported 0.5/1.5-second
 positions and rejection after source end.
 
 This establishes still-frame geometry and paint parity on synthetic content.
-It is not evidence for export throughput or every source decoder. Motion, cue
-changes, transition frames, and real-content watch/export friction tests remain
+It is not evidence for export throughput or every source decoder. Motion,
+transition frames, and real-content watch/export friction tests remain
 separate delivery gates.
 
 The browser reference is a paint check, not a promise that FFmpeg's video scaler

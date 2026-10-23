@@ -89,7 +89,7 @@ async function render(input) {
     element.style.position = 'relative';
     element.style.minWidth = '0';
     element.style.minHeight = '0';
-    if (node.kind === 'text') {
+    if (node.kind === 'text' || node.kind === 'caption') {
       element.style.whiteSpace = 'pre-line';
       element.textContent = node.content;
     } else if (!input.paint_dir && (node.kind === 'video' || node.kind === 'image')) {
@@ -173,7 +173,7 @@ async function render(input) {
              width: rounded(rect.width), height: rounded(rect.height)},
       layout_rule: node.style,
     };
-    if (node.kind === 'text') {
+    if (node.kind === 'text' || node.kind === 'caption') {
       const range = document.createRange();
       range.selectNodeContents(element);
       const lines = [];
@@ -192,6 +192,22 @@ async function render(input) {
       }
       box.text_lines = lines.map(line => ({x: rounded(line.x), y: rounded(line.y),
                                            width: rounded(line.width), height: rounded(line.height)}));
+      if (node.kind === 'caption') {
+        const css = getComputedStyle(element);
+        const px = key => parseFloat(css.getPropertyValue(key)) || 0;
+        const left = rect.left + px('border-left-width') + px('padding-left');
+        const top = rect.top + px('border-top-width') + px('padding-top');
+        const right = rect.right - px('border-right-width') - px('padding-right');
+        const bottom = rect.bottom - px('border-bottom-width') - px('padding-bottom');
+        box.caption = node.caption;
+        box.overflow = lines.some(line => line.x < left - 1 || line.y < top - 1
+          || line.x + line.width > right + 1 || line.y + line.height > bottom + 1);
+        if (box.overflow) {
+          diagnostics.push({code: 'caption_overflow', severity: 'error', path: node.path,
+                            track: node.caption.track, line_count: lines.length,
+                            reason: 'caption text exceeds its content box; enlarge the region or reduce font size'});
+        }
+      }
     }
     boxes.push(box);
     if (rect.width <= 0 || rect.height <= 0) {
@@ -208,7 +224,7 @@ async function render(input) {
     }
     for (const {node, element} of entries) {
       element.style.outline = '1px solid #ffb000';
-      if (node.kind === 'text') element.style.color = 'transparent';
+      if (node.kind === 'text' || node.kind === 'caption') element.style.color = 'transparent';
       if (node.kind === 'video' || node.kind === 'image') element.style.backgroundColor = '#a9bed0';
     }
     for (const box of boxes) {
