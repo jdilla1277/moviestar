@@ -370,6 +370,31 @@ def test_caption_over_video_matches_browser_paint(project, tmp_path, at, text):
     assert all(box['caption']['text'] == text for box in caption_boxes)
 
 
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
+@pytest.mark.parametrize('canvas', [{'width': 640, 'height': 360}, {'width': 360, 'height': 640}])
+def test_responsive_video_layout_changes_geometry_without_changing_source_frames(project, tmp_path, canvas):
+    spec, metadata = project
+    layout = spec['spatial']['scenes']['interview']['layout']
+    layout['format_rules'] = [{'id': 'portrait-stack', 'when': {'orientation': 'portrait'},
+                               'layout': {'columns': '1fr', 'rows': '1fr 1fr'}}]
+    listeners = layout['children'][1]
+    listeners['format_rules'] = [{'id': 'portrait-pair', 'when': {'orientation': 'portrait'},
+                                  'layout': {'columns': '1fr 1fr', 'rows': '1fr'}}]
+    frame = _frame(spec, metadata)
+    output, reference = tmp_path / 'responsive.png', tmp_path / 'reference.png'
+    result = render_spatial_frame(spec, frame, canvas, output_path=output,
+                                 project_root=tmp_path, reference_path=reference)
+    assert sorted(item['source_time_s'] for item in result['media']) == [0.5, 0.7, 0.9]
+    pixels = _rgb(output)
+    for source_frame in (5, 7, 9):
+        assert bytes((20 + 8 * source_frame, 40, 60)) * 8 in pixels
+    assert max(abs(a - b) for a, b in zip(pixels, _rgb(reference))) <= 3
+    measured = measure_spatial_layout(frame, canvas)
+    assert result['boxes'] == measured['boxes']
+    assert result['scene_layout']['matched_format_rules'] == (
+        ['portrait-stack'] if canvas['height'] > canvas['width'] else [])
+
+
 def test_preview_rejects_video_alpha_before_painting(project, tmp_path):
     spec, metadata = project
     alpha = tmp_path / 'alpha.mov'

@@ -172,6 +172,7 @@ async function render(input) {
       rect: {x: rounded(rect.x), y: rounded(rect.y),
              width: rounded(rect.width), height: rounded(rect.height)},
       layout_rule: node.style,
+      rule_sources: node.rule_sources, matched_format_rules: node.matched_format_rules,
     };
     if (node.kind === 'text' || node.kind === 'caption') {
       const range = document.createRange();
@@ -261,7 +262,7 @@ async function render(input) {
     }
   };
   if (input.output_path && !input.paint_dir) labelView();
-  return {boxes, diagnostics, video_planes: videoPlanes.map(entry => ({
+  return {boxes, diagnostics, scene_layout: input.scene_layout, video_planes: videoPlanes.map(entry => ({
     id: entry.node.video.id, path: entry.node.path, rect: entry.rect,
   }))};
 }

@@ -121,8 +121,95 @@ macOS Chrome application; set `MOVIESTAR_CHROME_PATH` to a specific executable
 when needed. The command does not download a browser or write a project
 revision. In a container where Chrome cannot use its sandbox, set
 `MOVIESTAR_CHROME_NO_SANDBOX=1`; the CI job uses that explicit setting.
-Format-specific rules, scene motion, transitions, watch, and export remain
-later renderer work.
+Scene motion, transitions, watch, and export remain later renderer work.
+
+## Responsive canvas rules
+
+One saved arrangement can adapt to portrait, landscape, square, or numeric canvas
+constraints. Add `format_rules` to a scene's `layout`, an element, or a component
+instance. The rules below change a two-column scene into a stack in portrait:
+
+```json
+{
+  "display": "grid",
+  "columns": "1fr 2fr",
+  "gap": 24,
+  "format_rules": [
+    {
+      "id": "portrait-stack",
+      "when": {"orientation": "portrait"},
+      "layout": {"columns": "1fr", "rows": "auto 1fr auto"}
+    },
+    {
+      "id": "compact-spacing",
+      "when": {"max_width": 600},
+      "layout": {"gap": 12}
+    }
+  ],
+  "children": []
+}
+```
+
+Rules on nodes inside a component definition are shared with every linked use.
+For example, put a portrait rule on a component's grid child to stack its internal
+contents. A rule on the instance controls its outer box. A component definition
+itself has no rendered box; rules there return an error identifying the child or
+instance target to use instead. Rule IDs are stable, non-empty, and unique within
+their owning node or scene layout.
+
+`when` combines all supplied conditions with **and**. It accepts:
+
+- `orientation`: `portrait` means height > width, `landscape` means width > height,
+  and `square` means equal dimensions.
+- `min_width`, `max_width`, `min_height`, `max_height`: inclusive canvas pixel bounds.
+- `min_aspect_ratio`, `max_aspect_ratio`: inclusive positive width/height ratios.
+
+Rules always match the requested **output canvas**, including rules deep inside
+components. They are not container queries. Bounds are numbers, not CSS strings;
+unknown predicates and inverted bounds are rejected. Rules can change only
+`layout` and `style`, using the same supported CSS properties as base rules.
+They cannot change content bindings, source ranges, scene timing, or audio.
+To switch arrangements cleanly, override the affected grid rows/columns or sizing
+properties explicitly; properties not mentioned in a rule retain their base value.
+
+Precedence is resolved per CSS property:
+
+1. Base layout and style.
+2. Matching format rules. The highest integer `priority` wins; its default is 0.
+3. An occurrence customization of an inherited node, authored with
+   `instance.customize`. That local value wins in every format until reset.
+
+Different matching rules can set different properties. Equal-priority rules
+setting the same normalized value are compatible. Conflicting values at the
+highest matching priority produce `ambiguous_format_rule`, listing the occurrence,
+property, and rule IDs. Rule order does not break ties. Increase a rule's priority,
+make its predicate disjoint, or supply a local customization. A higher-priority
+rule or local customization resolves lower-priority conflicts for that property.
+CSS aliases such as `columns` and `grid_template_columns` identify the same
+property for precedence and conflict checks.
+
+Editing a scene-owned base property or using `component.update` edits the base
+layer; matching rules still apply. Resetting an inherited occurrence customization
+restores the base/format cascade. Saving a customized occurrence as a separate
+component bakes its unconditional choices into the new definition, removing
+conflicting assignments for those properties from its copied format rules.
+Other properties keep responding to the canvas, and the original definition is
+unchanged.
+
+Author rules through the existing `model dump` → edit → `model apply` file loop.
+They survive save/reload and participate in the normal revision and undo path.
+`model layout --canvas WIDTHxHEIGHT` and `model preview --canvas WIDTHxHEIGHT`
+select rules without modifying the saved document. Both views expose
+`scene_layout` for the scene, and each measured box includes `matched_format_rules`
+and a per-property `rule_sources` map identifying `base`, `format_rule`, or
+`local_customization`. `model frame` remains the temporal tree before canvas
+selection; it retains the rules for the layout stage.
+
+On an ambiguous property, layout inspection reports the conflict and shows
+provisional base geometry marked `ambiguous` in its provenance. Rendered preview
+rejects the ambiguity before touching an existing output. Caption wrapping and
+overflow are measured after applying the selected format. Scene duration, media
+source times, active caption cues, and audio routing are unchanged by the canvas.
 
 ## Rendered frame preview
 
@@ -165,8 +252,8 @@ Node setup as layout inspection, plus FFmpeg/ffprobe. Output paths must be disti
 PNG files in existing directories and cannot overwrite a project asset. Asset or
 paint failures preserve an existing preview, and no project revision is written.
 
-This is single-frame rendering. It does not implement format rules,
-motion, transition frames, static-only scene timing, watch, or export. The browser
+This is single-frame rendering. It does not implement motion, transition frames,
+static-only scene timing, watch, or export. The browser
 graphics and video visibility masks are temporary artifacts; no unchanged-clip
 cache is introduced. See the [rendering contract](design/spatial-frame-rendering.md)
 for the compositing boundary and parity evidence.

@@ -16,6 +16,8 @@ import shutil
 import subprocess
 from importlib.resources import files
 
+from moviestar.spatial_format import SpatialFormatError, matches_canvas, validate_format_rules
+
 
 class SpatialLayoutError(ValueError):
     """A visual tree cannot be measured with the supported layout subset."""
@@ -52,6 +54,7 @@ _FRAME_FIELDS = {
     "scene_id", "children", "diagnostics", "result_time_s", "sample_time_s",
     "scene_time_s", "scene_duration_s", "scene_source_time_s",
     "scene_source_duration_s", "canvas", "pacing_segment_id",
+    "format_rules",
 }
 _UNSAFE_CSS = re.compile(r"url\s*\(|@import|expression\s*\(|javascript\s*:|[;{}]", re.I)
 _LENGTH_PROPERTIES = {
@@ -100,21 +103,72 @@ def _canvas(value: dict) -> dict[str, int]:
     return result
 
 
+def _resolve_styles(base: dict, rules: list, local: dict, canvas: dict,
+                    path: list[str], diagnostics: list[dict], *, root: bool = False) -> dict:
+    """Cascade base, highest-priority matching rules, and occurrence edits."""
+    where = 'scene' if root else '/'.join(path)
+    allowed_layout = _ROOT if root else _LAYOUT
+    style = _css(base.get('layout', {}), allowed_layout, f'{where}.layout')
+    style.update(_css(base.get('style', {}), _STYLE, f'{where}.style'))
+    sources = {key: {'layer': 'base'} for key in style}
+    overrides = _css(local.get('layout', {}), allowed_layout, f'{where}.customizations.layout')
+    overrides.update(_css(local.get('style', {}), _STYLE, f'{where}.customizations.style'))
+    try:
+        validate_format_rules(rules, f'{where}.format_rules')
+    except SpatialFormatError as exc:
+        raise SpatialLayoutError(str(exc)) from exc
+    matched = []
+    candidates: dict[str, list[tuple[int, str, str]]] = {}
+    for rule in rules:
+        if not matches_canvas(rule['when'], canvas):
+            continue
+        identity = rule['id']
+        matched.append(identity)
+        patch = _css(rule.get('layout', {}), allowed_layout, f'{where}.format_rules.{identity}.layout')
+        patch.update(_css(rule.get('style', {}), _STYLE, f'{where}.format_rules.{identity}.style'))
+        for key, value in patch.items():
+            candidates.setdefault(key, []).append((rule.get('priority', 0), identity, value))
+    for key, choices in sorted(candidates.items(), key=lambda item: max(choice[0] for choice in item[1])):
+        if key in overrides:
+            continue
+        priority = max(choice[0] for choice in choices)
+        winners = [choice for choice in choices if choice[0] == priority]
+        identities = [choice[1] for choice in winners]
+        if len({choice[2] for choice in winners}) > 1:
+            diagnostics.append({'code': 'ambiguous_format_rule', 'severity': 'error', 'path': path,
+                                'property': key, 'rule_ids': identities, 'priority': priority})
+            sources[key] = {'layer': 'ambiguous', 'rule_ids': identities, 'priority': priority}
+            # Inspection can still show draft base geometry; preview rejects it.
+            continue
+        # Reinsert declarations in cascade order. Updating a dict value in place
+        # can let a base longhand override a later format shorthand in Chrome.
+        style.pop(key, None)
+        style[key] = winners[0][2]
+        sources[key] = {'layer': 'format_rule', 'rule_ids': identities, 'priority': priority}
+    for key, value in overrides.items():
+        style.pop(key, None)
+        style[key] = value
+    sources.update({key: {'layer': 'local_customization'} for key in overrides})
+    return {'style': style, 'rule_sources': sources, 'matched_format_rules': matched}
+
+
 def prepare_layout_frame(frame: dict, canvas: dict) -> dict:
     """Translate a resolved temporal frame to a safe, explicit CSS layout tree."""
     if not isinstance(frame, dict) or not isinstance(frame.get("children"), list):
         raise SpatialLayoutError("frame.children: expected an expanded scene")
     size = _canvas(canvas)
+    diagnostics = list(frame.get('diagnostics', []))
     root_properties = {key: value for key, value in frame.items() if key not in _FRAME_FIELDS}
-    root_style = _css(root_properties, _ROOT, "scene.layout")
+    scene_layout = _resolve_styles({'layout': root_properties}, frame.get('format_rules', []), {},
+                                    size, [frame.get('scene_id') or 'scene'], diagnostics, root=True)
 
     def prepare_node(node: dict) -> dict:
         if not isinstance(node, dict) or not isinstance(node.get("occurrence_path"), list):
             raise SpatialLayoutError("frame.children: expected identified nodes")
         path = node["occurrence_path"]
         where = "/".join(path)
-        style = _css(node.get("layout", {}), _LAYOUT, f"{where}.layout")
-        style.update(_css(node.get("style", {}), _STYLE, f"{where}.style"))
+        resolved = _resolve_styles(node.get('base_rules', node), node.get('format_rules', []),
+                                   node.get('local_overrides', {}), size, path, diagnostics)
         kind = node.get("type", "component")
         content = node.get("content")
         text = content.get("text", "") if kind == "text" and isinstance(content, dict) else ""
@@ -123,7 +177,7 @@ def prepare_layout_frame(frame: dict, canvas: dict) -> dict:
             if not isinstance(caption, dict):
                 raise SpatialLayoutError(f"{where}: resolve caption cues with model frame first")
             text = caption["text"]
-        prepared = {"path": path, "kind": kind, "content": text, "style": style,
+        prepared = {"path": path, "kind": kind, "content": text, **resolved,
                     "children": [prepare_node(child) for child in node.get("children", [])]}
         if caption is not None:
             prepared["caption"] = caption
@@ -132,9 +186,9 @@ def prepare_layout_frame(frame: dict, canvas: dict) -> dict:
     return {"scene_id": frame.get("scene_id"), "canvas": size,
             "scene_time_s": frame.get("scene_time_s"),
             "result_time_s": frame.get("result_time_s"),
-            "root_style": root_style,
+            "root_style": scene_layout['style'], "scene_layout": scene_layout,
             "nodes": [prepare_node(child) for child in frame["children"]],
-            "diagnostics": frame.get("diagnostics", [])}
+            "diagnostics": diagnostics}
 
 
 def _chrome_path() -> str | None:
@@ -169,6 +223,7 @@ def measure_spatial_layout(frame: dict, canvas: dict, *, output_path: Path | Non
     request = {**prepared, "output_path": str(output_path.resolve()) if output_path else None}
     measured = _run_browser(request)
     return {"view": "layout", "canvas": prepared["canvas"],
+            "scene_layout": measured['scene_layout'],
             "boxes": measured["boxes"], "diagnostics": [*prepared["diagnostics"], *measured["diagnostics"]],
             "artifact": str(output_path.resolve()) if output_path else None}
 

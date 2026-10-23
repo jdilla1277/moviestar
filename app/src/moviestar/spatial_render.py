@@ -287,6 +287,9 @@ def render_spatial_frame(spec: dict, frame: dict, canvas: dict, *,
         if destination in asset_paths:
             raise SpatialRenderError('preview output cannot overwrite a project asset')
     prepared = prepare_layout_frame(frame, canvas)
+    for diagnostic in prepared['diagnostics']:
+        if diagnostic.get('severity') == 'error':
+            raise SpatialRenderError(f"{diagnostic['code']} at {'/'.join(diagnostic['path'])}")
     with TemporaryDirectory(prefix='moviestar-frame-') as directory:
         temporary = Path(directory)
         videos = _prepare_assets(spec, frame, prepared, root, temporary, reference=reference_path is not None)
@@ -305,6 +308,7 @@ def render_spatial_frame(spec: dict, frame: dict, canvas: dict, *,
         if reference_path:
             _publish(temporary / 'reference.png', reference_path.resolve())
     return {'view': 'rendered', 'canvas': prepared['canvas'], 'boxes': measured['boxes'],
+            'scene_layout': measured['scene_layout'],
             'diagnostics': [*prepared['diagnostics'], *measured['diagnostics']],
             'media': [{**{key: value for key, value in videos[plane['id']].items() if key != 'decoded'},
                        'rect': plane['rect']} for plane in measured['video_planes']],
