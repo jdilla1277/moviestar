@@ -4,7 +4,9 @@ For normal source-over paint, each opaque video's contribution is linear in its
 RGB pixels. Chrome captures the scene with black video planes, then with each
 plane white in turn. The difference measures that plane's visibility through
 every foreground, clip, and opacity group. FFmpeg fills those measured regions
-with decoded source frames. No second implementation of CSS stacking is needed.
+with decoded source frames. Moving subtrees instead paint the decoded still in
+Chrome, keeping transformed media sampling and graphics together. Neither path
+needs a second implementation of CSS stacking.
 """
 
 from __future__ import annotations
@@ -159,6 +161,7 @@ def _prepare_assets(spec: dict, frame: dict, prepared: dict, root: Path, tempora
     images = {name: _asset_path(asset['path'], root)
               for name, asset in spec.get('spatial', {}).get('assets', {}).items()}
     nodes = {tuple(node['occurrence_path']): node for node in _walk(frame['children'])}
+    moving_paths = [tuple(node['path']) for node in _walk(prepared['nodes']) if node.get('motion')]
     decoded = {}
     probed = set()
     videos = {}
@@ -212,6 +215,12 @@ def _prepare_assets(spec: dict, frame: dict, prepared: dict, root: Path, tempora
             node['video'] = {'id': identity, 'width': width, 'height': height,
                              'black_image': _solid_image(0, width, height),
                              'white_image': _solid_image(255, width, height)}
+            # Browser transforms resample media together with its graphics.
+            # Paint a decoded still there so fractional translation/scale cannot
+            # diverge from the browser's clip and interpolation at sharp edges.
+            address = tuple(node['path'])
+            if any(address[:len(parent)] == parent for parent in moving_paths):
+                node['video']['raster_image'] = _image_data(png)
             if reference:
                 node['video']['reference_image'] = _image_data(png)
             videos[identity] = {'path': node['path'], 'asset_id': asset_id,
@@ -311,6 +320,6 @@ def render_spatial_frame(spec: dict, frame: dict, canvas: dict, *,
             'scene_layout': measured['scene_layout'],
             'diagnostics': [*prepared['diagnostics'], *measured['diagnostics']],
             'media': [{**{key: value for key, value in videos[plane['id']].items() if key != 'decoded'},
-                       'rect': plane['rect']} for plane in measured['video_planes']],
+                       'rect': plane['rect']} for plane in measured['media_planes']],
             'artifact': str(output_path.resolve()),
             'layout_artifact': str(layout_output_path.resolve()) if layout_output_path else None}

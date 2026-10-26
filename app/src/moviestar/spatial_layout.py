@@ -16,6 +16,7 @@ import shutil
 import subprocess
 from importlib.resources import files
 
+from moviestar.spatial_motion import SpatialMotionError, sample_motion
 from moviestar.spatial_format import SpatialFormatError, expand_properties, matches_canvas, validate_format_rules
 
 
@@ -184,6 +185,12 @@ def prepare_layout_frame(frame: dict, canvas: dict) -> dict:
             text = caption["text"]
         prepared = {"path": path, "kind": kind, "content": text, **resolved,
                     "children": [prepare_node(child) for child in node.get("children", [])]}
+        if node.get('motion'):
+            try:
+                prepared['motion_transform'] = bool(set(node['motion']) - {'opacity'})
+                prepared['motion'] = sample_motion(node['motion'], frame.get('scene_time_s'), f'{where}.motion')
+            except SpatialMotionError as exc:
+                raise SpatialLayoutError(str(exc)) from exc
         if caption is not None:
             prepared["caption"] = caption
         return prepared

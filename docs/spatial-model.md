@@ -76,7 +76,8 @@ an image element or input binding then uses `{ "asset_id": "logo" }`. An
 instance inside a component can pass an enclosing input with
 `{ "forward": "input_name" }`. Scene layouts and child nodes can carry
 CSS-like `layout` properties. Measurement and rendered preview share the
-supported properties below; authored movement belongs to a later slice.
+supported properties below. Elements and component instances can also carry
+scene-relative visual motion, described below.
 
 The same definition can be instantiated in `scene_b` with different bindings.
 Editing the one definition updates both expansions; each occurrence keeps its
@@ -121,7 +122,7 @@ macOS Chrome application; set `MOVIESTAR_CHROME_PATH` to a specific executable
 when needed. The command does not download a browser or write a project
 revision. In a container where Chrome cannot use its sandbox, set
 `MOVIESTAR_CHROME_NO_SANDBOX=1`; the CI job uses that explicit setting.
-Scene motion, transitions, watch, and export remain later renderer work.
+Transitions, watch, and export remain later renderer work.
 
 ## Responsive canvas rules
 
@@ -268,11 +269,91 @@ Node setup as layout inspection, plus FFmpeg/ffprobe. Output paths must be disti
 PNG files in existing directories and cannot overwrite a project asset. Asset or
 paint failures preserve an existing preview, and no project revision is written.
 
-This is single-frame rendering. It does not implement motion, transition frames,
+This is single-frame rendering. It does not implement transition frames,
 static-only scene timing, watch, or export. The browser
 graphics and video visibility masks are temporary artifacts; no unchanged-clip
 cache is introduced. See the [rendering contract](design/spatial-frame-rendering.md)
 for the compositing boundary and parity evidence.
+
+## Element and component motion
+
+Add a `motion` object to an element or a component **instance**, including one
+inside a reusable definition. Definitions themselves and the scene layout have
+no motion target; place a group instance if you want to move a whole scene tree.
+The stable occurrence path identifies the target. A component's entire subtree
+moves together, and a child's own motion composes with its ancestors:
+
+```json
+{
+  "instance_id": "speaker",
+  "definition_id": "SpeakerCard",
+  "motion": {
+    "translate_x": [{ "at": 0, "value": "-100%" }, { "at": 1, "value": "0%" }],
+    "translate_y": [{ "at": 0, "value": 0 }, { "at": 1, "value": 24 }],
+    "scale": [{ "at": 0, "value": 0.8 }, { "at": 1, "value": 1 }],
+    "opacity": [{ "at": 0, "value": 0 }, { "at": 0.5, "value": 1 }]
+  }
+}
+```
+
+Each property has an independent, non-empty track of `{ "at", "value" }`
+keyframes. `at` is a non-negative numeric **scene-relative result time in
+seconds**. Times must strictly increase. Values interpolate linearly between
+keys, hold the first value before the first key, and hold the last value after
+the last key. A one-key track is constant. Omitted properties use translation
+zero, scale one, and opacity one. An empty `motion` object has no effect.
+Keyframes past the scene end are allowed; a shortened scene samples the portion
+that still exists. There is no automatic retiming of these visual tracks.
+
+Translation values are finite CSS pixel numbers, `"24px"`, or `"-100%"`.
+Every value in a given translation track must use the same unit (numbers and
+`px` strings can mix). Percentages refer to the target's own **base border
+box**, after responsive layout. Positive x moves right; positive y moves down.
+Scale is a finite positive uniform factor around the box's top-left corner.
+Opacity is a finite factor from zero to one, multiplied by the resolved
+`style.opacity`; nested opacities multiply. Use opacity zero to hide a target.
+These transforms use normal CSS stacking contexts and ancestor overflow clips.
+They do not move siblings, change text wrapping, or change the base layout.
+Translated or scaled targets use the normal spatial `position: relative` default or an
+explicit non-static position; `position: static` is rejected for animated
+targets because transforming it would change its descendants' containing block.
+Fixed-position descendants of translated/scaled targets are also rejected; use
+absolute positioning inside the component. Opacity-only tracks can fade a static
+target without introducing a transform.
+
+Visual motion uses `scene_time_s`, so it keeps advancing while source footage
+is held and is unaffected by source playback speed. It restarts at each scene's
+zero, even when the scene is later reordered. Source decoding, caption cue
+selection, and audio continue using their existing clocks. The exact project
+end still samples the last output frame, including for motion.
+
+`model layout --at ...` and `model preview --at ...` sample these tracks at the
+same time. Every measured box reports `base_rect` before any motion, and `rect`
+after its own and its ancestors' motion. These are geometric border boxes;
+`rect` can extend outside an ancestor clip or the canvas and does not claim to
+be a segmentation of visible pixels. Text line rectangles use transformed
+coordinates. Animated boxes also report their sampled `motion`; all boxes
+report `effective_opacity`, including ancestors. Labeled PNGs show the same
+transformed boxes, while rendered PNGs include the assets. Compare snapshots
+before, during, and after a move to inspect intermediate positions. Automated
+interval-wide collision checking is not part of this slice.
+
+Use the existing `instance.customize`, `component.update`, and `instance.reset`
+operations with `property: "motion.translate_x"` (or the other three track
+names) and the keyframe array as `value`. This replaces that whole track. Local
+occurrence tracks take precedence over shared tracks and survive saving a
+component variation. To remove a track from a direct scene node, reset that
+property; an empty motion object is a no-op. Persistence, dry-run conflict
+checks, revisions, and undo use the existing model editing path.
+
+For moving video subtrees, FFmpeg decodes the exact selected source frame and
+Chrome paints that still with the subtree's transforms. This keeps resampling,
+text, images, opacity, and clips in the same coordinate system. Stationary video
+continues through the existing browser-mask/FFmpeg composition path, including
+when moving graphics overlap it. Both paths report the sampled media rectangle.
+This adds no rendered-clip cache, video export, or scene transition renderer.
+Rotation, nonuniform scale, custom easing, and transcript-triggered motion are
+not supported by these tracks.
 
 ## Timed caption elements
 

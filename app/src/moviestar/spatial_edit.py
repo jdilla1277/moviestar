@@ -91,10 +91,10 @@ def _definition_target(spatial: dict, target: dict) -> tuple[dict, list[dict] | 
 
 def _property(value: object) -> tuple[str, str]:
     if not isinstance(value, str) or len(value.split(".")) != 2:
-        _fail("property: use style.KEY or layout.KEY")
+        _fail("property: use style.KEY, layout.KEY, or motion.KEY")
     group, key = value.split(".")
-    if group not in {"style", "layout"} or not key:
-        _fail("property: use style.KEY or layout.KEY")
+    if group not in {"style", "layout", "motion"} or not key:
+        _fail("property: use style.KEY, layout.KEY, or motion.KEY")
     return group, key
 
 
@@ -234,6 +234,9 @@ def _bake_variation(children: list[dict], edits: list[dict], path: list[str]) ->
         for edit in edits:
             if edit["op"] == "property_set" and edit["path"] == node_path:
                 group, key = _property(edit["property"])
+                if group == 'motion':
+                    node.setdefault(group, {})[key] = deepcopy(edit['value'])
+                    continue
                 # A baked unconditional choice must still win over every format
                 # rule after the occurrence becomes a separate definition.
                 where = '/'.join(node_path)
