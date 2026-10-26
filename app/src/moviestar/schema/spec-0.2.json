@@ -164,7 +164,32 @@
     "spatial_layout": {
       "description": "Scene-owned arrangement. CSS-like display, position, sizing, and grid properties can be authored here; measurement follows in the renderer milestone.",
       "type": "object", "required": ["children"],
-      "properties": { "children": { "type": "array", "items": { "$ref": "#/$defs/spatial_node" } } }
+      "properties": {
+        "children": { "type": "array", "items": { "$ref": "#/$defs/spatial_node" } },
+        "format_rules": { "type": "array", "items": { "$ref": "#/$defs/spatial_format_rule" } }
+      }
+    },
+    "spatial_format_rule": {
+      "description": "Visual layout/style changes for a canvas. Higher integer priority wins per property; conflicting ties are diagnostics. Local occurrence customizations win last.",
+      "type": "object", "required": ["id", "when"], "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "priority": { "type": "integer", "default": 0 },
+        "when": {
+          "type": "object", "minProperties": 1, "additionalProperties": false,
+          "properties": {
+            "orientation": { "enum": ["portrait", "landscape", "square"] },
+            "min_width": { "type": "number", "minimum": 0 },
+            "max_width": { "type": "number", "minimum": 0 },
+            "min_height": { "type": "number", "minimum": 0 },
+            "max_height": { "type": "number", "minimum": 0 },
+            "min_aspect_ratio": { "type": "number", "exclusiveMinimum": 0 },
+            "max_aspect_ratio": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        },
+        "layout": { "type": "object" },
+        "style": { "type": "object" }
+      }
     },
     "spatial_node": {
       "oneOf": [
@@ -178,6 +203,7 @@
         "id": { "type": "string", "minLength": 1 },
         "type": { "enum": ["video", "image", "text", "number", "color", "boolean", "caption", "shape"] },
         "content": { "$ref": "#/$defs/spatial_binding" },
+        "format_rules": { "type": "array", "items": { "$ref": "#/$defs/spatial_format_rule" } },
         "layout": { "type": "object" },
         "style": { "type": "object" },
         "children": { "type": "array", "items": { "$ref": "#/$defs/spatial_node" } }
@@ -188,6 +214,7 @@
       "properties": {
         "instance_id": { "type": "string", "minLength": 1 },
         "definition_id": { "type": "string", "minLength": 1 },
+        "format_rules": { "type": "array", "items": { "$ref": "#/$defs/spatial_format_rule" } },
         "bindings": { "type": "object", "additionalProperties": { "$ref": "#/$defs/spatial_binding" } },
         "layout": { "type": "object" },
         "style": { "type": "object" },

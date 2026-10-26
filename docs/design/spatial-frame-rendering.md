@@ -2,7 +2,7 @@
 
 This slice connects the persisted visual tree and canonical media clock to a
 real still-frame preview. It advances milestone 2; it does not complete the
-watch/export, motion, responsive-rule, or static-scene timing gates.
+watch/export, motion, or static-scene timing gates.
 
 ## Shared boundary
 
@@ -78,6 +78,36 @@ everything and removes its temporary directory. Reusing previously rendered scen
 clips and cache invalidation remain a separate project.
 
 ## Verification
+
+### Responsive canvas rules
+
+The temporal compiler preserves `format_rules` on scene layouts, elements, and
+component instances. Layout preparation matches those predicates against the
+requested output canvas, then resolves base properties, highest-priority matching
+rules, and local occurrence customizations. CSS aliases and overlapping gap/grid
+shorthands are expanded to effective longhands before checking conflicts.
+Equal-priority conflicting final values produce an addressed
+diagnostic; inspection shows provisional base geometry, and preview rejects it
+before publishing. Matching rules cannot change bindings, timing, or audio.
+
+The shared browser request contains the resolved CSS and its property provenance.
+Both preview and labeled measurement return `scene_layout` and per-box
+`matched_format_rules`/`rule_sources`. Responsive text uses the same browser line
+measurement and caption overflow checks. Scene-local edits remain local, reset
+restores the cascade, and saving a separate component preserves unconditional
+customizations while retaining responsive choices for other properties.
+Variation baking uses that same expansion to remove only overridden longhand
+assignments; an unmodified column gap or grid boundary stays responsive even
+when another part of its original shorthand becomes an unconditional local value.
+
+Tests cover portrait/landscape/square, inclusive numeric bounds, nested component
+rules, explicit priorities, conflicting and identical ties, local overrides,
+reset/variation, save/reload, and read-only canvas selection. Real video cases
+retain source frames 5/7/9 while changing the arrangement, and pass the existing
+3/255 browser paint comparison in both canvas orientations.
+Review regressions compare actual geometry before/after variation save in both
+formats, check conflicting/compatible/ranked gap rules in both array orders, and
+compare expanded grid placements with Chrome's original shorthand parser.
 
 ### Timed caption elements
 
