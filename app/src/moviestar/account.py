@@ -409,11 +409,14 @@ def account() -> None:
 @account.command("connect")
 @click.argument("email")
 @click.option("--terminal", is_flag=True, help="Verify an emailed code and finish signup entirely through the CLI.")
-def connect(email: str, terminal: bool) -> None:
+@click.option("--restart", is_flag=True, help="Restart terminal email verification while keeping a valid installation claim.")
+def connect(email: str, terminal: bool, restart: bool) -> None:
     """Ask Moviestar to email an account claim to EMAIL.
 
     --terminal sends a verification code instead of a browser link. Use
     account verify to complete signup, consent, and installation approval.
+    Add --restart to replace an expired provider attempt while preserving a
+    still-valid installation claim and private challenge.
 
     The request returns immediately. It gives the agent the same response
     whether the human is new or already has an account, so account existence
@@ -427,6 +430,10 @@ def connect(email: str, terminal: bool) -> None:
     Moviestar's user config directory, never in a Moviestar project. Set
     MOVIESTAR_ACCOUNT_CLAIM_URL to target a preview or self-hosted control plane.
     """
+    if restart and not terminal:
+        _emit({"command": "account connect", "status": "error", "code": "terminal_required",
+               "hint": "Use --restart together with --terminal to restart email verification."})
+        raise click.exceptions.Exit(1)
     normalized = email.strip().lower()
     if not _valid_email(normalized) or len(normalized) > 254:
         _emit(
@@ -498,7 +505,7 @@ def connect(email: str, terminal: bool) -> None:
         _state_write_error(state_error)
     if terminal:
         from moviestar.account_terminal import begin
-        begin(state, remote)
+        begin(state, remote, restart=restart)
         return
     _emit(
         {

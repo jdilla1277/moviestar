@@ -19,6 +19,19 @@ logs. The email code is short-lived; `moviestar account resend` requests another
 code subject to the authentication provider's limits. The account request can
 remain valid longer than an individual email code.
 
+If the provider's signup or sign-in attempt has expired or been abandoned,
+restart verification explicitly:
+
+```sh
+moviestar account connect human@example.com --terminal --restart
+```
+
+This sends a new code and replaces the temporary provider state. While the
+installation claim is still valid, its request ID, private challenge, and
+installation remain the same. Enter the new code and complete verification
+and approval again; restarting never grants installation access by itself.
+Use `account resend` for an expired email code on a still-active attempt.
+
 After verification, the command returns `approval_required` with the requesting
 installation, terms version, statement, and policy links. Ask the human to review
 these and choose a public handle. With their explicit confirmation:
@@ -33,6 +46,12 @@ accept terms, or approve an installation without the human's instruction.
 Verification alone does none of these. A changed policy requires review again.
 An existing account that already accepted current consent needs only
 `--approve-installation`; its handle is preserved.
+
+If a new handle is taken, invalid, or reserved, the CLI returns a specific
+`handle_taken` or `invalid_handle` code with `field: "handle"` and recovery
+instructions. Choose another handle and repeat `account verify` with the new
+`--handle` and the same consent/installation options. Your verified email
+session is kept, so this does not require a new email code.
 
 If signup requires a password, the result lists `password` under
 `missing_fields`. Set it without putting it in command history:

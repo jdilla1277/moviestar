@@ -24,8 +24,31 @@ class TerminalError(Exception):
         super().__init__(self.code)
 
 
-def _fail(command: str, code: str, hint: str = "Retry the command; pending account state was kept.") -> None:
-    accounts._emit({"command": command, "status": "error", "code": code, "hint": hint})
+_ERROR_DETAILS = {
+    "handle_taken": {
+        "field": "handle",
+        "error": "That public handle is already taken.",
+        "hint": "Choose another public handle, then rerun 'moviestar account verify' with --handle NEW_HANDLE and your consent and installation options.",
+    },
+    "invalid_handle": {
+        "field": "handle",
+        "error": "The public handle is missing, invalid, or reserved.",
+        "hint": "Choose another public handle with 3–30 lowercase letters, numbers, or underscores, starting with a letter or number, then rerun 'moviestar account verify' with --handle NEW_HANDLE and your consent and installation options.",
+    },
+    "terminal_attempt_expired": {
+        "error": "This email verification attempt expired or was abandoned.",
+        "hint": "Run 'moviestar account connect EMAIL --terminal --restart' to request a new code while keeping the installation request.",
+    },
+}
+
+
+def _fail(command: str, code: str, hint: str | None = None) -> None:
+    details = _ERROR_DETAILS.get(code, {})
+    default_hint = "Retry the command; pending account state was kept."
+    if command in {"account verify", "account resend"}:
+        default_hint += " If the verification attempt is no longer usable, run 'moviestar account connect EMAIL --terminal --restart'."
+    accounts._emit({"command": command, "status": "error", "code": code, **details,
+                    "hint": hint or details.get("hint") or default_hint})
     raise click.exceptions.Exit(1)
 
 
@@ -78,6 +101,12 @@ def _request(state: dict, method: str, endpoint: str, data=None, session_jwt=Non
             if len(raw) > 1_000_000:
                 raise TerminalError("invalid_authentication_response")
             body = accounts._decode_response(raw)
+            # Only translate known MovieStar error shapes to local, safe copy.
+            # Never forward arbitrary service/provider messages or hints.
+            if not native and response.status in {400, 409} and body.get("status") == "error" and body.get("field") == "handle":
+                raise TerminalError("handle_taken" if response.status == 409 else "invalid_handle")
+            if native and response.status == 404 and endpoint.startswith(("/client/sign_ups/", "/client/sign_ins/")):
+                raise TerminalError("terminal_attempt_expired")
             errors = body.get("errors")
             if errors and isinstance(errors, list) and isinstance(errors[0], dict):
                 raise TerminalError(str(errors[0].get("code", "authentication_failed")))
@@ -87,6 +116,8 @@ def _request(state: dict, method: str, endpoint: str, data=None, session_jwt=Non
             result = body.get("response", body)
             if not isinstance(result, dict):
                 raise TerminalError("invalid_authentication_response")
+            if native and result.get("status") in {"abandoned", "expired"}:
+                raise TerminalError("terminal_attempt_expired")
             return result
     except (URLError, TimeoutError, OSError):
         raise TerminalError("account_service_unavailable") from None
@@ -119,7 +150,7 @@ def _remember(state: dict, resource: dict) -> None:
     _save(state)
 
 
-def begin(state: dict, remote: dict) -> None:
+def begin(state: dict, remote: dict, *, restart: bool = False) -> None:
     command = "account connect"
     metadata = remote.get("terminal")
     if not isinstance(metadata, dict) or not isinstance(metadata.get("terms"), dict):
@@ -128,6 +159,17 @@ def begin(state: dict, remote: dict) -> None:
         origin = _origin(metadata.get("frontend_api", ""))
         pending = state["pending_claim"]
         auth = pending.get("terminal_auth")
+        if restart:
+            # Replace only provider state. The installation request, expiry,
+            # private claim secret, and challenge remain unchanged.
+            if isinstance(auth, dict) and auth.get("origin") == origin:
+                session = auth.get("session_id")
+                if isinstance(session, str) and re.fullmatch(r"sess_[a-zA-Z0-9]+", session):
+                    try:
+                        _request(state, "POST", f"/client/sessions/{session}/end")
+                    except TerminalError:
+                        pass  # An expired session must not prevent recovery.
+            auth = None
         if not isinstance(auth, dict) or auth.get("origin") != origin:
             auth = {"origin": origin, "client_jwt": "", "terms": metadata["terms"], "step": "email_code"}
             pending["terminal_auth"] = auth

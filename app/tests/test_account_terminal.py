@@ -1,4 +1,5 @@
 """Terminal account setup preserves Clerk verification and explicit human consent."""
+import hashlib
 import importlib
 import json
 import stat
@@ -9,6 +10,7 @@ from click.testing import CliRunner
 from moviestar.cli import cli
 
 account = importlib.import_module("moviestar.account")
+_REAL_TERMINAL_REQUEST = importlib.import_module("moviestar.account_terminal")._request
 TERMS = {"version": "hosted-terms-v1", "consent_version": "hosted-account-v1", "statement": "I confirm I am at least 18 and accept the terms.", "terms_url": "https://trymoviestar.com/terms", "privacy_url": "https://trymoviestar.com/privacy"}
 
 @pytest.fixture
@@ -208,3 +210,176 @@ def test_terms_acceptance_posts_only_current_policy_and_explicit_consent(termina
     assert json.loads(result.stdout)["status"] == "accepted"
     assert transport.call_args.args[3] == {"terms_accepted": True, "age_confirmed": True, "terms_version": TERMS["version"], "consent_version": TERMS["consent_version"]}
     assert "mvs_" not in result.stdout
+
+
+def test_restart_replaces_abandoned_provider_attempt_but_preserves_installation_claim(terminal, monkeypatch):
+    native, path, calls = terminal
+    assert invoke("connect", "human@example.com", "--terminal").exit_code == 0
+    before = json.loads(path.read_text())
+    before["pending_claim"]["terminal_auth"]["status"] = "abandoned"
+    before["pending_claim"]["terminal_auth"]["resource_id"] = "sua_abandoned"
+    before["pending_claim"]["terminal_auth"]["client_jwt"] = "expired-private-client"
+    account._write_state(before)
+    claims = []
+    original = account._send_claim
+    def send_claim(payload):
+        claims.append(payload)
+        return original(payload)
+    monkeypatch.setattr(account, "_send_claim", send_claim)
+    calls.clear()
+
+    result = invoke("connect", "human@example.com", "--terminal", "--restart")
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["status"] == "verification_pending"
+    after = json.loads(path.read_text())
+    for key in ("request_id", "claim_secret", "email", "expires_at"):
+        assert after["pending_claim"][key] == before["pending_claim"][key]
+    assert after["installation_id"] == before["installation_id"]
+    assert claims[0]["request_id"] == before["pending_claim"]["request_id"]
+    assert claims[0]["claim_challenge"] == hashlib.sha256(before["pending_claim"]["claim_secret"].encode()).hexdigest()
+    assert after["pending_claim"]["terminal_auth"]["resource_id"] == "sua_test"
+    assert after["pending_claim"]["terminal_auth"]["client_jwt"] == ""
+    assert any(call[1].endswith("prepare_verification") for call in calls)
+    assert "expired-private-client" not in result.output
+    finish = invoke("verify", "--code-stdin", "--handle", "human", "--accept-terms", TERMS["version"], "--age-18-or-older", "--approve-installation", input="123456\n")
+    assert finish.exit_code == 0, finish.output
+    assert json.loads(finish.stdout)["status"] == "connected"
+
+
+def test_restart_requires_terminal_mode_and_does_not_send_a_browser_invitation(terminal, monkeypatch):
+    send_claim = Mock()
+    monkeypatch.setattr(account, "_send_claim", send_claim)
+    result = invoke("connect", "human@example.com", "--restart")
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["code"] == "terminal_required"
+    send_claim.assert_not_called()
+
+
+@pytest.fixture
+def terminal_http_service(terminal, monkeypatch):
+    """Use the real HTTP decoder for approval errors and provider expiry."""
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
+    native, path, _ = terminal
+    responses = {}
+    requests = []
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args): pass
+        def do_POST(self):
+            raw = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            body = json.loads(raw) if self.headers.get("Content-Type") == "application/json" else None
+            requests.append((self.path, body))
+            status, payload = responses["current"]
+            self.send_response(status)
+            self.end_headers()
+            self.wfile.write(json.dumps(payload).encode())
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    origin = f"http://127.0.0.1:{server.server_port}"
+    real_decoder = _REAL_TERMINAL_REQUEST
+    try:
+        yield native, path, origin, responses, requests, real_decoder
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+@pytest.mark.parametrize("status, message, expected_code", [
+    (409, "That handle is already taken.", "handle_taken"),
+    (400, "That handle is reserved.", "invalid_handle"),
+    (400, "Choose a public handle.", "invalid_handle"),
+])
+def test_real_approval_errors_explain_handle_recovery_and_keep_verified_session(terminal_http_service, monkeypatch, status, message, expected_code):
+    native, path, origin, responses, requests, real_decoder = terminal_http_service
+    assert invoke("connect", "human@example.com", "--terminal").exit_code == 0
+    assert invoke("verify", "--code-stdin", input="123456\n").exit_code == 0
+    state = json.loads(path.read_text())
+    state["claim_url"] = origin + "/api/v1/account/claims"
+    account._write_state(state)
+    original = native._request
+    def send(state, method, endpoint, data=None, session_jwt=None):
+        if method == "POST" and "/claims/" in endpoint:
+            return real_decoder(state, method, endpoint, data, session_jwt)
+        return original(state, method, endpoint, data, session_jwt)
+    monkeypatch.setattr(native, "_request", send)
+    responses["current"] = status, {"status": "error", "field": "handle", "error": message, "hint": "Choose another public handle. private-value"}
+    args = ("verify", "--handle", "taken", "--accept-terms", TERMS["version"], "--age-18-or-older", "--approve-installation")
+    result = invoke(*args)
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["code"] == expected_code
+    assert payload["field"] == "handle"
+    assert "--handle" in payload["hint"]
+    assert "private-value" not in result.output
+    assert json.loads(path.read_text())["pending_claim"]["terminal_auth"]["session_id"] == "sess_test"
+    responses["current"] = 200, {"status": "connected", "handle": "@human"}
+    success = invoke("verify", "--handle", "human", *args[3:])
+    assert success.exit_code == 0, success.output
+    assert json.loads(success.stdout)["status"] == "connected"
+    assert requests[-1][1]["handle"] == "human"
+
+
+@pytest.mark.parametrize("status, payload", [
+    (200, {"response": {"id": "sua_test", "status": "abandoned"}}),
+    (404, {"errors": [{"code": "resource_not_found", "long_message": "private-provider-detail"}]}),
+])
+@pytest.mark.parametrize("command", ["verify", "resend"])
+def test_expired_provider_attempt_has_actionable_restart_hint(terminal_http_service, monkeypatch, status, payload, command):
+    native, path, origin, responses, _, real_decoder = terminal_http_service
+    assert invoke("connect", "human@example.com", "--terminal").exit_code == 0
+    state = json.loads(path.read_text())
+    state["pending_claim"]["terminal_auth"]["origin"] = origin
+    account._write_state(state)
+    responses["current"] = status, payload
+    monkeypatch.setattr(native, "_request", real_decoder)
+    result = invoke(command, *(["--code-stdin"] if command == "verify" else []), input="123456\n")
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["code"] == "terminal_attempt_expired"
+    assert "--terminal --restart" in json.loads(result.stdout)["hint"]
+    assert "private-provider-detail" not in result.output
+    assert json.loads(path.read_text())["pending_claim"]["claim_secret"] == state["pending_claim"]["claim_secret"]
+
+
+def test_restarting_verified_setup_ends_old_session_without_approving_installation(terminal):
+    _, path, calls = terminal
+    assert invoke("connect", "human@example.com", "--terminal").exit_code == 0
+    assert invoke("verify", "--code-stdin", input="123456\n").exit_code == 0
+    calls.clear()
+    result = invoke("connect", "human@example.com", "--terminal", "--restart")
+    assert result.exit_code == 0, result.output
+    assert any(call[1] == "/client/sessions/sess_test/end" for call in calls)
+    assert not any("/claims/" in call[1] for call in calls)
+    auth = json.loads(path.read_text())["pending_claim"]["terminal_auth"]
+    assert auth["step"] == "email_code"
+    assert "session_id" not in auth
+
+
+def test_clerk_errors_remain_redacted_even_with_service_like_fields(terminal_http_service, monkeypatch):
+    native, path, origin, responses, _, real_decoder = terminal_http_service
+    assert invoke("connect", "human@example.com", "--terminal").exit_code == 0
+    state = json.loads(path.read_text())
+    state["pending_claim"]["terminal_auth"]["origin"] = origin
+    account._write_state(state)
+    responses["current"] = 400, {"status": "error", "field": "handle", "error": "private-provider-detail",
+        "hint": "private-provider-detail", "errors": [{"code": "form_code_incorrect", "long_message": "private-provider-detail"}]}
+    monkeypatch.setattr(native, "_request", real_decoder)
+    result = invoke("verify", "--code-stdin", input="123456\n")
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["code"] == "form_code_incorrect"
+    assert "field" not in json.loads(result.stdout)
+    assert "private-provider-detail" not in result.output
+
+
+def test_terms_policy_error_does_not_suggest_restarting_connected_account(terminal, monkeypatch):
+    native, _, _ = terminal
+    monkeypatch.setattr(account, "_read_state", lambda: {"connection": {}})
+    monkeypatch.setattr(account, "_credential_for_connection", lambda state: "mvs_" + "a" * 43)
+    monkeypatch.setattr(native, "_request", Mock(return_value={"status": "consent_required", "terms": TERMS}))
+    result = invoke("terms", "--accept", "old-policy", "--age-18-or-older")
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["code"] == "policy_changed"
+    assert "--restart" not in payload["hint"]
