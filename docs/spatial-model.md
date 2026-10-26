@@ -122,6 +122,11 @@ macOS Chrome application; set `MOVIESTAR_CHROME_PATH` to a specific executable
 when needed. The command does not download a browser or write a project
 revision. In a container where Chrome cannot use its sandbox, set
 `MOVIESTAR_CHROME_NO_SANDBOX=1`; the CI job uses that explicit setting.
+Browser startup allows 30 seconds for the debugging port, then up to 5 seconds
+for page discovery. Transient connection, HTTP, and incomplete-response failures
+are retried during discovery with bounded requests; rendering itself is not
+retried. Persistent startup failures return an error with the last failure and
+available Chrome stderr. The overall browser process retains its 60-second bound.
 Transitions, watch, and export remain later renderer work.
 
 ## Responsive canvas rules
@@ -319,7 +324,11 @@ explicit non-static position; `position: static` is rejected for animated
 targets because transforming it would change its descendants' containing block.
 Fixed-position descendants of translated/scaled targets are also rejected; use
 absolute positioning inside the component. Opacity-only tracks can fade a static
-target without introducing a transform.
+target without introducing a transform. Geometric motion also requires a
+transformable box: non-replaced `display: inline`, `contents`, `table-column`,
+and `table-column-group` targets return an addressed error. Use `block` or
+`inline-block` when moving/scaling that target. Inline text can still fade, and
+a flex/grid item that CSS blockifies can move normally.
 
 Visual motion uses `scene_time_s`, so it keeps advancing while source footage
 is held and is unaffected by source playback speed. It restarts at each scene's
@@ -356,6 +365,10 @@ Rotation, nonuniform scale, custom easing, and transcript-triggered motion are
 not supported by these tracks.
 
 ## Timed caption elements
+
+Active caption glyphs must fit even when the authored box has zero width.
+Inspection still reports `caption_overflow` for such text, including under a
+scaled ancestor; preview rejects it before replacing either output artifact.
 
 Generate a caption track with `moviestar captions generate`, or import cues with
 `moviestar captions import`. Place it in a structured scene with an element:

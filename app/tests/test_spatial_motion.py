@@ -335,3 +335,74 @@ def test_zero_width_video_fails_explicitly_in_both_paint_paths(project, tmp_path
         render_spatial_frame(spec, _render_frame(spec, metadata), {'width': 320, 'height': 180},
                               output_path=output, project_root=tmp_path)
     assert output.read_bytes() == b'previous output'
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
+@pytest.mark.parametrize('scale', [None, .5, 2])
+def test_zero_width_caption_keeps_overflow_error_and_previous_artifacts(caption_project, tmp_path, scale):
+    from moviestar.spatial_render import SpatialRenderError
+
+    spec, metadata = caption_project
+    words = spec['spatial']['definitions']['subtitles']['children'][0]
+    words['layout'].update({'width': 0, 'height': 88, 'padding': 0, 'overflow': 'hidden'})
+    if scale is not None:
+        spec['spatial']['scenes']['first']['layout']['children'][0]['motion'] = {
+            'scale': [{'at': 0, 'value': scale}]}
+    frame = compile_spatial_frame(spec, resolve_project(metadata, spec), .5)
+    measured = measure_spatial_layout(frame, {'width': 640, 'height': 360})
+    caption = measured['boxes'][1]
+    assert caption['base_rect']['width'] == 0
+    assert caption['text_lines'][0]['width'] > 0
+    assert caption['overflow'] is True
+    assert any(item['code'] == 'caption_overflow' and item['path'] == ['first', 'subtitles', 'words']
+               for item in measured['diagnostics'])
+    preview, labels = tmp_path / 'previous.png', tmp_path / 'labels.png'
+    preview.write_bytes(b'previous preview')
+    labels.write_bytes(b'previous labels')
+    with pytest.raises(SpatialRenderError, match='caption_overflow.*first/subtitles/words'):
+        render_spatial_frame(spec, frame, {'width': 640, 'height': 360}, output_path=preview,
+                              layout_output_path=labels, project_root=tmp_path)
+    assert preview.read_bytes() == b'previous preview'
+    assert labels.read_bytes() == b'previous labels'
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
+@pytest.mark.parametrize('display', ['inline', 'contents', 'table-column', 'table-column-group'])
+def test_geometric_motion_rejects_nontransformable_boxes(caption_project, tmp_path, display):
+    spec, metadata = caption_project
+    spec['spatial']['scenes']['first']['layout']['children'] = [{
+        'id': 'label', 'type': 'text', 'content': {'text': 'Move me'},
+        'layout': {'display': display, 'position': 'relative'}, 'style': {'font_size': 24},
+        'motion': {'translate_x': [{'at': 0, 'value': 100}], 'scale': [{'at': 0, 'value': 2}]}}]
+    frame = compile_spatial_frame(spec, resolve_project(metadata, spec), .5)
+    preview = tmp_path / 'previous.png'
+    preview.write_bytes(b'previous preview')
+    for inspect in (lambda: measure_spatial_layout(frame, {'width': 640, 'height': 360}),
+                    lambda: render_spatial_frame(spec, frame, {'width': 640, 'height': 360},
+                        output_path=preview, project_root=tmp_path)):
+        with pytest.raises(SpatialLayoutError, match=f'first/label.motion:.*{display}.*inline-block'):
+            inspect()
+    assert preview.read_bytes() == b'previous preview'
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
+@pytest.mark.parametrize('display', ['inline-block', 'inline'])
+def test_inline_block_can_move_and_inline_can_fade_without_reflow(caption_project, tmp_path, display):
+    spec, metadata = caption_project
+    motion = ({'translate_x': [{'at': 0, 'value': 100}], 'scale': [{'at': 0, 'value': 2}]}
+              if display == 'inline-block' else {})
+    motion['opacity'] = [{'at': 0, 'value': .5}]
+    spec['spatial']['scenes']['first']['layout']['children'] = [{
+        'id': 'label', 'type': 'text', 'content': {'text': 'Move me'},
+        'layout': {'display': display}, 'style': {'font_size': 24}, 'motion': motion}]
+    frame = compile_spatial_frame(spec, resolve_project(metadata, spec), .5)
+    actual = render_spatial_frame(spec, frame, {'width': 640, 'height': 360},
+                                  output_path=tmp_path / 'preview.png', project_root=tmp_path)
+    assert actual['boxes'] == measure_spatial_layout(frame, {'width': 640, 'height': 360})['boxes']
+    box = actual['boxes'][0]
+    assert box['effective_opacity'] == .5
+    if display == 'inline-block':
+        assert box['rect']['x'] == box['base_rect']['x'] + 100
+        assert box['rect']['width'] == pytest.approx(box['base_rect']['width'] * 2, abs=.002)
+    else:
+        assert box['rect'] == box['base_rect']

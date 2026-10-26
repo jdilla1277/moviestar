@@ -99,7 +99,16 @@ ancestors. Rectangles describe geometric boxes, not unclipped pixel occupancy.
 A translated/scaled static target or fixed descendant would acquire a different
 containing block. Those cases fail with an addressed error; the normal relative
 positioning default and absolute children are supported. Opacity-only motion
-does not introduce a transform and can fade a static target.
+does not introduce a transform and can fade a static target. Computed display
+must provide a transformable box for geometric motion: non-replaced inline,
+contents, table-column, and table-column-group targets fail with a hint to use
+block or inline-block. Opacity-only tracks remain valid on inline text.
+
+Cumulative scale is calculated from the ancestor motion factors, independently
+of measured width. A zero-width caption may still have glyph fragments; its
+content-box bounds stay finite, overflow stays inspectable, and preview rejects
+it before replacing artifacts. Regression cases cover an unanimated caption
+and shrinking/growing ancestors.
 
 Sharp scaled patterns exposed the existing FFmpeg/Chrome interpolation
 difference under motion. Rather than change the 3/255 paint budget, videos with
@@ -230,3 +239,15 @@ The initial Ubuntu CI run passed every renderer case but hit the previous
 15-second Chrome startup limit in two layout tests. Startup now allows 30 seconds,
 with a 60-second overall browser-process timeout. These are bounded failure
 deadlines, not changes to the renderer spike's performance acceptance budgets.
+
+Page discovery now retries transient connection failures, non-success HTTP
+responses, invalid/incomplete JSON, and missing targets for at most 5 seconds
+after the port becomes available. Each request is bounded to 500 ms (or the
+remaining deadline), and Chrome exit aborts discovery. Permanent failures retain
+the last discovery error and Chrome stderr. This does not retry rendering or
+change the 30-second port / 60-second process deadlines. A subprocess regression
+injects connection refusal, HTTP 503, incomplete JSON, a stalled request, and an
+empty target list before connecting to real Chrome and measuring geometry.
+Another keeps returning HTTP 503 and verifies bounded failure with the prior
+artifact preserved. These tests cover the transient discovery failure mode;
+they do not establish the exact cause of the original CI `fetch failed` result.

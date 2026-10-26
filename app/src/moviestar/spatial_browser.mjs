@@ -25,19 +25,52 @@ let socket;
 let nextId = 0;
 const pending = new Map();
 
+function startupError(reason) {
+  const detail = chromeError.trim().split('\n').filter(Boolean).slice(-2).join(' | ');
+  return new Error(detail ? `${reason}: ${detail}` : reason);
+}
+
 async function waitForPort() {
-  const startupError = reason => {
-    const detail = chromeError.trim().split('\n').filter(Boolean).slice(-2).join(' | ');
-    return new Error(detail ? `${reason}: ${detail}` : reason);
-  };
   // A cold CI browser launch can take longer than warm scene measurements.
   for (let attempt = 0; attempt < 600; attempt++) {
     const path = join(profile, 'DevToolsActivePort');
-    if (existsSync(path)) return Number(readFileSync(path, 'utf8').split('\n')[0]);
+    if (existsSync(path)) {
+      const port = Number(readFileSync(path, 'utf8').split('\n')[0]);
+      if (Number.isInteger(port) && port > 0 && port <= 65535) return port;
+    }
     if (chrome.exitCode !== null) throw startupError('Chrome exited before opening a debugging port');
     await pause(50);
   }
   throw startupError('Chrome did not open a debugging port within 30 seconds');
+}
+
+async function waitForTarget(port) {
+  // Publishing DevToolsActivePort does not guarantee that discovery is already
+  // accepting requests. Retry only this startup handshake, never a render.
+  const deadline = Date.now() + 5000;
+  let lastError = 'no page target yet';
+  while (Date.now() < deadline) {
+    if (chrome.exitCode !== null || chrome.signalCode !== null) {
+      throw startupError('Chrome exited before opening a page target');
+    }
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/json/list`, {
+        signal: AbortSignal.timeout(Math.max(1, Math.min(500, deadline - Date.now()))),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const pages = await response.json();
+      if (!Array.isArray(pages)) throw new Error('invalid page target list');
+      const target = pages.find(page => page?.type === 'page'
+        && typeof page.webSocketDebuggerUrl === 'string' && page.webSocketDebuggerUrl);
+      if (target) return target;
+      lastError = 'no page target yet';
+    } catch (error) {
+      lastError = error.cause?.code ? `${error.message} (${error.cause.code})` : error.message;
+    }
+    const remaining = deadline - Date.now();
+    if (remaining > 0) await pause(Math.min(50, remaining));
+  }
+  throw startupError(`Chrome opened no page target within 5 seconds (${lastError})`);
 }
 
 function send(method, params = {}) {
@@ -107,13 +140,22 @@ async function render(input) {
   // Measure the responsive layout before any visual transform. Motion never
   // changes flow sizing, text wrapping, or a sibling's layout position.
   const baseRects = new Map(entries.map(({element}) => [element, element.getBoundingClientRect()]));
+  // Derive cumulative uniform scale from motion, not width ratios: a zero-width
+  // caption can still paint glyphs, and 0/0 would disable overflow comparisons.
+  const worldScales = new Map([[scene, 1]]);
   // Freeze resolved base opacity before modifying any ancestor. Inherited
   // opacity must not re-inherit an already animated multiplier and apply it
   // twice inside a subtree.
   const baseOpacity = new Map(entries.map(({element}) => [element, getComputedStyle(element).opacity]));
   for (const {element} of entries) element.style.opacity = baseOpacity.get(element);
   for (const {node, element} of entries) {
+    worldScales.set(element, worldScales.get(element.parentElement)
+      * (node.motion_transform ? node.motion.scale : 1));
     if (!node.motion) continue;
+    const display = getComputedStyle(element).display;
+    if (node.motion_transform && ['inline', 'contents', 'table-column', 'table-column-group'].includes(display)) {
+      throw new Error(`${node.path.join('/')}.motion: display ${display} has no transformable box; use block or inline-block`);
+    }
     // Transforming a static ancestor changes the containing block for absolute
     // descendants. Require the normal spatial default instead of silently
     // changing their base layout when motion is authored.
@@ -153,8 +195,7 @@ async function render(input) {
         throw new Error(`${node.path.join('/')}: unresolved video geometry`);
       }
       const box = element.getBoundingClientRect();
-      const baseWidth = baseRects.get(element).width;
-      const worldScale = baseWidth > 0 ? box.width / baseWidth : 1;
+      const worldScale = worldScales.get(element);
       const left = box.x + ((parseFloat(computed.borderLeftWidth) || 0) + padding('left')) * worldScale;
       const top = box.y + ((parseFloat(computed.borderTopWidth) || 0) + padding('top')) * worldScale;
       let nativeWidth, nativeHeight;
@@ -250,7 +291,7 @@ async function render(input) {
                                            width: rounded(line.width), height: rounded(line.height)}));
       if (node.kind === 'caption') {
         const css = getComputedStyle(element);
-        const worldScale = rect.width / baseRects.get(element).width;
+        const worldScale = worldScales.get(element);
         const px = key => (parseFloat(css.getPropertyValue(key)) || 0) * worldScale;
         const left = rect.left + px('border-left-width') + px('padding-left');
         const top = rect.top + px('border-top-width') + px('padding-top');
@@ -330,14 +371,7 @@ try {
     throw new Error('Node.js 22 or newer is required');
   }
   const port = await waitForPort();
-  let target;
-  for (let attempt = 0; attempt < 100; attempt++) {
-    const pages = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-    target = pages.find(page => page.type === 'page');
-    if (target) break;
-    await pause(50);
-  }
-  if (!target) throw new Error('Chrome opened no page target');
+  const target = await waitForTarget(port);
   socket = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => {
     socket.addEventListener('open', resolve, {once: true});
