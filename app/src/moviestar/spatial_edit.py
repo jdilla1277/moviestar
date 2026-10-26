@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from moviestar.spatial_format import canonical_property
+from moviestar.spatial_format import expand_properties, remove_properties
 
 from moviestar.spatial_model import SpatialModelError, expand_spatial_scene, spatial_state_id
 
@@ -236,11 +236,12 @@ def _bake_variation(children: list[dict], edits: list[dict], path: list[str]) ->
                 group, key = _property(edit["property"])
                 # A baked unconditional choice must still win over every format
                 # rule after the occurrence becomes a separate definition.
-                for properties in [node.setdefault(group, {}),
-                                   *(rule.get(group, {}) for rule in node.get('format_rules', []))]:
-                    for earlier in list(properties):
-                        if canonical_property(earlier) == canonical_property(key):
-                            del properties[earlier]
+                where = '/'.join(node_path)
+                removed = set(expand_properties({key: edit['value']}, where))
+                node[group] = remove_properties(node.get(group, {}), removed, where)
+                for rule in node.get('format_rules', []):
+                    if group in rule:
+                        rule[group] = remove_properties(rule[group], removed, where)
                 node[group][key] = deepcopy(edit["value"])
         if "instance_id" in node:
             nested = []

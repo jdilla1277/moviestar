@@ -9,7 +9,7 @@ from click.testing import CliRunner
 from moviestar.cli import cli
 from moviestar.project import save_project
 from moviestar.resolved import resolve_project
-from moviestar.spatial_layout import browser_available, measure_spatial_layout, prepare_layout_frame
+from moviestar.spatial_layout import SpatialLayoutError, _run_browser, browser_available, measure_spatial_layout, prepare_layout_frame
 from moviestar.spatial_model import compile_spatial_frame, edit_spatial_model
 from moviestar.spatial_render import SpatialRenderError, render_spatial_frame
 from moviestar.spec import SpecValidationError, load_spec, save_spec, validate_spec
@@ -62,7 +62,7 @@ def test_scene_and_component_format_rules_resolve_for_canvas(
     frame = _frame(spec, project)
     prepared = prepare_layout_frame(frame, {'width': width, 'height': height})
     assert prepared['root_style']['grid-template-columns'] == columns
-    assert prepared['root_style']['gap'] == gap
+    assert prepared['root_style']['row-gap'] == prepared['root_style']['column-gap'] == gap
     assert prepared['scene_layout']['matched_format_rules'] == matched
     panel = prepared['nodes'][0]['children'][0]
     assert panel['style']['grid-template-columns'] == ('1fr' if height > width else '1fr 1fr')
@@ -99,10 +99,10 @@ def test_rule_constraints_are_inclusive_and_priority_is_explicit(responsive_proj
          'layout': {'gap': 32}},
         {'id': 'broad', 'when': {'orientation': 'landscape'}, 'layout': {'gap': 40}, 'priority': -1}]
     prepared = prepare_layout_frame(_frame(spec, project), {'width': 640, 'height': 360})
-    assert prepared['root_style']['gap'] == '32px'
-    assert prepared['scene_layout']['rule_sources']['gap']['rule_ids'] == ['exact']
+    assert prepared['root_style']['row-gap'] == prepared['root_style']['column-gap'] == '32px'
+    assert prepared['scene_layout']['rule_sources']['row-gap']['rule_ids'] == ['exact']
     prepared = prepare_layout_frame(_frame(spec, project), {'width': 641, 'height': 360})
-    assert prepared['root_style']['gap'] == '40px'
+    assert prepared['root_style']['row-gap'] == prepared['root_style']['column-gap'] == '40px'
 
 
 def test_saving_variation_preserves_local_choices_across_formats(responsive_project):
@@ -226,6 +226,131 @@ def test_format_shorthand_applies_after_base_and_lower_priority_longhand(respons
     result = measure_spatial_layout(_frame(spec, project), {'width': 360, 'height': 640})
     cards = [box for box in result['boxes'] if box['path'] in [['first', 'alice'], ['first', 'bob']]]
     assert cards[1]['rect']['y'] - cards[0]['rect']['y'] - cards[0]['rect']['height'] == 24
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+def test_shorthand_longhand_ties_report_effective_property_conflict(responsive_project, reverse):
+    spec, project = responsive_project
+    panel = spec['spatial']['definitions']['card']['children'][0]
+    rules = [
+        {'id': 'both-gaps', 'when': {'orientation': 'portrait'}, 'layout': {'gap': 24}},
+        {'id': 'row-only', 'when': {'orientation': 'portrait'}, 'layout': {'row_gap': 8}}]
+    panel['format_rules'] = list(reversed(rules)) if reverse else rules
+    prepared = prepare_layout_frame(_frame(spec, project), {'width': 360, 'height': 640})
+    assert len(prepared['diagnostics']) == 2
+    for diagnostic in prepared['diagnostics']:
+        assert diagnostic['code'] == 'ambiguous_format_rule'
+        assert diagnostic['property'] == 'row-gap'
+        assert set(diagnostic['rule_ids']) == {'both-gaps', 'row-only'}
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('row_value,row_priority,expected', [(24, 0, 24), (8, 1, 8), (8, -1, 24)])
+def test_shorthand_longhand_compatible_and_ranked_rules_are_order_independent(
+        responsive_project, reverse, row_value, row_priority, expected):
+    spec, project = responsive_project
+    panel = spec['spatial']['definitions']['card']['children'][0]
+    rules = [
+        {'id': 'both-gaps', 'when': {'orientation': 'portrait'},
+         'layout': {'gap': 24, 'columns': '1fr', 'rows': '1fr 1fr'}},
+        {'id': 'row-only', 'when': {'orientation': 'portrait'}, 'priority': row_priority,
+         'layout': {'row_gap': row_value}}]
+    panel['format_rules'] = list(reversed(rules)) if reverse else rules
+    result = measure_spatial_layout(_frame(spec, project), {'width': 360, 'height': 640})
+    assert result['diagnostics'] == []
+    boxes = {tuple(box['path']): box for box in result['boxes']}
+    headline = boxes['first', 'alice', 'panel', 'headline']['rect']
+    graphic = boxes['first', 'alice', 'panel', 'graphic']['rect']
+    assert graphic['y'] - headline['y'] - headline['height'] == expected
+    assert boxes['first', 'alice', 'panel']['layout_rule']['column-gap'] == '24px'
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
+@pytest.mark.parametrize('canvas', [{'width': 640, 'height': 360}, {'width': 360, 'height': 640}])
+def test_variation_preserves_local_longhand_and_unaffected_shorthand_geometry(responsive_project, canvas):
+    spec, project = responsive_project
+    panel = spec['spatial']['definitions']['card']['children'][0]
+    panel['layout']['rows'] = '1fr 1fr'
+    panel['format_rules'][0]['layout'].update({'gap': 24, 'columns': '1fr 1fr'})
+    panel['children'].extend([{'id': name, 'type': 'shape'} for name in ('third', 'fourth')])
+    spec, _ = edit_spatial_model(spec, {'op': 'instance.customize',
+        'target': {'occurrence_path': ['first', 'alice', 'panel']}, 'property': 'layout.row_gap', 'value': 4})
+    before = measure_spatial_layout(_frame(spec, project), canvas)
+    boxes = {tuple(box['path']): box['rect'] for box in before['boxes']}
+    top_left, top_right, bottom_left = [boxes['first', 'alice', 'panel', name]
+                                      for name in ('headline', 'graphic', 'third')]
+    assert bottom_left['y'] - top_left['y'] - top_left['height'] == 4
+    assert top_right['x'] - top_left['x'] - top_left['width'] == (24 if canvas['height'] > canvas['width'] else 8)
+    spec, _ = edit_spatial_model(spec, {'op': 'component.save_variation',
+        'source': {'occurrence_path': ['first', 'alice']}, 'new_definition_id': 'fixed_gaps',
+        'relink_source': True})
+    after = measure_spatial_layout(_frame(spec, project), canvas)
+    assert [box['rect'] for box in after['boxes']] == [box['rect'] for box in before['boxes']]
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
+@pytest.mark.parametrize('placement', [
+    {'grid_area': 'a'}, {'grid_area': '2 / 1 / 3 / 3'}, {'grid_area': 'b'},
+    {'grid_area': '2 / 1'}, {'grid_area': 'span 2 / 2'},
+    {'grid_row': '1 / 3', 'grid_column': '2'}, {'grid_row': 'b', 'grid_column': '1'},
+    {'grid_area': r'\61 ', 'grid_row': '2'}, {'grid_area': 'a\\ '}])
+def test_expanded_grid_shorthands_match_chrome_placement(placement):
+    frame = {'scene_id': 'probe', 'display': 'grid', 'columns': '[a\\ ] 100px 120px', 'rows': '[a\\ ] 80px 90px',
+             'grid_template_areas': '"a a" "b c"', 'gap': 'calc(4px + 4px) 12px',
+             'children': [{'type': 'shape', 'occurrence_path': ['probe', 'target'], 'layout': placement}],
+             'diagnostics': []}
+    prepared = prepare_layout_frame(frame, {'width': 320, 'height': 240})
+    reference = deepcopy(prepared)
+    reference['nodes'][0]['style'] = {key.replace('_', '-'): value for key, value in placement.items()}
+    # Compare our normalization against Chrome's own shorthand parser.
+    assert _run_browser(prepared)['boxes'][0]['rect'] == _run_browser(reference)['boxes'][0]['rect']
+
+
+def test_grid_area_ties_and_partial_variation_use_effective_longhands(responsive_project):
+    spec, project = responsive_project
+    panel = spec['spatial']['definitions']['card']['children'][0]
+    headline = panel['children'][0]
+    headline['format_rules'] = [
+        {'id': 'area', 'when': {'orientation': 'portrait'}, 'layout': {'grid_area': '1 / 2 / 3 / 4'}},
+        {'id': 'row', 'when': {'orientation': 'portrait'}, 'layout': {'grid_row': '2 / 3'}}]
+    prepared = prepare_layout_frame(_frame(spec, project), {'width': 360, 'height': 640})
+    assert {item['property'] for item in prepared['diagnostics']} == {'grid-row-start'}
+    spec, _ = edit_spatial_model(spec, {'op': 'instance.customize',
+        'target': {'occurrence_path': ['first', 'alice', 'panel', 'headline']},
+        'property': 'layout.grid_row_start', 'value': '4'})
+    before = prepare_layout_frame(_frame(spec, project), {'width': 360, 'height': 640})['nodes'][0]['children'][0]['children'][0]['style']
+    assert before['grid-row-start'] == '4'
+    assert before['grid-column-start'] == '2'
+    assert before['grid-column-end'] == '4'
+    spec, _ = edit_spatial_model(spec, {'op': 'component.save_variation',
+        'source': {'occurrence_path': ['first', 'alice']}, 'new_definition_id': 'fixed_grid', 'relink_source': True})
+    after = prepare_layout_frame(_frame(spec, project), {'width': 360, 'height': 640})['nodes'][0]['children'][0]['children'][0]['style']
+    assert after == before
+
+
+@pytest.mark.parametrize('value', ['var(--gaps, 4px 8px)', 'env(custom-gap, 4px 8px)'])
+def test_unresolved_shorthand_substitution_requests_explicit_longhands(responsive_project, value):
+    spec, project = responsive_project
+    spec['spatial']['scenes']['first']['layout']['gap'] = value
+    with pytest.raises(SpatialLayoutError, match='scene.layout.gap.*explicit longhand'):
+        prepare_layout_frame(_frame(spec, project), {'width': 640, 'height': 360})
+
+
+@pytest.mark.parametrize('properties', [{'gap': 'inherit initial'}, {'grid_area': 'inherit / auto'}])
+def test_css_wide_keywords_cannot_be_parts_of_a_shorthand(responsive_project, properties):
+    spec, project = responsive_project
+    spec['spatial']['definitions']['card']['children'][0]['layout'].update(properties)
+    with pytest.raises(SpatialLayoutError, match='CSS-wide'):
+        prepare_layout_frame(_frame(spec, project), {'width': 640, 'height': 360})
+
+
+def test_comments_in_shorthands_do_not_become_substitutions(responsive_project):
+    spec, project = responsive_project
+    spec['spatial']['scenes']['first']['layout']['gap'] = '10px /* var(--unused) */ 20px'
+    style = prepare_layout_frame(_frame(spec, project), {'width': 640, 'height': 360})['root_style']
+    assert style['row-gap'] == '10px'
+    assert style['column-gap'] == '20px'
 
 
 def test_responsive_model_survives_save_reload_and_cli_canvas_is_read_only(responsive_project, tmp_path, monkeypatch):

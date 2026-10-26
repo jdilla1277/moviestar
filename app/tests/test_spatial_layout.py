@@ -63,7 +63,8 @@ def test_layout_preparation_maps_nested_css_and_rejects_unsafe_values():
     frame = _frame()
     prepared = prepare_layout_frame(frame, {"width": 640, "height": 360})
     assert prepared["canvas"] == {"width": 640, "height": 360}
-    assert prepared["root_style"] == {"display": "grid", "grid-template-columns": "1fr 2fr", "gap": "16px"}
+    assert prepared["root_style"] == {"display": "grid", "grid-template-columns": "1fr 2fr",
+                                      "row-gap": "16px", "column-gap": "16px"}
     assert prepared["nodes"][1]["style"]["font-size"] == "28px"
     assert prepared["nodes"][1]["content"] == "A two-line\nheadline"
     assert prepared["nodes"][0]["path"] == ["scene_a", "left"]
@@ -119,7 +120,8 @@ def test_numeric_css_preserves_unitless_values_and_adds_units_to_lengths():
     prepared = prepare_layout_frame(frame, {"width": 640, "height": 360})
     assert prepared["nodes"][0]["style"] == {
         "width": "100px", "height": "50px", "aspect-ratio": "2",
-        "grid-column": "2", "grid-row": "1", "grid-area": "2", "gap": "8px",
+        "grid-column-start": "auto", "grid-column-end": "auto",
+        "grid-row-start": "2", "grid-row-end": "auto", "row-gap": "8px", "column-gap": "8px",
         "font-size": "24px", "line-height": "1.5", "opacity": "0.5",
     }
 

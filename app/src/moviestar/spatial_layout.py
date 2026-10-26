@@ -16,7 +16,7 @@ import shutil
 import subprocess
 from importlib.resources import files
 
-from moviestar.spatial_format import SpatialFormatError, matches_canvas, validate_format_rules
+from moviestar.spatial_format import SpatialFormatError, expand_properties, matches_canvas, validate_format_rules
 
 
 class SpatialLayoutError(ValueError):
@@ -29,6 +29,8 @@ _LAYOUT = {
     "grid_template_areas": "grid-template-areas", "grid_auto_columns": "grid-auto-columns",
     "grid_auto_rows": "grid-auto-rows", "grid_auto_flow": "grid-auto-flow",
     "grid_area": "grid-area", "grid_column": "grid-column", "grid_row": "grid-row",
+    "grid_column_start": "grid-column-start", "grid_column_end": "grid-column-end",
+    "grid_row_start": "grid-row-start", "grid_row_end": "grid-row-end",
     "gap": "gap", "row_gap": "row-gap", "column_gap": "column-gap",
     "padding": "padding", "margin": "margin", "width": "width", "height": "height",
     "min_width": "min-width", "max_width": "max-width", "min_height": "min-height",
@@ -88,7 +90,10 @@ def _css(properties: dict, allowed: dict[str, str], path: str) -> dict[str, str]
         if isinstance(raw_value, (int, float)) and css_key in _LENGTH_PROPERTIES:
             value += "px"
         result[css_key] = value
-    return result
+    try:
+        return expand_properties(result, path)
+    except SpatialFormatError as exc:
+        raise SpatialLayoutError(str(exc)) from exc
 
 
 def _canvas(value: dict) -> dict[str, int]:
@@ -140,8 +145,8 @@ def _resolve_styles(base: dict, rules: list, local: dict, canvas: dict,
             sources[key] = {'layer': 'ambiguous', 'rule_ids': identities, 'priority': priority}
             # Inspection can still show draft base geometry; preview rejects it.
             continue
-        # Reinsert declarations in cascade order. Updating a dict value in place
-        # can let a base longhand override a later format shorthand in Chrome.
+        # Every candidate now owns effective longhands, so Chrome declaration
+        # order cannot silently resolve conflicts between different shorthands.
         style.pop(key, None)
         style[key] = winners[0][2]
         sources[key] = {'layer': 'format_rule', 'rule_ids': identities, 'priority': priority}

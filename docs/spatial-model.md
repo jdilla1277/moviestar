@@ -186,13 +186,29 @@ property, and rule IDs. Rule order does not break ties. Increase a rule's priori
 make its predicate disjoint, or supply a local customization. A higher-priority
 rule or local customization resolves lower-priority conflicts for that property.
 CSS aliases such as `columns` and `grid_template_columns` identify the same
-property for precedence and conflict checks.
+property for precedence and conflict checks. Overlapping shorthands are expanded
+before selecting winners: `gap` assigns `row-gap` and `column-gap`; `grid_area`,
+`grid_row`, and `grid_column` assign the corresponding grid start/end longhands.
+For example, equally ranked `gap: 24` and `row_gap: 8` conflict on `row-gap` in
+either rule order. Raising the row rule's priority selects an 8px row gap while
+retaining the shorthand's 24px column gap. Identical values remain compatible.
+
+Inspection reports these effective longhand names in the resolved style and
+`rule_sources`. Grid start/end properties can also be authored directly as
+`grid_row_start`, `grid_row_end`, `grid_column_start`, and `grid_column_end`.
+Fixed values and math functions such as `calc()` retain their CSS meaning.
+Substitution functions (`var()`, `env()`, or `attr()`) inside these shorthands
+require explicit longhand declarations, so unresolved multi-value substitutions
+cannot be guessed during expansion.
 
 Editing a scene-owned base property or using `component.update` edits the base
 layer; matching rules still apply. Resetting an inherited occurrence customization
 restores the base/format cascade. Saving a customized occurrence as a separate
 component bakes its unconditional choices into the new definition, removing
 conflicting assignments for those properties from its copied format rules.
+When only part of a shorthand overlaps, its unaffected assignments are retained
+as longhands. A local `row_gap: 4` therefore remains 4px after saving a component
+whose portrait rule sets `gap: 24`, while the column gap still responds to that rule.
 Other properties keep responding to the canvas, and the original definition is
 unchanged.
 
