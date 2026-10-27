@@ -20,6 +20,7 @@ from moviestar.spatial_layout import SpatialLayoutError, prepare_layout_frame
 from moviestar.spatial_model import compile_spatial_scene_frame, expand_spatial_scene
 from moviestar.spatial_render import _asset_path, render_spatial_frame
 from moviestar.timecodes import format_timecode
+from moviestar.transitions import resolve_edge_transition
 
 
 def _walk(nodes):
@@ -122,6 +123,12 @@ def spatial_video_command(*, project, spec, command, output, from_s=0.0, to_s=No
         end = timeline.duration_s if to_s is None else to_s
         if not 0 <= from_s < end <= timeline.duration_s:
             raise ValueError(f'range {from_s}-{end} must be within 0-{timeline.duration_s} seconds')
+        for field, edge in [('opening_transition', 'opening'), ('closing_transition', 'closing')]:
+            transition = spec.get(field)
+            if transition:
+                resolved_edge = resolve_edge_transition(timeline, edge=edge, duration_s=transition['duration'])
+                if not resolved_edge.sufficient:
+                    raise ValueError(f"{field}: duration exceeds project limit {resolved_edge.maximum_duration_s}s")
         render_start, render_end = _context_range(spec, timeline, from_s, end)
         plan, render_plans = c._scene_render_plans_for_range(
             project=project, spec=spec, composition=spec['composition'],

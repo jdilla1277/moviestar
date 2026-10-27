@@ -314,3 +314,14 @@ def test_watch_transition_limit_error_identifies_watch(video_project, tmp_path):
     result = CliRunner().invoke(cli, ['watch', '--from', '.3', '--to', '.5', '--dry-run', '--video-encoder', 'x264'])
     assert result.exit_code == 1
     assert json.loads(result.stdout)['command'] == 'watch'
+
+
+@pytest.mark.parametrize('field', ['opening_transition', 'closing_transition'])
+def test_project_edge_limit_is_checked_before_video_render(video_project, tmp_path, field):
+    spec, metadata = video_project
+    spec[field] = {'type': 'dip-black', 'duration': 1}
+    save_spec(spec, cwd=tmp_path)
+    result = CliRunner().invoke(cli, ['export', '--out', 'edge.mp4', '--dry-run', '--video-encoder', 'x264'])
+    assert result.exit_code == 1
+    assert field in json.loads(result.stdout)['error']
+    assert not (tmp_path / 'edge.mp4').exists()
