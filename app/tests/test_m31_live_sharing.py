@@ -270,7 +270,12 @@ def test_owner_api_redirect_is_not_followed_with_device_credential(tmp_path,monk
         server.shutdown();server.server_close();worker.join()
 
 
-@pytest.mark.parametrize("response", [(0, {}), (503, {"status": "sharing_unavailable"}), (201, {"status": "shared"}), (201, {"status": ["invalid"]})])
+@pytest.mark.parametrize("response", [(0, {}), (503, {"status": "sharing_unavailable"}), (201, {"status": "shared"}), (201, {"status": ["invalid"]}),
+    (201, {"status": "shared", "video_id": VIDEO, "quota": QUOTA,
+           "link": {k: v for k, v in link().items() if k != "revoked_at"}}),
+    (201, {"status": "shared", "video_id": VIDEO, "quota": QUOTA,
+           "link": {k: v for k, v in link(True).items() if k != "url"}}),
+])
 def test_unconfirmed_publication_is_unknown_and_requires_same_key_reconciliation(connected, monkeypatch, response):
     monkeypatch.setattr(sharing, "_json_request", lambda *a, **k: response)
     result, body = invoke("share", VIDEO, "--idempotency-key", "original-key")
@@ -331,3 +336,27 @@ def test_bad_viewer_configuration_does_not_block_owner_revocation(connected,monk
     monkeypatch.setattr(sharing,"_json_request",lambda *a, **k:(200,{"status":"revoked","video_id":VIDEO,"link":link(True),"video_deleted":False,"quota":QUOTA}))
     result,body=invoke("unshare",LINK)
     assert result.exit_code == 0 and body["link_revoked"] is True
+
+
+@pytest.mark.parametrize("read_failure", ["reset", "incomplete"])
+def test_error_response_body_read_failure_is_an_unknown_publication_outcome(connected,monkeypatch,read_failure):
+    from http.client import IncompleteRead
+    from io import BytesIO
+    from urllib.error import HTTPError
+    from moviestar import upload as uploads
+    closed=[]
+    class BrokenBody(BytesIO):
+        def read(self,*args):
+            if read_failure == "incomplete": raise IncompleteRead(b"",1)
+            raise ConnectionResetError("response lost")
+        def close(self):
+            closed.append(True)
+            super().close()
+    error=HTTPError(f"{ORIGIN}/api/v1/videos/{VIDEO}/shares",503,"Unavailable",{},BrokenBody())
+    class Opener:
+        def open(self,*args,**kwargs): raise error
+    monkeypatch.setattr(uploads,"build_opener",lambda *a, **k:Opener())
+    result,body=invoke("share",VIDEO,"--idempotency-key","original-key")
+    assert result.exit_code == 1 and body["link_created"] is None
+    assert body["publication_outcome"] == "unknown"
+    assert "original-key" in body["hint"] and closed

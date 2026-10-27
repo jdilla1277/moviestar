@@ -7,6 +7,7 @@ import re
 import uuid
 from typing import Callable
 from pathlib import Path
+from http.client import HTTPException
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, build_opener
@@ -81,17 +82,19 @@ def _json_request(url: str, credential: str, payload: dict | None = None, *, met
     )
     opener = build_opener(_NoRedirectHandler())
     try:
-        with opener.open(request, timeout=30) as response:
-            status, body = response.status, response.read(65_537)
-    except HTTPError as error:
-        status, body = error.code, error.read(65_537)
-    except (URLError, TimeoutError, OSError):
+        try:
+            with opener.open(request, timeout=30) as response:
+                status, body = response.status, response.read(65_537)
+        except HTTPError as error:
+            with error:
+                status, body = error.code, error.read(65_537)
+    except (URLError, HTTPException, TimeoutError, OSError):
         return 0, {}
     if len(body) > 65_536:
         return status, {}
     try:
         result = json.loads(body)
-    except (UnicodeDecodeError, json.JSONDecodeError):
+    except (UnicodeDecodeError, ValueError):
         return status, {}
     return status, result if isinstance(result, dict) else {}
 

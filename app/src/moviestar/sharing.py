@@ -61,7 +61,8 @@ def _timestamp(value: object) -> bool:
 
 
 def _link(raw: object, origin: str, video_id: str | None = None) -> dict | None:
-    if not isinstance(raw, dict):
+    fields = ("id", "video_id", "url", "access", "forwardable", "downloadable", "created_at", "revoked_at")
+    if not isinstance(raw, dict) or any(field not in raw for field in fields):
         return None
     if (not isinstance(raw.get("id"), str) or not _RESERVATION_RE.fullmatch(raw["id"])
             or not isinstance(raw.get("video_id"), str) or not _RESERVATION_RE.fullmatch(raw["video_id"])
@@ -76,9 +77,7 @@ def _link(raw: object, origin: str, video_id: str | None = None) -> dict | None:
     else:
         if watch_link(raw.get("url"), allowed_origin=origin) is None:
             return None
-    return {field: raw[field] for field in (
-        "id", "video_id", "url", "access", "forwardable", "downloadable", "created_at", "revoked_at",
-    )}
+    return {field: raw[field] for field in fields}
 
 
 def _usage(value: object) -> dict | None:
