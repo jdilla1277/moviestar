@@ -2,13 +2,14 @@
 
 This slice connects the persisted visual tree and canonical media clock to a
 real still-frame preview. It advances milestone 2; it does not complete the
-watch/export, motion, or static-scene timing gates.
+watch/export or static-scene timing gates. Scene-relative element and component
+motion now uses this same frame path.
 
 ## Shared boundary
 
 `compile_spatial_frame` selects the scene, expands linked components, and resolves
 media clocks. `prepare_layout_frame` validates and translates the supported CSS
-rules. One browser page measures the result, paints graphics, and can also draw
+rules and samples scene-relative visual tracks. One browser page measures the result, paints graphics, and can also draw
 the labeled layout view. Media background paint never participates in flow, so
 adding asset pixels leaves measured element boxes and text lines unchanged.
 Each asset is a content-box background layer on its own element; an empty final
@@ -18,9 +19,10 @@ ancestor clips and stacking keep their normal CSS behavior.
 
 FFmpeg decodes each distinct asset/time pair once, normalizing display aspect
 ratio and orientation into a PNG. Local images become RGBA PNGs painted by the
-browser; videos remain opaque RGB frames composed by FFmpeg. This avoids browser
+browser. Stationary videos remain opaque RGB frames composed by FFmpeg; videos
+in moving subtrees are decoded RGB stills painted by Chrome. This avoids browser
 video codec and seek differences. The frame response records the source times
-and pixel-aligned sampling rectangles used by FFmpeg.
+and pixel-aligned sampling rectangles used by the selected paint path.
 
 For video, the existing PyAV dependency seeks to the preceding keyframe and
 walks decoded presentation timestamps until the first frame after the requested
@@ -67,8 +69,9 @@ canvas dimensions on older FFmpeg builds whose
 Calibration surfaces use opaque PNG textures with the source's intrinsic size,
 matching the browser reference's image path. Every capture forces a complete
 repaint: partial repaint can reuse rounded-clip edge pixels from a previous
-calibration. CSS filters, blend modes, transforms, and arbitrary HTML/scripts are
-outside the accepted vocabulary. Video with alpha is rejected because its pixels
+calibration. CSS filters, blend modes, arbitrary transforms, and user HTML/scripts
+are outside the accepted vocabulary. Authored visual motion uses only the
+validated translation/uniform-scale/opacity tracks below. Video with alpha is rejected because its pixels
 would change the visibility of underlying paint; images with alpha are browser
 graphics and are supported.
 
@@ -78,6 +81,58 @@ everything and removes its temporary directory. Reusing previously rendered scen
 clips and cache invalidation remain a separate project.
 
 ## Verification
+
+### Scene-relative visual motion
+
+`spatial_motion.py` validates independent tracks for translation x/y, uniform
+scale, and opacity. Each track has strictly increasing scene-relative result
+seconds, linear interpolation, and endpoint holds. Pixel or own-box percentage
+translation resolves after responsive base layout. Local track overrides use the
+same stable paths, shared edit conflicts, reset, variation baking, and undo as
+existing visual properties. They do not change source pacing, media ranges,
+caption cue selection, or audio.
+
+The browser records every `base_rect`, then applies top-left-origin transforms
+and multiplicative opacity without changing flow or wrapping. `rect` and text
+line bounds use the transformed coordinates; `effective_opacity` includes
+ancestors. Rectangles describe geometric boxes, not unclipped pixel occupancy.
+A translated/scaled static target or fixed descendant would acquire a different
+containing block. Those cases fail with an addressed error; the normal relative
+positioning default and absolute children are supported. Opacity-only motion
+does not introduce a transform and can fade a static target. Computed display
+must provide a transformable box for geometric motion: non-replaced inline,
+contents, table-column, and table-column-group targets fail with a hint to use
+block or inline-block. Opacity-only tracks remain valid on inline text.
+
+Cumulative scale is calculated from the ancestor motion factors, independently
+of measured width. A zero-width caption may still have glyph fragments; its
+content-box bounds stay finite, overflow stays inspectable, and preview rejects
+it before replacing artifacts. Regression cases cover an unanimated caption
+and shrinking/growing ancestors.
+
+Sharp scaled patterns exposed the existing FFmpeg/Chrome interpolation
+difference under motion. Rather than change the 3/255 paint budget, videos with
+motion on themselves or an ancestor use a decoded PNG as browser background
+paint. This path is selected by authored tracks, consistently before, during,
+and after the move. It retains exact FFmpeg frame selection while sharing the
+browser's transformed sampling, clips, and group opacity. Other videos retain
+the mask compositor: moving video paint is included in the base and calibration
+captures, so it correctly occludes stationary footage. The renderer returns
+all media rectangles independently of which paint path owns their pixels.
+
+`test_spatial_motion.py` covers before/middle/after samples in portrait and
+landscape, nested element/group motion, fractional scales and translation,
+patterned footage, transparent images, and overlap between moving browser paint
+and stationary mask-composited footage. All retain the existing maximum 3/255
+paint comparison. Geometry checks independently calculate ancestor/child
+transforms from the base boxes. Source frame/color checks and clock tests cover
+speed changes, holds, scene offsets, and the final output-grid sample. Caption
+checks retain cues, wrapping, and scaled content-box overflow measurement.
+File-based CLI tests cover dry-run/save/read-only preview, equal rendered and
+labeled boxes, and revision undo. Unsupported containing-block changes preserve
+prior artifacts. This is still-frame evidence; interval-wide collision checks,
+transition frames, watch/export throughput, custom easing, and render caching
+remain outside this slice.
 
 ### Responsive canvas rules
 
@@ -163,17 +218,18 @@ against an independent full decode, including the reported 0.5/1.5-second
 positions and rejection after source end.
 
 This establishes still-frame geometry and paint parity on synthetic content.
-It is not evidence for export throughput or every source decoder. Motion,
-transition frames, and real-content watch/export friction tests remain
+It is not evidence for export throughput or every source decoder.
+Transition frames and real-content watch/export friction tests remain
 separate delivery gates.
 
 The browser reference is a paint check, not a promise that FFmpeg's video scaler
 matches Chrome's image scaler. A larger manual `testsrc2` example measured mean
 channel differences below 0.4/255, but individual sharp-edge pixels differed by
 69/255 in landscape and 21/255 in portrait when resampled. Those cases do not
-meet the 3/255 paint budget and are not counted as passing that gate. The product
-preview uses FFmpeg's bilinear video sampling; future export must use that same
-sampling path. Native-size patterned coverage isolates paint fidelity from this
+meet the 3/255 paint budget and are not counted as passing that gate. Stationary footage in the product
+preview uses FFmpeg's bilinear video sampling; moving subtrees use the browser
+still-image path described above. Future export must preserve the same path
+selection and sampling. Native-size patterned coverage isolates paint fidelity from this
 known resampling difference. Do not claim arbitrary scaled footage is pixel
 identical to browser image rendering. This manual check used a 320×180, 10 fps
 source sampled at 0.5/0.7/0.9 seconds on 960×540 and 540×960 canvases, macOS
@@ -183,3 +239,15 @@ The initial Ubuntu CI run passed every renderer case but hit the previous
 15-second Chrome startup limit in two layout tests. Startup now allows 30 seconds,
 with a 60-second overall browser-process timeout. These are bounded failure
 deadlines, not changes to the renderer spike's performance acceptance budgets.
+
+Page discovery now retries transient connection failures, non-success HTTP
+responses, invalid/incomplete JSON, and missing targets for at most 5 seconds
+after the port becomes available. Each request is bounded to 500 ms (or the
+remaining deadline), and Chrome exit aborts discovery. Permanent failures retain
+the last discovery error and Chrome stderr. This does not retry rendering or
+change the 30-second port / 60-second process deadlines. A subprocess regression
+injects connection refusal, HTTP 503, incomplete JSON, a stalled request, and an
+empty target list before connecting to real Chrome and measuring geometry.
+Another keeps returning HTTP 503 and verifies bounded failure with the prior
+artifact preserved. These tests cover the transient discovery failure mode;
+they do not establish the exact cause of the original CI `fetch failed` result.

@@ -250,3 +250,49 @@ def test_model_layout_reports_missing_browser_as_json(tmp_path, monkeypatch):
     error = json.loads(result.output)
     assert error["command"] == "composition model layout"
     assert "MOVIESTAR_CHROME_PATH" in error["error"]
+
+
+@pytest.mark.skipif(not browser_available(), reason='local Chrome and Node are required')
+def test_browser_discovery_recovers_from_transient_connection_and_response_failures(tmp_path, monkeypatch):
+    # Fail discovery in the Node subprocess, without retrying the render itself.
+    # The final attempt reaches real Chrome and must produce measured geometry.
+    attempts = tmp_path / 'attempts.json'
+    preload = tmp_path / 'discovery.mjs'
+    preload.write_text('''
+import {writeFileSync} from 'node:fs';
+const originalFetch = globalThis.fetch;
+let calls = 0;
+globalThis.fetch = async (...args) => {
+  if (!String(args[0]).endsWith('/json/list')) return originalFetch(...args);
+  writeFileSync(''' + json.dumps(str(attempts)) + ''', JSON.stringify(++calls));
+  if (calls === 1) throw new TypeError('simulated startup connection refusal');
+  if (calls === 2) return new Response('starting', {status: 503});
+  if (calls === 3) return new Response('incomplete JSON', {status: 200});
+  if (calls === 4) return new Promise((resolve, reject) => {
+    args[1]?.signal?.addEventListener('abort', () => reject(args[1].signal.reason), {once: true});
+  });
+  if (calls === 5) return Response.json([]);
+  return originalFetch(...args);
+};
+''')
+    monkeypatch.setenv('NODE_OPTIONS', f'--import={preload.as_uri()}')
+    result = measure_spatial_layout(_frame(), {'width': 640, 'height': 360}, output_path=tmp_path / 'layout.png')
+    assert json.loads(attempts.read_text()) >= 6
+    assert result['boxes'][0]['rect']['width'] == pytest.approx(208, abs=1)
+    assert (tmp_path / 'layout.png').read_bytes().startswith(b'\x89PNG')
+
+
+@pytest.mark.skipif(not browser_available(), reason='local Chrome and Node are required')
+def test_browser_discovery_failure_is_bounded_and_preserves_prior_artifact(tmp_path, monkeypatch):
+    import time
+
+    preload = tmp_path / 'unavailable.mjs'
+    preload.write_text('globalThis.fetch = async () => new Response("starting", {status: 503});')
+    monkeypatch.setenv('NODE_OPTIONS', f'--import={preload.as_uri()}')
+    output = tmp_path / 'previous.png'
+    output.write_bytes(b'previous layout')
+    started = time.monotonic()
+    with pytest.raises(SpatialLayoutError, match='Chrome.*page target.*HTTP 503'):
+        measure_spatial_layout(_frame(), {'width': 640, 'height': 360}, output_path=output)
+    assert time.monotonic() - started < 40  # Chrome's 30s launch + 5s discovery + cleanup
+    assert output.read_bytes() == b'previous layout'

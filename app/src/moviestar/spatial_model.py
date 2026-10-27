@@ -24,6 +24,15 @@ class SpatialModelError(ValueError):
     """A spatial document cannot be read unambiguously."""
 
 
+def _motion(value: object, path: str) -> None:
+    from moviestar.spatial_motion import SpatialMotionError, validate_motion
+
+    try:
+        validate_motion(value, path)
+    except SpatialMotionError as exc:
+        _fail(path, str(exc))
+
+
 def _format_rules(owner: dict, path: str) -> None:
     from moviestar.spatial_format import SpatialFormatError, validate_format_rules
 
@@ -179,8 +188,10 @@ def _customizations(value: object, path: str, definitions: dict, definition_id: 
         allowed = {"op", "path"}
         if op == "property_set":
             prop = edit.get("property")
-            if not isinstance(prop, str) or not prop.startswith(("style.", "layout.")) or len(prop.split(".")) != 2:
-                _fail(f"{here}.property", "must be style.KEY or layout.KEY")
+            if not isinstance(prop, str) or not prop.startswith(("style.", "layout.", "motion.")) or len(prop.split(".")) != 2:
+                _fail(f"{here}.property", "must be style.KEY, layout.KEY, or motion.KEY")
+            if prop.startswith('motion.'):
+                _motion({prop.split('.')[1]: edit.get('value')}, here)
             allowed |= {"property", "value"}
             if "value" not in edit:
                 _fail(f"{here}.value", "is required")
@@ -218,6 +229,8 @@ def _children(children: object, path: str, definitions: dict, inputs: dict[str, 
         if "style" in node and not isinstance(node["style"], dict):
             _fail(f"{here}.style", "must be an object")
         _format_rules(node, here)
+        if 'motion' in node:
+            _motion(node['motion'], f'{here}.motion')
         if is_instance:
             target = _identifier(node.get("definition_id"), f"{here}.definition_id")
             bindings = node.get("bindings", {})
@@ -285,6 +298,8 @@ def validate_spatial_model(spec: dict) -> None:
         _identifier(definition_id, path)
         if not isinstance(definition, dict):
             _fail(path, "must be an object")
+        if 'motion' in definition:
+            _fail(f'{path}.motion', 'place motion on a rendered child or component instance')
         if 'format_rules' in definition:
             _fail(f'{path}.format_rules', 'place internal rules on a rendered child, or outer rules on an instance')
         _identifier(definition.get("name"), f"{path}.name")
@@ -298,6 +313,8 @@ def validate_spatial_model(spec: dict) -> None:
             _fail(path, "unknown timeline scene id")
         if not isinstance(scene, dict) or not isinstance(scene.get("layout"), dict):
             _fail(f"{path}.layout", "must be an object")
+        if 'motion' in scene['layout']:
+            _fail(f'{path}.layout.motion', 'place motion on a rendered child or component instance')
         _format_rules(scene['layout'], f'{path}.layout')
         _children(scene["layout"].get("children"), f"{path}.layout.children", definitions, {})
 
@@ -400,6 +417,9 @@ def expand_spatial_scene(spec: dict, scene_id: str) -> dict:
                     overrides[key] = deepcopy(edit['value'])
             common = {"occurrence_path": address, "layout": deepcopy(node.get("layout", {})),
                       "style": deepcopy(node.get("style", {}))}
+            if 'motion' in node:
+                _motion(node['motion'], '/'.join(address) + '.motion')
+                common['motion'] = deepcopy(node['motion'])
             if 'format_rules' in node:
                 common['format_rules'] = deepcopy(node['format_rules'])
             if local_overrides:

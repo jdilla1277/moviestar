@@ -191,6 +191,34 @@
         "style": { "type": "object" }
       }
     },
+    "spatial_motion": {
+      "description": "Independent linear keyframe tracks on scene-relative result seconds. Endpoint values hold. Translation uses CSS pixels or percent of the target base box; scale uses its top-left origin; opacity multiplies base opacity.",
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "translate_x": { "$ref": "#/$defs/spatial_translation_track" },
+        "translate_y": { "$ref": "#/$defs/spatial_translation_track" },
+        "scale": {
+          "type": "array", "minItems": 1,
+          "items": { "type": "object", "required": ["at", "value"], "additionalProperties": false,
+            "properties": { "at": { "type": "number", "minimum": 0 }, "value": { "type": "number", "exclusiveMinimum": 0 } } }
+        },
+        "opacity": {
+          "type": "array", "minItems": 1,
+          "items": { "type": "object", "required": ["at", "value"], "additionalProperties": false,
+            "properties": { "at": { "type": "number", "minimum": 0 }, "value": { "type": "number", "minimum": 0, "maximum": 1 } } }
+        }
+      }
+    },
+    "spatial_translation_track": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "required": ["at", "value"], "additionalProperties": false,
+        "properties": {
+          "at": { "type": "number", "minimum": 0 },
+          "value": { "oneOf": [{ "type": "number" }, { "type": "string", "pattern": "^[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(px|%)$" }] }
+        }
+      }
+    },
     "spatial_node": {
       "oneOf": [
         { "$ref": "#/$defs/spatial_element" },
@@ -204,6 +232,7 @@
         "type": { "enum": ["video", "image", "text", "number", "color", "boolean", "caption", "shape"] },
         "content": { "$ref": "#/$defs/spatial_binding" },
         "format_rules": { "type": "array", "items": { "$ref": "#/$defs/spatial_format_rule" } },
+        "motion": { "$ref": "#/$defs/spatial_motion" },
         "layout": { "type": "object" },
         "style": { "type": "object" },
         "children": { "type": "array", "items": { "$ref": "#/$defs/spatial_node" } }
@@ -215,6 +244,7 @@
         "instance_id": { "type": "string", "minLength": 1 },
         "definition_id": { "type": "string", "minLength": 1 },
         "format_rules": { "type": "array", "items": { "$ref": "#/$defs/spatial_format_rule" } },
+        "motion": { "$ref": "#/$defs/spatial_motion" },
         "bindings": { "type": "object", "additionalProperties": { "$ref": "#/$defs/spatial_binding" } },
         "layout": { "type": "object" },
         "style": { "type": "object" },
