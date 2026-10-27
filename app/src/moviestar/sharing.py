@@ -1,264 +1,260 @@
-"""Truthful command previews for the planned hosted-sharing workflow."""
-
+"""Unlisted hosted-video handoffs for agents and their collaborators."""
 from __future__ import annotations
 
 import json
-import re
+import uuid
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
 import click
 
-from moviestar.account import _EMAIL_RE, _read_state
-
-
-FREE_LIMITS = {
-    "stored_videos": 3,
-    "total_bytes": 1_000_000_000,
-    "per_video_bytes": 500_000_000,
-}
+from moviestar.account import _credential_for_connection, _read_state, _valid_email
+from moviestar.upload import (
+    FREE_LIMITS, MAX_FILE_BYTES, UploadError, _KEY_RE, _RESERVATION_RE,
+    _json_request, _upload_url, upload_video,
+)
+from moviestar.download import download  # Re-export the existing command surface.
 
 
 def _emit(payload: dict) -> None:
     click.echo(json.dumps(payload, indent=2))
 
 
-def _owner_from_local_state() -> dict:
-    connection = _read_state().get("connection")
-    if isinstance(connection, dict):
-        handle = connection.get("handle")
-        email = connection.get("email")
-        if isinstance(handle, str) and isinstance(email, str):
-            return {
-                "connection": "local_record",
-                "handle": handle,
-                "email": email,
-            }
-    return {"connection": "not_connected", "handle": None, "email": None}
-
-
-def _unavailable(command: str, **fields: object) -> None:
-    _emit(
-        {
-            "command": command,
-            "status": "not_available",
-            **fields,
-            "mocked_surface_note": "This command has no hosting backend yet.",
-            "hint": (
-                "Hosted sharing is not enabled yet. The --help text shows "
-                "the planned workflow."
-            ),
-        }
-    )
+def _fail(command: str, status: str, hint: str, **fields: object) -> None:
+    _emit({"command": command, "status": status, **fields, "hint": hint})
     raise click.exceptions.Exit(1)
 
 
+def _owner_from_local_state() -> dict:
+    connection = _read_state().get("connection")
+    if isinstance(connection, dict):
+        handle, email = connection.get("handle"), connection.get("email")
+        if isinstance(handle, str) and isinstance(email, str):
+            return {"connection": "local_record", "handle": handle, "email": email}
+    return {"connection": "not_connected", "handle": None, "email": None}
+
+
+def _connection(command: str) -> tuple[str, str, str]:
+    endpoint = _upload_url()
+    credential = _credential_for_connection(_read_state())
+    if not endpoint or not credential:
+        _fail(command, "not_connected", "Run 'moviestar account connect EMAIL', then 'moviestar account status'.")
+    return endpoint.removesuffix("/api/v1/videos/uploads"), endpoint, credential
+
+
+def _timestamp(value: object) -> bool:
+    if not isinstance(value, str) or len(value) > 64:
+        return False
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).tzinfo is not None
+    except ValueError:
+        return False
+
+
+def _link(raw: object, origin: str, video_id: str | None = None) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    if (not isinstance(raw.get("id"), str) or not _RESERVATION_RE.fullmatch(raw["id"])
+            or not isinstance(raw.get("video_id"), str) or not _RESERVATION_RE.fullmatch(raw["video_id"])
+            or (video_id is not None and raw["video_id"] != video_id)
+            or raw.get("access") != "unlisted" or raw.get("forwardable") is not True
+            or raw.get("downloadable") is not True or not _timestamp(raw.get("created_at"))):
+        return None
+    revoked = raw.get("revoked_at")
+    if revoked is not None:
+        if not _timestamp(revoked) or raw.get("url") is not None:
+            return None
+    else:
+        from moviestar.download import watch_link
+        parsed = watch_link(raw.get("url"), allowed_origin=origin)
+        if parsed is None or parsed[0] != origin:
+            return None
+    return {field: raw[field] for field in (
+        "id", "video_id", "url", "access", "forwardable", "downloadable", "created_at", "revoked_at",
+    )}
+
+
+def _usage(value: object) -> dict | None:
+    if not isinstance(value, dict) or not all(type(value.get(k)) is int and value[k] >= 0 for k in ("used_videos", "used_bytes")):
+        return None
+    return {k: value[k] for k in ("used_videos", "used_bytes")}
+
+
+def _quota(value: object) -> dict | None:
+    if not isinstance(value, dict) or value.get("changed") is not False:
+        return None
+    before, after = _usage(value.get("before")), _usage(value.get("after"))
+    return {"before": before, "after": after, "changed": False} if before is not None and after == before else None
+
+
+_ERRORS = {
+    "not_connected": "Run 'moviestar account status' and reconnect if needed.",
+    "not_found": "That video or link is unavailable in this account.",
+    "consent_required": "Run 'moviestar account terms' to finish account setup, then retry.",
+    "video_not_ready": "Finish media validation with 'moviestar upload FILE --resume VIDEO_ID' before sharing.",
+    "link_revoked": "This key belongs to a revoked link. Use a new key to deliberately create another link.",
+    "idempotency_conflict": "Use the original video for this key, or choose another idempotency key.",
+    "over_quota": "Bring the account within its storage limits before publishing a new link.",
+    "rate_limited": "Wait before retrying. A successful request can be retried with its original key.",
+    "invalid_cursor": "Use the next_cursor from the previous page for this same listing.",
+    "invalid_request": "Check the video, link, cursor, and idempotency key.",
+    "publication_paused": "New publication is paused. Keep any uploaded video private and retry sharing its video ID later.",
+    "sharing_unavailable": "Sharing is unavailable. Retry the same video and idempotency key later.",
+}
+
+
+def _service_failure(command: str, code: int, body: dict, **fields: object) -> None:
+    status = body.get("status")
+    if code == 401:
+        status = "not_connected"
+    if not isinstance(status, str) or status not in _ERRORS:
+        status = "sharing_unavailable"
+    _fail(command, status, _ERRORS[status], **fields)
+
+
 @click.command("share")
-@click.argument("file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
-@click.option("--to", "recipient", metavar="EMAIL", help="Email the link to this exact address.")
-@click.option(
-    "--dry-run", is_flag=True,
-    help="Preview the handoff without uploading or sending email.",
-)
-def share(file: Path, recipient: str | None, dry_run: bool) -> None:
-    """Host a finished MP4 and optionally email its watch-and-download link.
+@click.argument("target", metavar="FILE_OR_VIDEO_ID")
+@click.option("--to", "recipient", metavar="EMAIL", help="Reserved for email delivery; live use is not available yet.")
+@click.option("--idempotency-key", metavar="KEY", help="Reuse KEY with the same file or video after an interrupted handoff.")
+@click.option("--dry-run", is_flag=True, help="Preview the handoff without uploading, publishing, or sending email.")
+def share(target: str, recipient: str | None, idempotency_key: str | None, dry_run: bool) -> None:
+    """Share an uploaded video, or upload and share a local finished MP4.
 
-    An unlisted link can be forwarded by anyone who receives it. Downloading
-    gives the recipient a finished MP4, not source files or edit history.
-    --to requires an exact email address; ask the human when you only know a
-    person's name. Without --to, create a link without sending email.
+    Anyone holding the unlisted link can watch and download. It can be forwarded.
+    Upload alone remains private. --to requires an exact email address and is
+    reserved for a later email-delivery feature; live --to changes nothing.
 
-    Example: moviestar share final.mp4 --to alex@example.com --dry-run
+    Example: moviestar share final.mp4 --idempotency-key handoff-1
 
-    This first surface preview does not upload, create a link, or send email.
-    The planned live result includes video_id, link_id, url, delivery, and
-    post-upload quota usage. Live quota usage is unavailable in this preview.
+    Retry the same file/key to recover its upload and original link. If the
+    upload succeeds but publication fails, the result includes video_id: use
+    'share VIDEO_ID --idempotency-key KEY' to retry just publication.
     """
-    file_details = {"path": str(file.resolve()), "size_bytes": file.stat().st_size}
     delivery = {"to": recipient, "would_send_email": recipient is not None}
-    no_mutation = {"upload_performed": False, "email_sent": False}
-
-    if file.suffix.lower() != ".mp4":
-        _emit(
-            {
-                "command": "share",
-                "status": "error",
-                "file": file_details,
-                "delivery": delivery,
-                **no_mutation,
-                "error": "Hosted sharing accepts a finished MP4 file.",
-                "hint": "Export a finished .mp4, then retry 'moviestar share FILE --dry-run'.",
-            }
-        )
-        raise click.exceptions.Exit(1)
-
-    if recipient is not None and not _EMAIL_RE.fullmatch(recipient):
-        _emit(
-            {
-                "command": "share",
-                "status": "error",
-                "file": file_details,
-                "delivery": delivery,
-                **no_mutation,
-                "error": "Recipient must be an email address.",
-                "hint": "Ask the human for the recipient's exact email address, then retry.",
-            }
-        )
-        raise click.exceptions.Exit(1)
-
-    if not dry_run:
-        _unavailable(
-            "share",
-            file=file_details,
-            owner=_owner_from_local_state(),
-            delivery=delivery,
-            **no_mutation,
-        )
-
-    owner = _owner_from_local_state()
-    _emit(
-        {
-            "command": "share",
-            "status": "would_share",
-            "file": file_details,
-            "owner": owner,
-            "access": {
-                "mode": "unlisted",
-                "forwardable": True,
-                "downloadable": True,
-            },
-            "delivery": delivery,
-            "quota": {
-                "plan": "unknown",
-                "current_usage": "unavailable",
-                "projected_usage": "unavailable",
-                "free_limits": FREE_LIMITS,
-                "would_use_bytes": file_details["size_bytes"],
-            },
-            "file_validation": "extension_only; media verification follows in the live service",
-            **no_mutation,
-            "mocked_surface_note": "No file was uploaded, link created, or email sent.",
-            "hint": (
-                "Run 'moviestar account connect EMAIL' first; hosted sharing is not enabled yet."
-                if owner["connection"] == "not_connected"
-                else "Hosted sharing is not enabled yet. This is the planned handoff preview."
-            ),
-        }
-    )
-
-
-@click.command("download")
-@click.argument("url")
-@click.option("--out", type=click.Path(dir_okay=False, path_type=Path), metavar="FILE",
-              help="Save the finished MP4 here; defaults to the link slug plus .mp4.")
-@click.option("--dry-run", is_flag=True, help="Preview the destination without fetching anything.")
-def download(url: str, out: Path | None, dry_run: bool) -> None:
-    """Download a finished MP4 from an unlisted Moviestar watch link.
-
-    Example: moviestar download https://trymoviestar.com/v/SLUG --out alex.mp4
-
-    Anyone with an unlisted link can download; a recipient account is not
-    required. The file is a finished MP4, not the owner's project or sources.
-    This surface preview does not fetch or write a file yet.
-    """
-    parsed = urlsplit(url)
-    slug_match = re.fullmatch(r"/v/([A-Za-z0-9_-]+)", parsed.path)
-    if (parsed.scheme != "https" or parsed.netloc != "trymoviestar.com"
-            or not slug_match or parsed.query or parsed.fragment):
-        _emit({
-            "command": "download", "status": "error", "url": url,
-            "download_performed": False,
-            "error": "Expected an unlisted Moviestar watch URL.",
-            "hint": "Use a link like https://trymoviestar.com/v/SLUG.",
-        })
-        raise click.exceptions.Exit(1)
-
-    destination = (out or Path(f"{slug_match.group(1)}.mp4")).resolve()
-    if destination.exists():
-        _emit({
-            "command": "download", "status": "error", "url": url,
-            "out": str(destination), "download_performed": False,
-            "error": "Destination already exists.",
-            "hint": "Choose another --out path; downloads never overwrite an existing file.",
-        })
-        raise click.exceptions.Exit(1)
-
-    if not dry_run:
-        _unavailable("download", url=url, out=str(destination), download_performed=False)
-
-    _emit({
-        "command": "download", "status": "would_download", "url": url,
-        "out": str(destination), "account_required": False,
-        "download_performed": False,
-        "mocked_surface_note": "No network request or file write was made.",
-        "hint": "Hosted downloads are not enabled yet. The live command will save a finished MP4.",
-    })
+    common = {"upload_performed": False, "email_sent": False, "link_created": False, "delivery": delivery}
+    if recipient is not None and not _valid_email(recipient):
+        _fail("share", "error", "Ask the human for the recipient's exact email address, then retry.", **common)
+    if recipient is not None and not dry_run:
+        _fail("share", "not_available", "Email delivery is not available yet. Omit --to to create an unlisted link without sending email.", **common)
+    if idempotency_key is not None and not _KEY_RE.fullmatch(idempotency_key):
+        _fail("share", "invalid_request", "Use 1–128 letters, digits, underscores, or hyphens for the idempotency key.", **common)
+    video_id = str(uuid.UUID(target)) if _RESERVATION_RE.fullmatch(target) else None
+    file = None if video_id else Path(target).expanduser()
+    details = None
+    if file is not None:
+        try:
+            size = file.stat().st_size
+            valid = file.is_file() and file.suffix.lower() == ".mp4" and 1 <= size <= MAX_FILE_BYTES
+        except OSError:
+            valid = False
+        if not valid:
+            _fail("share", "error", "Use a readable finished .mp4 between 1 byte and 500 MB, or a video UUID.", **common)
+        details = {"path": str(file.resolve()), "size_bytes": size}
+    if dry_run:
+        owner = _owner_from_local_state()
+        _emit({"command": "share", "status": "would_share", **common,
+               **({"video_id": video_id} if video_id else {"file": details}), "owner": owner,
+               "access": {"mode": "unlisted", "forwardable": True, "downloadable": True},
+               "quota": {"plan": "unknown", "current_usage": "unavailable", "projected_usage": "unavailable",
+                         "free_limits": FREE_LIMITS, "would_use_bytes": details["size_bytes"] if details else 0,
+                         "would_use_videos": 1 if file else 0},
+               "hint": "Connect with 'moviestar account connect EMAIL' before publishing; service readiness and quota are checked live. --to email delivery is not available yet."})
+        return
+    origin, endpoint, credential = _connection("share")
+    key = idempotency_key or uuid.uuid4().hex
+    click.echo(json.dumps({"command": "share", "status": "retry_key", "idempotency_key": key,
+                           "hint": "If interrupted, retry the same file or video with --idempotency-key KEY."}), err=True)
+    uploaded = False
+    if file is not None:
+        try:
+            result = upload_video(file, idempotency_key=key, connection=(endpoint, credential))
+        except UploadError as error:
+            _fail("share", error.status, error.hint, **{**common, **error.fields, "idempotency_key": key})
+        video_id = result.get("video_id")
+        uploaded = result.get("upload_performed") is True
+        if result.get("status") != "ready" or not isinstance(video_id, str) or not _RESERVATION_RE.fullmatch(video_id):
+            _fail("share", "video_not_ready", _ERRORS["video_not_ready"], **{**common, "upload_performed": uploaded}, idempotency_key=key)
+    fields = {**common, "upload_performed": uploaded, "video_id": video_id, "idempotency_key": key}
+    code, body = _json_request(f"{origin}/api/v1/videos/{video_id}/shares", credential, {"idempotency_key": key})
+    if code not in {200, 201} or body.get("status") not in {"shared", "already_shared"}:
+        _service_failure("share", code, body, **fields)
+    item, quota = _link(body.get("link"), origin, video_id), _quota(body.get("quota"))
+    if not item or item["revoked_at"] is not None or body.get("video_id") != video_id or quota is None:
+        _service_failure("share", 0, {}, **fields)
+    _emit({"command": "share", "status": body["status"], **fields,
+           "link_created": body["status"] == "shared", "link_id": item["id"], "url": item["url"],
+           "link": item, "quota": quota, "quota_scope": "link_publication",
+           "hint": "Anyone with this unlisted link can watch, download, and forward it. No email was sent."})
 
 
 @click.group("shares", invoke_without_command=True)
+@click.option("--video", "video_id", metavar="VIDEO_ID", help="List only links for this uploaded video.")
+@click.option("--cursor", metavar="LINK_ID", help="Continue using the prior response's next_cursor and the same --video scope.")
 @click.pass_context
-def shares(ctx: click.Context) -> None:
-    """List hosted videos, or delete a video and all its links.
+def shares(ctx: click.Context, video_id: str | None, cursor: str | None) -> None:
+    """List owned share links, including revoked history, or preview deletion.
 
-    The planned list shows each video's ID, links, delivery recipients, size,
-    and state. In this surface preview there is no hosted-video list yet.
+    The list returns one page and next_cursor. Use --video to filter a video.
+    Deletion of a video and all its links is a separate, future operation.
     """
-    if ctx.invoked_subcommand is None:
-        _unavailable("shares")
+    if ctx.invoked_subcommand is not None:
+        return
+    if any(value is not None and not _RESERVATION_RE.fullmatch(value) for value in (video_id, cursor)):
+        _fail("shares", "invalid_request", _ERRORS["invalid_request"])
+    video_id = str(uuid.UUID(video_id)) if video_id else None
+    origin, _, credential = _connection("shares")
+    path = f"/api/v1/videos/{video_id}/shares" if video_id else "/api/v1/shares"
+    code, body = _json_request(origin + path + (f"?cursor={cursor}" if cursor else ""), credential, method="GET")
+    if code != 200 or body.get("status") != "ok":
+        _service_failure("shares", code, body)
+    raw = body.get("links")
+    items = [_link(item, origin, video_id) for item in raw] if isinstance(raw, list) and len(raw) <= 50 else None
+    next_cursor, quota = body.get("next_cursor"), _usage(body.get("quota"))
+    if (items is None or any(item is None for item in items) or quota is None
+            or (next_cursor is not None and (not isinstance(next_cursor, str) or not _RESERVATION_RE.fullmatch(next_cursor)))):
+        _service_failure("shares", 0, {})
+    _emit({"command": "shares", "status": "ok", "links": items, "next_cursor": next_cursor,
+           "quota": quota, **({"video_id": video_id} if video_id else {})})
 
 
 @shares.command("delete")
 @click.argument("video_id")
 @click.option("--dry-run", is_flag=True, help="Preview deletion without removing the video.")
 def delete_video(video_id: str, dry_run: bool) -> None:
-    """Delete a hosted video, revoke all its links, and free its quota.
+    """Preview deleting a video and all its links; live deletion is unavailable.
 
-    This differs from ``unshare LINK_ID``, which only revokes one link. Copies
-    already downloaded by recipients cannot be recalled.
+    Unlike unshare, deletion would free storage. Downloaded copies cannot be recalled.
     """
     if not dry_run:
-        _unavailable("shares delete", video_id=video_id, video_deleted=False)
-    _emit(
-        {
-            "command": "shares delete",
-            "status": "would_delete_video",
-            "video_id": video_id,
-            "video_deleted": False,
-            "all_links_revoked": False,
-            "quota_released": False,
-            "mocked_surface_note": "No hosted video or link was changed.",
-            "hint": (
-                "The live command will delete the asset and all its links; "
-                "use 'unshare LINK_ID' to revoke one link."
-            ),
-        }
-    )
+        _fail("shares delete", "not_available", "Video deletion is not available yet.", video_id=video_id, video_deleted=False)
+    _emit({"command": "shares delete", "status": "would_delete_video", "video_id": video_id,
+                     "video_deleted": False, "all_links_revoked": False, "quota_released": False})
 
 
 @click.command("unshare")
 @click.argument("link_id")
 @click.option("--dry-run", is_flag=True, help="Preview revocation without changing the link.")
 def unshare(link_id: str, dry_run: bool) -> None:
-    """Revoke one hosted link without deleting its video.
+    """Revoke one link, preserving its video, other links, and storage quota.
 
-    Other links to the same video keep working; revoking a link does not free
-    storage. Use ``moviestar shares delete VIDEO_ID`` to remove the video and
-    all its links. Already downloaded copies cannot be recalled.
+    Downloads cannot be recalled. Previously issued media URLs may remain valid
+    for up to 60 seconds. Video deletion is a separate future operation.
     """
-    if not dry_run:
-        _unavailable("unshare", link_id=link_id, link_revoked=False)
-    _emit(
-        {
-            "command": "unshare",
-            "status": "would_revoke_link",
-            "link_id": link_id,
-            "link_revoked": False,
-            "video_deleted": False,
-            "quota_released": False,
-            "mocked_surface_note": "No hosted link or video was changed.",
-            "hint": (
-                "The live command will revoke this link only; use "
-                "'shares delete VIDEO_ID' to free storage."
-            ),
-        }
-    )
+    fields = {"link_id": link_id, "link_revoked": False, "video_deleted": False, "quota_released": False}
+    if dry_run:
+        _emit({"command": "unshare", "status": "would_revoke_link", **fields})
+        return
+    if not _RESERVATION_RE.fullmatch(link_id):
+        _fail("unshare", "invalid_request", "Use the link_id returned by share or shares.", **fields)
+    link_id = str(uuid.UUID(link_id))
+    fields["link_id"] = link_id
+    origin, _, credential = _connection("unshare")
+    code, body = _json_request(f"{origin}/api/v1/shares/{link_id}", credential, method="DELETE")
+    if code != 200 or body.get("status") not in {"revoked", "already_revoked"}:
+        _service_failure("unshare", code, body, **fields)
+    item, quota = _link(body.get("link"), origin), _quota(body.get("quota"))
+    if not item or item["id"] != link_id or not item["revoked_at"] or quota is None or body.get("video_deleted") is not False:
+        _service_failure("unshare", 0, {}, **fields)
+    _emit({"command": "unshare", "status": body["status"], **fields, "link_revoked": True,
+           "video_id": item["video_id"], "link": item, "quota": quota})

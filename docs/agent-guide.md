@@ -76,3 +76,14 @@ image yourself.
 The distributable [Moviestar skill](install-skill.md) gives compatible agents
 this workflow automatically. The [complete command guide](../app/README.md)
 covers every command family.
+
+## Hosted collaboration
+
+When the user requests a hosted handoff, upload privately with `moviestar upload`
+and publish with `moviestar share VIDEO_ID`, or use `moviestar share FILE` to do
+both. Preserve the stderr retry key and read the single stdout JSON result.
+`shares` lists owned links, `unshare LINK_ID` revokes one, and `download URL
+--out FILE` lets a recipient agent start another edit without an account.
+Unlisted links are forwardable and downloadable; email delivery is not yet
+implemented. See [sharing and download](sharing.md) for availability, safe
+retries after partial success, pagination, revocation, and Preview origins.

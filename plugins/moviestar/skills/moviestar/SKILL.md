@@ -1,6 +1,6 @@
 ---
 name: moviestar
-description: Edit and verify videos with the Moviestar CLI. Use for trimming, transcript search, multicamera composition, scene layout and motion, captions, overlays, audio mixing, rendering, or inspecting Moviestar projects and exports. Do not use for image-only editing or unrelated FFmpeg administration.
+description: Edit and verify videos with the Moviestar CLI. Use for trimming, transcript search, multicamera composition, scene layout and motion, captions, overlays, audio mixing, rendering, sharing or downloading finished videos, or inspecting Moviestar projects and exports. Do not use for image-only editing or unrelated FFmpeg administration.
 metadata:
   openclaw:
     requires:
@@ -80,3 +80,20 @@ age, accept the displayed terms, and authorize installation access; never infer
 these decisions. Keep verification codes and passwords out of arguments, project
 files, and logs. Connected accounts can review account-wide consent with
 `moviestar account terms`. Uploads remain private and need no per-video approval.
+
+## Hand off a finished video
+
+When the user authorizes hosting, `moviestar upload FILE` stores an MP4 privately;
+`moviestar share VIDEO_ID` publishes an unlisted link for that ready upload.
+`moviestar share FILE` combines upload and sharing. Preview with `--dry-run` and
+preserve the retry key printed to stderr before network work. Retry the same
+file/key after interruption; if an upload succeeded but sharing failed, retry
+its returned video ID with that same key. Read the one JSON stdout result.
+
+`moviestar shares` lists links with optional `--video` and `--cursor` pagination.
+`moviestar unshare LINK_ID` revokes one link, preserving the video and quota.
+`moviestar download WATCH_URL --out FILE` saves a finished MP4 anonymously and
+never overwrites a file. The recipient gets no project or source history.
+Anyone holding an unlisted link can watch, download, and forward it. Live
+`--to` email delivery and video deletion remain unavailable. If hosting is
+paused, report the returned status; never claim a link was created or sent.
