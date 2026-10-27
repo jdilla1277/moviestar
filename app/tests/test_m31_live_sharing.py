@@ -78,12 +78,12 @@ def test_local_file_composes_upload_and_share_and_reuses_retry_key(connected, tm
     assert file.read_bytes() == b"video"
 
 
-def test_to_email_rejects_before_any_upload_or_request(connected, tmp_path, monkeypatch):
+def test_invalid_to_email_rejects_before_any_upload_or_request(connected, tmp_path, monkeypatch):
     file = tmp_path / "cut.mp4"; file.write_bytes(b"video")
     monkeypatch.setattr(sharing, "upload_video", lambda *a, **k: pytest.fail("unexpected upload"))
     monkeypatch.setattr(sharing, "_json_request", lambda *a, **k: pytest.fail("unexpected publication"))
-    result, body = invoke("share", str(file), "--to", "editor@example.com")
-    assert result.exit_code == 1 and body["status"] == "not_available"
+    result, body = invoke("share", str(file), "--to", "editor@example.com~")
+    assert result.exit_code == 1 and body["status"] == "error"
     assert body["upload_performed"] is False and body["email_sent"] is False
 
 
