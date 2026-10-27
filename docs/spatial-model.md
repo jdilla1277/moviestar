@@ -9,9 +9,10 @@ The frame command also resolves the current scene and each video element's
 source position on the existing result clock. `model layout` measures a
 supported CSS layout subset in local Chrome and can draw a labeled layout PNG.
 `model preview` fills those positions with real video, images, text, and shapes.
-To avoid producing a video that silently ignores authored visuals, composition
-export stops when a spatial
-scene tree is present. The existing `--source` export remains available.
+`watch` and `export` now render those same visual trees as MP4 video, including
+motion, explicit caption elements, existing audio routing, and scene transitions.
+Mixed compositions retain the preset renderer for scenes without a spatial tree.
+The existing `--source` option still selects an individual source's edit.
 
 ## Authoring
 
@@ -127,7 +128,7 @@ for page discovery. Transient connection, HTTP, and incomplete-response failures
 are retried during discovery with bounded requests; rendering itself is not
 retried. Persistent startup failures return an error with the last failure and
 available Chrome stderr. The overall browser process retains its 60-second bound.
-Transitions, watch, and export remain later renderer work.
+Video rendering uses the same local Chrome, Node, and FFmpeg prerequisites.
 
 ## Responsive canvas rules
 
@@ -274,11 +275,73 @@ Node setup as layout inspection, plus FFmpeg/ffprobe. Output paths must be disti
 PNG files in existing directories and cannot overwrite a project asset. Asset or
 paint failures preserve an existing preview, and no project revision is written.
 
-This is single-frame rendering. It does not implement transition frames,
-static-only scene timing, watch, or export. The browser
-graphics and video visibility masks are temporary artifacts; no unchanged-clip
-cache is introduced. See the [rendering contract](design/spatial-frame-rendering.md)
+`model preview` remains a single-frame view and rejects active transition
+windows rather than showing an incomplete scene layer. `watch` and `export`
+compose the scene layers through the video transition stage described below.
+Static-only scene timing remains a separate contract. Browser graphics, video
+visibility masks, and video frame sequences are temporary artifacts; no
+unchanged-clip cache is introduced. See the [rendering contract](design/spatial-frame-rendering.md)
 for the compositing boundary and parity evidence.
+
+## Video watch and export
+
+```sh
+moviestar export --dry-run --out movie.mp4
+moviestar export --out movie.mp4
+moviestar watch --from 0:00:01.000 --to 0:00:03.000 --out watch.mp4
+```
+
+With no `--source`, a project containing spatial scenes uses the spatial video
+path. Every structured frame uses the temporal compiler and the same measured
+browser/FFmpeg frame renderer as `model preview`. Responsive layout and element
+or component motion resolve at each frame. Sampling follows the global output
+frame grid, including scene boundaries between frames. A structured window with
+no representable output frame returns an addressed error rather than adding an
+extra frame. `--preview` uses the existing 480p encoder profile after layout at
+the authored canvas; `--fast` reports that composition requires re-encoding.
+`--video-encoder`, loudness reporting/mastering, source join fades, and the saved
+audio mix use the existing encoding/audio helpers.
+
+The composition's slots still own scene duration, pacing, and the routed source
+audio. Placing a video twice in a visual tree does not route its audio twice.
+Visual bindings do not inherit legacy slot camera/framing effects; the spatial
+node owns its fitting and visual motion. Scenes without a spatial tree retain
+the preset renderer and its overlays/captions. A structured scene renders
+captions only through an explicit caption element, including nested components.
+Placed live tracks are checked for stale cues before rendering.
+
+Dissolve and dip-to-black/white transitions reuse the existing transition
+resolver, source-handle planner, and FFmpeg compositor. Structured scene layers
+render their own footage handles at the owning scene's edge source speed.
+Motion and caption state hold the owning scene's endpoint during those handles.
+Every placed video binding also needs sufficient asset handles; insufficient
+footage returns `insufficient_spatial_transition_handle` with its occurrence
+path. The existing timeline-slot handle checks remain in force. Optional video
+that ended before the scene boundary stays transparent. Opening and closing
+black/white fades apply to the complete composition. Visual transitions do not
+crossfade or duplicate source audio.
+
+A partial watch includes any transition context needed around its range, renders
+that context through the same compositor, then crops it to the requested result
+time. Audio mixing uses the requested result-time window. This keeps a watch
+inside a dissolve consistent with the corresponding export frames.
+
+Dry-run reports `spatial_render_plan` with scene IDs, frame counts, result ranges,
+and temporary PNG-sequence inputs, plus scene encoding/concat/finish commands
+and audio routes. It validates the model, layout rules, timeline, and audio plan
+without starting Chrome, decoding assets, encoding, or writing temporary files.
+Per-frame glyph overflow and media availability are runtime checks and may still
+reject a real render. The real MP4 is staged until all scene frames, encoding,
+audio mixing, and mastering succeed. Failures preserve an existing destination;
+outputs cannot overwrite a project media asset. Rendering writes no spec revision.
+
+Current video generation calls the shared still-frame renderer for each spatial
+frame and stores a temporary PNG sequence. Long jobs incur per-frame browser and
+source decoding work and temporary disk use; export throughput has not been validated
+against release performance budgets. Persistent browser/decoder workers and streaming remain
+follow-on optimizations. No unchanged-clip reuse or cache invalidation is added.
+Single-frame inspection of active transitions, static-only scene timing, and the
+remaining layout readiness checks are separate work before release.
 
 ## Element and component motion
 
@@ -491,12 +554,12 @@ that timestamp as `sample_time_s` alongside the requested `result_time_s`.
 At a time inside an authored scene or project-edge transition, `frame` returns
 an explicit JSON error because a complete transition frame needs both visual
 trees and transition state.
-Static-only scenes and spatial export are subsequent implementation steps.
+Scenes still require existing timeline slots for duration and pacing, even when
+the visual tree contains only text, images, or shapes.
 Local editing of an inherited nested instance's input
 bindings still requires editing its enclosing definition or applying a complete
 spatial document; `input.bind` currently targets scene-owned instances. Input
-declaration changes and static-only scene duration remain separate contract
-work before this model is ready for export.
+declaration changes and static-only scene duration remain separate contract work.
 
 Replacing the timeline with `moviestar scenes set` retains visual trees for
 scene IDs that remain and removes trees owned by deleted scenes in the same

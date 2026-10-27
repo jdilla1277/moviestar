@@ -3049,31 +3049,37 @@ def build_render_layout_video_command(
     audio_speed: float = 1.0,
     output_fps: float | None = None,
     video_encoder: str = "x264",
+    frame_sequence: str | None = None,
 ) -> list[str]:
     """Render simultaneous layout slots composited onto one canvas."""
-    _validate_layout_slots(layout_slots, canvas, duration)
+    if frame_sequence is None:
+        _validate_layout_slots(layout_slots, canvas, duration)
     cmd: list[str] = [
         "ffmpeg", "-y", "-loglevel", "error",
         "-progress", "pipe:2", "-nostats",
     ]
-    _append_layout_video_inputs(cmd, layout_slots)
-    _append_audio_from_inputs(cmd, len(layout_slots), audio_from_input)
+    if frame_sequence is None:
+        _append_layout_video_inputs(cmd, layout_slots)
+    else:
+        cmd += ['-framerate', str(output_fps or 30), '-start_number', '0', '-i', frame_sequence]
+    video_inputs = len(layout_slots) if frame_sequence is None else 1
+    _append_audio_from_inputs(cmd, video_inputs, audio_from_input)
     audio_input_count = len(audio_from_input[1]) if audio_from_input else 0
-    _append_shape_mask_inputs(cmd, layout_slots, duration)
+    if frame_sequence is None:
+        _append_shape_mask_inputs(cmd, layout_slots, duration)
 
     # Overlays burn in at canvas resolution, before any preview
     # downscale, so preview and full renders show identical text.
     composed_label = "vlaid" if overlay_plans else (
         "vraw" if preview else "outv"
     )
-    filter_parts = _layout_filter_parts(
-        layout_slots,
-        canvas,
-        duration,
-        output_label=composed_label,
-        output_fps=output_fps,
-        mask_start_index=len(layout_slots) + audio_input_count,
-    )
+    if frame_sequence is None:
+        filter_parts = _layout_filter_parts(
+            layout_slots, canvas, duration, output_label=composed_label,
+            output_fps=output_fps, mask_start_index=video_inputs + audio_input_count,
+        )
+    else:
+        filter_parts = [f'[0:v]trim=duration={duration},setpts=PTS-STARTPTS,setsar=1[{composed_label}]']
     if overlay_plans:
         filter_parts.extend(
             build_overlay_filter_parts(
@@ -3086,7 +3092,7 @@ def build_render_layout_video_command(
             )
         )
     audio_parts, audio_label = _audio_from_filter_parts(
-        start_index=len(layout_slots),
+        start_index=video_inputs,
         audio_from_input=audio_from_input,
         audio_speed=audio_speed,
     )
@@ -3100,6 +3106,8 @@ def build_render_layout_video_command(
     cmd += _h264_video_args(preview, video_encoder)
     if audio_label is not None:
         cmd += ["-c:a", "aac"]
+    if frame_sequence is not None:
+        cmd += ["-t", str(duration)]
     cmd.append(output_path)
     return cmd
 
@@ -3917,9 +3925,10 @@ def render_layout_video(
     audio_speed: float = 1.0,
     output_fps: float | None = None,
     video_encoder: str = "x264",
+    frame_sequence: str | None = None,
 ) -> list[str]:
     """Render simultaneous layout slots composited onto one MP4."""
-    for slot in layout_slots:
+    for slot in ([] if frame_sequence is not None else layout_slots):
         if not os.path.exists(slot["path"]):
             raise FileNotFoundError(f"File not found: {slot['path']}")
     if audio_from_input is not None:
@@ -3929,7 +3938,8 @@ def render_layout_video(
 
     check_ffmpeg_available()
     preflight_overlay_render_capabilities(overlay_plans)
-    preflight_shape_render_capabilities(layout_slots)
+    if frame_sequence is None:
+        preflight_shape_render_capabilities(layout_slots)
     cmd = build_render_layout_video_command(
         layout_slots,
         output_path,
@@ -3942,6 +3952,7 @@ def render_layout_video(
         highlight_ass=highlight_ass,
         audio_speed=audio_speed,
         output_fps=output_fps,
+        **({'frame_sequence': frame_sequence} if frame_sequence is not None else {}),
     )
     if progress_cb is None:
         progress_cb = lambda line: sys.stderr.write(line + "\n")

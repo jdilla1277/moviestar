@@ -2,8 +2,8 @@
 
 This slice connects the persisted visual tree and canonical media clock to a
 real still-frame preview. It advances milestone 2; it does not complete the
-watch/export or static-scene timing gates. Scene-relative element and component
-motion now uses this same frame path.
+static-scene timing and release-throughput gates. Scene-relative element and
+component motion, watch, and export now use this same frame path.
 
 ## Shared boundary
 
@@ -131,8 +131,8 @@ checks retain cues, wrapping, and scaled content-box overflow measurement.
 File-based CLI tests cover dry-run/save/read-only preview, equal rendered and
 labeled boxes, and revision undo. Unsupported containing-block changes preserve
 prior artifacts. This is still-frame evidence; interval-wide collision checks,
-transition frames, watch/export throughput, custom easing, and render caching
-remain outside this slice.
+single-frame transition inspection, release-throughput verification, custom
+easing, and render caching remain separate gates.
 
 ### Responsive canvas rules
 
@@ -219,8 +219,8 @@ positions and rejection after source end.
 
 This establishes still-frame geometry and paint parity on synthetic content.
 It is not evidence for export throughput or every source decoder.
-Transition frames and real-content watch/export friction tests remain
-separate delivery gates.
+Real-content watch/export friction tests and single-frame transition inspection
+remain separate delivery gates.
 
 The browser reference is a paint check, not a promise that FFmpeg's video scaler
 matches Chrome's image scaler. A larger manual `testsrc2` example measured mean
@@ -251,3 +251,38 @@ empty target list before connecting to real Chrome and measuring geometry.
 Another keeps returning HTTP 503 and verifies bounded failure with the prior
 artifact preserved. These tests cover the transient discovery failure mode;
 they do not establish the exact cause of the original CI `fetch failed` result.
+
+## Spatial video integration
+
+`spatial_video.py` selects the shared spatial frame renderer for structured
+scene clips and the existing layout renderer for preset clips. PNG sequences
+feed the existing video encoder through `frame_sequence`; routed source audio
+uses the existing slice/tempo filters once, independently of visual reuse.
+Concatenation keeps audio duration separate from quantized video frame counts.
+Non-aligned structured scene boundaries sample global frame times and do not
+introduce a frame per boundary. Empty output-grid windows are rejected.
+
+The existing source-handle planner and FFmpeg transition compositor blend both
+structured and mixed scene clips. `compile_spatial_scene_frame` is an explicit
+owned-layer compiler for handles; normal `compile_spatial_frame` retains its
+active-transition guard. Handle footage follows edge pacing; component motion
+and caption cues hold scene endpoint state. Placed media handles are checked
+against asset duration in addition to the legacy carrier-slot checks. Watches
+expand to cover intersecting transition windows and crop after compositing.
+Project-edge fades apply to the complete video before crop. Audio mixing and
+mastering apply to the requested result-time window after this visual stage.
+
+The destination is replaced only after frame generation, encoding, mixing, and
+mastering succeed. Intermediate files are temporary and removed on failure.
+Dry-run plans do not launch Chrome or decode assets; runtime glyph/asset failures
+remain possible and preserve previous output. This introduces no clip cache.
+Per-frame browser/decode overhead and PNG storage are explicit throughput
+limitations, with persistent workers/streaming left as mechanical follow-ons.
+
+`test_spatial_video.py` uses real encoded clips and decoded frames to verify
+portrait/landscape motion placement, audio RMS without duplicated routing,
+authored gain, global clocks, mixed transitions, watch windows, edge fades,
+caption declaration policy, non-aligned scene cuts, insufficient media handles,
+and preservation of prior output after late caption/media failure. These are
+MP4 correctness checks with lossy-encoding patch tolerances; the existing PNG
+paint-parity budget is unchanged. No release-throughput claim is made.

@@ -516,8 +516,35 @@ def compile_spatial_frame(
     span = timeline.span_at(lookup_time)
     if span.scene_id is None:
         _fail("spatial frame", "resolved scene has no stable id")
+    return _compile_scene_frame(spec, timeline, span, lookup_time, result_time_s, source_durations or {})
+
+
+def compile_spatial_scene_frame(spec: dict, timeline: ResolvedProject, scene_index: int,
+                                scene_time_s: float, *, source_durations: dict[str, float]) -> dict:
+    """Compile an owned scene layer, including source handles for a transition.
+
+    The caller composes these layers through the existing transition renderer.
+    Single-frame preview still rejects incomplete active-transition frames.
+    Visual motion and captions hold the owning scene's endpoint during handles;
+    footage follows that scene's edge playback speed and checks asset bounds.
+    """
+    if not _finite_number(scene_time_s):
+        _fail('scene time', 'must be finite')
+    spans = [span for span in timeline.spans if span.scene_index == scene_index]
+    if not spans:
+        _fail('scene index', 'has no resolved spans')
+    lookup_time = round(spans[0].scene_start_s + scene_time_s, 6)
+    span = next((span for span in spans if span.start_s <= lookup_time < span.end_s),
+                spans[0] if scene_time_s < 0 else spans[-1])
+    return _compile_scene_frame(spec, timeline, span, lookup_time, lookup_time,
+                                source_durations, transition_handles=True)
+
+
+def _compile_scene_frame(spec, timeline, span, lookup_time, result_time_s, source_durations,
+                         *, transition_handles=False):
     scene_duration = round(span.scene_end_s - span.scene_start_s, 6)
-    scene_time = round(min(scene_duration, lookup_time - span.scene_start_s), 6)
+    local = lookup_time - span.scene_start_s
+    scene_time = round(max(0, min(scene_duration, local)), 6)
     from moviestar.spec import parse_timecode_string
 
     authored_scene = spec["composition"][span.scene_index]
@@ -560,7 +587,16 @@ def compile_spatial_frame(
                                             "asset_duration_s": durations[asset_id]})
                     else:
                         duration = round(source["end"] - source["start"], 6)
-                        visible = scene_source_time < duration
+                        visible = 0 <= scene_source_time < duration
+                        outside = local < 0 or local >= scene_duration
+                        if transition_handles and outside and (local < 0 or duration >= scene_source_duration):
+                            requested = round(source['start'] + scene_source_time, 6)
+                            available = durations.get(asset_id)
+                            if requested < 0 or available is None or requested >= available:
+                                diagnostics.append({'code': 'insufficient_spatial_transition_handle',
+                                    'severity': 'error', 'path': node['occurrence_path'],
+                                    'source_time_s': requested, 'asset_duration_s': available})
+                            visible = True
                         node["media"] = {
                             "asset_id": asset_id,
                             "source_time_s": round(source["start"] + scene_source_time, 6) if visible else None,
@@ -575,7 +611,9 @@ def compile_spatial_frame(
             place_media(node.get("children", []))
 
     place_media(expanded["children"])
-    _place_captions(spec, expanded["children"], lookup_time, diagnostics)
+    caption_time = (max(span.scene_start_s, min(lookup_time, span.scene_end_s - .000001))
+                    if transition_handles else lookup_time)
+    _place_captions(spec, expanded["children"], caption_time, diagnostics)
     return {
         **expanded,
         "result_time_s": round(result_time_s, 6),

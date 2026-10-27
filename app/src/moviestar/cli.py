@@ -4778,6 +4778,9 @@ def watch(
     ``file_size_bytes`` are dropped (post-execution measurements).
     Scene compositions use the same ``would_extract`` status and include
     a multi-step ``scene_render_commands`` + ``concat_command`` plan.
+    Spatial scenes additionally report ``spatial_render_plan``. Their dry-run
+    checks model/timing/audio without starting Chrome or decoding media;
+    per-frame asset and glyph-overflow checks run during actual rendering.
     """
     if not is_loaded():
         _no_project_error_exit("watch")
@@ -4808,6 +4811,12 @@ def watch(
         )
 
     composition = spec.get("composition")
+    if source_arg is None and (spec.get('spatial') or {}).get('scenes'):
+        from moviestar.spatial_video import spatial_video_command
+        spatial_video_command(project=project, spec=spec, command='watch', output=output,
+                              from_s=from_s, to_s=to_s, dry_run=dry_run,
+                              loudness_report=loudness_report, video_encoder=video_encoder)
+        return
     if source_arg is None and _is_layout_composition(composition):
         if _is_scene_layout_composition(composition):
             _watch_scene_layout_composition(
@@ -5458,6 +5467,7 @@ def _scene_video_render_artifacts(
     preview: bool,
     audio_join_fade: float | None = None,
     video_encoder: str = "auto",
+    render_transitions: bool = False,
 ) -> dict:
     video_encoder = _resolve_video_encoder(command, video_encoder)
     render_plans, transition_render_plan = _apply_internal_transition_rendering(
@@ -5465,11 +5475,18 @@ def _scene_video_render_artifacts(
         project=project,
         spec=spec,
         render_plans=render_plans,
+        **({'render_transitions': True} if render_transitions else {}),
     )
     # Scene clips render separately then concat, so each scene's
     # overlay plan is windowed to that scene's global result range;
     # enable times land relative to the clip's local t=0.
     for render_plan in render_plans:
+        scene_id = render_plan['scene'].get('id')
+        if scene_id in (spec.get('spatial') or {}).get('scenes', {}):
+            render_plan['spatial_render'] = {'scene_id': scene_id}
+            render_plan['overlay_context'] = None
+            render_plan['overlay_plans'] = None
+            continue
         window = render_plan["scene_window"]["result_range"]
         scene_planned = _overlay_render_context(
             project,
@@ -5499,6 +5516,14 @@ def _scene_video_render_artifacts(
         work_dir / f"scene_{i + 1:04d}.mp4"
         for i, render_plan in enumerate(render_plans)
     ]
+    for index, render_plan in enumerate(render_plans):
+        if render_plan.get('spatial_render'):
+            from moviestar.spatial_video import _frame_count
+            render_plan['frame_sequence'] = str(work_dir / f'frames_{index:04d}' / 'frame%08d.png')
+            # Preserve whole sampled frames through per-clip encoding and the
+            # final compositor. Fractional trim durations can round down in
+            # an input's time base and drop a required dissolve-handle frame.
+            render_plan['frame_encode_duration'] = _frame_count(render_plan) / render_plan['output_fps']
     scene_render_commands = [
         {
             "scene": render_plan["scene_window"]["scene"],
@@ -5508,7 +5533,7 @@ def _scene_video_render_artifacts(
                 render_plan["render_slots"],
                 str(scene_clip_paths[i]),
                 render_plan["canvas_tuple"],
-                render_plan["video_duration"],
+                render_plan.get('frame_encode_duration', render_plan['video_duration']),
                 preview=preview,
                 video_encoder=video_encoder,
                 audio_from_input=render_plan["audio_from_input"],
@@ -5518,6 +5543,7 @@ def _scene_video_render_artifacts(
                 highlight_ass=_highlight_ass_arg(
                     render_plan["overlay_context"]
                 ),
+                **({'frame_sequence': render_plan['frame_sequence']} if render_plan.get('frame_sequence') else {}),
             ),
             "duration": format_timecode(render_plan["duration"]),
             "video_duration": format_timecode(render_plan["video_duration"]),
@@ -5538,6 +5564,7 @@ def _scene_video_render_artifacts(
         render_plan["audio_from_input"] is not None
         for render_plan in render_plans
     ]
+    separate_video_audio = bool(transition_render_plan) or any(plan.get('spatial_render') for plan in render_plans)
     concat_command = build_render_segments_command(
         concat_segments,
         abs_output,
@@ -5549,11 +5576,11 @@ def _scene_video_render_artifacts(
         audio_join_fade=audio_join_fade,
         output_fps=render_plans[0]["output_fps"],
         video_segment_durations=(
-            [render_plan["video_duration"] for render_plan in render_plans]
-            if transition_render_plan
+            [max(render_plan['video_duration'], render_plan.get('frame_encode_duration', 0)) for render_plan in render_plans]
+            if separate_video_audio
             else None
         ),
-        video_transitions=transition_render_plan or None,
+        video_transitions=transition_render_plan if separate_video_audio else None,
     )
     setup_commands = _dry_run_setup_commands_for_outputs(
         [*scene_clip_paths, abs_output]
@@ -5577,6 +5604,9 @@ def _scene_video_render_artifacts(
         "setup_commands": setup_commands,
         "audio_dropped_note": audio_dropped_note,
         "transition_render_plan": transition_render_plan,
+        "separate_video_audio": separate_video_audio,
+        "spatial_spec": spec,
+        "spatial_project": project,
     }
 
 
@@ -5586,12 +5616,13 @@ def _apply_internal_transition_rendering(
     project: dict,
     spec: dict,
     render_plans: list[dict],
+    render_transitions: bool = False,
 ) -> tuple[list[dict], list[dict]]:
     """Add visual handles around scene cuts while preserving result time."""
     plans = copy.deepcopy(render_plans)
     for plan in plans:
         plan["video_duration"] = float(plan["duration"])
-    if command != "export":
+    if command != 'export' and not render_transitions:
         return plans, []
 
     composition = spec.get("composition") or []
@@ -5773,23 +5804,31 @@ def _render_scene_video_artifacts(
         artifacts["render_plans"],
     ):
         _write_highlight_ass(render_plan.get("overlay_context"))
+        if render_plan.get('spatial_render'):
+            from moviestar.spatial_video import render_spatial_sequence
+            render_spatial_sequence(artifacts['spatial_spec'], artifacts['spatial_project'],
+                                    render_plan, project_root=get_project_dir().parent,
+                                    progress_cb=None if quiet else lambda message: click.echo(message, err=True))
         render_layout_video(
             render_plan["render_slots"],
             str(path),
             render_plan["canvas_tuple"],
-            render_plan.get("video_duration", render_plan["duration"]),
+            render_plan.get('frame_encode_duration', render_plan.get('video_duration', render_plan['duration'])),
             preview=preview,
             video_encoder=video_encoder,
             audio_from_input=render_plan["audio_from_input"],
             audio_speed=render_plan.get("audio_speed", 1.0),
             output_fps=render_plan.get("output_fps"),
+            **({'frame_sequence': render_plan['frame_sequence']} if render_plan.get('frame_sequence') else {}),
             progress_cb=lambda _line: None,
             overlay_plans=render_plan.get("overlay_plans"),
             highlight_ass=_highlight_ass_arg(
                 render_plan.get("overlay_context")
             ),
         )
-        _assert_scene_clip_duration(str(path), render_plan)
+        checked_plan = ({**render_plan, 'video_duration': render_plan['frame_encode_duration']}
+                        if 'frame_encode_duration' in render_plan else render_plan)
+        _assert_scene_clip_duration(str(path), checked_plan)
     ffmpeg_cmd = render_segments(
         artifacts["concat_segments"],
         abs_output,
@@ -5802,20 +5841,23 @@ def _render_scene_video_artifacts(
         output_fps=artifacts["output_fps"],
         video_segment_durations=(
             [
-                render_plan["video_duration"]
+                max(render_plan['video_duration'], render_plan.get('frame_encode_duration', 0))
                 for render_plan in artifacts["render_plans"]
             ]
-            if artifacts["transition_render_plan"]
+            if artifacts.get('separate_video_audio', bool(artifacts['transition_render_plan']))
             else None
         ),
-        video_transitions=artifacts["transition_render_plan"] or None,
+        video_transitions=(artifacts['transition_render_plan']
+            if artifacts.get('separate_video_audio', bool(artifacts['transition_render_plan'])) else None),
         progress_cb=_render_progress_cb(quiet),
     )
-    _assert_rendered_video_duration(
-        abs_output,
-        sum(end - start for _path, start, end in artifacts["concat_segments"]),
-        "scene composition",
-    )
+    expected_duration = sum(end - start for _path, start, end in artifacts['concat_segments'])
+    if any(plan.get('spatial_render') for plan in artifacts['render_plans']):
+        fps = artifacts['output_fps']
+        start = artifacts['render_plans'][0]['scene_window']['result_range']['from']['seconds']
+        end = artifacts['render_plans'][-1]['scene_window']['result_range']['to']['seconds']
+        expected_duration = (math.ceil(round(end * fps, 9)) - math.ceil(round(start * fps, 9))) / fps
+    _assert_rendered_video_duration(abs_output, expected_duration, 'scene composition')
     return ffmpeg_cmd
 
 
@@ -26266,6 +26308,12 @@ def export_cmd(
     ``file_size_bytes`` are dropped (post-execution measurements that
     don't exist in dry-run).
 
+    Spatial scenes use the same measured visual tree as composition model
+    preview and report spatial_render_plan. Dry-run validates model, timing,
+    and audio without starting Chrome or decoding media; runtime per-frame
+    asset and glyph-overflow checks can still reject a render. Existing output
+    is preserved if spatial rendering or audio processing fails.
+
     Multicam audio routing: set `concat --audio-from <source>` on the
     composition; `export` honors it automatically. There is no
     export-side audio-routing flag — audio routing is a property of
@@ -26300,13 +26348,12 @@ def export_cmd(
     composition = spec.get("composition")
 
     if source_arg is None and (spec.get("spatial") or {}).get("scenes"):
-        _error_exit_with_hint(
-            "export",
-            "Spatial scene trees are saved but pixel rendering is not connected yet.",
-            "Inspect the visual tree with 'moviestar composition model inspect "
-            "<scene-id>'. Export individual sources with --source until "
-            "spatial rendering is available.",
-        )
+        from moviestar.spatial_video import spatial_video_command
+        spatial_video_command(project=project, spec=spec, command='export', output=output,
+                              dry_run=dry_run, preview=preview, fast=fast, quiet=quiet,
+                              loudness_target=loudness_target, audio_join_fade=audio_join_fade,
+                              loudness_report=loudness_report, video_encoder=video_encoder)
+        return
 
     # M13b step 5 dispatch:
     #   --source set        → per-source path (existing M13a behavior).
