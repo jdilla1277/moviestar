@@ -3106,8 +3106,9 @@ def build_render_layout_video_command(
     cmd += _h264_video_args(preview, video_encoder)
     if audio_label is not None:
         cmd += ["-c:a", "aac"]
-    if frame_sequence is not None:
-        cmd += ["-t", str(duration)]
+    # The video filter limits the finite PNG sequence independently. An
+    # output-level -t would also truncate an authored audio slice whenever
+    # its duration exceeds the quantized video frame count / output_fps.
     cmd.append(output_path)
     return cmd
 
@@ -3511,7 +3512,14 @@ def build_render_segments_command(
         "-progress", "pipe:2", "-nostats",
     ]
     for path, src_from, _src_to in segments:
-        cmd += ["-ss", str(src_from), "-i", path]
+        # Owned scene clips already start at zero. On some FFmpeg versions,
+        # seeking to zero drops the negative-PTS AAC priming packet and then
+        # skips priming samples again, shortening every concatenated slice.
+        # Decode these clips from the beginning; the filters still own trims.
+        if video_transitions is not None and src_from == 0:
+            cmd += ["-i", path]
+        else:
+            cmd += ["-ss", str(src_from), "-i", path]
     # Extra -i per audio_from slice — same fast-seek shape, just feeds
     # the audio side of the filter graph instead of the video side.
     if audio_from_input is not None:
@@ -3676,8 +3684,14 @@ def build_render_segments_command(
             current_video_label = next_label
             authored_elapsed += segments[i][2] - segments[i][1]
         if current_video_label != video_output_label:
+            # A one-frame clip has no timestamp delta for concat to infer its
+            # duration. For sampled, transition-free video, preserve every
+            # frame in order instead of letting the final fps filter collapse
+            # equal boundary timestamps. Audio keeps its independent clock.
+            cadence = (f"setpts=N/({output_fps}*TB)"
+                       if not video_transitions and output_fps is not None else "null")
             filter_parts.append(
-                f"[{current_video_label}]null[{video_output_label}]"
+                f"[{current_video_label}]{cadence}[{video_output_label}]"
             )
         if a_count:
             filter_parts.append(

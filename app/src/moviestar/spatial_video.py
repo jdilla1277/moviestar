@@ -7,7 +7,7 @@ The final movie is staged until rendering, mixing, and mastering all succeed.
 from __future__ import annotations
 
 from contextlib import nullcontext
-from math import ceil
+from math import ceil, floor
 import os
 from pathlib import Path
 import tempfile
@@ -30,8 +30,9 @@ def _walk(nodes):
 
 
 def _frame_window(plan):
-    start = plan['scene_window']['result_range']['from']['seconds'] - plan.get('transition_preroll', 0)
-    end = start + plan.get('video_duration', plan['duration'])
+    start = plan.get('result_start_s', plan['scene_window']['result_range']['from']['seconds']) - plan.get('transition_preroll', 0)
+    end = (plan['result_end_s'] + plan.get('transition_postroll', 0) if 'result_end_s' in plan
+           else start + plan.get('video_duration', plan['duration']))
     first = ceil(round(start * plan['output_fps'], 9))
     count = ceil(round(end * plan['output_fps'], 9)) - first
     if count <= 0:
@@ -67,7 +68,11 @@ def render_spatial_sequence(spec, project, plan, *, project_root, progress_cb=No
 
 
 def _context_range(spec, timeline, start, end):
-    """Include complete transition windows, then crop to the requested range."""
+    """Include full transitions with a video origin on the global frame grid.
+
+    Audio retains its exact authored range; the finish stage crops both streams
+    back to the requested window independently of video sampling.
+    """
     windows = []
     for index, scene in enumerate(spec['composition']):
         transition = scene.get('transition_in')
@@ -83,11 +88,12 @@ def _context_range(spec, timeline, start, end):
     changed = True
     while changed:
         previous = start, end
+        start = floor(round(start * timeline.output_fps, 9)) / timeline.output_fps
         for left, right in windows:
             if start < right and end > left:
                 start, end = min(start, left), max(end, right)
         changed = previous != (start, end)
-    return round(max(0, start), 6), round(min(timeline.duration_s, end), 6)
+    return max(0, start), min(timeline.duration_s, end)
 
 
 def _finish_command(spec, timeline, source, output, *, render_start, start, end, has_audio, video_encoder):
@@ -103,7 +109,12 @@ def _finish_command(spec, timeline, source, output, *, render_start, start, end,
             color = 'white' if transition['type'] == 'dip-white' else 'black'
             filters.append(f"fade=t={direction}:st={round(left-render_start, 6)}:d={transition['duration']}:color={color}")
     offset, duration = round(start-render_start, 6), round(end-start, 6)
-    filters += [f'trim=start={offset}:duration={duration}', 'setpts=PTS-STARTPTS']
+    # Select video on its global frame grid, separately from exact audio time.
+    # Time-based trims can round up at recurring frame timestamps (e.g. 30 fps).
+    first = ceil(round(render_start * timeline.output_fps, 9))
+    begin = ceil(round(start * timeline.output_fps, 9)) - first
+    stop = ceil(round(end * timeline.output_fps, 9)) - first
+    filters += [f'trim=start_frame={begin}:end_frame={stop}', 'setpts=PTS-STARTPTS']
     command = ['ffmpeg', '-v', 'error', '-y', '-i', str(source), '-map', '0:v:0', '-vf', ','.join(filters)]
     if has_audio:
         command += ['-map', '0:a:0', '-af', f'atrim=start={offset}:duration={duration},asetpts=PTS-STARTPTS', '-c:a', 'aac']
@@ -153,7 +164,7 @@ def spatial_video_command(*, project, spec, command, output, from_s=0.0, to_s=No
         for item in render_plans:
             if item['scene'].get('id') not in selected_ids:
                 continue
-            at = item['scene_window']['result_range']['from']['seconds']
+            at = item['result_start_s']
             scene_index = item['scene_window']['index']
             scene_start = min(span.scene_start_s for span in timeline.spans if span.scene_index == scene_index)
             frame = compile_spatial_scene_frame(spec, timeline, scene_index, at-scene_start,

@@ -258,7 +258,10 @@ they do not establish the exact cause of the original CI `fetch failed` result.
 scene clips and the existing layout renderer for preset clips. PNG sequences
 feed the existing video encoder through `frame_sequence`; routed source audio
 uses the existing slice/tempo filters once, independently of visual reuse.
-Concatenation keeps audio duration separate from quantized video frame counts.
+The video filter limits each PNG sequence without an output-level duration cap
+on audio. Concatenation decodes zero-origin scene clips without seeking past AAC
+priming, preserving the full authored audio samples independently of quantized
+video frame counts.
 Non-aligned structured scene boundaries sample global frame times and do not
 introduce a frame per boundary. Empty output-grid windows are rejected.
 
@@ -268,7 +271,10 @@ owned-layer compiler for handles; normal `compile_spatial_frame` retains its
 active-transition guard. Handle footage follows edge pacing; component motion
 and caption cues hold scene endpoint state. Placed media handles are checked
 against asset duration in addition to the legacy carrier-slot checks. Watches
-expand to cover intersecting transition windows and crop after compositing.
+expand to cover intersecting transition windows, align the render origin to the
+global output frame grid, and crop by frame indices after compositing. Exact
+internal sample origins are kept separate from rounded timecode reports; audio
+is cropped to the requested times without video-grid quantization.
 Project-edge fades apply to the complete video before crop. Audio mixing and
 mastering apply to the requested result-time window after this visual stage.
 
@@ -282,7 +288,9 @@ limitations, with persistent workers/streaming left as mechanical follow-ons.
 `test_spatial_video.py` uses real encoded clips and decoded frames to verify
 portrait/landscape motion placement, audio RMS without duplicated routing,
 authored gain, global clocks, mixed transitions, watch windows, edge fades,
-caption declaration policy, non-aligned scene cuts, insufficient media handles,
+caption declaration policy, non-aligned scene cuts, fractional-cut audio duration
+and tone alignment, fractional-transition watch/export frame-count and blend
+parity at 10 and 30 fps, insufficient media handles,
 and preservation of prior output after late caption/media failure. These are
 MP4 correctness checks with lossy-encoding patch tolerances; the existing PNG
 paint-parity budget is unchanged. No release-throughput claim is made.

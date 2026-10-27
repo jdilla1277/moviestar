@@ -5854,8 +5854,9 @@ def _render_scene_video_artifacts(
     expected_duration = sum(end - start for _path, start, end in artifacts['concat_segments'])
     if any(plan.get('spatial_render') for plan in artifacts['render_plans']):
         fps = artifacts['output_fps']
-        start = artifacts['render_plans'][0]['scene_window']['result_range']['from']['seconds']
-        end = artifacts['render_plans'][-1]['scene_window']['result_range']['to']['seconds']
+        first, last = artifacts['render_plans'][0], artifacts['render_plans'][-1]
+        start = first.get('result_start_s', first['scene_window']['result_range']['from']['seconds'])
+        end = last.get('result_end_s', last['scene_window']['result_range']['to']['seconds'])
         expected_duration = (math.ceil(round(end * fps, 9)) - math.ceil(round(start * fps, 9))) / fps
     _assert_rendered_video_duration(abs_output, expected_duration, 'scene composition')
     return ffmpeg_cmd
@@ -8967,6 +8968,9 @@ def _paced_segment_render_plan(
         "slots": slots_out,
         "render_slots": render_slots,
         "duration": segment.duration_s,
+        # Internal sampling uses exact times, not millisecond report fields.
+        "result_start_s": segment.start_s,
+        "result_end_s": segment.end_s,
         "composition_duration": None,
         "result_range": scene_window["result_range"],
         "audio_from": audio_from,

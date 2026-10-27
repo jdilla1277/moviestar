@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 import json
+import math
 from pathlib import Path
 import struct
 import subprocess
@@ -325,3 +326,98 @@ def test_project_edge_limit_is_checked_before_video_render(video_project, tmp_pa
     assert result.exit_code == 1
     assert field in json.loads(result.stdout)['error']
     assert not (tmp_path / 'edge.mp4').exists()
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
+def test_fractional_cuts_preserve_audio_duration_and_tone_alignment(video_project, tmp_path, monkeypatch):
+    spec, metadata = video_project
+    # Four contiguous 150 ms scenes alternate between one and two video
+    # samples at 10 fps. Audio must retain every authored sample regardless.
+    source = tmp_path / 'tones.mkv'
+    expression = 'if(lt(t,.15),sin(2*PI*300*t),if(lt(t,.3),sin(2*PI*600*t),if(lt(t,.45),sin(2*PI*1200*t),sin(2*PI*2400*t))))*.1'
+    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', spec['sources'][0]['path'],
+        '-f', 'lavfi', '-i', f'aevalsrc={expression}:s=48000:d=2'.replace(',', r'\,'),
+        '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'pcm_s16le', str(source)], check=True)
+    spec['sources'][0]['path'] = str(source)
+    metadata['sources'][0]['path'] = str(source)
+    original = spec['composition'][0]
+    spec['composition'] = []
+    spec['spatial']['scenes'] = {}
+    for index in range(4):
+        scene = deepcopy(original)
+        name = scene['id'] = scene['name'] = f'scene-{index}'
+        scene['slots'][0].update({'source_from': f'0:00:00.{index*150:03d}',
+                                 'source_to': f'0:00:00.{(index+1)*150:03d}'})
+        spec['composition'].append(scene)
+        spec['spatial']['scenes'][name] = {'layout': {'background_color': '#112233', 'children': []}}
+    save_spec(spec, cwd=tmp_path)
+    save_project(metadata, cwd=tmp_path)
+    from moviestar import cli as command_module
+    encode = command_module.render_layout_video
+    audio_durations = []
+    def inspect_clip(*args, **kwargs):
+        result = encode(*args, **kwargs)
+        probe = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-select_streams', 'a:0',
+            '-show_entries', 'stream=duration', '-of', 'json', args[1]]))
+        audio_durations.append(float(probe['streams'][0]['duration']))
+        return result
+    monkeypatch.setattr(command_module, 'render_layout_video', inspect_clip)
+    _invoke(['export', '--out', 'tones.mp4', '--quiet', '--video-encoder', 'x264'])
+    assert audio_durations == pytest.approx([.15] * 4, abs=.001)
+    _invoke(['watch', '--from', '.17', '--to', '.52', '--out', 'part.mp4', '--video-encoder', 'x264'])
+    for path, duration, tones in [
+        ('tones.mp4', .6, [(.12, 300), (.27, 600), (.32, 1200), (.47, 2400)]),
+        ('part.mp4', .35, [(.1, 600), (.15, 1200), (.3, 2400)]),
+    ]:
+        probe = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-select_streams', 'a:0',
+            '-show_entries', 'stream=duration', '-of', 'json', path]))
+        assert float(probe['streams'][0]['duration']) == pytest.approx(duration, abs=.01)
+        for start, frequency in tones:
+            raw = subprocess.check_output(['ffmpeg', '-v', 'error', '-ss', str(start), '-i', path,
+                '-t', '0.025', '-vn', '-ac', '1', '-ar', '48000', '-f', 'f32le', 'pipe:1'])
+            samples = struct.unpack('<' + 'f' * (len(raw) // 4), raw)
+            def strength(hz):
+                return abs(sum(value * complex(math.cos(2*math.pi*hz*i/48000),
+                                                math.sin(2*math.pi*hz*i/48000))
+                               for i, value in enumerate(samples)))
+            assert max((300, 600, 1200, 2400), key=strength) == frequency, (path, start)
+
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
+@pytest.mark.parametrize('fps,cut,start,end,first,count', [(10, .35, .3, .5, 3, 2), (10, .35, .31, .5, 4, 1),
+                                                           (30, .38, .3, .5, 9, 6), (30, .38, .31, .5, 10, 5)])
+def test_fractional_dissolve_watch_matches_export_frame_count_and_blends(
+        video_project, tmp_path, fps, cut, start, end, first, count):
+    spec, metadata = video_project
+    metadata['sources'][0]['fps'] = fps
+    save_project(metadata, cwd=tmp_path)
+    _transition_project(spec, metadata)
+    spec['composition'][0]['slots'][0]['source_to'] = f'0:00:{.2+cut:06.3f}'
+    spec['spatial']['scenes']['first']['layout']['children'][0]['content']['source']['end'] = .2+cut
+    save_spec(spec, cwd=tmp_path)
+    _invoke(['export', '--out', 'whole.mp4', '--quiet', '--video-encoder', 'x264'])
+    _invoke(['watch', '--from', str(start), '--to', str(end), '--out', 'part.mp4', '--video-encoder', 'x264'])
+    probe = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+        '-show_entries', 'stream=nb_frames', '-of', 'json', 'part.mp4']))
+    assert int(probe['streams'][0]['nb_frames']) == count
+    offset = (70*160+100)*3
+    for index in range(count):
+        whole = _pixels('whole.mp4', first+index)[offset:offset+3]
+        part = _pixels('part.mp4', index)[offset:offset+3]
+        weight = min(1, max(0, ((first+index)/fps - (cut-.1)) / .2))
+        expected = (255*(1-weight), 0, 255*weight)
+        assert max(abs(a-b) for a,b in zip(part, expected)) <= 10, (index, list(part), expected)
+        assert max(abs(a-b) for a,b in zip(part, whole)) <= 8
+
+
+def test_transition_context_preserves_an_exact_30fps_origin(video_project):
+    from moviestar.spatial_video import _context_range
+
+    spec, metadata = video_project
+    metadata['sources'][0]['fps'] = 30
+    _transition_project(spec, metadata)
+    spec['composition'][0]['slots'][0]['source_to'] = '0:00:00.580'
+    start, end = _context_range(spec, resolve_project(metadata, spec), .3, .5)
+    assert start == 8 / 30
+    assert end == .5

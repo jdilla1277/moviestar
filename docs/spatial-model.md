@@ -305,7 +305,9 @@ the authored canvas; `--fast` reports that composition requires re-encoding.
 audio mix use the existing encoding/audio helpers.
 
 The composition's slots still own scene duration, pacing, and the routed source
-audio. Placing a video twice in a visual tree does not route its audio twice.
+audio. Audio slices retain their full authored duration even when a fractional
+scene cut yields a shorter video frame sequence. Placing a video twice in a
+visual tree does not route its audio twice.
 Visual bindings do not inherit legacy slot camera/framing effects; the spatial
 node owns its fitting and visual motion. Scenes without a spatial tree retain
 the preset renderer and its overlays/captions. A structured scene renders
@@ -324,8 +326,9 @@ black/white fades apply to the complete composition. Visual transitions do not
 crossfade or duplicate source audio.
 
 A partial watch includes any transition context needed around its range, renders
-that context through the same compositor, then crops it to the requested result
-time. Audio mixing uses the requested result-time window. This keeps a watch
+that context from an origin on the global output frame grid through the same
+compositor, then selects the requested frames. Audio retains its exact requested
+result-time window, independently of video sampling. This keeps a watch
 inside a dissolve consistent with the corresponding export frames.
 
 Dry-run reports `spatial_render_plan` with scene IDs, frame counts, result ranges,
