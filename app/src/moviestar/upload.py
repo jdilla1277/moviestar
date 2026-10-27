@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from typing import Callable
 from pathlib import Path
+from http.client import HTTPException
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, build_opener
@@ -32,9 +34,14 @@ def _emit(status: str, **fields: object) -> None:
     click.echo(json.dumps({"command": "upload", "status": status, **fields}, indent=2))
 
 
+class UploadError(Exception):
+    def __init__(self, status: str, hint: str, **fields: object):
+        super().__init__(status)
+        self.status, self.hint, self.fields = status, hint, fields
+
+
 def _fail(status: str, hint: str, **fields: object) -> None:
-    _emit(status, hint=hint, **fields)
-    raise click.exceptions.Exit(1)
+    raise UploadError(status, hint, **fields)
 
 
 def _upload_url() -> str | None:
@@ -62,30 +69,32 @@ def _safe_signed_url(url: object) -> bool:
     return parsed.scheme == "http" and host in {"localhost", "127.0.0.1", "::1"}
 
 
-def _json_request(url: str, credential: str, payload: dict | None = None) -> tuple[int, dict]:
+def _json_request(url: str, credential: str, payload: dict | None = None, *, method: str = "POST") -> tuple[int, dict]:
     request = Request(
         url,
-        data=json.dumps(payload).encode("utf-8") if payload is not None else b"",
+        data=json.dumps(payload).encode("utf-8") if payload is not None else (b"" if method == "POST" else None),
         headers={
             "Authorization": f"Bearer {credential}",
             "x-moviestar-client": _CLIENT_MARKER,
             "Content-Type": "application/json",
         },
-        method="POST",
+        method=method,
     )
     opener = build_opener(_NoRedirectHandler())
     try:
-        with opener.open(request, timeout=30) as response:
-            status, body = response.status, response.read(65_537)
-    except HTTPError as error:
-        status, body = error.code, error.read(65_537)
-    except (URLError, TimeoutError, OSError):
+        try:
+            with opener.open(request, timeout=30) as response:
+                status, body = response.status, response.read(65_537)
+        except HTTPError as error:
+            with error:
+                status, body = error.code, error.read(65_537)
+    except (URLError, HTTPException, TimeoutError, OSError):
         return 0, {}
     if len(body) > 65_536:
         return status, {}
     try:
         result = json.loads(body)
-    except (UnicodeDecodeError, json.JSONDecodeError):
+    except (UnicodeDecodeError, ValueError):
         return status, {}
     return status, result if isinstance(result, dict) else {}
 
@@ -101,8 +110,8 @@ def _put_file(url: str, headers: dict[str, str], file: Path) -> bool:
         return False
 
 
-def _validate_and_emit(endpoint: str, credential: str, video_id: str,
-                       reservation_id: str, file: Path, size: int, key: str | None) -> None:
+def _validate_result(endpoint: str, credential: str, video_id: str,
+                       reservation_id: str, file: Path, size: int, key: str | None) -> dict:
     validation_url = f"{endpoint.removesuffix('/uploads')}/{video_id}/validate"
     status, validation = _json_request(validation_url, credential)
     common = {"video_id": video_id, "filename": file.name, "size_bytes": size,
@@ -116,9 +125,8 @@ def _validate_and_emit(endpoint: str, credential: str, video_id: str,
                 and type(media.get("height")) is int and media["height"] > 0
                 and media.get("videoCodec") == "avc" and (audio_codec is None or audio_codec == "aac")):
             public_media = {field: media[field] for field in ("durationMs", "width", "height", "videoCodec", "audioCodec")}
-            _emit("ready", **common, media=public_media,
-                  hint="The video is stored privately and ready for a share link when sharing is available.")
-            return
+            return {"status": "ready", **common, "media": public_media,
+                    "hint": "The video is stored privately. Use 'moviestar share VIDEO_ID' to create an unlisted link when publication is enabled."}
     if status == 422 and validation.get("status") == "invalid_video" and validation.get("video_id") == video_id:
         reason = validation.get("reason")
         quota_released = validation.get("quota_released") is True
@@ -135,8 +143,8 @@ def _validate_and_emit(endpoint: str, credential: str, video_id: str,
           **common)
 
 
-def _complete_and_emit(endpoint: str, credential: str, reservation_id: str,
-                       file: Path, size: int, key: str | None) -> None:
+def _complete_result(endpoint: str, credential: str, reservation_id: str,
+                       file: Path, size: int, key: str | None) -> dict:
     status, completion = _json_request(f"{endpoint}/{reservation_id}/complete", credential)
     if status == 409 and completion.get("status") == "consent_required":
         _fail("consent_required", "Run 'moviestar account terms' to finish account setup, then resume this upload.", reservation_id=reservation_id)
@@ -151,8 +159,8 @@ def _complete_and_emit(endpoint: str, credential: str, reservation_id: str,
             reservation_id=reservation_id, **({"idempotency_key": key} if key else {}),
         )
     stored_size = completion.get("size_bytes")
-    _validate_and_emit(endpoint, credential, video_id, reservation_id, file,
-                       stored_size if type(stored_size) is int and stored_size > 0 else size, key)
+    return _validate_result(endpoint, credential, video_id, reservation_id, file,
+                            stored_size if type(stored_size) is int and stored_size > 0 else size, key)
 
 
 @click.command("upload")
@@ -172,6 +180,27 @@ def upload(file: Path, idempotency_key: str | None, resume: str | None, dry_run:
 
     Example: moviestar upload final.mp4
     """
+    try:
+        result = upload_video(file, idempotency_key=idempotency_key, resume=resume,
+                              dry_run=dry_run, announce_retry=_announce_retry)
+    except UploadError as error:
+        _emit(error.status, hint=error.hint, **error.fields)
+        raise click.exceptions.Exit(1)
+    _emit(**result)
+
+
+def _announce_retry(key: str) -> None:
+    click.echo(json.dumps({
+        "command": "upload", "status": "retry_key", "idempotency_key": key,
+        "hint": "If interrupted, retry the same file with --idempotency-key KEY.",
+    }), err=True)
+
+
+def upload_video(file: Path, *, idempotency_key: str | None = None,
+                 resume: str | None = None, dry_run: bool = False,
+                 announce_retry: Callable[[str], None] | None = None,
+                 connection: tuple[str, str] | None = None) -> dict:
+    """Upload/validate without printing a result, for composed CLI workflows."""
     if file.suffix.lower() != ".mp4":
         _fail("invalid_file", "Export a finished .mp4 and retry.")
     try:
@@ -181,8 +210,8 @@ def upload(file: Path, idempotency_key: str | None, resume: str | None, dry_run:
     if size < 1 or size > MAX_FILE_BYTES:
         _fail("invalid_file", "Use an MP4 between 1 byte and 500 MB.", size_bytes=size)
     state = _read_state()
-    credential = _credential_for_connection(state)
-    endpoint = _upload_url()
+    credential = connection[1] if connection else _credential_for_connection(state)
+    endpoint = connection[0] if connection else _upload_url()
     if not credential or not endpoint:
         _fail("not_connected", "Run 'moviestar account connect EMAIL', then 'moviestar account status'.")
 
@@ -192,7 +221,7 @@ def upload(file: Path, idempotency_key: str | None, resume: str | None, dry_run:
         connection = state.get("connection")
         owner = connection if isinstance(connection, dict) else {}
         parsed = urlsplit(endpoint)
-        _emit("would_upload", file={"path": str(file.resolve()), "size_bytes": size},
+        return dict(status="would_upload", file={"path": str(file.resolve()), "size_bytes": size},
               account={"handle": owner.get("handle"), "email": owner.get("email"),
                        "service_origin": f"{parsed.scheme}://{parsed.netloc}"},
               quota={"free_limits": FREE_LIMITS, "would_use_videos": 1,
@@ -200,7 +229,6 @@ def upload(file: Path, idempotency_key: str | None, resume: str | None, dry_run:
                      "projected_usage": "unavailable"},
               upload_performed=False, reservation_created=False,
               hint="Current usage is checked by the service when the upload starts.")
-        return
 
     key = idempotency_key or uuid.uuid4().hex
     if not _KEY_RE.fullmatch(key):
@@ -209,13 +237,10 @@ def upload(file: Path, idempotency_key: str | None, resume: str | None, dry_run:
     if resume is not None:
         if not _RESERVATION_RE.fullmatch(resume):
             _fail("invalid_request", "Use the reservation ID reported by the failed upload.")
-        _complete_and_emit(endpoint, credential, resume, file, size, None)
-        return
+        return {**_complete_result(endpoint, credential, resume, file, size, None), "upload_performed": False}
 
-    click.echo(json.dumps({
-        "command": "upload", "status": "retry_key", "idempotency_key": key,
-        "hint": "If interrupted, retry the same file with --idempotency-key KEY.",
-    }), err=True)
+    if announce_retry:
+        announce_retry(key)
     status, initiation = _json_request(endpoint, credential, {
         "filename": file.name, "size_bytes": size, "idempotency_key": key,
     })
@@ -225,8 +250,7 @@ def upload(file: Path, idempotency_key: str | None, resume: str | None, dry_run:
         reservation_id = initiation.get("reservation_id")
         if not isinstance(reservation_id, str) or not _RESERVATION_RE.fullmatch(reservation_id):
             _fail("upload_unavailable", "The upload service returned an invalid reservation.", idempotency_key=key)
-        _complete_and_emit(endpoint, credential, reservation_id, file, size, key)
-        return
+        return {**_complete_result(endpoint, credential, reservation_id, file, size, key), "upload_performed": False}
     if status not in {200, 201} or initiation.get("status") != "upload_pending":
         _fail(
             initiation.get("status", "upload_unavailable") if status else "upload_unavailable",
@@ -250,4 +274,8 @@ def upload(file: Path, idempotency_key: str | None, resume: str | None, dry_run:
             idempotency_key=key, reservation_id=reservation_id,
         )
 
-    _complete_and_emit(endpoint, credential, reservation_id, file, size, key)
+    try:
+        return {**_complete_result(endpoint, credential, reservation_id, file, size, key), "upload_performed": True}
+    except UploadError as error:
+        error.fields["upload_performed"] = True
+        raise

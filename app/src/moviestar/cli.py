@@ -989,6 +989,10 @@ ACCOUNT COMMANDS
   account disconnect     Revoke this install; local editing keeps working.
   account open           Open the human's account page in a browser.
   upload FILE            Store a finished MP4 privately when hosting is enabled.
+  share FILE_OR_VIDEO_ID Create an unlisted watch/download link when enabled.
+  shares                 List owned links; --video filters and --cursor paginates.
+  unshare LINK_ID        Revoke a link without deleting the video.
+  download WATCH_URL     Save a shared MP4 without a recipient account.
 
 \b
 TIMECODE FORMATS

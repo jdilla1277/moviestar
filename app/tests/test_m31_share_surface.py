@@ -1,10 +1,17 @@
-"""The first sharing PR establishes an honest, non-publishing CLI contract."""
+"""Offline previews remain truthful alongside the live sharing workflow."""
 
 import json
+
+import pytest
 
 from click.testing import CliRunner
 
 from moviestar.cli import cli
+
+
+@pytest.fixture(autouse=True)
+def isolated_account(tmp_path, monkeypatch):
+    monkeypatch.setenv("MOVIESTAR_ACCOUNT_STATE", str(tmp_path / "missing-account.json"))
 
 
 def invoke(*args: str):
@@ -151,13 +158,13 @@ def test_revoke_and_delete_are_distinct_and_never_mutate_in_surface_preview():
 
     listed, listing = invoke("shares")
     assert listed.exit_code == 1
-    assert listing["status"] == "not_available"
+    assert listing["status"] == "not_connected"
     assert "videos" not in listing
 
 
 def test_download_preflight_resolves_a_safe_default_and_never_fetches(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    url = "https://trymoviestar.com/v/opaque-slug"
+    url = "https://trymoviestar.com/v/" + "s" * 43
 
     result, payload = invoke("download", url, "--dry-run")
 
@@ -165,15 +172,15 @@ def test_download_preflight_resolves_a_safe_default_and_never_fetches(tmp_path, 
     assert payload["command"] == "download"
     assert payload["status"] == "would_download"
     assert payload["url"] == url
-    assert payload["out"] == str(tmp_path / "opaque-slug.mp4")
+    assert payload["out"] == str(tmp_path / ("s" * 43 + ".mp4"))
     assert payload["account_required"] is False
     assert payload["download_performed"] is False
-    assert not (tmp_path / "opaque-slug.mp4").exists()
+    assert not (tmp_path / ("s" * 43 + ".mp4")).exists()
 
 
 def test_download_accepts_explicit_destination_but_will_not_overwrite(tmp_path):
     destination = tmp_path / "project" / "alex.mp4"
-    url = "https://trymoviestar.com/v/opaque-slug"
+    url = "https://trymoviestar.com/v/" + "s" * 43
 
     preview, payload = invoke("download", url, "--out", str(destination), "--dry-run")
 
@@ -190,17 +197,21 @@ def test_download_accepts_explicit_destination_but_will_not_overwrite(tmp_path):
     assert destination.read_bytes() == b"existing edit"
 
 
-def test_download_rejects_non_moviestar_links_and_live_download_is_unavailable(tmp_path):
+def test_download_rejects_non_moviestar_links_and_failed_transfer_never_writes(tmp_path, monkeypatch):
+    from moviestar import download as download_module
+    def offline(*args):
+        raise OSError("network unavailable")
+    monkeypatch.setattr(download_module, "_open", offline)
     invalid, error = invoke("download", "https://example.com/v/opaque-slug", "--dry-run")
     assert invalid.exit_code == 1
     assert error["status"] == "error"
     assert error["download_performed"] is False
 
-    destination = tmp_path / "opaque-slug.mp4"
+    destination = tmp_path / ("s" * 43 + ".mp4")
     unavailable, payload = invoke(
-        "download", "https://trymoviestar.com/v/opaque-slug", "--out", str(destination)
+        "download", "https://trymoviestar.com/v/" + "s" * 43, "--out", str(destination)
     )
     assert unavailable.exit_code == 1
-    assert payload["status"] == "not_available"
+    assert payload["status"] == "download_unavailable"
     assert payload["download_performed"] is False
     assert not destination.exists()
