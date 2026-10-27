@@ -23,6 +23,7 @@ def link(revoked=False):
 
 def invoke(*args):
     result = CliRunner().invoke(cli, list(args))
+    assert result.stdout, repr(result.exception)
     return result, json.loads(result.stdout)
 
 
@@ -33,6 +34,7 @@ def connected(tmp_path, monkeypatch):
         "connection": {"handle": "@editor", "email": "e***@example.com", "credential_storage": "private_file", "credential_fallback": CREDENTIAL}}))
     monkeypatch.setenv("MOVIESTAR_ACCOUNT_STATE", str(state))
     monkeypatch.delenv("MOVIESTAR_ACCOUNT_INSTALLATION_URL", raising=False)
+    monkeypatch.delenv("MOVIESTAR_WATCH_ORIGIN", raising=False)
     return state
 
 
@@ -205,9 +207,12 @@ def test_full_http_handoff_retry_list_download_and_revoke(tmp_path, monkeypatch)
         first, failure = invoke("share",str(file),"--idempotency-key","same-handoff")
         assert first.exit_code == 1 and failure["video_id"] == VIDEO
         assert failure["upload_performed"] is True
+        assert state["published"] is True and failure["link_created"] is None
+        assert failure["publication_outcome"] == "unknown"
         second, success = invoke("share",str(file),"--idempotency-key","same-handoff")
         assert second.exit_code == 0,second.output
         assert success["status"] == "already_shared" and state["puts"] == 1
+        assert success["publication_outcome"] == "already_shared"
         assert state["keys"] == ["same-handoff"]*4 and state["stored"] == body_bytes
         assert success["upload_performed"] is False
         listed, listing=invoke("shares")
@@ -263,3 +268,66 @@ def test_owner_api_redirect_is_not_followed_with_device_credential(tmp_path,monk
         assert calls == [f"/api/v1/videos/{VIDEO}/shares"]
     finally:
         server.shutdown();server.server_close();worker.join()
+
+
+@pytest.mark.parametrize("response", [(0, {}), (503, {"status": "sharing_unavailable"}), (201, {"status": "shared"}), (201, {"status": ["invalid"]})])
+def test_unconfirmed_publication_is_unknown_and_requires_same_key_reconciliation(connected, monkeypatch, response):
+    monkeypatch.setattr(sharing, "_json_request", lambda *a, **k: response)
+    result, body = invoke("share", VIDEO, "--idempotency-key", "original-key")
+    assert result.exit_code == 1
+    assert body["link_created"] is None
+    assert body["publication_outcome"] == "unknown"
+    assert "may already be public" in body["hint"]
+    assert VIDEO in body["hint"] and "original-key" in body["hint"]
+    assert "url" not in body
+
+
+@pytest.mark.parametrize("code,status", [(409,"consent_required"),(503,"publication_paused"),(429,"rate_limited")])
+def test_explicit_publication_rejections_are_distinct_from_unknown_outcomes(connected,monkeypatch,code,status):
+    monkeypatch.setattr(sharing,"_json_request",lambda *a, **k:(code,{"status":status}))
+    result,body=invoke("share",VIDEO,"--idempotency-key","original-key")
+    assert result.exit_code == 1 and body["link_created"] is False
+    assert body["publication_outcome"] == "rejected"
+
+
+def test_explicit_watch_origin_allows_canonical_preview_links_across_commands(connected,monkeypatch,tmp_path):
+    from moviestar.download import watch_link
+    api="https://app-deployment-example.vercel.app"
+    watch="https://app-branch-example.vercel.app"
+    canonical=f"{watch}/v/"+"s"*43
+    monkeypatch.setenv("MOVIESTAR_ACCOUNT_INSTALLATION_URL",api+"/api/v1/account/installation")
+    monkeypatch.setenv("MOVIESTAR_WATCH_ORIGIN",watch)
+    calls=[]
+    def request(url,credential,payload=None,*,method="POST"):
+        calls.append((url,credential,method))
+        item={**link(),"url":canonical}
+        if method == "GET": return 200,{"status":"ok","links":[item],"next_cursor":None,"quota":QUOTA["after"]}
+        return 201,{"status":"shared","video_id":VIDEO,"link":item,"quota":QUOTA}
+    monkeypatch.setattr(sharing,"_json_request",request)
+    result,body=invoke("share",VIDEO)
+    assert result.exit_code == 0 and body["url"] == canonical,result.output
+    assert body["publication_outcome"] == "shared"
+    for args in [("shares",),("shares","--video",VIDEO)]:
+        listed,listing=invoke(*args)
+        assert listed.exit_code == 0 and listing["links"][0]["url"] == canonical
+    downloaded,preview=invoke("download",canonical,"--out",str(tmp_path/"video.mp4"),"--dry-run")
+    assert downloaded.exit_code == 0 and preview["status"] == "would_download"
+    assert watch_link(f"https://other-branch-example.vercel.app/v/"+"s"*43) is None
+    assert all(url.startswith(api+"/api/") and credential == CREDENTIAL for url,credential,_ in calls)
+
+
+@pytest.mark.parametrize("origin", ["http://remote.example", "https://branch.example/path", "https://user:password@branch.example", "https://branch.example?token=secret", "https://branch.example#fragment"])
+def test_invalid_watch_origin_fails_before_publication_or_credential_lookup(connected,monkeypatch,origin):
+    monkeypatch.setenv("MOVIESTAR_WATCH_ORIGIN",origin)
+    monkeypatch.setattr(sharing,"_json_request",lambda *a, **k:pytest.fail("unexpected API request"))
+    monkeypatch.setattr(sharing,"_credential_for_connection",lambda *a:pytest.fail("unexpected credential lookup"))
+    result,body=invoke("share",VIDEO)
+    assert result.exit_code == 1 and body["status"] == "invalid_configuration"
+    assert "MOVIESTAR_WATCH_ORIGIN" in body["hint"]
+
+
+def test_bad_viewer_configuration_does_not_block_owner_revocation(connected,monkeypatch):
+    monkeypatch.setenv("MOVIESTAR_WATCH_ORIGIN","https://branch.example/private/path")
+    monkeypatch.setattr(sharing,"_json_request",lambda *a, **k:(200,{"status":"revoked","video_id":VIDEO,"link":link(True),"video_deleted":False,"quota":QUOTA}))
+    result,body=invoke("unshare",LINK)
+    assert result.exit_code == 0 and body["link_revoked"] is True

@@ -97,3 +97,25 @@ def test_download_does_not_overwrite_a_destination_created_during_transfer(serve
     result,body=invoke("download",f"{origin}/v/{SLUG}","--out",str(out))
     assert result.exit_code == 1 and body["download_performed"] is False
     assert out.read_bytes() == b"existing edit" and list(tmp_path.iterdir()) == [out]
+
+
+def test_explicit_canonical_watch_origin_downloads_without_contacting_different_api(server,tmp_path,monkeypatch):
+    from moviestar import sharing
+    origin,state=server
+    monkeypatch.setenv("MOVIESTAR_ACCOUNT_INSTALLATION_URL","https://deployment.example/api/v1/account/installation")
+    monkeypatch.setenv("MOVIESTAR_WATCH_ORIGIN",origin)
+    monkeypatch.setenv("MOVIESTAR_ACCOUNT_STATE",str(tmp_path/"absent-account.json"))
+    monkeypatch.setattr(sharing,"_credential_for_connection",lambda *a:pytest.fail("unexpected credential lookup"))
+    out=tmp_path/"canonical.mp4"
+    result,body=invoke("download",f"{origin}/v/{SLUG}","--out",str(out))
+    assert result.exit_code == 0 and out.read_bytes() == MEDIA,result.output
+    assert len(state["requests"]) == 2
+    assert state["requests"][0][0] == f"/v/{SLUG}/download"
+
+
+def test_invalid_watch_origin_fails_download_before_network(server,tmp_path,monkeypatch):
+    origin,state=server
+    monkeypatch.setenv("MOVIESTAR_WATCH_ORIGIN","https://branch.example/private/path")
+    result,body=invoke("download",f"{origin}/v/{SLUG}","--out",str(tmp_path/"cut.mp4"))
+    assert result.exit_code == 1 and body["status"] == "invalid_configuration"
+    assert not state["requests"]

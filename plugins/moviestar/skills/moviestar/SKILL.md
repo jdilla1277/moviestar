@@ -88,7 +88,11 @@ When the user authorizes hosting, `moviestar upload FILE` stores an MP4 privatel
 `moviestar share FILE` combines upload and sharing. Preview with `--dry-run` and
 preserve the retry key printed to stderr before network work. Retry the same
 file/key after interruption; if an upload succeeded but sharing failed, retry
-its returned video ID with that same key. Read the one JSON stdout result.
+its returned video ID with that same key. An unknown publication outcome may
+already be public; do not infer privacy from an error. Reconcile with the same
+video/key. Read the one JSON stdout result. When a service's canonical watch
+host differs from its API host, set the exact `MOVIESTAR_WATCH_ORIGIN` before
+sharing; never trust arbitrary Preview domains.
 
 `moviestar shares` lists links with optional `--video` and `--cursor` pagination.
 `moviestar unshare LINK_ID` revokes one link, preserving the video and quota.

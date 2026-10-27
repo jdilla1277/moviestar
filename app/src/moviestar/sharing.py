@@ -14,7 +14,7 @@ from moviestar.upload import (
     FREE_LIMITS, MAX_FILE_BYTES, UploadError, _KEY_RE, _RESERVATION_RE,
     _json_request, _upload_url, upload_video,
 )
-from moviestar.download import download  # Re-export the existing command surface.
+from moviestar.download import configured_watch_origin, download, watch_link
 
 
 def _emit(payload: dict) -> None:
@@ -22,6 +22,9 @@ def _emit(payload: dict) -> None:
 
 
 def _fail(command: str, status: str, hint: str, **fields: object) -> None:
+    if command == "share":
+        fields.setdefault("publication_outcome", "not_attempted")
+        fields.setdefault("link_created", False)
     _emit({"command": command, "status": status, **fields, "hint": hint})
     raise click.exceptions.Exit(1)
 
@@ -36,6 +39,11 @@ def _owner_from_local_state() -> dict:
 
 
 def _connection(command: str) -> tuple[str, str, str]:
+    if command in {"share", "shares"}:
+        try:
+            configured_watch_origin()
+        except ValueError as error:
+            _fail(command, "invalid_configuration", str(error))
     endpoint = _upload_url()
     credential = _credential_for_connection(_read_state())
     if not endpoint or not credential:
@@ -66,9 +74,7 @@ def _link(raw: object, origin: str, video_id: str | None = None) -> dict | None:
         if not _timestamp(revoked) or raw.get("url") is not None:
             return None
     else:
-        from moviestar.download import watch_link
-        parsed = watch_link(raw.get("url"), allowed_origin=origin)
-        if parsed is None or parsed[0] != origin:
+        if watch_link(raw.get("url"), allowed_origin=origin) is None:
             return None
     return {field: raw[field] for field in (
         "id", "video_id", "url", "access", "forwardable", "downloadable", "created_at", "revoked_at",
@@ -99,7 +105,7 @@ _ERRORS = {
     "rate_limited": "Wait before retrying. A successful request can be retried with its original key.",
     "invalid_cursor": "Use the next_cursor from the previous page for this same listing.",
     "invalid_request": "Check the video, link, cursor, and idempotency key.",
-    "publication_paused": "New publication is paused. Keep any uploaded video private and retry sharing its video ID later.",
+    "publication_paused": "New link creation is paused. Existing links are unaffected; retry this video and key when publication resumes.",
     "sharing_unavailable": "Sharing is unavailable. Retry the same video and idempotency key later.",
 }
 
@@ -110,7 +116,24 @@ def _service_failure(command: str, code: int, body: dict, **fields: object) -> N
         status = "not_connected"
     if not isinstance(status, str) or status not in _ERRORS:
         status = "sharing_unavailable"
-    _fail(command, status, _ERRORS[status], **fields)
+    hint = _ERRORS[status]
+    if command == "share" and fields.get("publication_outcome") == "unknown":
+        hint += (" The link may already be public; do not assume the video is private. "
+                 f"Reconcile with 'moviestar share {fields['video_id']} --idempotency-key {fields['idempotency_key']}' "
+                 "using the same video and key. If API and watch hosts differ, configure MOVIESTAR_WATCH_ORIGIN first.")
+    _fail(command, status, hint, **fields)
+
+
+_REJECTIONS = {
+    400: {"invalid_request"}, 401: {"not_connected"}, 404: {"not_found"},
+    409: {"consent_required", "video_not_ready", "link_revoked", "idempotency_conflict", "over_quota"},
+    429: {"rate_limited"}, 503: {"publication_paused"},
+}
+
+
+def _publication_rejected(code: int, body: dict) -> bool:
+    status = body.get("status")
+    return isinstance(status, str) and status in _REJECTIONS.get(code, set())
 
 
 @click.command("share")
@@ -128,11 +151,11 @@ def share(target: str, recipient: str | None, idempotency_key: str | None, dry_r
     Example: moviestar share final.mp4 --idempotency-key handoff-1
 
     Retry the same file/key to recover its upload and original link. If the
-    upload succeeds but publication fails, the result includes video_id: use
-    'share VIDEO_ID --idempotency-key KEY' to retry just publication.
+    upload succeeds but publication cannot be confirmed, use its video_id and
+    the same key to reconcile. An unknown outcome may already be public.
     """
     delivery = {"to": recipient, "would_send_email": recipient is not None}
-    common = {"upload_performed": False, "email_sent": False, "link_created": False, "delivery": delivery}
+    common = {"upload_performed": False, "email_sent": False, "link_created": False, "publication_outcome": "not_attempted", "delivery": delivery}
     if recipient is not None and not _valid_email(recipient):
         _fail("share", "error", "Ask the human for the recipient's exact email address, then retry.", **common)
     if recipient is not None and not dry_run:
@@ -175,15 +198,18 @@ def share(target: str, recipient: str | None, idempotency_key: str | None, dry_r
         uploaded = result.get("upload_performed") is True
         if result.get("status") != "ready" or not isinstance(video_id, str) or not _RESERVATION_RE.fullmatch(video_id):
             _fail("share", "video_not_ready", _ERRORS["video_not_ready"], **{**common, "upload_performed": uploaded}, idempotency_key=key)
-    fields = {**common, "upload_performed": uploaded, "video_id": video_id, "idempotency_key": key}
+    fields = {**common, "upload_performed": uploaded, "video_id": video_id, "idempotency_key": key,
+              "link_created": None, "publication_outcome": "unknown"}
     code, body = _json_request(f"{origin}/api/v1/videos/{video_id}/shares", credential, {"idempotency_key": key})
-    if code not in {200, 201} or body.get("status") not in {"shared", "already_shared"}:
+    if code not in {200, 201} or not isinstance(body.get("status"), str) or body["status"] not in {"shared", "already_shared"}:
+        if _publication_rejected(code, body):
+            fields.update(link_created=False, publication_outcome="rejected")
         _service_failure("share", code, body, **fields)
     item, quota = _link(body.get("link"), origin, video_id), _quota(body.get("quota"))
     if not item or item["revoked_at"] is not None or body.get("video_id") != video_id or quota is None:
         _service_failure("share", 0, {}, **fields)
     _emit({"command": "share", "status": body["status"], **fields,
-           "link_created": body["status"] == "shared", "link_id": item["id"], "url": item["url"],
+           "link_created": body["status"] == "shared", "publication_outcome": body["status"], "link_id": item["id"], "url": item["url"],
            "link": item, "quota": quota, "quota_scope": "link_publication",
            "hint": "Anyone with this unlisted link can watch, download, and forward it. No email was sent."})
 

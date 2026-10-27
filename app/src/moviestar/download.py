@@ -13,10 +13,38 @@ from urllib.request import Request, build_opener
 
 import click
 
-from moviestar.account import _NoRedirectHandler
+from moviestar.account import _NoRedirectHandler, _service_url_error
 from moviestar.upload import _safe_signed_url, _upload_url
 
 MAX_DOWNLOAD_BYTES = 1_000_000_000
+
+
+def _origin(url: str) -> str:
+    parsed = urlsplit(url)
+    host = parsed.hostname
+    if not host:
+        raise ValueError("Missing origin host.")
+    host = f"[{host.lower()}]" if ":" in host else host.lower()
+    port = parsed.port
+    suffix = f":{port}" if port is not None and (parsed.scheme, port) not in {("https", 443), ("http", 80)} else ""
+    return f"{parsed.scheme}://{host}{suffix}"
+
+
+def configured_watch_origin() -> str | None:
+    """Trust a separately hosted viewer only through explicit local config."""
+    raw = os.environ.get("MOVIESTAR_WATCH_ORIGIN")
+    if not raw:
+        return None
+    value = raw.strip()
+    try:
+        parsed = urlsplit(value)
+        if (any(ord(c) <= 32 or ord(c) == 127 for c in value) or "\\" in value
+                or _service_url_error(value) or parsed.path not in {"", "/"}
+                or parsed.query or parsed.fragment):
+            raise ValueError("Invalid watch origin.")
+        return _origin(value)
+    except ValueError:
+        raise ValueError("MOVIESTAR_WATCH_ORIGIN must be an HTTPS origin without credentials, path, query, or fragment (HTTP is allowed only on loopback).") from None
 
 
 def watch_link(url: object, *, allowed_origin: str | None = None) -> tuple[str, str] | None:
@@ -26,12 +54,20 @@ def watch_link(url: object, *, allowed_origin: str | None = None) -> tuple[str, 
         parsed = urlsplit(url)
         if parsed.username or parsed.password or parsed.query or parsed.fragment or not parsed.hostname:
             return None
-        origin = f"{parsed.scheme}://{parsed.netloc}"
-        configured = allowed_origin
-        if configured is None:
+        origin = _origin(url)
+        # Owner responses must match their API origin or an explicit canonical
+        # viewer. Recipients may also use the public production watch site.
+        if allowed_origin is None:
             endpoint = _upload_url()
-            configured = endpoint.removesuffix("/api/v1/videos/uploads") if endpoint else None
-        if origin not in {"https://trymoviestar.com", configured}:
+            trusted = {"https://trymoviestar.com"}
+            if endpoint:
+                trusted.add(_origin(endpoint))
+        else:
+            trusted = {_origin(allowed_origin)}
+        canonical = configured_watch_origin()
+        if canonical:
+            trusted.add(canonical)
+        if origin not in trusted:
             return None
         slug = re.fullmatch(r"/v/([A-Za-z0-9_-]{43})", parsed.path)
         return (origin, slug.group(1)) if slug else None
@@ -117,13 +153,18 @@ def download(url: str, out: Path | None, dry_run: bool) -> None:
 
     Anyone holding the link can download; no recipient account is required.
     Only the published file is downloaded, not projects, sources, or history.
-    Preview links are accepted only for the configured account service origin.
+    Preview links must match the configured API origin or explicit
+    MOVIESTAR_WATCH_ORIGIN; arbitrary preview hosts are never trusted.
 
     Example: moviestar download https://trymoviestar.com/v/SLUG --out cut.mp4
     """
+    try:
+        configured_watch_origin()
+    except ValueError as error:
+        _fail("invalid_configuration", str(error))
     parsed = watch_link(url)
     if parsed is None:
-        _fail("error", "Use a complete Moviestar watch link, https://trymoviestar.com/v/SLUG, or a link on the configured service origin.")
+        _fail("error", "Use a complete Moviestar watch link, https://trymoviestar.com/v/SLUG, or a link on the configured API/watch origin.")
     origin, slug = parsed
     destination = (out or Path(f"{slug}.mp4")).expanduser().absolute()
     fields = {"url": url, "out": str(destination), "account_required": False}

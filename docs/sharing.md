@@ -48,14 +48,27 @@ and retry the **same file or video** with `--idempotency-key KEY`. A file/key
 retry recovers the existing upload and link rather than consuming another
 video slot. Never reuse the key for different content.
 
-If upload succeeds but sharing is paused or fails, the error includes
-`video_id`. The video remains private. Retry just publication:
+If upload succeeds but publication is rejected or cannot be confirmed, the
+error includes `video_id`. An explicit service rejection is reported as
+`publication_outcome: "rejected"` and `link_created: false` for this request;
+previously published links are unaffected.
+
+A lost response, generic server failure, or invalid success response has
+`publication_outcome: "unknown"` and `link_created: null`. The service may
+already have committed a public link. Do not assume the video remains private,
+and do not switch to a new key. Reconcile by retrying just publication with
+the **same video and original key**:
 
 ```sh
 moviestar share VIDEO_ID --idempotency-key ORIGINAL_KEY
 ```
 
-Validation failure does not publish anything. A temporarily unavailable
+Success returns `publication_outcome: "shared"` or `"already_shared"` with the
+active link. `link_created: false` on `already_shared` means the original link
+was recovered, not that the video is private. A failure before attempting
+publication reports `publication_outcome: "not_attempted"`.
+
+Validation failure does not attempt new publication. A temporarily unavailable
 validation step can be resumed with `moviestar upload FILE --resume RESERVATION_ID`
 using the returned reservation ID. Once ready, share that video ID. No terms
 are accepted or installation grants approved implicitly by these commands.
@@ -112,6 +125,25 @@ Owner commands use the same service origin as the connected installation.
 `MOVIESTAR_ACCOUNT_INSTALLATION_URL` can explicitly select a Preview or local
 service's `/api/v1/account/installation` endpoint. Outside loopback it must use
 HTTPS. Connect/approve that installation on the intended service first.
-Download accepts production watch links and links on this configured service
-origin; it does not trust arbitrary preview domains. Local HTTP storage redirects
-are allowed only to the same loopback origin for development rehearsal.
+The canonical watch site can differ from the API hostname, for example when a
+deployment-specific API URL returns watch links on a stable branch alias.
+Configure the exact watch origin **before** sharing in that setup:
+
+```sh
+export MOVIESTAR_ACCOUNT_INSTALLATION_URL=https://deployment.example/api/v1/account/installation
+export MOVIESTAR_WATCH_ORIGIN=https://branch.example
+```
+
+`MOVIESTAR_WATCH_ORIGIN` must contain only an origin: no credentials, path
+(except a trailing `/`), query, or fragment. It must use HTTPS outside loopback.
+Invalid configuration stops live sharing/listing and downloads before network
+work; sharing/listing check it before credential lookup or upload as well.
+Owner revocation remains available even if the watch origin is misconfigured. The explicit watch origin is trusted consistently for
+share responses, link listings, and anonymous downloads. Owner credentials
+still go only to the configured API origin, never to the watch site.
+
+Without that setting, owner responses must use their API origin. Downloads
+accept production watch links, the configured API origin, and any explicit
+watch origin. They do not broadly trust `vercel.app` or other preview domains.
+Local HTTP storage redirects remain restricted to the watch link's same
+loopback origin for development rehearsal.
