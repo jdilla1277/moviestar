@@ -297,7 +297,9 @@ With no `--source`, a project containing spatial scenes uses the spatial video
 path. Every structured frame uses the temporal compiler and the same measured
 browser/FFmpeg frame renderer as `model preview`. Responsive layout and element
 or component motion resolve at each frame. Sampling follows the global output
-frame grid, including scene boundaries between frames. A structured window with
+frame grid, including scene boundaries between frames. Preset clips in a mixed
+project share that grid and keep footage, motion, and overlays aligned with their
+first global sample; fractional cuts add no extra frames. A scene window with
 no representable output frame returns an addressed error rather than adding an
 extra frame. `--preview` uses the existing 480p encoder profile after layout at
 the authored canvas; `--fast` reports that composition requires re-encoding.

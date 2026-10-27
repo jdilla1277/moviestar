@@ -5477,6 +5477,19 @@ def _scene_video_render_artifacts(
         render_plans=render_plans,
         **({'render_transitions': True} if render_transitions else {}),
     )
+    # Both renderers must own the same global samples before concat can
+    # preserve every frame. Preset-only projects keep their existing path.
+    global_frame_grid = bool((spec.get('spatial') or {}).get('scenes'))
+    if global_frame_grid:
+        from moviestar.spatial_video import _frame_window
+        for render_plan in render_plans:
+            first, count = _frame_window(render_plan)
+            # Keep whole sampled frames through encoding and fractional handles.
+            render_plan['frame_encode_duration'] = count / render_plan['output_fps']
+            scene_id = render_plan['scene'].get('id')
+            if scene_id not in spec['spatial']['scenes']:
+                start = render_plan['result_start_s'] - render_plan.get('transition_preroll', 0)
+                render_plan['preset_sample_offset'] = max(0.0, first / render_plan['output_fps'] - start)
     # Scene clips render separately then concat, so each scene's
     # overlay plan is windowed to that scene's global result range;
     # enable times land relative to the clip's local t=0.
@@ -5488,12 +5501,17 @@ def _scene_video_render_artifacts(
             render_plan['overlay_plans'] = None
             continue
         window = render_plan["scene_window"]["result_range"]
+        window_from, window_to = window["from"]["seconds"], window["to"]["seconds"]
+        if global_frame_grid:
+            window_from = (render_plan['result_start_s'] - render_plan.get('transition_preroll', 0)
+                           + render_plan['preset_sample_offset'])
+            window_to = render_plan['result_end_s'] + render_plan.get('transition_postroll', 0)
         scene_planned = _overlay_render_context(
             project,
             spec,
             render_plan["canvas_tuple"],
-            window["from"]["seconds"],
-            window["to"]["seconds"],
+            window_from,
+            window_to,
             command,
         )
         render_plan["overlay_context"] = scene_planned
@@ -5501,7 +5519,7 @@ def _scene_video_render_artifacts(
             scene_planned["plans"] if scene_planned else None
         )
         postroll = float(render_plan.get("transition_postroll", 0.0))
-        if postroll and render_plan["overlay_plans"]:
+        if postroll and render_plan["overlay_plans"] and not global_frame_grid:
             authored_duration = float(render_plan["duration"])
             for overlay_plan in render_plan["overlay_plans"]:
                 if overlay_plan["enable_to"] >= authored_duration - 0.0005:
@@ -5518,12 +5536,7 @@ def _scene_video_render_artifacts(
     ]
     for index, render_plan in enumerate(render_plans):
         if render_plan.get('spatial_render'):
-            from moviestar.spatial_video import _frame_count
             render_plan['frame_sequence'] = str(work_dir / f'frames_{index:04d}' / 'frame%08d.png')
-            # Preserve whole sampled frames through per-clip encoding and the
-            # final compositor. Fractional trim durations can round down in
-            # an input's time base and drop a required dissolve-handle frame.
-            render_plan['frame_encode_duration'] = _frame_count(render_plan) / render_plan['output_fps']
     scene_render_commands = [
         {
             "scene": render_plan["scene_window"]["scene"],
@@ -5544,6 +5557,7 @@ def _scene_video_render_artifacts(
                     render_plan["overlay_context"]
                 ),
                 **({'frame_sequence': render_plan['frame_sequence']} if render_plan.get('frame_sequence') else {}),
+                **({'sample_offset': render_plan['preset_sample_offset']} if 'preset_sample_offset' in render_plan else {}),
             ),
             "duration": format_timecode(render_plan["duration"]),
             "video_duration": format_timecode(render_plan["video_duration"]),
@@ -5564,7 +5578,7 @@ def _scene_video_render_artifacts(
         render_plan["audio_from_input"] is not None
         for render_plan in render_plans
     ]
-    separate_video_audio = bool(transition_render_plan) or any(plan.get('spatial_render') for plan in render_plans)
+    separate_video_audio = bool(transition_render_plan) or global_frame_grid
     concat_command = build_render_segments_command(
         concat_segments,
         abs_output,
@@ -5605,6 +5619,7 @@ def _scene_video_render_artifacts(
         "audio_dropped_note": audio_dropped_note,
         "transition_render_plan": transition_render_plan,
         "separate_video_audio": separate_video_audio,
+        "global_frame_grid": global_frame_grid,
         "spatial_spec": spec,
         "spatial_project": project,
     }
@@ -5820,6 +5835,7 @@ def _render_scene_video_artifacts(
             audio_speed=render_plan.get("audio_speed", 1.0),
             output_fps=render_plan.get("output_fps"),
             **({'frame_sequence': render_plan['frame_sequence']} if render_plan.get('frame_sequence') else {}),
+            **({'sample_offset': render_plan['preset_sample_offset']} if 'preset_sample_offset' in render_plan else {}),
             progress_cb=lambda _line: None,
             overlay_plans=render_plan.get("overlay_plans"),
             highlight_ass=_highlight_ass_arg(
@@ -5852,7 +5868,7 @@ def _render_scene_video_artifacts(
         progress_cb=_render_progress_cb(quiet),
     )
     expected_duration = sum(end - start for _path, start, end in artifacts['concat_segments'])
-    if any(plan.get('spatial_render') for plan in artifacts['render_plans']):
+    if artifacts.get('global_frame_grid', any(plan.get('spatial_render') for plan in artifacts['render_plans'])):
         fps = artifacts['output_fps']
         first, last = artifacts['render_plans'][0], artifacts['render_plans'][-1]
         start = first.get('result_start_s', first['scene_window']['result_range']['from']['seconds'])

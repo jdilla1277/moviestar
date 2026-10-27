@@ -262,8 +262,15 @@ The video filter limits each PNG sequence without an output-level duration cap
 on audio. Concatenation decodes zero-origin scene clips without seeking past AAC
 priming, preserving the full authored audio samples independently of quantized
 video frame counts.
-Non-aligned structured scene boundaries sample global frame times and do not
-introduce a frame per boundary. Empty output-grid windows are rejected.
+Both structured and preset clips in a spatial project use the global frame
+count, including a watch containing only preset scenes. The preset FFmpeg path
+phases source timestamps before CFR sampling, offsets camera/layout motion, and
+anchors overlays to its first global sample. This prevents fractional cuts from
+adding frames or shifting footage relative to audio in mixed compositions.
+Preset sampling uses a nanosecond working clock with a one-tick rescaling guard
+before retiming, so recurring timestamps such as 1/30 do not delay aligned
+frames. Preset-only projects retain their existing path. Empty output-grid windows are
+rejected.
 
 The existing source-handle planner and FFmpeg transition compositor blend both
 structured and mixed scene clips. `compile_spatial_scene_frame` is an explicit
@@ -290,7 +297,8 @@ portrait/landscape motion placement, audio RMS without duplicated routing,
 authored gain, global clocks, mixed transitions, watch windows, edge fades,
 caption declaration policy, non-aligned scene cuts, fractional-cut audio duration
 and tone alignment, fractional-transition watch/export frame-count and blend
-parity at 10 and 30 fps, insufficient media handles,
+parity at 10 and 30 fps, alternating preset/spatial fractional cuts in both
+orders with exact sampled footage and audio windows, insufficient media handles,
 and preservation of prior output after late caption/media failure. These are
 MP4 correctness checks with lossy-encoding patch tolerances; the existing PNG
 paint-parity budget is unchanged. No release-throughput claim is made.

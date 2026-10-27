@@ -421,3 +421,73 @@ def test_transition_context_preserves_an_exact_30fps_origin(video_project):
     start, end = _context_range(spec, resolve_project(metadata, spec), .3, .5)
     assert start == 8 / 30
     assert end == .5
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
+@pytest.mark.parametrize('spatial_first', [True, False])
+@pytest.mark.parametrize('scene_duration', [.15, .13])
+def test_mixed_fractional_cuts_share_global_frame_count_and_source_clock(
+        video_project, tmp_path, spatial_first, scene_duration):
+    spec, metadata = video_project
+    original = spec['composition'][0]
+    spec['composition'] = []
+    spec['spatial']['scenes'] = {}
+    # Fractional windows share the global 10 fps grid. Test both orders and
+    # phases so count-only trimming cannot hide incorrectly sampled footage.
+    for index in range(8):
+        scene = deepcopy(original)
+        name = scene['id'] = scene['name'] = f'scene-{index}'
+        scene['slots'][0].update({'source_from': f'0:00:{index*scene_duration:06.3f}',
+                                 'source_to': f'0:00:{(index+1)*scene_duration:06.3f}'})
+        spec['composition'].append(scene)
+        if (index % 2 == 0) == spatial_first:
+            spec['spatial']['scenes'][name] = {'layout': {'children': [{
+                'id': 'clip', 'type': 'video',
+                'content': {'asset_id': 'camera', 'source': {'start': index*scene_duration, 'end': (index+1)*scene_duration}},
+                'layout': {'width': '100%', 'height': '100%'}}]}}
+    save_spec(spec, cwd=tmp_path)
+    _invoke(['export', '--out', 'mixed.mp4', '--quiet', '--video-encoder', 'x264'])
+    # The watch starts off-grid and crosses both renderers. The second watch
+    # contains just a preset scene within an otherwise spatial project.
+    preset_start = scene_duration if spatial_first else 0
+    for path, extra, first, count, duration in [
+        ('mixed.mp4', None, 0, math.ceil(round(8*scene_duration*10, 9)), 8*scene_duration),
+        ('part.mp4', ['--from', '.17', '--to', '.73'], 2, 6, .56),
+        ('preset.mp4', ['--from', str(preset_start), '--to', str(preset_start+scene_duration)],
+         math.ceil(preset_start*10), 1 if spatial_first else 2, scene_duration),
+    ]:
+        if extra is not None:
+            _invoke(['watch', *extra, '--out', path, '--video-encoder', 'x264'])
+        probe = json.loads(subprocess.check_output(['ffprobe', '-v', 'error',
+            '-show_entries', 'stream=codec_type,nb_frames,duration', '-of', 'json', path]))
+        video, audio = probe['streams']
+        assert video['codec_type'] == 'video' and int(video['nb_frames']) == count
+        assert float(audio['duration']) == pytest.approx(duration, abs=.01)
+        for index in range(count):
+            frame = _pixels(path, index)
+            offset = (90*320+160)*3
+            expected = (20+8*(first+index), 40, 60)
+            assert max(abs(a-b) for a,b in zip(frame[offset:offset+3], expected)) <= 4, (path, index)
+
+
+@pytest.mark.parametrize('sample_offset', [0, .01])
+@pytest.mark.parametrize('speed', [.25, .5, 1, 2, 4])
+def test_preset_sampling_retains_recurring_30fps_source_timestamps(tmp_path, sample_offset, speed):
+    from moviestar.ffmpeg import render_layout_video
+
+    source = tmp_path / 'numbered.nut'
+    # NUT preserves the exact 1/30 timestamps that a millisecond source clock
+    # would obscure. Rounding frame 2 to 66,667 us must not delay it a frame.
+    raw = b''.join(bytes((20+8*(index % 20), 40+8*(index // 20), 60))*(160*90)
+                   for index in range(60))
+    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'rawvideo', '-pixel_format', 'rgb24',
+        '-video_size', '160x90', '-framerate', '30', '-i', 'pipe:0', '-c:v', 'ffv1',
+        '-pix_fmt', 'bgr0', str(source)], input=raw, check=True)
+    output = tmp_path / 'preset.mp4'
+    render_layout_video([{'path': str(source), 'source_from': 0., 'source_to': .5*speed, 'speed': speed,
+        'region': {'x': 0, 'y': 0, 'width': 160, 'height': 90}}], str(output), (160, 90), 12/30,
+        output_fps=30, sample_offset=sample_offset, progress_cb=lambda line: None)
+    for index in range(12):
+        source_frame = math.floor((sample_offset*30+index)*speed + 1e-9)
+        expected = (20+8*(source_frame % 20), 40+8*(source_frame // 20), 60)
+        assert max(abs(a-b) for a,b in zip(_pixels(output, index)[:3], expected)) <= 4, index
