@@ -1,13 +1,14 @@
 // Browser-owned geometry for a resolved spatial frame. No user-authored HTML,
 // script, remote URL, or stylesheet is loaded into the measurement page.
 import {spawn} from 'node:child_process';
-import {mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync} from 'node:fs';
+import {stopBrowser} from './spatial_browser_lifecycle.mjs';
+import {mkdtempSync, readFileSync, writeFileSync, existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
 const request = JSON.parse(readFileSync(0, 'utf8'));
 const chromePath = process.argv[2];
-const profile = mkdtempSync(join(tmpdir(), 'moviestar-layout-'));
+const profile = process.argv[3] || mkdtempSync(join(tmpdir(), 'moviestar-layout-'));
 const args = [
   '--headless=new', '--disable-gpu', '--hide-scrollbars',
   '--disable-background-networking', '--disable-extensions', '--no-first-run',
@@ -18,6 +19,7 @@ if (process.getuid?.() === 0 || process.env.MOVIESTAR_CHROME_NO_SANDBOX === '1')
   args.unshift('--no-sandbox');
 }
 const chrome = spawn(chromePath, args, {stdio: ['ignore', 'ignore', 'pipe']});
+const chromeClosed = new Promise(resolve => chrome.once('close', resolve));
 let chromeError = '';
 chrome.stderr.on('data', chunk => { chromeError = (chromeError + chunk.toString()).slice(-8192); });
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -423,7 +425,9 @@ try {
   process.exitCode = 1;
 } finally {
   try { socket?.close(); } catch {}
-  chrome.kill('SIGTERM');
-  await pause(100);
-  rmSync(profile, {recursive: true, force: true});
+  const cleanupError = await stopBrowser(chrome, chromeClosed, profile);
+  if (cleanupError && !process.exitCode) {
+    process.stderr.write(`Chrome profile cleanup failed: ${cleanupError.message}\n`);
+    process.exitCode = 1;
+  }
 }

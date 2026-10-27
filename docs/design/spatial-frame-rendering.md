@@ -286,3 +286,20 @@ caption declaration policy, non-aligned scene cuts, insufficient media handles,
 and preservation of prior output after late caption/media failure. These are
 MP4 correctness checks with lossy-encoding patch tolerances; the existing PNG
 paint-parity budget is unchanged. No release-throughput claim is made.
+
+The owned Chrome process is now awaited before deleting its temporary profile.
+Shutdown allows two seconds for SIGTERM, then one second after SIGKILL; profile
+removal has bounded retries. Completed shutdown timers are cancelled so they do
+not delay normal frame completion. Cleanup returns errors to the driver and
+never replaces an earlier startup/render error with a Node filesystem stack.
+This fixes a reproduced `ENOTEMPTY` race that could otherwise report only the
+Node version. Deterministic lifecycle tests cover delayed graceful shutdown,
+forced shutdown, and removal failure. Port/discovery/process deadlines and
+fidelity/performance acceptance budgets are unchanged.
+
+The Python driver also owns the profile and, on POSIX, a separate process group.
+If Node times out or crashes, the driver terminates that owned group and removes
+the profile instead of leaving browser descendants behind. The existing
+60-second rendering deadline is unchanged. A real subprocess-tree regression
+verifies descendant termination and profile removal after a shortened test-only
+deadline; no renderer deadline or performance budget is relaxed.

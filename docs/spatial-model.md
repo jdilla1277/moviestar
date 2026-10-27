@@ -127,7 +127,9 @@ Browser startup allows 30 seconds for the debugging port, then up to 5 seconds
 for page discovery. Transient connection, HTTP, and incomplete-response failures
 are retried during discovery with bounded requests; rendering itself is not
 retried. Persistent startup failures return an error with the last failure and
-available Chrome stderr. The overall browser process retains its 60-second bound.
+available Chrome stderr. The overall browser process retains its 60-second bound. The owned browser is
+stopped before its temporary profile is removed; cleanup preserves the primary
+startup or rendering error if one occurred.
 Video rendering uses the same local Chrome, Node, and FFmpeg prerequisites.
 
 ## Responsive canvas rules

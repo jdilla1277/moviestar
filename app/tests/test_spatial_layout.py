@@ -296,3 +296,101 @@ def test_browser_discovery_failure_is_bounded_and_preserves_prior_artifact(tmp_p
         measure_spatial_layout(_frame(), {'width': 640, 'height': 360}, output_path=output)
     assert time.monotonic() - started < 40  # Chrome's 30s launch + 5s discovery + cleanup
     assert output.read_bytes() == b'previous layout'
+
+
+@pytest.mark.parametrize('mode', ['delayed_exit', 'forced_exit', 'failed_cleanup'])
+def test_browser_lifecycle_waits_for_exit_and_returns_cleanup_errors(mode):
+    import shutil
+    import subprocess
+    from importlib.resources import files
+
+    node = shutil.which('node')
+    if node is None:
+        pytest.skip('Node is required')
+    module = Path(str(files('moviestar').joinpath('spatial_browser_lifecycle.mjs'))).as_uri()
+    script = r"""
+import assert from 'node:assert/strict';
+import {EventEmitter} from 'node:events';
+const {stopBrowser} = await import(process.argv[1]);
+const mode = process.argv[2];
+const events = [];
+const child = new EventEmitter();
+child.exitCode = null;
+child.signalCode = null;
+child.kill = signal => {
+  events.push(signal);
+  if (mode !== 'forced_exit' || signal === 'SIGKILL') {
+    setTimeout(() => {
+      child.signalCode = signal;
+      events.push('closed');
+      child.emit('close');
+    }, 30);
+  }
+  return true;
+};
+const closed = new Promise(resolve => child.once('close', resolve));
+const error = await stopBrowser(child, closed, 'owned-profile', () => {
+  events.push('remove');
+  assert.notEqual(child.signalCode, null, 'profile removed before browser exit');
+  if (mode === 'failed_cleanup') throw new Error('ENOTEMPTY');
+});
+assert.deepEqual(events, mode === 'forced_exit'
+  ? ['SIGTERM', 'SIGKILL', 'closed', 'remove']
+  : ['SIGTERM', 'closed', 'remove']);
+assert.equal(error?.message ?? null, mode === 'failed_cleanup' ? 'ENOTEMPTY' : null);
+console.log(JSON.stringify(events));
+"""
+    result = subprocess.run([node, '--input-type=module', '-e', script, module, mode],
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.skipif(__import__('os').name != 'posix', reason='POSIX process-group ownership')
+def test_browser_timeout_kills_owned_descendants_and_removes_profile(tmp_path, monkeypatch):
+    import os
+    import signal
+    import subprocess
+    import sys
+    import time
+    import moviestar.spatial_layout as layout
+
+    marker = tmp_path / 'child.json'
+    driver = tmp_path / 'spatial_browser.mjs'
+    driver.write_text('''
+import json, subprocess, sys, time
+from pathlib import Path
+child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(20)'],
+    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+Path(''' + repr(str(marker)) + ''').write_text(json.dumps({
+    'pid': child.pid, 'profile': sys.argv[2] if len(sys.argv) > 2 else None}))
+time.sleep(20)
+''')
+    original_popen = subprocess.Popen
+
+    class ShortDeadline(original_popen):
+        def communicate(self, input=None, timeout=None):
+            return super().communicate(input=input, timeout=2 if timeout == 60 else timeout)
+
+    monkeypatch.setattr(layout.subprocess, 'Popen', ShortDeadline)
+    monkeypatch.setattr(layout, '_chrome_path', lambda: '/unused-chrome')
+    monkeypatch.setattr(layout.shutil, 'which', lambda name: sys.executable)
+    monkeypatch.setattr(layout, 'files', lambda package: tmp_path)
+    try:
+        with pytest.raises(SpatialLayoutError, match='timed out'):
+            layout._run_browser({})
+        owned = json.loads(marker.read_text())
+        state = ''
+        for _ in range(20):
+            state = subprocess.run(['ps', '-o', 'stat=', '-p', str(owned['pid'])],
+                                   capture_output=True, text=True).stdout.strip()
+            if not state or state.startswith('Z'):
+                break
+            time.sleep(.05)
+        assert not state or state.startswith('Z'), f'owned browser descendant is still running: {state}'
+        assert owned['profile'] and not Path(owned['profile']).exists()
+    finally:
+        if marker.exists():
+            try:
+                os.kill(json.loads(marker.read_text())['pid'], signal.SIGKILL)
+            except ProcessLookupError:
+                pass
