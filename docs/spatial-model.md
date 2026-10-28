@@ -342,11 +342,17 @@ reject a real render. The real MP4 is staged until all scene frames, encoding,
 audio mixing, and mastering succeed. Failures preserve an existing destination;
 outputs cannot overwrite a project media asset. Rendering writes no spec revision.
 
-Current video generation calls the shared still-frame renderer for each spatial
-frame and stores a temporary PNG sequence. Long jobs incur per-frame browser and
-source decoding work and temporary disk use; export throughput has not been validated
-against release performance budgets. Persistent browser/decoder workers and streaming remain
-follow-on optimizations. No unchanged-clip reuse or cache invalidation is added.
+Watch and export lazily start one command-owned browser worker for all selected
+structured scenes, including transition handles. Each request rebuilds its page
+and resets the viewport; layout, captions, motion, and media selection resolve
+from the current frame's input. The worker closes before clip concatenation and final publication.
+A failed request closes the session and aborts the movie without replaying the
+frame. Dry-run and preset-only windows launch no browser worker.
+
+Video generation still calls the shared frame renderer for each spatial frame
+and stores a temporary PNG sequence. Per-frame source decoding, composition,
+and temporary disk use remain; decoder reuse and streaming are follow-on work.
+Export throughput has not been validated against release performance budgets. No unchanged-clip reuse or cache invalidation is added.
 Single-frame inspection of active transitions, static-only scene timing, and the
 remaining layout readiness checks are separate work before release.
 

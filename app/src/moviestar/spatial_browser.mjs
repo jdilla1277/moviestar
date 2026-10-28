@@ -1,12 +1,17 @@
 // Browser-owned geometry for a resolved spatial frame. No user-authored HTML,
 // script, remote URL, or stylesheet is loaded into the measurement page.
 import {spawn} from 'node:child_process';
+import {createInterface} from 'node:readline';
 import {stopBrowser} from './spatial_browser_lifecycle.mjs';
 import {mkdtempSync, readFileSync, writeFileSync, existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
-const request = JSON.parse(readFileSync(0, 'utf8'));
+const sessionMode = process.argv.includes('--session');
+const requests = sessionMode ? createInterface({input: process.stdin, crlfDelay: Infinity}) : null;
+// Attach the iterator before startup awaits, so early input is queued.
+const requestIterator = requests?.[Symbol.asyncIterator]();
+const request = sessionMode ? null : JSON.parse(readFileSync(0, 'utf8'));
 const chromePath = process.argv[2];
 const profile = process.argv[3] || mkdtempSync(join(tmpdir(), 'moviestar-layout-'));
 const args = [
@@ -368,27 +373,7 @@ async function render(input) {
   }))};
 }
 
-try {
-  if (Number(process.versions.node.split('.')[0]) < 22 || !globalThis.WebSocket) {
-    throw new Error('Node.js 22 or newer is required');
-  }
-  const port = await waitForPort();
-  const target = await waitForTarget(port);
-  socket = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => {
-    socket.addEventListener('open', resolve, {once: true});
-    socket.addEventListener('error', reject, {once: true});
-  });
-  socket.addEventListener('message', event => {
-    const message = JSON.parse(event.data);
-    const waiter = pending.get(message.id);
-    if (!waiter) return;
-    pending.delete(message.id);
-    if (message.error) waiter.reject(new Error(message.error.message));
-    else waiter.resolve(message);
-  });
-  await send('Page.enable');
-  await send('Runtime.enable');
+async function renderRequest(request) {
   await send('Emulation.setDeviceMetricsOverride', {
     width: request.canvas.width, height: request.canvas.height,
     deviceScaleFactor: 1, mobile: false,
@@ -419,11 +404,77 @@ try {
   } else if (request.output_path) {
     await capture(request.output_path);
   }
-  process.stdout.write(JSON.stringify(measured));
+  return measured;
+}
+
+async function withDeadline(operation) {
+  // The Python caller enforces the complete request budget. This independent
+  // bound also releases Chrome if that caller disappears during a CDP wait.
+  let timer;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(operation),
+      new Promise((resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('browser operation timed out after 60 seconds')), 60000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+try {
+  await withDeadline(async () => {
+    if (Number(process.versions.node.split('.')[0]) < 22 || !globalThis.WebSocket) {
+      throw new Error('Node.js 22 or newer is required');
+    }
+    const port = await waitForPort();
+    const target = await waitForTarget(port);
+    socket = new WebSocket(target.webSocketDebuggerUrl);
+    await new Promise((resolve, reject) => {
+      socket.addEventListener('open', resolve, {once: true});
+      socket.addEventListener('error', reject, {once: true});
+    });
+    socket.addEventListener('message', event => {
+      const message = JSON.parse(event.data);
+      const waiter = pending.get(message.id);
+      if (!waiter) return;
+      pending.delete(message.id);
+      if (message.error) waiter.reject(new Error(message.error.message));
+      else waiter.resolve(message);
+    });
+    const rejectPending = () => {
+      for (const waiter of pending.values()) waiter.reject(new Error('Chrome debugging connection closed'));
+      pending.clear();
+    };
+    socket.addEventListener('close', rejectPending);
+    socket.addEventListener('error', rejectPending);
+    await send('Page.enable');
+    await send('Runtime.enable');
+  });
+  if (sessionMode) {
+    for await (const line of requestIterator) {
+      let envelope;
+      try {
+        envelope = JSON.parse(line);
+        if (!Number.isInteger(envelope.id) || !envelope.request) throw new Error('invalid browser session request');
+        const result = await withDeadline(() => renderRequest(envelope.request));
+        process.stdout.write(JSON.stringify({id: envelope.id, result}) + '\n');
+      } catch (error) {
+        process.stdout.write(JSON.stringify({id: envelope?.id, error: error.message}) + '\n');
+        process.exitCode = 1;
+        break;
+      }
+    }
+  } else {
+    process.stdout.write(JSON.stringify(await withDeadline(() => renderRequest(request))));
+  }
 } catch (error) {
   process.stderr.write(`${error.message}\n`);
   process.exitCode = 1;
 } finally {
+  requests?.close();
+  if (sessionMode) process.stdin.pause();
   try { socket?.close(); } catch {}
   const cleanupError = await stopBrowser(chrome, chromeClosed, profile);
   if (cleanupError && !process.exitCode) {

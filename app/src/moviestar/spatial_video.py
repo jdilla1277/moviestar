@@ -19,6 +19,7 @@ from moviestar.resolved import ResolvedProjectError, resolve_project
 from moviestar.spatial_layout import SpatialLayoutError, prepare_layout_frame
 from moviestar.spatial_model import compile_spatial_scene_frame, expand_spatial_scene
 from moviestar.spatial_render import _asset_path, render_spatial_frame
+from moviestar.spatial_session import BrowserSession
 from moviestar.timecodes import format_timecode
 from moviestar.transitions import resolve_edge_transition
 
@@ -44,27 +45,29 @@ def _frame_count(plan):
     return _frame_window(plan)[1]
 
 
-def render_spatial_sequence(spec, project, plan, *, project_root, progress_cb=None):
+def render_spatial_sequence(spec, project, plan, *, project_root, progress_cb=None, browser_session=None):
     timeline = resolve_project(project, spec)
     durations = {source['id']: source['duration']['seconds'] for source in project['sources']}
     directory = Path(plan['frame_sequence']).parent
     directory.mkdir(parents=True, exist_ok=True)
     first, count = _frame_window(plan)
     last_progress = 0
-    for index in range(count):
-        at = (first + index) / plan['output_fps']
-        scene_index = plan['scene_window']['index']
-        scene_start = min(span.scene_start_s for span in timeline.spans if span.scene_index == scene_index)
-        try:
-            frame = compile_spatial_scene_frame(spec, timeline, scene_index, at - scene_start,
-                                                 source_durations=durations)
-            render_spatial_frame(spec, frame, timeline.canvas, output_path=directory / f'frame{index:08d}.png',
-                                  project_root=project_root)
-        except (ValueError, SpatialLayoutError) as exc:
-            raise SpatialLayoutError(f"{plan['spatial_render']['scene_id']} at result {at:.6f}s: {exc}") from exc
-        if progress_cb and (index + 1 == count or monotonic() - last_progress >= 1):
-            progress_cb(f"{plan['spatial_render']['scene_id']}: spatial frame {index + 1}/{count}")
-            last_progress = monotonic()
+    context = nullcontext(browser_session) if browser_session is not None else BrowserSession()
+    with context as browser:
+        for index in range(count):
+            at = (first + index) / plan['output_fps']
+            scene_index = plan['scene_window']['index']
+            scene_start = min(span.scene_start_s for span in timeline.spans if span.scene_index == scene_index)
+            try:
+                frame = compile_spatial_scene_frame(spec, timeline, scene_index, at - scene_start,
+                                                     source_durations=durations)
+                render_spatial_frame(spec, frame, timeline.canvas, output_path=directory / f'frame{index:08d}.png',
+                                      project_root=project_root, browser_session=browser)
+            except (ValueError, SpatialLayoutError) as exc:
+                raise SpatialLayoutError(f"{plan['spatial_render']['scene_id']} at result {at:.6f}s: {exc}") from exc
+            if progress_cb and (index + 1 == count or monotonic() - last_progress >= 1):
+                progress_cb(f"{plan['spatial_render']['scene_id']}: spatial frame {index + 1}/{count}")
+                last_progress = monotonic()
 
 
 def _context_range(spec, timeline, start, end):

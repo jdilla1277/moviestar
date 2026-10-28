@@ -17,6 +17,7 @@ import shutil
 import sys
 import tempfile
 import time
+from contextlib import ExitStack
 from fractions import Fraction
 from pathlib import Path
 
@@ -5814,37 +5815,42 @@ def _render_scene_video_artifacts(
     if work_dir.exists():
         shutil.rmtree(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
-    for path, render_plan in zip(
-        artifacts["scene_clip_paths"],
-        artifacts["render_plans"],
-    ):
-        _write_highlight_ass(render_plan.get("overlay_context"))
-        if render_plan.get('spatial_render'):
-            from moviestar.spatial_video import render_spatial_sequence
-            render_spatial_sequence(artifacts['spatial_spec'], artifacts['spatial_project'],
-                                    render_plan, project_root=get_project_dir().parent,
-                                    progress_cb=None if quiet else lambda message: click.echo(message, err=True))
-        render_layout_video(
-            render_plan["render_slots"],
-            str(path),
-            render_plan["canvas_tuple"],
-            render_plan.get('frame_encode_duration', render_plan.get('video_duration', render_plan['duration'])),
-            preview=preview,
-            video_encoder=video_encoder,
-            audio_from_input=render_plan["audio_from_input"],
-            audio_speed=render_plan.get("audio_speed", 1.0),
-            output_fps=render_plan.get("output_fps"),
-            **({'frame_sequence': render_plan['frame_sequence']} if render_plan.get('frame_sequence') else {}),
-            **({'sample_offset': render_plan['preset_sample_offset']} if 'preset_sample_offset' in render_plan else {}),
-            progress_cb=lambda _line: None,
-            overlay_plans=render_plan.get("overlay_plans"),
-            highlight_ass=_highlight_ass_arg(
-                render_plan.get("overlay_context")
-            ),
-        )
-        checked_plan = ({**render_plan, 'video_duration': render_plan['frame_encode_duration']}
-                        if 'frame_encode_duration' in render_plan else render_plan)
-        _assert_scene_clip_duration(str(path), checked_plan)
+    with ExitStack() as stack:
+        browser_session = None
+        for path, render_plan in zip(
+            artifacts["scene_clip_paths"],
+            artifacts["render_plans"],
+        ):
+            _write_highlight_ass(render_plan.get("overlay_context"))
+            if render_plan.get('spatial_render'):
+                from moviestar.spatial_video import render_spatial_sequence
+                from moviestar.spatial_session import BrowserSession
+                if browser_session is None:
+                    browser_session = stack.enter_context(BrowserSession())
+                render_spatial_sequence(artifacts['spatial_spec'], artifacts['spatial_project'],
+                                        render_plan, project_root=get_project_dir().parent, browser_session=browser_session,
+                                        progress_cb=None if quiet else lambda message: click.echo(message, err=True))
+            render_layout_video(
+                render_plan["render_slots"],
+                str(path),
+                render_plan["canvas_tuple"],
+                render_plan.get('frame_encode_duration', render_plan.get('video_duration', render_plan['duration'])),
+                preview=preview,
+                video_encoder=video_encoder,
+                audio_from_input=render_plan["audio_from_input"],
+                audio_speed=render_plan.get("audio_speed", 1.0),
+                output_fps=render_plan.get("output_fps"),
+                **({'frame_sequence': render_plan['frame_sequence']} if render_plan.get('frame_sequence') else {}),
+                **({'sample_offset': render_plan['preset_sample_offset']} if 'preset_sample_offset' in render_plan else {}),
+                progress_cb=lambda _line: None,
+                overlay_plans=render_plan.get("overlay_plans"),
+                highlight_ass=_highlight_ass_arg(
+                    render_plan.get("overlay_context")
+                ),
+            )
+            checked_plan = ({**render_plan, 'video_duration': render_plan['frame_encode_duration']}
+                            if 'frame_encode_duration' in render_plan else render_plan)
+            _assert_scene_clip_duration(str(path), checked_plan)
     ffmpeg_cmd = render_segments(
         artifacts["concat_segments"],
         abs_output,
