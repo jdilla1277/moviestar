@@ -367,10 +367,8 @@ class TestCaptionRules:
         transformed, report = apply_caption_rules(words, rules)
 
         assert [word["text"] for word in transformed] == ["coding", "agent"]
-        assert [
-            (word["start_s"], word["end_s"])
-            for word in transformed
-        ] == pytest.approx([(1.0, 1.3), (1.3, 1.6)])
+        assert [word["start_s"] for word in transformed] == pytest.approx([1.0, 1.3])
+        assert [word["end_s"] for word in transformed] == pytest.approx([1.3, 1.6])
         assert [word["source_start_s"] for word in transformed] == pytest.approx(
             [10.0, 10.3]
         )
@@ -395,9 +393,8 @@ class TestCaptionRules:
         assert [word["source_start_s"] for word in retimed] == pytest.approx(
             [10.0, 10.3]
         )
-        assert [
-            (word["start_s"], word["end_s"]) for word in retimed
-        ] == pytest.approx([(3.0, 3.15), (3.15, 3.3)])
+        assert [word["start_s"] for word in retimed] == pytest.approx([3.0, 3.15])
+        assert [word["end_s"] for word in retimed] == pytest.approx([3.15, 3.3])
 
     def test_split_children_have_distinct_break_anchors(self):
         from moviestar.captions import apply_break_edits
