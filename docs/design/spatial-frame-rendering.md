@@ -289,8 +289,9 @@ The destination is replaced only after frame generation, encoding, mixing, and
 mastering succeed. Intermediate files are temporary and removed on failure.
 Dry-run plans do not launch Chrome or decode assets; runtime glyph/asset failures
 remain possible and preserve previous output. This introduces no clip cache.
-Per-frame browser/decode overhead and PNG storage are explicit throughput
-limitations, with persistent workers/streaming left as mechanical follow-ons.
+A watch/export owns one lazy browser session across all its structured scenes.
+Per-frame source decoding/composition and PNG storage remain throughput
+limitations; decoder reuse and streaming remain follow-on work.
 
 `test_spatial_video.py` uses real encoded clips and decoded frames to verify
 portrait/landscape motion placement, audio RMS without duplicated routing,
@@ -319,3 +320,39 @@ the profile instead of leaving browser descendants behind. The existing
 60-second rendering deadline is unchanged. A real subprocess-tree regression
 verifies descendant termination and profile removal after a shortened test-only
 deadline; no renderer deadline or performance budget is relaxed.
+
+
+## Command-owned browser sessions
+
+`spatial_session.py` keeps one Node/Chrome worker alive for a video render and
+passes sequential, numbered JSON-line requests through the same page renderer
+used by standalone frames. The Node input iterator is installed before browser
+startup so the first request cannot be lost during the startup handshake.
+Every request reapplies the viewport, rebuilds the DOM, resolves current text,
+media and motion, and installs fresh paint/label callbacks. Rendered or labeled
+views from an earlier request cannot persist into a later frame. Standalone
+measurement and PNG commands retain the single-request protocol.
+
+The Python context lazily starts the worker, owns its temporary profile and
+POSIX process group, drains bounded stderr, and bounds response size. A request's
+60-second deadline includes blocked pipe writes and waiting for a complete
+response. Node independently bounds startup and render operations so a stalled
+CDP wait can terminate even if the Python caller disappears. Its deadline timers
+are cancelled on completion. Invalid JSON, wrong response IDs, driver exit, render errors, or a
+request timeout close the session permanently. Frames are never retried or
+replayed. Normal shutdown allows four seconds for EOF-driven browser/profile
+cleanup, then terminates the owned group if needed; shutdown failures abort the
+movie before publication. A primary rendering error survives cleanup.
+
+Video export shares the session across scene clips and closes it before concat.
+Preset rendering uses the existing FFmpeg path and a preset-only watch does not
+start Chrome. Dry-run starts no worker. No reusable clip cache or new dependency
+is introduced. Source decoding and PNG inputs remain per frame, so browser reuse
+alone does not close the release performance gate.
+
+`test_spatial_session.py` checks real browser geometry/PNG parity across viewport,
+tree, media, motion and labeled-view changes. Controlled subprocess workers
+exercise stderr backpressure, malformed/truncated replies, driver death,
+request/blocked-write timeouts, descendant termination, profile cleanup, and
+shutdown/primary-error behavior. Video tests count one worker across two scenes
+and verify that late caption failures and failed shutdown preserve prior output.

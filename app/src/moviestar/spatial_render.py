@@ -279,7 +279,7 @@ def _publish(staged: Path, destination: Path) -> None:
 def render_spatial_frame(spec: dict, frame: dict, canvas: dict, *,
                          output_path: Path, project_root: Path | None = None,
                          layout_output_path: Path | None = None,
-                         reference_path: Path | None = None) -> dict:
+                         reference_path: Path | None = None, browser_session=None) -> dict:
     """Render a single PNG; the optional browser reference supports parity tests."""
     root = (project_root or Path.cwd()).resolve()
     for diagnostic in frame.get('diagnostics', []):
@@ -305,7 +305,7 @@ def render_spatial_frame(spec: dict, frame: dict, canvas: dict, *,
         request = {**prepared, 'paint_dir': str(temporary),
                    'reference_path': str(temporary / 'reference.png') if reference_path else None,
                    'layout_output_path': str(temporary / 'layout.png') if layout_output_path else None}
-        measured = _run_browser(request)
+        measured = browser_session.run(request) if browser_session is not None else _run_browser(request)
         for diagnostic in measured['diagnostics']:
             if diagnostic.get('severity') == 'error':
                 raise SpatialRenderError(f"{diagnostic['code']} at {'/'.join(diagnostic['path'])}")

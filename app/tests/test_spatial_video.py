@@ -37,6 +37,19 @@ def video_project(project, tmp_path, monkeypatch):
     return spec, metadata
 
 
+@pytest.fixture
+def browser_sessions(monkeypatch):
+    import moviestar.spatial_session as worker
+    instances = []
+    original = worker.BrowserSession
+    class TrackedSession(original):
+        def __init__(self):
+            super().__init__()
+            instances.append(self)
+    monkeypatch.setattr(worker, 'BrowserSession', TrackedSession)
+    return instances
+
+
 def _invoke(arguments):
     result = CliRunner().invoke(cli, arguments)
     assert result.exit_code == 0, result.output
@@ -56,7 +69,11 @@ def _rms(path, *, start=0, duration=.3):
 
 
 @pytest.mark.parametrize('command,extra', [('export', []), ('watch', ['--from', '0', '--to', '.4'])])
-def test_spatial_video_dry_run_plans_frames_and_audio_without_writing(video_project, tmp_path, command, extra):
+def test_spatial_video_dry_run_plans_frames_and_audio_without_writing(video_project, tmp_path, command, extra, monkeypatch):
+    from moviestar.spatial_session import BrowserSession
+    def unexpected_start(self):
+        raise AssertionError('dry-run launched a browser worker')
+    monkeypatch.setattr(BrowserSession, '_start', unexpected_start)
     before = (tmp_path / 'moviestar' / 'spec.json').read_bytes()
     result = _invoke([command, *extra, '--out', 'movie.mp4', '--dry-run', '--video-encoder', 'x264'])
     assert result['mode'] == 'spatial_composition'
@@ -231,7 +248,7 @@ def test_non_aligned_scene_boundary_keeps_global_frame_and_source_clocks(video_p
 
 
 @pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
-def test_late_caption_overflow_cannot_replace_prior_movie(video_project, tmp_path):
+def test_late_caption_overflow_cannot_replace_prior_movie(video_project, tmp_path, browser_sessions):
     from tests.test_spatial_captions import _cue
 
     spec, metadata = video_project
@@ -246,6 +263,12 @@ def test_late_caption_overflow_cannot_replace_prior_movie(video_project, tmp_pat
     assert result.exit_code == 1
     assert 'caption_overflow' in json.loads(result.stdout)['error']
     assert prior.read_bytes() == b'previous movie'
+
+    assert len(browser_sessions) == 1
+    session = browser_sessions[0]
+    assert session._closed and session._process.poll() is not None
+    assert not Path(session._profile.name).exists()
+    assert not list(tmp_path.glob('.moviestar-spatial-*'))
 
 
 @pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
@@ -491,3 +514,50 @@ def test_preset_sampling_retains_recurring_30fps_source_timestamps(tmp_path, sam
         source_frame = math.floor((sample_offset*30+index)*speed + 1e-9)
         expected = (20+8*(source_frame % 20), 40+8*(source_frame // 20), 60)
         assert max(abs(a-b) for a,b in zip(_pixels(output, index)[:3], expected)) <= 4, index
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
+@pytest.mark.parametrize('command,extra', [('export', ['--quiet']), ('watch', ['--from', '.3', '--to', '.6'])])
+def test_video_command_owns_one_browser_across_scenes(video_project, tmp_path, monkeypatch, command, extra):
+    spec, metadata = video_project
+    _transition_project(spec, metadata)
+    save_spec(spec, cwd=tmp_path)
+    original = subprocess.Popen
+    workers = []
+    def record(args, *positional, **kwargs):
+        process = original(args, *positional, **kwargs)
+        if isinstance(args, list) and len(args) > 1 and Path(str(args[1])).name == 'spatial_browser.mjs':
+            workers.append((args, process))
+        return process
+    monkeypatch.setattr(subprocess, 'Popen', record)
+    _invoke([command, *extra, '--out', 'session.mp4', '--video-encoder', 'x264'])
+    assert len(workers) == 1, len(workers)
+    args, process = workers[0]
+    assert '--session' in args
+    assert process.poll() == 0
+    assert not Path(args[3]).exists()
+
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
+def test_browser_shutdown_failure_preserves_prior_movie(video_project, tmp_path, monkeypatch, browser_sessions):
+    from moviestar.spatial_session import BrowserSession
+    from moviestar.spatial_layout import SpatialLayoutError
+    original = BrowserSession.close
+    def failed_shutdown(self, *, abort=False):
+        was_closed = self._closed
+        original(self, abort=abort)
+        if not was_closed and not abort:
+            raise SpatialLayoutError('simulated session shutdown failure')
+    monkeypatch.setattr(BrowserSession, 'close', failed_shutdown)
+    prior = tmp_path / 'prior.mp4'
+    prior.write_bytes(b'previous movie')
+    result = CliRunner().invoke(cli, ['export', '--out', str(prior), '--quiet', '--video-encoder', 'x264'])
+    assert result.exit_code == 1
+    assert 'session shutdown failure' in json.loads(result.stdout)['error']
+    assert prior.read_bytes() == b'previous movie'
+    assert len(browser_sessions) == 1
+    session = browser_sessions[0]
+    assert session._closed and session._process.poll() == 0
+    assert not Path(session._profile.name).exists()
+    assert not list(tmp_path.glob('.moviestar-spatial-*'))
