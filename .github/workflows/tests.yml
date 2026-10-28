@@ -53,6 +53,22 @@ jobs:
           ffmpeg -version | head -1
           ffprobe -version | head -1
 
+      # Exercise the supported headless-shell renderer explicitly rather than
+      # whichever desktop Chrome happens to ship in the runner image.
+      - name: Install Chrome for Testing headless shell
+        env:
+          CHROME_FOR_TESTING_VERSION: '156.0.8078.73'
+        run: |
+          archive="$RUNNER_TEMP/moviestar-chrome.zip"
+          curl --fail --location --silent --show-error \
+            "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_FOR_TESTING_VERSION}/linux64/chrome-headless-shell-linux64.zip" \
+            --output "$archive"
+          unzip -q "$archive" -d "$RUNNER_TEMP/moviestar-chrome"
+          chrome_path="$RUNNER_TEMP/moviestar-chrome/chrome-headless-shell-linux64/chrome-headless-shell"
+          "$chrome_path" --version
+          node --version
+          echo "MOVIESTAR_CHROME_PATH=$chrome_path" >> "$GITHUB_ENV"
+
       # Cache the faster-whisper tiny model so CI doesn't re-download ~75MB
       # on every run. Key includes the model name; bump to invalidate.
       - name: Cache HuggingFace models
@@ -68,6 +84,17 @@ jobs:
           source .venv/bin/activate
           python -m pip install --upgrade pip
           pip install -e . pytest
+
+      - name: Check renderer cold startup
+        run: |
+          source app/.venv/bin/activate
+          python - <<'PY'
+          from moviestar.spatial_layout import browser_available, measure_spatial_layout
+          assert browser_available(), 'Renderer CI requires Chrome headless shell and Node.js 22+'
+          measured = measure_spatial_layout({'scene_id': 'ci_smoke', 'children': []}, {'width': 64, 'height': 64})
+          assert measured['boxes'] == []
+          print('Configured renderer completed a cold-start measurement.')
+          PY
 
       - name: Check dependency license policy
         run: |

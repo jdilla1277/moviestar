@@ -37,6 +37,16 @@ initialization and the remaining general screenshot integration are separate
 work; a loaded project's unused source need not be available to render a static
 scene. No rendered-clip reuse or cache invalidation is introduced.
 
+Linux CI installs Chrome for Testing headless shell 156.0.8078.73 from Google's
+[official distribution](https://github.com/GoogleChromeLabs/chrome-for-testing),
+reports its version, and sets `MOVIESTAR_CHROME_PATH` explicitly. This is an
+external test prerequisite, not an asset or binary distributed with MovieStar.
+Local runs still discover installed Chrome or headless shell as before. The
+pin makes the CI renderer explicit rather than depending on the runner image's
+desktop browser; it does not change startup, request, or fidelity budgets.
+Intermittent cold desktop Chrome startup failures observed before frame
+measurement are tracked separately in [#86](https://github.com/jdilla1277/moviestar/issues/86).
+
 ## Shared boundary
 
 `compile_spatial_frame` selects the scene, expands linked components, and resolves
