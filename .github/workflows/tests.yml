@@ -82,16 +82,8 @@ jobs:
           pip install -e "./app[url-captions]"
           bin/check-dependency-licenses --extra url-captions
 
-      # Fast path: everything except slow (whisper) tests. Gives quick
-      # signal on most failures even if the slow path breaks.
-      - name: Run fast tests
-        run: |
-          cd app
-          source .venv/bin/activate
-          pytest -v
-
-      # Full path: includes slow whisper tests. --run-slow is the
-      # conftest.py opt-in.
+      # --run-slow includes the fast tests too. Run the complete suite once:
+      # rendering tests made the old fast-then-full sequence exceed 25 minutes.
       - name: Run full suite (with --run-slow)
         run: |
           cd app
