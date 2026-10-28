@@ -548,17 +548,22 @@ def _compile_scene_frame(spec, timeline, span, lookup_time, result_time_s, sourc
     from moviestar.spec import parse_timecode_string
 
     authored_scene = spec["composition"][span.scene_index]
-    first_slot = authored_scene["slots"][0]
-    slot = span.slot(first_slot["slot"])
-    if slot is None:
-        _fail("spatial frame", "resolved scene has no pacing reference slot")
-    source_start = parse_timecode_string(first_slot["source_from"], "slot.source_from")
-    source_end = parse_timecode_string(first_slot["source_to"], "slot.source_to")
-    scene_source_duration = round(source_end - source_start, 6)
-    scene_source_time = round(
-        slot.source_from_s - source_start
-        + (0 if slot.held else (lookup_time - span.start_s) * slot.speed), 6
-    )
+    if authored_scene['slots']:
+        first_slot = authored_scene["slots"][0]
+        slot = span.slot(first_slot["slot"])
+        if slot is None:
+            _fail("spatial frame", "resolved scene has no pacing reference slot")
+        source_start = parse_timecode_string(first_slot["source_from"], "slot.source_from")
+        source_end = parse_timecode_string(first_slot["source_to"], "slot.source_to")
+        scene_source_duration = round(source_end - source_start, 6)
+        scene_source_time = round(
+            slot.source_from_s - source_start
+            + (0 if slot.held else (lookup_time - span.start_s) * slot.speed), 6
+        )
+    else:
+        # No carrier footage: content and motion share ordinary scene time.
+        scene_source_duration = scene_duration
+        scene_source_time = round(local, 6)
     expanded = expand_spatial_scene(spec, span.scene_id)
     diagnostics = expanded["diagnostics"]
     durations = source_durations or {}

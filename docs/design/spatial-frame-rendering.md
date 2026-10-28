@@ -1,9 +1,41 @@
 # Spatial frame rendering
 
 This slice connects the persisted visual tree and canonical media clock to a
-real still-frame preview. It advances milestone 2; it does not complete the
-static-scene timing and release-throughput gates. Scene-relative element and
+real still-frame preview. It advances milestone 2; release-throughput gates
+remain open. Scene-relative element and
 component motion, watch, and export now use this same frame path.
+
+## Explicit scene time without carrier footage
+
+A named composition scene may now store `duration` seconds with `slots: []`.
+It must reference a scene-owned spatial tree and use the `single` compatibility
+layout envelope. `scenes set` JSON creates its blank tree and stable identity
+atomically, preserving an existing tree when its scene ID survives a rename or
+duration edit. Undo includes the duration and tree. File parsing, spec validation,
+and the published schema reject duration on legacy scenes with footage slots;
+explicit-duration precedence over slot pacing is outside this slice.
+
+The pacing resolver uses the explicit duration to create an ordinary canonical
+segment with no slots. No fake source, resolved video slot, or second clock is
+inserted. The spatial compiler uses scene time directly as its source-local
+clock, so non-video component motion and optional bound videos use the same
+frame path as footage-backed scenes. Bound media can end early transparently
+or be clipped at the scene end, without changing scene duration or adding audio.
+The existing 30 fps fallback applies when the composition has no timed slots.
+
+Transitions need no footage handles for a static tree. Existing timeline
+transition-duration limits still apply; a bound video in a slot-free tree must
+still supply its own media handles. Video export retains atomic staging and
+the existing audio routing/mix. Static scenes have no implicit source audio;
+per-scene audio_from is invalid without a slot. Tests cover static-to-preset
+and preset-to-static dissolve/dip pixels and silence beside routed footage audio.
+
+The model frame/layout/preview commands inspect these scenes. Legacy screenshot
+and thumbnail inspect return a model-preview hint for slot-free samples rather
+than passing an empty slot list to FFmpeg. Entirely source-free project
+initialization and the remaining general screenshot integration are separate
+work; a loaded project's unused source need not be available to render a static
+scene. No rendered-clip reuse or cache invalidation is introduced.
 
 ## Shared boundary
 

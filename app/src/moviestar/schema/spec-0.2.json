@@ -16,7 +16,7 @@
       "items": { "$ref": "#/$defs/source" }
     },
     "spatial": {
-      "description": "Reusable component definitions and scene-owned visual trees. Keys in scenes refer to IDs in the composition timeline. These trees can be inspected and edited now; pixel layout and export support are forthcoming.",
+      "description": "Reusable component definitions and scene-owned visual trees. Keys in scenes refer to IDs in the composition timeline. Model frame/layout/preview, watch, and export use these trees; named scenes can use explicit duration without footage slots.",
       "oneOf": [
         { "type": "null" },
         { "$ref": "#/$defs/spatial_document" }
@@ -338,16 +338,30 @@
         "name": { "type": "string", "minLength": 1 },
         "layout": { "$ref": "#/$defs/layout" },
         "audio_from": { "type": "string", "minLength": 1 },
+        "duration": {
+          "type": "number",
+          "minimum": 0.001,
+          "description": "Explicit seconds for a named spatial scene with empty slots. Scenes with slots retain their existing source-range timing."
+        },
         "transition_in": {
           "description": "Visual transition at the boundary before this incoming scene. Omitted for the first scene and for the default hard cut.",
           "$ref": "#/$defs/transition"
         },
         "slots": {
           "type": "array",
-          "minItems": 1,
+          "minItems": 0,
           "items": { "$ref": "#/$defs/layout_slot" }
         }
-      }
+      },
+      "allOf": [{
+        "if": { "properties": { "slots": { "maxItems": 0 } }, "required": ["slots"] },
+        "then": {
+          "required": ["id", "name", "duration"],
+          "properties": { "layout": { "properties": { "preset": { "const": "single" } } } },
+          "not": { "required": ["audio_from"] }
+        },
+        "else": { "not": { "required": ["duration"] } }
+      }]
     },
     "transition": {
       "type": "object",

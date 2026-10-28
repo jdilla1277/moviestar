@@ -8538,7 +8538,7 @@ def _format_layout_slots(scene: dict, canvas: dict) -> tuple[list[dict], float]:
         if slot.get("id"):
             record["slot_id"] = slot["id"]
         out.append(record)
-    return out, round(durations[0] if durations else 0.0, 3)
+    return out, round(durations[0] if durations else scene.get('duration', 0.0), 6)
 
 
 def _format_layout_scene(
@@ -8951,6 +8951,8 @@ def _paced_segment_render_plan(
             )
         elif audio_from is None:
             audio_note = (
+                "Slot-free scene has no source audio."
+                if not segment.slots else
                 "Scene has multiple audio-capable slots but no audio_from; "
                 "this segment will be video-only."
             )
@@ -9208,6 +9210,13 @@ def _scene_render_plan_at(
     timeline = plan["pacing_timeline"]
     segment = timeline.segment_at(lookup_at_s)
     resolved_scene = timeline.scenes[segment.scene_index]
+    if not resolved_scene.scene['slots']:
+        _error_exit_with_hint(
+            command,
+            'Slot-free spatial scenes use the composition model frame commands.',
+            'Use moviestar composition model preview --at <H:MM:SS.mmm> --out frame.png '
+            'for assets, or composition model layout for labeled boxes.',
+        )
     frame_segment = segment.clipped(
         lookup_at_s, min(segment.end_s, lookup_at_s + 0.001)
     )
@@ -9549,7 +9558,7 @@ class _SceneFileSchemaError(ValueError):
 
 
 _SCENE_FILE_KEYS = {"canvas", "scenes"}
-_SCENE_ENTRY_KEYS = {"id", "name", "layout", "slots", "audio_from"}
+_SCENE_ENTRY_KEYS = {"id", "name", "layout", "slots", "audio_from", "duration"}
 _SCENE_SLOT_KEYS = {
     "id", "slot", "source", "from", "to", "framing", "geometry",
 }
@@ -9686,7 +9695,7 @@ def _load_scene_file_inputs(
         )
 
         raw_slots = raw_scene.get("slots")
-        if not isinstance(raw_slots, list) or not raw_slots:
+        if not isinstance(raw_slots, list) or (not raw_slots and 'duration' not in raw_scene):
             errors.append(
                 _scene_file_error(f"{scene_path}.slots", "must be a non-empty array")
             )
@@ -9757,6 +9766,8 @@ def _load_scene_file_inputs(
                 "slot_ids": slot_ids,
                 "audio_from": audio_from,
             }
+            if 'duration' in raw_scene:
+                scene_input['duration'] = raw_scene['duration']
             if has_slot_geometry:
                 scene_input["slot_geometry"] = slot_geometry
                 scene_input["slot_geometry_paths"] = slot_geometry_paths
@@ -12138,6 +12149,11 @@ def scenes_set(
     JSON file input and repeated --scene/--slot flags are mutually
     exclusive. --dry-run resolves the same full scene plan without
     writing spec.json.
+
+    In a JSON file, use "layout": "single", "slots": [], and a numeric
+    "duration" in seconds to create a slot-free spatial scene. This also
+    creates a blank visual layout; populate it with composition model apply.
+    Duration must be at least 0.001 seconds and cannot accompany footage slots.
 
     On a picture-in-picture slot object, optional ``geometry`` carries the
     canonical inset override, for example ``"geometry": {"size": 0.22,

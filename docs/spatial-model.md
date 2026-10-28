@@ -11,6 +11,8 @@ supported CSS layout subset in local Chrome and can draw a labeled layout PNG.
 `model preview` fills those positions with real video, images, text, and shapes.
 `watch` and `export` now render those same visual trees as MP4 video, including
 motion, explicit caption elements, existing audio routing, and scene transitions.
+Explicitly timed spatial scenes can contain text, images, and reusable components
+without assigning any footage slot.
 Mixed compositions retain the preset renderer for scenes without a spatial tree.
 The existing `--source` option still selects an individual source's edit.
 
@@ -89,6 +91,80 @@ time, and visibility for each video element. A video range is half-open and
 starts at scene source-local time zero. Authored scene speed and holds use the
 same mapping as the canonical timeline. Shorter media becomes transparent after
 its range ends and produces a warning.
+
+## Scenes without footage slots
+
+To add a title card or other independently timed composition in an existing
+loaded project, use `scenes set` with an editable JSON file:
+
+```json
+{
+  "canvas": "640x360",
+  "scenes": [
+    {"id": "title", "name": "Title", "layout": "single", "slots": [], "duration": 2.5}
+  ]
+}
+```
+
+```sh
+moviestar scenes set scenes.json --dry-run
+moviestar scenes set scenes.json
+moviestar composition model apply spatial.json
+moviestar composition model preview --at 0:00:01.000 --out title.png --layout-out boxes.png
+moviestar export --out title.mp4
+```
+
+`scenes set` replaces the complete ordered composition, so include footage
+scenes in that file too when keeping them. A slot-free scene receives a stable
+ID (or keeps the supplied ID) and a blank spatial layout. It initially renders
+black; replace that layout with elements or reusable component instances using
+`model apply` or `model edit`. For example, `spatial.json` can contain:
+
+```json
+{
+  "scenes": {
+    "title": {
+      "layout": {
+        "background_color": "#102030",
+        "padding": 32,
+        "children": [
+          {"id": "headline", "type": "text", "content": {"text": "Our next chapter"},
+           "style": {"font_size": 48, "color": "#ffffff"}}
+        ]
+      }
+    }
+  }
+}
+```
+
+`model apply` replaces the entire spatial document; retain other scene trees,
+definitions, and image assets when applying a replacement. Renaming a scene
+with the same ID preserves its tree, and undo restores duration, identity, and
+layout together. Deleting a slot-free scene's required tree is rejected before
+writing the spec.
+
+The persisted composition entry carries numeric `duration` seconds, `slots: []`,
+and `layout: {"preset": "single"}`. The spatial tree owns the visible design;
+`single` is the timeline's compatibility envelope and creates no footage slot.
+Duration must be finite and at least 0.001 seconds. Explicit duration with
+non-empty legacy slots is rejected; those scenes keep their existing timing
+and pacing. Slot-free scenes have no legacy slot speed/hold controls; element
+and component motion uses ordinary scene-relative time.
+
+A slot-free tree may also contain video bindings: they play at 1× from their
+declared source starts, with shorter ranges becoming transparent and longer
+ranges clipped by scene duration. Their audio is not implicitly routed. By
+default the scene has no source audio; existing composition-wide audio and the
+saved audio mix still follow their normal rules. Per-scene `audio_from` requires
+a footage slot and is rejected here. With no timed footage slots anywhere in
+the composition, the existing output cadence defaults to 30 fps; mixed edits
+use the cadence chosen from their timed footage slots.
+
+Watch, export, `model frame`, `model layout`, and `model preview` support these
+scenes, including scene-relative motion and existing visual transitions in video.
+Legacy `screenshot` and thumbnail `inspect` direct slot-free frames to the model
+commands with a JSON hint. This adds independently timed scenes to a loaded
+project; creating an entirely source-free project is outside this slice.
 
 ## Measured layout view
 
@@ -306,8 +382,8 @@ the authored canvas; `--fast` reports that composition requires re-encoding.
 `--video-encoder`, loudness reporting/mastering, source join fades, and the saved
 audio mix use the existing encoding/audio helpers.
 
-The composition's slots still own scene duration, pacing, and the routed source
-audio. Audio slices retain their full authored duration even when a fractional
+The composition's slots own footage-scene duration, pacing, and routed source
+audio; slot-free spatial scenes use their explicit duration instead. Audio slices retain their full authored duration even when a fractional
 scene cut yields a shorter video frame sequence. Placing a video twice in a
 visual tree does not route its audio twice.
 Visual bindings do not inherit legacy slot camera/framing effects; the spatial
@@ -353,7 +429,7 @@ Video generation still calls the shared frame renderer for each spatial frame
 and stores a temporary PNG sequence. Per-frame source decoding, composition,
 and temporary disk use remain; decoder reuse and streaming are follow-on work.
 Export throughput has not been validated against release performance budgets. No unchanged-clip reuse or cache invalidation is added.
-Single-frame inspection of active transitions, static-only scene timing, and the
+Single-frame inspection of active transitions and the
 remaining layout readiness checks are separate work before release.
 
 ## Element and component motion
@@ -567,12 +643,11 @@ that timestamp as `sample_time_s` alongside the requested `result_time_s`.
 At a time inside an authored scene or project-edge transition, `frame` returns
 an explicit JSON error because a complete transition frame needs both visual
 trees and transition state.
-Scenes still require existing timeline slots for duration and pacing, even when
-the visual tree contains only text, images, or shapes.
+Scenes may use explicit duration with empty slots as described above.
 Local editing of an inherited nested instance's input
 bindings still requires editing its enclosing definition or applying a complete
 spatial document; `input.bind` currently targets scene-owned instances. Input
-declaration changes and static-only scene duration remain separate contract work.
+declaration changes remain separate contract work.
 
 Replacing the timeline with `moviestar scenes set` retains visual trees for
 scene IDs that remain and removes trees owned by deleted scenes in the same
