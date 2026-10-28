@@ -2402,6 +2402,7 @@ def _layout_filter_parts(
     output_fps: float | None = None,
     frame_decode: bool = False,
     mask_start_index: int | None = None,
+    sample_offset: float | None = None,
 ) -> list[str]:
     canvas_width, canvas_height = canvas
     rate = f":r={output_fps}" if output_fps is not None else ""
@@ -2433,6 +2434,21 @@ def _layout_filter_parts(
                 # after the seek. Do not discard either with the 0.1s
                 # compositor window — rebase whichever frame arrives first.
                 timing = f"trim=start=0,setpts=(PTS-STARTPTS)/{speed}"
+            elif sample_offset is not None:
+                # A mixed composition supplies the phase of the first global
+                # output sample within this preset clip. Keep source PTS (and
+                # VFR gaps) relative to that exact origin before CFR sampling;
+                # rounding up selects the frame displayed at each sample.
+                origin = source_offset + sample_offset * speed
+                timing = (
+                    f"trim=start=0:end={source_duration},settb=1/1000000000,"
+                    # Bias by one source clock tick before retiming so rescaling
+                    # cannot put an aligned frame in the future at any speed.
+                    f"setpts=(PTS-{origin}/TB-1)/{speed},"
+                    f"fps={output_fps}:start_time=0:round=up,"
+                    f"tpad=stop_mode=clone:stop_duration={duration},"
+                    f"trim=end={duration}"
+                )
             elif output_fps is not None:
                 # VFR sources (screen recordings emit no frames while
                 # the screen is static) can start a slot mid-void or
@@ -2460,6 +2476,11 @@ def _layout_filter_parts(
                 )
         camera_crop = slot.get("camera_crop")
         camera_animation = slot.get("camera_animation")
+        if camera_animation is not None and sample_offset is not None:
+            camera_animation = {
+                **camera_animation,
+                "result_local_from": camera_animation["result_local_from"] + sample_offset,
+            }
         crop_filter = ""
         if camera_crop is not None:
             crop_filter = (
@@ -2570,7 +2591,7 @@ def _layout_filter_parts(
                     f"render_layout: unknown slot motion {motion.get('preset')!r}"
                 )
             offset = _format_filter_number(
-                float(motion.get("result_time_offset", 0.0))
+                float(motion.get("result_time_offset", 0.0)) + (sample_offset or 0.0)
             )
 
             def bounce_expression(axis: str) -> str:
@@ -3049,31 +3070,50 @@ def build_render_layout_video_command(
     audio_speed: float = 1.0,
     output_fps: float | None = None,
     video_encoder: str = "x264",
+    frame_sequence: str | None = None,
+    sample_offset: float | None = None,
 ) -> list[str]:
-    """Render simultaneous layout slots composited onto one canvas."""
-    _validate_layout_slots(layout_slots, canvas, duration)
+    """Render simultaneous layout slots composited onto one canvas.
+
+    ``sample_offset`` phases preset samples within an authored window; callers
+    supply a duration of whole frames while audio keeps its authored slices.
+    """
+    if sample_offset is not None:
+        if (
+            output_fps is None or output_fps <= 0 or not math.isfinite(sample_offset)
+            or sample_offset < -1e-9 or sample_offset >= 1 / output_fps + 1e-9
+            or frame_sequence is not None
+        ):
+            raise ValueError("render_layout: invalid preset sample_offset or output_fps")
+    if frame_sequence is None:
+        _validate_layout_slots(layout_slots, canvas, duration)
     cmd: list[str] = [
         "ffmpeg", "-y", "-loglevel", "error",
         "-progress", "pipe:2", "-nostats",
     ]
-    _append_layout_video_inputs(cmd, layout_slots)
-    _append_audio_from_inputs(cmd, len(layout_slots), audio_from_input)
+    if frame_sequence is None:
+        _append_layout_video_inputs(cmd, layout_slots)
+    else:
+        cmd += ['-framerate', str(output_fps or 30), '-start_number', '0', '-i', frame_sequence]
+    video_inputs = len(layout_slots) if frame_sequence is None else 1
+    _append_audio_from_inputs(cmd, video_inputs, audio_from_input)
     audio_input_count = len(audio_from_input[1]) if audio_from_input else 0
-    _append_shape_mask_inputs(cmd, layout_slots, duration)
+    if frame_sequence is None:
+        _append_shape_mask_inputs(cmd, layout_slots, duration)
 
     # Overlays burn in at canvas resolution, before any preview
     # downscale, so preview and full renders show identical text.
     composed_label = "vlaid" if overlay_plans else (
         "vraw" if preview else "outv"
     )
-    filter_parts = _layout_filter_parts(
-        layout_slots,
-        canvas,
-        duration,
-        output_label=composed_label,
-        output_fps=output_fps,
-        mask_start_index=len(layout_slots) + audio_input_count,
-    )
+    if frame_sequence is None:
+        filter_parts = _layout_filter_parts(
+            layout_slots, canvas, duration, output_label=composed_label,
+            output_fps=output_fps, mask_start_index=video_inputs + audio_input_count,
+            **({'sample_offset': sample_offset} if sample_offset is not None else {}),
+        )
+    else:
+        filter_parts = [f'[0:v]trim=duration={duration},setpts=PTS-STARTPTS,setsar=1[{composed_label}]']
     if overlay_plans:
         filter_parts.extend(
             build_overlay_filter_parts(
@@ -3086,7 +3126,7 @@ def build_render_layout_video_command(
             )
         )
     audio_parts, audio_label = _audio_from_filter_parts(
-        start_index=len(layout_slots),
+        start_index=video_inputs,
         audio_from_input=audio_from_input,
         audio_speed=audio_speed,
     )
@@ -3100,6 +3140,9 @@ def build_render_layout_video_command(
     cmd += _h264_video_args(preview, video_encoder)
     if audio_label is not None:
         cmd += ["-c:a", "aac"]
+    # The video filter limits the finite PNG sequence independently. An
+    # output-level -t would also truncate an authored audio slice whenever
+    # its duration exceeds the quantized video frame count / output_fps.
     cmd.append(output_path)
     return cmd
 
@@ -3503,7 +3546,14 @@ def build_render_segments_command(
         "-progress", "pipe:2", "-nostats",
     ]
     for path, src_from, _src_to in segments:
-        cmd += ["-ss", str(src_from), "-i", path]
+        # Owned scene clips already start at zero. On some FFmpeg versions,
+        # seeking to zero drops the negative-PTS AAC priming packet and then
+        # skips priming samples again, shortening every concatenated slice.
+        # Decode these clips from the beginning; the filters still own trims.
+        if video_transitions is not None and src_from == 0:
+            cmd += ["-i", path]
+        else:
+            cmd += ["-ss", str(src_from), "-i", path]
     # Extra -i per audio_from slice — same fast-seek shape, just feeds
     # the audio side of the filter graph instead of the video side.
     if audio_from_input is not None:
@@ -3668,8 +3718,14 @@ def build_render_segments_command(
             current_video_label = next_label
             authored_elapsed += segments[i][2] - segments[i][1]
         if current_video_label != video_output_label:
+            # A one-frame clip has no timestamp delta for concat to infer its
+            # duration. For sampled, transition-free video, preserve every
+            # frame in order instead of letting the final fps filter collapse
+            # equal boundary timestamps. Audio keeps its independent clock.
+            cadence = (f"setpts=N/({output_fps}*TB)"
+                       if not video_transitions and output_fps is not None else "null")
             filter_parts.append(
-                f"[{current_video_label}]null[{video_output_label}]"
+                f"[{current_video_label}]{cadence}[{video_output_label}]"
             )
         if a_count:
             filter_parts.append(
@@ -3917,9 +3973,11 @@ def render_layout_video(
     audio_speed: float = 1.0,
     output_fps: float | None = None,
     video_encoder: str = "x264",
+    frame_sequence: str | None = None,
+    sample_offset: float | None = None,
 ) -> list[str]:
     """Render simultaneous layout slots composited onto one MP4."""
-    for slot in layout_slots:
+    for slot in ([] if frame_sequence is not None else layout_slots):
         if not os.path.exists(slot["path"]):
             raise FileNotFoundError(f"File not found: {slot['path']}")
     if audio_from_input is not None:
@@ -3929,7 +3987,8 @@ def render_layout_video(
 
     check_ffmpeg_available()
     preflight_overlay_render_capabilities(overlay_plans)
-    preflight_shape_render_capabilities(layout_slots)
+    if frame_sequence is None:
+        preflight_shape_render_capabilities(layout_slots)
     cmd = build_render_layout_video_command(
         layout_slots,
         output_path,
@@ -3942,6 +4001,8 @@ def render_layout_video(
         highlight_ass=highlight_ass,
         audio_speed=audio_speed,
         output_fps=output_fps,
+        **({'frame_sequence': frame_sequence} if frame_sequence is not None else {}),
+        **({'sample_offset': sample_offset} if sample_offset is not None else {}),
     )
     if progress_cb is None:
         progress_cb = lambda line: sys.stderr.write(line + "\n")

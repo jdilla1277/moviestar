@@ -2,8 +2,8 @@
 
 This slice connects the persisted visual tree and canonical media clock to a
 real still-frame preview. It advances milestone 2; it does not complete the
-watch/export or static-scene timing gates. Scene-relative element and component
-motion now uses this same frame path.
+static-scene timing and release-throughput gates. Scene-relative element and
+component motion, watch, and export now use this same frame path.
 
 ## Shared boundary
 
@@ -131,8 +131,8 @@ checks retain cues, wrapping, and scaled content-box overflow measurement.
 File-based CLI tests cover dry-run/save/read-only preview, equal rendered and
 labeled boxes, and revision undo. Unsupported containing-block changes preserve
 prior artifacts. This is still-frame evidence; interval-wide collision checks,
-transition frames, watch/export throughput, custom easing, and render caching
-remain outside this slice.
+single-frame transition inspection, release-throughput verification, custom
+easing, and render caching remain separate gates.
 
 ### Responsive canvas rules
 
@@ -219,8 +219,8 @@ positions and rejection after source end.
 
 This establishes still-frame geometry and paint parity on synthetic content.
 It is not evidence for export throughput or every source decoder.
-Transition frames and real-content watch/export friction tests remain
-separate delivery gates.
+Real-content watch/export friction tests and single-frame transition inspection
+remain separate delivery gates.
 
 The browser reference is a paint check, not a promise that FFmpeg's video scaler
 matches Chrome's image scaler. A larger manual `testsrc2` example measured mean
@@ -251,3 +251,71 @@ empty target list before connecting to real Chrome and measuring geometry.
 Another keeps returning HTTP 503 and verifies bounded failure with the prior
 artifact preserved. These tests cover the transient discovery failure mode;
 they do not establish the exact cause of the original CI `fetch failed` result.
+
+## Spatial video integration
+
+`spatial_video.py` selects the shared spatial frame renderer for structured
+scene clips and the existing layout renderer for preset clips. PNG sequences
+feed the existing video encoder through `frame_sequence`; routed source audio
+uses the existing slice/tempo filters once, independently of visual reuse.
+The video filter limits each PNG sequence without an output-level duration cap
+on audio. Concatenation decodes zero-origin scene clips without seeking past AAC
+priming, preserving the full authored audio samples independently of quantized
+video frame counts.
+Both structured and preset clips in a spatial project use the global frame
+count, including a watch containing only preset scenes. The preset FFmpeg path
+phases source timestamps before CFR sampling, offsets camera/layout motion, and
+anchors overlays to its first global sample. This prevents fractional cuts from
+adding frames or shifting footage relative to audio in mixed compositions.
+Preset sampling uses a nanosecond working clock with a one-tick rescaling guard
+before retiming, so recurring timestamps such as 1/30 do not delay aligned
+frames. Preset-only projects retain their existing path. Empty output-grid windows are
+rejected.
+
+The existing source-handle planner and FFmpeg transition compositor blend both
+structured and mixed scene clips. `compile_spatial_scene_frame` is an explicit
+owned-layer compiler for handles; normal `compile_spatial_frame` retains its
+active-transition guard. Handle footage follows edge pacing; component motion
+and caption cues hold scene endpoint state. Placed media handles are checked
+against asset duration in addition to the legacy carrier-slot checks. Watches
+expand to cover intersecting transition windows, align the render origin to the
+global output frame grid, and crop by frame indices after compositing. Exact
+internal sample origins are kept separate from rounded timecode reports; audio
+is cropped to the requested times without video-grid quantization.
+Project-edge fades apply to the complete video before crop. Audio mixing and
+mastering apply to the requested result-time window after this visual stage.
+
+The destination is replaced only after frame generation, encoding, mixing, and
+mastering succeed. Intermediate files are temporary and removed on failure.
+Dry-run plans do not launch Chrome or decode assets; runtime glyph/asset failures
+remain possible and preserve previous output. This introduces no clip cache.
+Per-frame browser/decode overhead and PNG storage are explicit throughput
+limitations, with persistent workers/streaming left as mechanical follow-ons.
+
+`test_spatial_video.py` uses real encoded clips and decoded frames to verify
+portrait/landscape motion placement, audio RMS without duplicated routing,
+authored gain, global clocks, mixed transitions, watch windows, edge fades,
+caption declaration policy, non-aligned scene cuts, fractional-cut audio duration
+and tone alignment, fractional-transition watch/export frame-count and blend
+parity at 10 and 30 fps, alternating preset/spatial fractional cuts in both
+orders with exact sampled footage and audio windows, insufficient media handles,
+and preservation of prior output after late caption/media failure. These are
+MP4 correctness checks with lossy-encoding patch tolerances; the existing PNG
+paint-parity budget is unchanged. No release-throughput claim is made.
+
+The owned Chrome process is now awaited before deleting its temporary profile.
+Shutdown allows two seconds for SIGTERM, then one second after SIGKILL; profile
+removal has bounded retries. Completed shutdown timers are cancelled so they do
+not delay normal frame completion. Cleanup returns errors to the driver and
+never replaces an earlier startup/render error with a Node filesystem stack.
+This fixes a reproduced `ENOTEMPTY` race that could otherwise report only the
+Node version. Deterministic lifecycle tests cover delayed graceful shutdown,
+forced shutdown, and removal failure. Port/discovery/process deadlines and
+fidelity/performance acceptance budgets are unchanged.
+
+The Python driver also owns the profile and, on POSIX, a separate process group.
+If Node times out or crashes, the driver terminates that owned group and removes
+the profile instead of leaving browser descendants behind. The existing
+60-second rendering deadline is unchanged. A real subprocess-tree regression
+verifies descendant termination and profile removal after a shortened test-only
+deadline; no renderer deadline or performance budget is relaxed.

@@ -466,7 +466,7 @@ def model() -> None:
 
     These structural trees are stored in spec.json. Existing scene order and
     timing stay authoritative. `model layout` measures boxes in local Chrome;
-    `model preview` renders a real frame. Export is not yet connected.
+    `model preview` renders a real frame; watch and export render the scene trees as video.
     """
 
 

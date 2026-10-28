@@ -13,8 +13,10 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 from importlib.resources import files
+from tempfile import TemporaryDirectory
 
 from moviestar.spatial_motion import SpatialMotionError, sample_motion
 from moviestar.spatial_format import SpatialFormatError, expand_properties, matches_canvas, validate_format_rules
@@ -249,15 +251,36 @@ def _run_browser(request: dict) -> dict:
     if node is None:
         raise SpatialLayoutError("Node.js 22 or newer is required for browser layout measurement")
     script = files("moviestar").joinpath("spatial_browser.mjs")
+    def kill_owned_browser(process):
+        try:
+            if os.name == 'posix':
+                os.killpg(process.pid, signal.SIGKILL)
+            else:
+                process.kill()
+        except ProcessLookupError:
+            pass
+
     try:
-        completed = subprocess.run([node, str(script), chrome], input=json.dumps(request),
-                                   text=True, capture_output=True, timeout=60, check=False)
+        # The parent owns both the profile and a separate process group, so a
+        # timed-out/crashed Node driver cannot strand Chrome or its profile.
+        with TemporaryDirectory(prefix='moviestar-layout-', ignore_cleanup_errors=True) as profile:
+            process = subprocess.Popen([node, str(script), chrome, profile], stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                start_new_session=os.name == 'posix')
+            try:
+                stdout, stderr = process.communicate(input=json.dumps(request), timeout=60)
+            except BaseException:
+                kill_owned_browser(process)
+                process.communicate()
+                raise
+            if process.returncode:
+                kill_owned_browser(process)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise SpatialLayoutError(f"browser layout failed: {exc}") from exc
-    if completed.returncode:
-        detail = completed.stderr.strip().splitlines()[-1] if completed.stderr.strip() else "unknown browser error"
+    if process.returncode:
+        detail = stderr.strip().splitlines()[-1] if stderr.strip() else 'unknown browser error'
         raise SpatialLayoutError(f"browser layout failed: {detail}")
     try:
-        return json.loads(completed.stdout)
+        return json.loads(stdout)
     except ValueError as exc:
         raise SpatialLayoutError("browser layout returned invalid JSON") from exc

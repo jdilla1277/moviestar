@@ -790,16 +790,16 @@ def test_real_cli_apply_inspect_and_image_asset_diagnostic(tmp_path, monkeypatch
     assert json.loads(missing.output)["scene"]["diagnostics"][0]["code"] == "unknown_asset"
 
 
-def test_export_refuses_to_ignore_spatial_scene_tree(tmp_path, monkeypatch):
+def test_export_plans_saved_spatial_scene_tree(tmp_path, monkeypatch):
     spec = _project()
     save_spec(spec, cwd=tmp_path)
-    save_project({"sources": spec["sources"]}, cwd=tmp_path)
+    save_project(_source_project(spec), cwd=tmp_path)
     monkeypatch.chdir(tmp_path)
     result = CliRunner().invoke(cli, ["export", "--dry-run"])
-    assert result.exit_code == 1
+    assert result.exit_code == 0, result.output
     output = json.loads(result.output)
-    assert output["command"] == "export"
-    assert "spatial" in output["error"].lower()
+    assert output["mode"] == "spatial_composition"
+    assert len(output["spatial_render_plan"]) == 2
 
 
 def test_invalid_apply_keeps_previous_spec(tmp_path, monkeypatch):
