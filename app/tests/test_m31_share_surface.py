@@ -105,14 +105,14 @@ def test_share_requires_an_address_only_when_email_delivery_is_requested(
     assert "account connect" in payload["hint"]
 
 
-def test_share_without_dry_run_does_not_claim_to_send_or_publish(tmp_path):
+def test_disconnected_email_handoff_does_not_claim_to_send_or_publish(tmp_path):
     source = tmp_path / "final.mp4"
     source.write_bytes(b"movie")
 
     result, payload = invoke("share", str(source), "--to", "alex@example.com")
 
     assert result.exit_code == 1
-    assert payload["status"] == "not_available"
+    assert payload["status"] == "not_connected"
     assert payload["delivery"]["to"] == "alex@example.com"
     assert payload["upload_performed"] is False
     assert payload["email_sent"] is False

@@ -82,8 +82,13 @@ covers every command family.
 When the user requests a hosted handoff, upload privately with `moviestar upload`
 and publish with `moviestar share VIDEO_ID`, or use `moviestar share FILE` to do
 both. Preserve the stderr retry key and read the single stdout JSON result.
-`shares` lists owned links, `unshare LINK_ID` revokes one, and `download URL
+`share FILE_OR_VIDEO_ID --to EMAIL` emails the forwardable link to a human-authorized
+address. `shares email LINK_ID --to EMAIL --idempotency-key KEY` recovers delivery
+or emails an existing link; keep the same recipient/key for retries and check
+`shares deliveries LINK_ID` for provider-acceptance history. Email failure does
+not undo a confirmed public link, and provider acceptance does not prove inbox
+delivery. `shares` lists owned links, `unshare LINK_ID` revokes one, and `download URL
 --out FILE` lets a recipient agent start another edit without an account.
-Unlisted links are forwardable and downloadable; email delivery is not yet
-implemented. See [sharing and download](sharing.md) for availability, safe
+Unlisted links are forwardable and downloadable; email does not restrict access
+to its recipient. See [sharing and download](sharing.md) for availability, safe
 retries after partial success, pagination, revocation, and Preview origins.

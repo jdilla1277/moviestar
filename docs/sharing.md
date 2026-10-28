@@ -28,7 +28,7 @@ moviestar share final.mp4 --idempotency-key handoff-cut-1
 ```
 
 Live stdout is one JSON result with `video_id`, `link_id`, `url`, quota,
-`upload_performed`, and `email_sent: false`. `quota_scope: "link_publication"`
+`upload_performed`, and `email_sent` (false when `--to` is omitted). `quota_scope: "link_publication"`
 means its before/after snapshot covers link creation, after any upload has
 already consumed storage; `quota.after` is the account's final usage. Uploading
 a local file can use a slot even though link publication itself changes no
@@ -36,10 +36,59 @@ quota. Anyone with the unlisted link can
 watch, download, and forward it without signing in. Ask before uploading or
 publishing a user's private video when that action has not been authorized.
 
-Email delivery is a later feature. Live `--to EMAIL` returns `not_available`
-before uploading or publishing; omit it to create a link and hand it to the
-user. `--dry-run --to EMAIL` can preview the requested address, but never sends.
-Do not describe the link as restricted to that address.
+## Email an unlisted link
+
+```sh
+moviestar share final.mp4 --to editor@example.com --dry-run
+moviestar share final.mp4 --to editor@example.com --idempotency-key handoff-email-1
+moviestar share VIDEO_ID --to editor@example.com --idempotency-key handoff-email-2
+moviestar shares email LINK_ID --to editor@example.com --idempotency-key email-existing-1
+moviestar shares deliveries LINK_ID
+moviestar shares deliveries LINK_ID --cursor DELIVERY_ID
+```
+
+Use one exact address supplied or authorized by the human. If only a person's
+name is known, ask for the address. `--dry-run` previews the address without
+connecting, uploading, publishing, or emailing. Live addresses use a single
+ASCII mailbox and are normalized to lowercase; display names, multiple
+recipients, and custom subjects/messages/attachments are not accepted.
+
+`share --to` uploads if necessary, creates an unlisted link, then requests its
+email delivery. `shares email` emails an existing link without uploading or
+creating another link. Each message names the owner's public handle, includes
+the watch/download link, and explains that it can be forwarded. The recipient
+needs no account. Sending email does not restrict who can use the link and does
+not subscribe the recipient to updates.
+
+A successful `share --to` preserves the publication status and includes
+`email_sent: true`, `email_outcome`, and a delivery receipt. The receipt's
+`status: "accepted"` means the email provider accepted the request; it does
+**not** confirm inbox delivery. Delivery history lists recipients, request IDs,
+statuses and times, one page at a time. It stays available if sending is paused
+or the link is revoked.
+
+If publication succeeds and email fails, stdout still includes `url`, `link_id`,
+`video_id`, and the confirmed `publication_outcome`. A definite provider
+rejection reports `email_failed` and `email_sent: false`. A lost or unverifiable
+acknowledgement reports `delivery_pending` and `email_sent: null`: it may have
+been sent. These incomplete handoffs exit with a nonzero status. Keep the
+original link, recipient, and key; recover only the email step with the
+`shares email` command printed in the hint. Do not re-upload or create a new
+link to recover email.
+
+Unchanged retries recover one durable request and do not deliberately send a
+second message. Requests still in progress should be retried after at least a
+minute. An uncertain request becomes `delivery_unknown` after the service's
+23-hour safe retry window and is not sent again automatically. Check with the
+recipient before deliberately resending with a **new** key. Reusing a key with
+a different recipient or link is a conflict. A new key requests another email
+and is subject to recipient/account/service limits; use it only when the human
+wants another message. Revoked links and held/unready/deleted videos cannot be
+emailed, including between reservation and provider submission.
+
+Email sending must be enabled on the service separately from link creation.
+If it is paused, preserve any returned link and delivery uncertainty; do not
+claim the email was sent or that publication failed.
 
 ## Recover an interrupted handoff
 

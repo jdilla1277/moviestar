@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import re
+import shlex
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -9,7 +11,7 @@ from urllib.parse import urlsplit
 
 import click
 
-from moviestar.account import _credential_for_connection, _read_state, _valid_email
+from moviestar.account import _credential_for_connection, _read_state
 from moviestar.upload import (
     FREE_LIMITS, MAX_FILE_BYTES, UploadError, _KEY_RE, _RESERVATION_RE,
     _json_request, _upload_url, upload_video,
@@ -38,16 +40,16 @@ def _owner_from_local_state() -> dict:
     return {"connection": "not_connected", "handle": None, "email": None}
 
 
-def _connection(command: str) -> tuple[str, str, str]:
+def _connection(command: str, **failure_fields: object) -> tuple[str, str, str]:
     if command in {"share", "shares"}:
         try:
             configured_watch_origin()
         except ValueError as error:
-            _fail(command, "invalid_configuration", str(error))
+            _fail(command, "invalid_configuration", str(error), **failure_fields)
     endpoint = _upload_url()
     credential = _credential_for_connection(_read_state())
     if not endpoint or not credential:
-        _fail(command, "not_connected", "Run 'moviestar account connect EMAIL', then 'moviestar account status'.")
+        _fail(command, "not_connected", "Run 'moviestar account connect EMAIL', then 'moviestar account status'.", **failure_fields)
     return endpoint.removesuffix("/api/v1/videos/uploads"), endpoint, credential
 
 
@@ -117,8 +119,10 @@ def _service_failure(command: str, code: int, body: dict, **fields: object) -> N
         status = "sharing_unavailable"
     hint = _ERRORS[status]
     if command == "share" and fields.get("publication_outcome") == "unknown":
+        recipient = fields.get("delivery", {}).get("to")
+        email_option = f" --to {shlex.quote(recipient)}" if isinstance(recipient, str) else ""
         hint += (" The link may already be public; do not assume the video is private. "
-                 f"Reconcile with 'moviestar share {fields['video_id']} --idempotency-key {fields['idempotency_key']}' "
+                 f"Reconcile with 'moviestar share {fields['video_id']} --idempotency-key {fields['idempotency_key']}{email_option}' "
                  "using the same video and key. If API and watch hosts differ, configure MOVIESTAR_WATCH_ORIGIN first.")
     _fail(command, status, hint, **fields)
 
@@ -135,9 +139,61 @@ def _publication_rejected(code: int, body: dict) -> bool:
     return isinstance(status, str) and status in _REJECTIONS.get(code, set())
 
 
+def _valid_recipient(value: object) -> bool:
+    if not isinstance(value, str) or len(value) > 254 or value.count("@") != 1:
+        return False
+    local, domain = value.split("@")
+    return (0 < len(local) <= 64 and re.fullmatch(r"[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+", local) is not None
+            and not local.startswith(".") and not local.endswith(".") and ".." not in local
+            and "." in domain and all(len(part) <= 63 and re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?", part) for part in domain.split("."))
+            and re.fullmatch(r"[A-Za-z]{2,63}", domain.split(".")[-1]) is not None)
+
+
+def _delivery(raw: object, link_id: str, recipient: str | None = None) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    fields = ("id", "link_id", "to", "status", "created_at", "accepted_at")
+    if (any(k not in raw for k in fields) or not isinstance(raw["id"], str) or not _RESERVATION_RE.fullmatch(raw["id"])
+            or raw["link_id"] != link_id or not _valid_recipient(raw["to"])
+            or (recipient is not None and raw["to"] != recipient)
+            or not isinstance(raw["status"], str) or raw["status"] not in {"pending", "accepted", "failed", "unknown"} or not _timestamp(raw["created_at"])
+            or (raw["status"] == "accepted" and not _timestamp(raw["accepted_at"]))
+            or (raw["status"] != "accepted" and raw["accepted_at"] is not None)):
+        return None
+    return {k: raw[k] for k in fields}
+
+
+def _email_request(command: str, link_id: str, recipient: str, key: str, origin: str,
+                   credential: str, fields: dict, *, success_status: str | None = None) -> None:
+    code, body = _json_request(f"{origin}/api/v1/shares/{link_id}/deliveries", credential,
+                               {"to": recipient, "idempotency_key": key})
+    item = _delivery(body.get("delivery"), link_id, recipient)
+    status = body.get("status")
+    retry = (f"moviestar shares email {link_id} --to {shlex.quote(recipient)} --idempotency-key {key}")
+    safe = {**fields, "link_id": link_id, "idempotency_key": key, "email_sent": None,
+            "delivery": item or {"to": recipient, "status": "pending"}}
+    if code == 200 and isinstance(status, str) and status in {"accepted", "already_accepted"} and item and item["status"] == "accepted" and body.get("email_sent") is True:
+        _emit({"command": command, "status": success_status or status, **safe, "email_sent": True, "email_outcome": status,
+               "hint": "The email provider accepted this message; inbox delivery is not confirmed. Anyone with the link can watch, download, and forward it."})
+        return
+    if item and isinstance(status, str) and ((code == 202 and status in {"delivery_pending", "in_progress"} and item["status"] == "pending")
+                 or (code == 409 and status == "delivery_unknown" and item["status"] == "unknown")
+                 or (code == 502 and status == "email_failed" and item["status"] == "failed")):
+        safe["email_sent"] = False if item["status"] == "failed" else None
+        hint = ("Delivery is uncertain. Check with the recipient before deliberately sending again with a new key."
+                if item["status"] == "unknown" else f"Email is not confirmed. Recover this request with: {retry}")
+        _fail(command, status, hint, **safe)
+    known = {400: {"invalid_request"}, 401: {"not_connected"}, 404: {"not_found"},
+             409: {"consent_required", "video_not_ready", "link_revoked", "idempotency_conflict"},
+             429: {"rate_limited"}, 503: {"email_delivery_paused"}}
+    if isinstance(status, str) and status in known.get(code, set()):
+        _fail(command, status, f"Email was not confirmed. Check account status and the link, then retry the same request: {retry}", **safe)
+    _fail(command, "delivery_pending", f"The email response could not be verified; it may have been sent. Recover with the same recipient and key: {retry}", **safe)
+
+
 @click.command("share")
 @click.argument("target", metavar="FILE_OR_VIDEO_ID")
-@click.option("--to", "recipient", metavar="EMAIL", help="Reserved for email delivery; live use is not available yet.")
+@click.option("--to", "recipient", metavar="EMAIL", help="Email the forwardable unlisted link to one exact address supplied by the human.")
 @click.option("--idempotency-key", metavar="KEY", help="Reuse KEY with the same file or video after an interrupted handoff.")
 @click.option("--dry-run", is_flag=True, help="Preview the handoff without uploading, publishing, or sending email.")
 def share(target: str, recipient: str | None, idempotency_key: str | None, dry_run: bool) -> None:
@@ -145,7 +201,7 @@ def share(target: str, recipient: str | None, idempotency_key: str | None, dry_r
 
     Anyone holding the unlisted link can watch and download. It can be forwarded.
     Upload alone remains private. --to requires an exact email address and is
-    reserved for a later email-delivery feature; live --to changes nothing.
+    sends that person the forwardable link, without requiring an account.
 
     Example: moviestar share final.mp4 --idempotency-key handoff-1
 
@@ -155,10 +211,8 @@ def share(target: str, recipient: str | None, idempotency_key: str | None, dry_r
     """
     delivery = {"to": recipient, "would_send_email": recipient is not None}
     common = {"upload_performed": False, "email_sent": False, "link_created": False, "publication_outcome": "not_attempted", "delivery": delivery}
-    if recipient is not None and not _valid_email(recipient):
+    if recipient is not None and not _valid_recipient(recipient):
         _fail("share", "error", "Ask the human for the recipient's exact email address, then retry.", **common)
-    if recipient is not None and not dry_run:
-        _fail("share", "not_available", "Email delivery is not available yet. Omit --to to create an unlisted link without sending email.", **common)
     if idempotency_key is not None and not _KEY_RE.fullmatch(idempotency_key):
         _fail("share", "invalid_request", "Use 1–128 letters, digits, underscores, or hyphens for the idempotency key.", **common)
     video_id = str(uuid.UUID(target)) if _RESERVATION_RE.fullmatch(target) else None
@@ -181,9 +235,9 @@ def share(target: str, recipient: str | None, idempotency_key: str | None, dry_r
                "quota": {"plan": "unknown", "current_usage": "unavailable", "projected_usage": "unavailable",
                          "free_limits": FREE_LIMITS, "would_use_bytes": details["size_bytes"] if details else 0,
                          "would_use_videos": 1 if file else 0},
-               "hint": "Connect with 'moviestar account connect EMAIL' before publishing; service readiness and quota are checked live. --to email delivery is not available yet."})
+               "hint": "Connect with 'moviestar account connect EMAIL' before publishing; service readiness and quota are checked live. --to sends an unlisted, forwardable link when enabled."})
         return
-    origin, endpoint, credential = _connection("share")
+    origin, endpoint, credential = _connection("share", **common)
     key = idempotency_key or uuid.uuid4().hex
     click.echo(json.dumps({"command": "share", "status": "retry_key", "idempotency_key": key,
                            "hint": "If interrupted, retry the same file or video with --idempotency-key KEY."}), err=True)
@@ -207,9 +261,12 @@ def share(target: str, recipient: str | None, idempotency_key: str | None, dry_r
     item, quota = _link(body.get("link"), origin, video_id), _quota(body.get("quota"))
     if not item or item["revoked_at"] is not None or body.get("video_id") != video_id or quota is None:
         _service_failure("share", 0, {}, **fields)
-    _emit({"command": "share", "status": body["status"], **fields,
-           "link_created": body["status"] == "shared", "publication_outcome": body["status"], "link_id": item["id"], "url": item["url"],
-           "link": item, "quota": quota, "quota_scope": "link_publication",
+    published = {**fields, "link_created": body["status"] == "shared", "publication_outcome": body["status"],
+                 "link_id": item["id"], "url": item["url"], "link": item, "quota": quota, "quota_scope": "link_publication"}
+    if recipient is not None:
+        _email_request("share", item["id"], recipient.lower(), key, origin, credential, published, success_status=body["status"])
+        return
+    _emit({"command": "share", "status": body["status"], **published,
            "hint": "Anyone with this unlisted link can watch, download, and forward it. No email was sent."})
 
 
@@ -241,6 +298,55 @@ def shares(ctx: click.Context, video_id: str | None, cursor: str | None) -> None
         _service_failure("shares", 0, {})
     _emit({"command": "shares", "status": "ok", "links": items, "next_cursor": next_cursor,
            "quota": quota, **({"video_id": video_id} if video_id else {})})
+
+
+@shares.command("email")
+@click.argument("link_id")
+@click.option("--to", "recipient", required=True, metavar="EMAIL", help="One exact email address supplied by the human.")
+@click.option("--idempotency-key", metavar="KEY", help="Reuse KEY for a retry; a new key deliberately sends another email.")
+@click.option("--dry-run", is_flag=True, help="Preview email delivery without a network request.")
+def email_link(link_id: str, recipient: str, idempotency_key: str | None, dry_run: bool) -> None:
+    """Email an existing unlisted link, or deliberately resend it with a new key.
+
+    The link remains forwardable and downloadable without a recipient account.
+    Retries must keep the same link, recipient and key. Provider acceptance does
+    not confirm inbox delivery. An uncertain request stops retrying after 23 hours.
+    """
+    if not _RESERVATION_RE.fullmatch(link_id) or not _valid_recipient(recipient) or (idempotency_key is not None and not _KEY_RE.fullmatch(idempotency_key)):
+        _fail("shares email", "invalid_request", "Use a link UUID, one exact email address, and a valid idempotency key.", email_sent=False)
+    link_id = str(uuid.UUID(link_id))
+    if dry_run:
+        _emit({"command": "shares email", "status": "would_email", "link_id": link_id, "delivery": {"to": recipient}, "email_sent": False, "owner": _owner_from_local_state(),
+               "hint": "This emails a forwardable unlisted link; it does not restrict access to this address."})
+        return
+    origin, _, credential = _connection("shares email")
+    key = idempotency_key or uuid.uuid4().hex
+    click.echo(json.dumps({"command": "shares email", "status": "retry_key", "idempotency_key": key,
+                           "hint": "Retry the same link and recipient with --idempotency-key KEY."}), err=True)
+    _email_request("shares email", link_id, recipient.lower(), key, origin, credential, {})
+
+
+@shares.command("deliveries")
+@click.argument("link_id")
+@click.option("--cursor", metavar="DELIVERY_ID", help="Use the prior next_cursor with the same link.")
+def email_history(link_id: str, cursor: str | None) -> None:
+    """List email recipients and provider-acceptance history for an owned link.
+
+    Returns one page and next_cursor. Acceptance is not proof of inbox delivery.
+    Listing remains available when sending is paused or the link is revoked.
+    """
+    if not _RESERVATION_RE.fullmatch(link_id) or (cursor is not None and not _RESERVATION_RE.fullmatch(cursor)):
+        _fail("shares deliveries", "invalid_request", "Use a link UUID and the previous delivery cursor.")
+    link_id = str(uuid.UUID(link_id))
+    origin, _, credential = _connection("shares deliveries")
+    code, body = _json_request(f"{origin}/api/v1/shares/{link_id}/deliveries" + (f"?cursor={cursor}" if cursor else ""), credential, method="GET")
+    if code != 200 or body.get("status") != "ok":
+        _service_failure("shares deliveries", code, body)
+    raw, cursor = body.get("deliveries"), body.get("next_cursor")
+    items = [_delivery(item, link_id) for item in raw] if isinstance(raw, list) and len(raw) <= 50 else None
+    if items is None or any(item is None for item in items) or (cursor is not None and (not isinstance(cursor, str) or not _RESERVATION_RE.fullmatch(cursor))):
+        _fail("shares deliveries", "sharing_unavailable", "Could not verify delivery history. Retry this link's previous cursor.")
+    _emit({"command": "shares deliveries", "status": "ok", "link_id": link_id, "deliveries": items, "next_cursor": cursor})
 
 
 @shares.command("delete")

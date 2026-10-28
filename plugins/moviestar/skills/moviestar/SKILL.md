@@ -98,6 +98,20 @@ sharing; never trust arbitrary Preview domains.
 `moviestar unshare LINK_ID` revokes one link, preserving the video and quota.
 `moviestar download WATCH_URL --out FILE` saves a finished MP4 anonymously and
 never overwrites a file. The recipient gets no project or source history.
-Anyone holding an unlisted link can watch, download, and forward it. Live
-`--to` email delivery and video deletion remain unavailable. If hosting is
-paused, report the returned status; never claim a link was created or sent.
+Anyone holding an unlisted link can watch, download, and forward it. When the
+human authorizes a recipient address, `share FILE_OR_VIDEO_ID --to EMAIL`
+publishes and emails that link. Ask for the exact address if only a name is
+known; do not invent a recipient. Preview with `--dry-run`. This does not
+restrict access to the address or create an account for the recipient.
+
+Use `shares email LINK_ID --to EMAIL --idempotency-key KEY` to email an existing
+link or recover an interrupted delivery; `shares deliveries LINK_ID` lists the
+owner's recipient/status history with `--cursor` pagination. Keep the same link,
+recipient, and key on retry. If email fails after publication, preserve the
+returned URL and confirmed publication outcome. `email_sent: true` means
+provider acceptance, not inbox delivery; `email_sent: null` means uncertain.
+Do not re-upload or create another link to recover email. After
+`delivery_unknown`, check with the recipient before deliberately sending again
+with a new key. A new key sends another message subject to service limits.
+Video deletion remains unavailable. If hosting or email is paused, report the
+returned status; never claim a link was created or an email was sent.
