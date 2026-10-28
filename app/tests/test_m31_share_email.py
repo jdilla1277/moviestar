@@ -90,3 +90,51 @@ def test_email_existing_link_dry_run_never_connects(connected,monkeypatch):
     monkeypatch.setattr(sharing,'_json_request',lambda *a,**k:pytest.fail('network'))
     result,body=invoke('shares','email',LINK,'--to',TO,'--dry-run')
     assert result.exit_code==0 and body['status']=='would_email' and body['email_sent'] is False
+
+
+@pytest.mark.parametrize("stage", ["upload", "publication", "email", "existing_link_email"])
+def test_missing_consent_explains_terms_acceptance_in_terminal_and_json(
+    connected, tmp_path, monkeypatch, stage
+):
+    from moviestar import upload as uploads
+
+    file = tmp_path / "cut.mp4"
+    file.write_bytes(b"video")
+    calls = []
+
+    def request(url, *args, **kwargs):
+        calls.append(url)
+        if stage == "email" and url.endswith("/shares"):
+            return 201, publication()
+        return 409, {"status": "consent_required"}
+
+    # Exercise the actual upload rejection for local files, rather than
+    # replacing the UploadError-to-share path with a stub.
+    monkeypatch.setattr(uploads, "_json_request", request)
+    monkeypatch.setattr(sharing, "_json_request", request)
+    if stage == "existing_link_email":
+        args = ["shares", "email", LINK]
+    else:
+        args = ["share", str(file) if stage == "upload" else VIDEO]
+    result, body = invoke(*args, "--to", TO, "--idempotency-key", "same")
+
+    assert result.exit_code == 1
+    assert body["status"] == "consent_required"
+    message = "Accept the Terms of Service before sharing."
+    assert body["error"] == message
+    assert message in result.stderr
+    for output in (body["hint"], result.stderr):
+        assert "moviestar account terms" in output
+        assert "--accept VERSION --age-18-or-older" in output
+        assert "human" in output
+    assert body["idempotency_key"] == "same"
+    if stage == "email":
+        assert body["publication_outcome"] == "shared"
+        assert body["link_created"] is True
+        assert body["url"] == URL
+        assert "shares email" in body["hint"]
+    elif stage != "existing_link_email":
+        assert body["link_created"] is False
+        assert body["email_sent"] is False
+        assert "url" not in body
+    assert len(calls) == (2 if stage == "email" else 1)

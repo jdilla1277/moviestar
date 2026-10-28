@@ -24,6 +24,13 @@ def _emit(payload: dict) -> None:
 
 
 def _fail(command: str, status: str, hint: str, **fields: object) -> None:
+    if status == "consent_required":
+        message = "Accept the Terms of Service before sharing."
+        fields["error"] = message
+        hint = ("Run 'moviestar account terms' to review the policies and get VERSION. "
+                "After the human agrees and confirms they are at least 18, run "
+                "'moviestar account terms --accept VERSION --age-18-or-older'. " + hint)
+        click.echo(f"{message} {hint}", err=True)
     if command == "share":
         fields.setdefault("publication_outcome", "not_attempted")
         fields.setdefault("link_created", False)
@@ -98,7 +105,7 @@ def _quota(value: object) -> dict | None:
 _ERRORS = {
     "not_connected": "Run 'moviestar account status' and reconnect if needed.",
     "not_found": "That video or link is unavailable in this account.",
-    "consent_required": "Run 'moviestar account terms' to finish account setup, then retry.",
+    "consent_required": "Then retry the same video and idempotency key.",
     "video_not_ready": "Finish media validation with 'moviestar upload FILE --resume VIDEO_ID' before sharing.",
     "link_revoked": "This key belongs to a revoked link. Use a new key to deliberately create another link.",
     "idempotency_conflict": "Use the original video for this key, or choose another idempotency key.",
