@@ -216,6 +216,75 @@ Single-frame inspection of active transitions remains an explicit JSON error in
 projects using spatial composition; use `watch` or `export` for the complete
 transition. `model layout` remains the labeled-box and draft-placeholder view.
 
+## Reserved regions and intentional overlap
+
+A scene can reserve the box of an element or component occurrence for captions,
+a title, or another protected part of the design. Add `reserved_regions` to its
+scene-owned `layout`:
+
+```json
+{
+  "reserved_regions": [
+    {"id": "captions", "target": ["caption_band"], "allow": [["background_video"]]}
+  ],
+  "children": []
+}
+```
+
+This is a layout fragment: supply the named `caption_band` and `background_video`
+children in the actual scene. Paths contain stable element/instance IDs from the
+scene root, omitting the scene ID. Nested targets work too, such as
+`["speaker_card", "caption_band"]`. Region IDs are unique within one scene.
+The target owns its subtree; its ancestors provide layout context and do not
+intrude. Each `allow` path explicitly permits that occurrence and its descendants
+to overlap this region. For example, full-frame footage may intentionally sit
+behind a caption band while a separate logo must stay out. Other regions keep
+their own allowances. Layouts without reservations retain unrestricted layering.
+
+Reservations follow the target's measured box after responsive rules and
+scene-relative motion. They add no invisible spacer, move no elements, and do
+not change scene time. To leave room even between caption cues, use a caption
+or wrapper with an explicit size. An unrelated box that enters a reserved region
+returns `reserved_region_overlap`, its full occurrence path, the region ID and
+path, intersection rectangle, and sampled result time. A fully transparent box,
+off-screen area, or area clipped by an ancestor does not intrude. Touching edges
+are allowed. Checks describe rectangular layout occupancy, not visible glyph
+silhouettes, rounded corners, z-order occlusion, or burned-in graphics in footage.
+An empty or transparent reserved target still reserves its box; an empty box or
+one fully outside the canvas reports `unresolved_reserved_region_geometry`.
+
+`model layout` returns `reserved_regions` with resolved rectangles, allowances,
+and overlaps. It still produces a labeled PNG when collisions exist, marking
+reservations with dashed guides so an agent can inspect and repair the draft.
+For scenes with reservations, measured boxes also include `visible_rect` from
+Chrome's intersection measurement and `occupies_layout` for effective opacity.
+Rendered previews, screenshot, inspect, watch, and export use the same check;
+a collision is a blocking render error. Video checks each output frame, so a
+collision halfway through movement prevents publication of an incomplete movie.
+An inspection or preview checks only the requested samples, not every possible
+moment. Dry-runs validate references and authored rules without measuring Chrome
+geometry; they do not certify that a layout is collision-free.
+
+Reservations save and reload with the scene layout. Use `model apply`, or edit
+just the region list with a request file for `model edit`:
+
+```json
+{
+  "op": "instance.customize",
+  "target": {"occurrence_path": ["scene_id"]},
+  "property": "layout.reserved_regions",
+  "value": [{"id": "captions", "target": ["caption_band"], "allow": [["background_video"]]}]
+}
+```
+
+The normal `--dry-run`, project revision, and undo behavior applies. Set the
+list to `[]` to remove reservations. Reordering siblings or renaming a component
+display name does not change paths. Missing target/allow paths remain saveable
+and produce `unknown_reserved_region_target` draft diagnostics. A shared edit
+that removes a previously referenced occurrence fails atomically; update the
+affected reservations first. Reservations belong to the scene and can address
+reusable component internals without changing the component definition.
+
 ## Measured layout view
 
 `model layout` uses the same expanded scene and result time as `model frame`.

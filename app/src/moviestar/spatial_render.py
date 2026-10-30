@@ -26,6 +26,7 @@ from time import monotonic
 import zlib
 
 from moviestar.spatial_layout import SpatialLayoutError, _run_browser, prepare_layout_frame
+from moviestar.spatial_regions import inspect_reserved_regions
 
 
 class SpatialRenderError(SpatialLayoutError):
@@ -306,9 +307,12 @@ def render_spatial_frame(spec: dict, frame: dict, canvas: dict, *,
                    'reference_path': str(temporary / 'reference.png') if reference_path else None,
                    'layout_output_path': str(temporary / 'layout.png') if layout_output_path else None}
         measured = browser_session.run(request) if browser_session is not None else _run_browser(request)
+        regions = inspect_reserved_regions(frame, prepared['canvas'], measured['boxes'])
+        measured['diagnostics'].extend(regions['diagnostics'])
         for diagnostic in measured['diagnostics']:
             if diagnostic.get('severity') == 'error':
-                raise SpatialRenderError(f"{diagnostic['code']} at {'/'.join(diagnostic['path'])}")
+                region = f"; reserved region {diagnostic['region_id']!r}" if 'region_id' in diagnostic else ''
+                raise SpatialRenderError(f"{diagnostic['code']} at {'/'.join(diagnostic['path'])}{region}")
         staged = temporary / 'rendered.png'
         _compose(temporary, prepared['canvas'], measured['video_planes'], videos, staged)
         _publish(staged, output_path.resolve())
@@ -317,6 +321,7 @@ def render_spatial_frame(spec: dict, frame: dict, canvas: dict, *,
         if reference_path:
             _publish(temporary / 'reference.png', reference_path.resolve())
     return {'view': 'rendered', 'canvas': prepared['canvas'], 'boxes': measured['boxes'],
+            'reserved_regions': regions['reserved_regions'],
             'scene_layout': measured['scene_layout'],
             'diagnostics': [*prepared['diagnostics'], *measured['diagnostics']],
             'media': [{**{key: value for key, value in videos[plane['id']].items() if key != 'decoded'},

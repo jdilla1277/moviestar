@@ -562,7 +562,7 @@ def model_edit(document: Path, dry_run: bool) -> None:
     except SpatialEditConflict as exc:
         click.echo(json.dumps({"command": "composition model edit", "error": str(exc),
                                "conflicts": exc.conflicts, "writes_spec": False,
-                               "hint": "Reset the affected customization, or save a separate component variation."}, indent=2))
+                               "hint": exc.hint}, indent=2))
         raise SystemExit(1) from exc
     except (OSError, ValueError, TypeError, KeyError, SpecValidationError, SpatialModelError) as exc:
         _error_exit("composition model edit", str(exc))
@@ -599,6 +599,7 @@ def model_layout(at_time: str, canvas: str | None, out: Path | None) -> None:
     """Measure identified boxes in local Chrome and optionally draw their labels.
 
     This view shows layout and text geometry with video/image placeholders.
+    Declared reserved regions show guides and report unrelated box collisions.
     It does not composite source pixels or change the saved project.
     """
     from moviestar.cli import _error_exit

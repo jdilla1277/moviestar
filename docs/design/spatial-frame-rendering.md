@@ -5,6 +5,34 @@ real still-frame preview. It advances milestone 2; release-throughput gates
 remain open. Scene-relative element and
 component motion, watch, and export now use this same frame path.
 
+## Measured layout reservations
+
+Scene layouts may declare `reserved_regions`, each with a stable ID, a relative
+occurrence target, and optional allowed occurrence subtrees. The temporal
+compiler retains the declarations and diagnoses unresolved references without
+preventing draft persistence. Shared edits cannot silently remove previously
+referenced targets. Existing scene-root property edits and undo cover the list;
+there is no separate region registry or timing model.
+
+For scenes using reservations, Chrome's `IntersectionObserver` supplies clipped,
+post-motion border rectangles. This follows actual containing-block and overflow
+relationships, including absolute children that escape static overflow ancestors.
+The pure `spatial_regions.py` checker compares unrelated boxes with each target,
+exempting its descendants/ancestors and explicitly allowed subtrees. It returns
+addressed blocking diagnostics and a region report. Occupancy is rectangular
+and conservative; no pixel masks, OCR, stacking-occlusion analysis, or general
+collision heuristic is introduced. Completely transparent intruders are ignored;
+a reserved target remains reserved regardless of content/opacity.
+
+Layout inspection includes diagnostics and dashed guides for repair. Rendering
+runs the same checker before publishing assets. Single-frame views check the
+requested sample; video checks every rendered output sample, including positions
+between motion keyframes, and retains the command's atomic publication boundary.
+Dry-runs do not claim measured collision readiness. Without declarations, the
+browser performs no intersection-observer work and layering remains unchanged.
+Active-transition still inspection and real-content acceptance remain separate
+gates; no rendered-clip reuse or cache invalidation is added.
+
 ## Explicit scene time without carrier footage
 
 A named composition scene may now store `duration` seconds with `slots: []`.
