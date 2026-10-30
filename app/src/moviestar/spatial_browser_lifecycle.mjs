@@ -2,11 +2,11 @@
 // error so a caller can preserve an earlier startup or rendering failure.
 import {rmSync} from 'node:fs';
 
-export async function stopBrowser(child, closed, profile, removeProfile = rmSync) {
-  async function waitForClose(milliseconds) {
+export async function stopBrowser(child, exited, profile, removeProfile = rmSync) {
+  async function waitForExit(milliseconds) {
     let timer;
     try {
-      await Promise.race([closed, new Promise(resolve => {
+      await Promise.race([exited, new Promise(resolve => {
         timer = setTimeout(resolve, milliseconds);
       })]);
     } finally {
@@ -14,11 +14,18 @@ export async function stopBrowser(child, closed, profile, removeProfile = rmSync
     }
   }
   if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
-  await waitForClose(2000);
+  await waitForExit(2000);
   if (child.exitCode === null && child.signalCode === null) {
     child.kill('SIGKILL');
-    await waitForClose(1000);
+    await waitForExit(1000);
   }
+  if (child.exitCode === null && child.signalCode === null) {
+    return new Error('Chrome did not exit after SIGKILL');
+  }
+  // Stop reading the captured pipe after its owner exits. Otherwise an inherited
+  // helper descriptor can keep Node alive until the Python shutdown watchdog
+  // fires. The Python owner reaps remaining descendants in its process group.
+  child.stderr?.destroy();
   try {
     removeProfile(profile, {recursive: true, force: true, maxRetries: 3, retryDelay: 100});
     return null;

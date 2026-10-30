@@ -298,7 +298,7 @@ def test_browser_discovery_failure_is_bounded_and_preserves_prior_artifact(tmp_p
     assert output.read_bytes() == b'previous layout'
 
 
-@pytest.mark.parametrize('mode', ['delayed_exit', 'forced_exit', 'failed_cleanup'])
+@pytest.mark.parametrize('mode', ['delayed_exit', 'forced_exit', 'failed_cleanup', 'never_exit'])
 def test_browser_lifecycle_waits_for_exit_and_returns_cleanup_errors(mode):
     import shutil
     import subprocess
@@ -319,25 +319,30 @@ child.exitCode = null;
 child.signalCode = null;
 child.kill = signal => {
   events.push(signal);
-  if (mode !== 'forced_exit' || signal === 'SIGKILL') {
+  if (mode !== 'never_exit' && (mode !== 'forced_exit' || signal === 'SIGKILL')) {
     setTimeout(() => {
       child.signalCode = signal;
-      events.push('closed');
-      child.emit('close');
+      events.push('exited');
+      child.emit('exit');
     }, 30);
   }
   return true;
 };
-const closed = new Promise(resolve => child.once('close', resolve));
-const error = await stopBrowser(child, closed, 'owned-profile', () => {
+const exited = new Promise(resolve => child.once('exit', resolve));
+const error = await stopBrowser(child, exited, 'owned-profile', () => {
   events.push('remove');
   assert.notEqual(child.signalCode, null, 'profile removed before browser exit');
   if (mode === 'failed_cleanup') throw new Error('ENOTEMPTY');
 });
-assert.deepEqual(events, mode === 'forced_exit'
-  ? ['SIGTERM', 'SIGKILL', 'closed', 'remove']
-  : ['SIGTERM', 'closed', 'remove']);
-assert.equal(error?.message ?? null, mode === 'failed_cleanup' ? 'ENOTEMPTY' : null);
+if (mode === 'never_exit') {
+  assert.deepEqual(events, ['SIGTERM', 'SIGKILL']);
+  assert.match(error.message, /did not exit/);
+} else {
+  assert.deepEqual(events, mode === 'forced_exit'
+    ? ['SIGTERM', 'SIGKILL', 'exited', 'remove']
+    : ['SIGTERM', 'exited', 'remove']);
+  assert.equal(error?.message ?? null, mode === 'failed_cleanup' ? 'ENOTEMPTY' : null);
+}
 console.log(JSON.stringify(events));
 """
     result = subprocess.run([node, '--input-type=module', '-e', script, module, mode],
