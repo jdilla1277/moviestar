@@ -166,8 +166,22 @@
       "type": "object", "required": ["children"],
       "properties": {
         "children": { "type": "array", "items": { "$ref": "#/$defs/spatial_node" } },
-        "format_rules": { "type": "array", "items": { "$ref": "#/$defs/spatial_format_rule" } }
+        "format_rules": { "type": "array", "items": { "$ref": "#/$defs/spatial_format_rule" } },
+        "reserved_regions": { "type": "array", "items": { "$ref": "#/$defs/spatial_reserved_region" } }
       }
+    },
+    "spatial_reserved_region": {
+      "description": "Reserve the measured box of a scene-relative occurrence. Its subtree and ancestors are exempt; allow explicitly exempts other subtrees. Unrelated overlap is a render error.",
+      "type": "object", "required": ["id", "target"], "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "target": { "$ref": "#/$defs/spatial_region_path" },
+        "allow": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/spatial_region_path" } }
+      }
+    },
+    "spatial_region_path": {
+      "description": "Stable child/instance IDs from the scene root, omitting the scene ID.",
+      "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }
     },
     "spatial_format_rule": {
       "description": "Visual layout/style changes for a canvas. Higher integer priority wins per property; conflicting ties are diagnostics. Local occurrence customizations win last.",

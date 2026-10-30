@@ -20,7 +20,10 @@ class SpatialEditConflict(SpatialModelError):
     def __init__(self, conflicts: list[dict]):
         self.conflicts = conflicts
         paths = ["/".join(item["path"]) for item in conflicts]
-        super().__init__(f"shared edit conflict at {', '.join(paths)}; reset the affected customization or save a variation")
+        self.hint = ('Update the affected scene layout reserved_regions paths before removing these targets.'
+                     if any(item['code'] == 'unknown_reserved_region_target' for item in conflicts)
+                     else 'Reset the affected customization, or save a separate component variation.')
+        super().__init__(f"shared edit conflict at {', '.join(paths)}; {self.hint}")
 
 
 def _fail(message: str) -> None:
@@ -352,7 +355,7 @@ def _conflicts(spec: dict) -> list[dict]:
     spatial = spec.get("spatial", {})
     for scene_id in spatial.get("scenes", {}):
         conflicts.extend(item for item in expand_spatial_scene(spec, scene_id)["diagnostics"]
-                         if item["code"] == "customization_conflict")
+                         if item["code"] in {"customization_conflict", "unknown_reserved_region_target"})
     # Definitions can contain locally customized nested instances even when
     # no scene currently places them. Probe each definition without writing a
     # synthetic scene to the project; shared edits must preserve those drafts.

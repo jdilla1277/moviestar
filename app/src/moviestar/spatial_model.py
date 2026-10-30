@@ -316,6 +316,12 @@ def validate_spatial_model(spec: dict) -> None:
         if 'motion' in scene['layout']:
             _fail(f'{path}.layout.motion', 'place motion on a rendered child or component instance')
         _format_rules(scene['layout'], f'{path}.layout')
+        from moviestar.spatial_regions import SpatialRegionError, validate_reserved_regions
+        try:
+            validate_reserved_regions(scene['layout'].get('reserved_regions', []),
+                                      f'{path}.layout.reserved_regions')
+        except SpatialRegionError as exc:
+            raise SpatialModelError(str(exc)) from exc
         _children(scene["layout"].get("children"), f"{path}.layout.children", definitions, {})
 
 
@@ -475,6 +481,8 @@ def expand_spatial_scene(spec: dict, scene_id: str) -> dict:
 
     layout = scenes[scene_id]["layout"]
     children = expand_nodes(layout["children"], [scene_id], {}, set(), set(), (), [])
+    from moviestar.spatial_regions import region_reference_diagnostics
+    diagnostics.extend(region_reference_diagnostics(layout.get('reserved_regions', []), scene_id, children))
     for edit in tracked_edits:
         if edit["_token"] not in applied_edits:
             conflict(edit["path"], "customized target no longer exists")

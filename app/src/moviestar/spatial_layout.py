@@ -20,6 +20,7 @@ from tempfile import TemporaryDirectory
 
 from moviestar.spatial_motion import SpatialMotionError, sample_motion
 from moviestar.spatial_format import SpatialFormatError, expand_properties, matches_canvas, validate_format_rules
+from moviestar.spatial_regions import SpatialRegionError, inspect_reserved_regions, validate_reserved_regions
 
 
 class SpatialLayoutError(ValueError):
@@ -59,7 +60,7 @@ _FRAME_FIELDS = {
     "scene_id", "children", "diagnostics", "result_time_s", "sample_time_s",
     "scene_time_s", "scene_duration_s", "scene_source_time_s",
     "scene_source_duration_s", "canvas", "pacing_segment_id",
-    "format_rules",
+    "format_rules", "reserved_regions",
 }
 _UNSAFE_CSS = re.compile(r"url\s*\(|@import|expression\s*\(|javascript\s*:|[;{}]", re.I)
 _LENGTH_PROPERTIES = {
@@ -165,6 +166,10 @@ def prepare_layout_frame(frame: dict, canvas: dict) -> dict:
     if not isinstance(frame, dict) or not isinstance(frame.get("children"), list):
         raise SpatialLayoutError("frame.children: expected an expanded scene")
     size = _canvas(canvas)
+    try:
+        validate_reserved_regions(frame.get('reserved_regions', []), 'scene.reserved_regions')
+    except SpatialRegionError as exc:
+        raise SpatialLayoutError(str(exc)) from exc
     diagnostics = list(frame.get('diagnostics', []))
     root_properties = {key: value for key, value in frame.items() if key not in _FRAME_FIELDS}
     scene_layout = _resolve_styles({'layout': root_properties}, frame.get('format_rules', []), {},
@@ -198,6 +203,7 @@ def prepare_layout_frame(frame: dict, canvas: dict) -> dict:
         return prepared
 
     return {"scene_id": frame.get("scene_id"), "canvas": size,
+            'reserved_regions': frame.get('reserved_regions', []),
             "scene_time_s": frame.get("scene_time_s"),
             "result_time_s": frame.get("result_time_s"),
             "root_style": scene_layout['style'], "scene_layout": scene_layout,
@@ -236,9 +242,11 @@ def measure_spatial_layout(frame: dict, canvas: dict, *, output_path: Path | Non
     prepared = prepare_layout_frame(frame, canvas)
     request = {**prepared, "output_path": str(output_path.resolve()) if output_path else None}
     measured = _run_browser(request)
+    regions = inspect_reserved_regions(frame, prepared['canvas'], measured['boxes'])
     return {"view": "layout", "canvas": prepared["canvas"],
             "scene_layout": measured['scene_layout'],
-            "boxes": measured["boxes"], "diagnostics": [*prepared["diagnostics"], *measured["diagnostics"]],
+            "boxes": measured["boxes"], 'reserved_regions': regions['reserved_regions'],
+            "diagnostics": [*prepared["diagnostics"], *measured["diagnostics"], *regions['diagnostics']],
             "artifact": str(output_path.resolve()) if output_path else None}
 
 

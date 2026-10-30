@@ -257,6 +257,18 @@ async function render(input) {
     }
   }
 
+  // Let Chrome resolve clipping through actual containing blocks, transforms,
+  // overflow edges, and the viewport. Walking DOM parents would incorrectly
+  // clip absolute/fixed descendants that escape a static overflow ancestor.
+  const visibleRects = input.reserved_regions?.length ? await new Promise(resolve => {
+    const rectangles = new Map();
+    if (!entries.length) { resolve(rectangles); return; }
+    const observer = new IntersectionObserver(changes => {
+      for (const change of changes) rectangles.set(change.target, change.intersectionRect);
+      if (rectangles.size === entries.length) { observer.disconnect(); resolve(rectangles); }
+    });
+    for (const {element} of entries) observer.observe(element);
+  }) : null;
   const boxes = [];
   const diagnostics = [];
   for (let index = 0; index < entries.length; index++) {
@@ -277,6 +289,12 @@ async function render(input) {
       opacity *= Number(getComputedStyle(ancestor).opacity);
     }
     box.effective_opacity = rounded(opacity);
+    if (visibleRects) {
+      box.occupies_layout = opacity > 0;
+      const visible = visibleRects.get(element);
+      box.visible_rect = Object.fromEntries(['x', 'y', 'width', 'height']
+        .map(key => [key, rounded(visible[key])]));
+    }
     if (node.kind === 'text' || node.kind === 'caption') {
       const range = document.createRange();
       range.selectNodeContents(element);
@@ -347,6 +365,22 @@ async function render(input) {
         label.style.top = `${Math.max(0, box.rect.y)}px`;
       }
       document.body.append(label);
+    }
+    for (const region of input.reserved_regions ?? []) {
+      const path = JSON.stringify([input.scene_id, ...region.target]);
+      const box = boxes.find(box => JSON.stringify(box.path) === path);
+      if (!box) continue;
+      const rect = box.visible_rect;
+      const guide = document.createElement('div');
+      guide.style.cssText = 'position:absolute;box-sizing:border-box;border:2px dashed #00d4ff;'
+        + 'pointer-events:none;z-index:2147483647;color:#00d4ff;font:12px monospace';
+      Object.assign(guide.style, {left: `${rect.x}px`, top: `${rect.y}px`,
+        width: `${rect.width}px`, height: `${rect.height}px`});
+      const label = document.createElement('span');
+      label.textContent = `reserved: ${region.id}`;
+      label.style.cssText = 'background:#13263a;position:absolute;bottom:0;left:0;white-space:nowrap';
+      guide.append(label);
+      document.body.append(guide);
     }
   }
   window.moviestarLabelView = labelView;
