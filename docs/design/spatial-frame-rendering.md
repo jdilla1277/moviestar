@@ -30,10 +30,9 @@ the existing audio routing/mix. Static scenes have no implicit source audio;
 per-scene audio_from is invalid without a slot. Tests cover static-to-preset
 and preset-to-static dissolve/dip pixels and silence beside routed footage audio.
 
-The model frame/layout/preview commands inspect these scenes. Legacy screenshot
-and thumbnail inspect return a model-preview hint for slot-free samples rather
-than passing an empty slot list to FFmpeg. Entirely source-free project
-initialization and the remaining general screenshot integration are separate
+The model frame/layout/preview commands and standard screenshot/thumbnail inspect
+render these scenes through the same compiler and renderer. Entirely source-free project
+initialization and active-transition frame inspection are separate
 work; a loaded project's unused source need not be available to render a static
 scene. No rendered-clip reuse or cache invalidation is introduced.
 
@@ -46,6 +45,34 @@ pin makes the CI renderer explicit rather than depending on the runner image's
 desktop browser; it does not change startup, request, or fidelity budgets.
 Intermittent cold desktop Chrome startup failures observed before frame
 measurement are tracked separately in [#86](https://github.com/jdilla1277/moviestar/issues/86).
+
+## Standard still-image surfaces
+
+`spatial_inspection.py` adapts the shared spatial frame to screenshot and mixed
+preset/spatial thumbnail batches. Model views and standard frames share one
+in-memory live-caption refresh helper. The compiler and dispatcher share exact
+end-of-project sample selection, while inspect schedules retain canonical
+microsecond boundaries rather than reading rounded display timecodes.
+
+The adapter measures at the authored canvas and converts/resizes only the final
+raster. Geometry metadata therefore stays in canvas coordinates. Screenshot
+supports PNG/JPEG and optional platform annotation; the latter lints actual
+browser text/caption rectangles through the existing platform policy. Dry-run
+only validates/plans and does not claim browser-measured geometry.
+
+Spatial inspection deliberately disables thumbnail reuse and allocates a fresh
+output directory, including when asset contents change at the same path. It
+borrows one command-owned browser across frames and stages the complete mixed
+batch before publishing its directory. Preset-only paths retain their existing
+renderer/cache. This adds no asset fingerprinting or rendered-clip reuse.
+Failures during conversion, annotation, later frames, or browser shutdown cannot
+publish an incomplete batch or replace a prior screenshot.
+
+Active transitions still fail before publishing a single-tree frame, including
+when the scene active at that time is a preset in a mixed project. Full blended
+frame inspection remains follow-on work; watch/export remain the complete
+transition path. Camera preview and source-specific commands retain their
+existing behavior.
 
 ## Shared boundary
 

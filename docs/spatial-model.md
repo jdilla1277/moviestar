@@ -9,6 +9,8 @@ The frame command also resolves the current scene and each video element's
 source position on the existing result clock. `model layout` measures a
 supported CSS layout subset in local Chrome and can draw a labeled layout PNG.
 `model preview` fills those positions with real video, images, text, and shapes.
+Standard `screenshot` and thumbnail `inspect` use that same spatial frame for
+scenes with a visual tree, including scenes without footage slots.
 `watch` and `export` now render those same visual trees as MP4 video, including
 motion, explicit caption elements, existing audio routing, and scene transitions.
 Explicitly timed spatial scenes can contain text, images, and reusable components
@@ -162,9 +164,57 @@ use the cadence chosen from their timed footage slots.
 
 Watch, export, `model frame`, `model layout`, and `model preview` support these
 scenes, including scene-relative motion and existing visual transitions in video.
-Legacy `screenshot` and thumbnail `inspect` direct slot-free frames to the model
-commands with a JSON hint. This adds independently timed scenes to a loaded
+Standard `screenshot` and thumbnail `inspect` also render these scenes. This
+adds independently timed scenes to a loaded
 project; creating an entirely source-free project is outside this slice.
+
+## Standard screenshots and thumbnails
+
+```sh
+moviestar screenshot --at 0:00:01.000 --out frame.png
+moviestar screenshot --at 0:00:01.000 --out frame.jpg --inline
+moviestar inspect --from 0:00:00.000 --to 0:00:03.000 --interval 0.5
+```
+
+For a spatial scene, `screenshot` expands the same components, refreshes only
+declared live caption tracks in memory, samples the same motion/media clock,
+and renders through the model-preview path. It returns `spatial_frame` and
+`spatial_preview` alongside the usual output path and dimensions. The preview
+contains measured boxes, draw order, text wrapping, rule provenance, and media
+bindings. PNG pixels match `model preview`; JPEG is the default when no output
+path is supplied. Explicit PNG/JPEG paths are supported, and project assets
+cannot be overwritten. `--source` continues to select an individual source edit.
+
+`--platform` annotates the completed spatial frame. Platform collision checks use
+browser-measured text/caption bounds and the existing policy for small footage
+regions. In dry-run, no browser measurement is performed and platform geometry
+is marked `pending_render`.
+
+Thumbnail `inspect` restarts its sampling schedule at every scene or pacing
+window, retaining exact internal boundary times independently of the rounded
+display timecodes. A range can contain both preset and spatial scenes. Spatial
+thumbnails expose `spatial_preview`; preset thumbnails retain slot records.
+Layout is measured at the authored canvas, then the image is resized to the
+existing 640-pixel inspection width. `spatial_preview.canvas` and box coordinates
+remain in the authored canvas; `image_dimensions` reports the thumbnail size.
+Use `--inline` to include image bytes in the JSON response.
+
+An inspection containing spatial frames always renders fresh thumbnails into a
+new directory under `moviestar/inspect-frames`. This avoids stale assets, captions,
+or shared definitions without introducing an asset or rendered-clip cache.
+Preset-only inspection keeps its existing cache. One browser session serves a
+spatial inspection batch; its complete directory is published after every frame
+and normal browser shutdown succeed. Failures remove partial batches and preserve
+previous artifacts. Screenshot conversion and platform annotation are staged
+before replacing an existing destination. These commands write no spec revision.
+
+Both commands support dry-run plans without launching Chrome, decoding assets,
+or creating output directories. Runtime asset, CSS, and measured overflow errors
+can still reject rendering. At the exact project end, frame selection uses the
+last global output sample, even if that sample belongs to the previous scene.
+Single-frame inspection of active transitions remains an explicit JSON error in
+projects using spatial composition; use `watch` or `export` for the complete
+transition. `model layout` remains the labeled-box and draft-placeholder view.
 
 ## Measured layout view
 
@@ -563,7 +613,8 @@ layer into a structured scene without an element. Each authored occurrence
 renders once. An empty caption keeps its authored box and background, allowing
 a reserved region to stay in place as speech changes.
 
-`model frame`, `model layout`, and `model preview` refresh live caption recipes
+`model frame`, `model layout`, `model preview`, spatial `screenshot`, and thumbnail
+`inspect` refresh live caption recipes
 in memory using the existing derivation pipeline after timeline edits. They do
 not write cue caches or revisions. Frozen/imported tracks keep their stored
 result-time cues. Direct Python callers of `compile_spatial_frame` supply a spec

@@ -4320,6 +4320,11 @@ def inspect(
     already 240 frames per call without scene-boundary resets. Scene
     compositions may return more. Wider overviews are skim's job.
 
+    Spatial scenes use the same component tree, motion, and caption clock as
+    model preview. Mixed preset/spatial ranges render fresh thumbnail batches;
+    measured boxes stay in the authored canvas before thumbnail resizing.
+    Active transitions in spatial projects require watch or export.
+
     Without scenes, thumbnails land at from_s, from_s+interval, ...,
     stopping strictly before to_s. So a 10s range at 0.5s interval
     returns 20 frames (5.0, 5.5, ..., 14.5), not 21 — the upper bound
@@ -5035,16 +5040,18 @@ def _scene_inspect_samples(
     samples: list[dict] = []
     for render_plan in render_plans:
         scene_window = render_plan["scene_window"]
-        overlap_from = scene_window["result_range"]["from"]["seconds"]
-        overlap_duration = scene_window["result_range"]["duration"]["seconds"]
-        local_from = scene_window["scene_local_range"]["from"]["seconds"]
+        # Display timecodes round to milliseconds; frame selection must keep
+        # the canonical clock, especially at explicitly timed scene cuts.
+        overlap_from = render_plan.get('result_start_s', scene_window["result_range"]["from"]["seconds"])
+        overlap_duration = render_plan.get('duration', scene_window["result_range"]["duration"]["seconds"])
+        local_from = render_plan.get('scene_local_start_s', scene_window["scene_local_range"]["from"]["seconds"])
         samples_count = math.ceil(round(overlap_duration / interval, 9))
         for index in range(samples_count):
             samples.append(
                 {
-                    "result_time": round(overlap_from + index * interval, 3),
+                    "result_time": round(overlap_from + index * interval, 6),
                     "scene": scene_window["scene"],
-                    "scene_local_time": round(local_from + index * interval, 3),
+                    "scene_local_time": round(local_from + index * interval, 6),
                     "sample_kind": (
                         "window_anchor" if index == 0 else "scene_interval"
                     ),
@@ -5126,6 +5133,12 @@ def _inspect_scene_layout_composition(
         )[1]
         for frame_time in frame_times
     ]
+    if any('spatial_frame' in item for item in frame_render_plans):
+        from moviestar.spatial_inspection import inspect_frames
+        inspect_frames(project, spec, plan, render_plans, frame_samples, frame_render_plans,
+            from_s=from_s, to_s=to_s, interval=interval, width=width,
+            paths_only=paths_only, dry_run=dry_run)
+        return
     planned_overlays = _overlay_render_context(
         project,
         spec,
@@ -6792,9 +6805,14 @@ def screenshot(
     for verifying a rendered export.
 
     The response carries an explicit ``mode: "file" | "project" |
-    "layout_composition" | "scene_composition"`` field so agents can
+    "layout_composition" | "scene_composition" | "spatial_composition"`` field so agents can
     branch on a single key rather than sniffing for the presence of
     ``result_timecode``.
+
+    Spatial scenes, including text/image-only scenes, use the same frame as
+    composition model preview. Their JSON includes spatial_frame and
+    spatial_preview with measured boxes and media bindings. Active transitions
+    in spatial projects require watch or export.
 
     Outputs JPEG by default. When --out is omitted, the file is
     written to screenshot_<seconds>s.jpg in the current directory.
@@ -7118,6 +7136,11 @@ def _screenshot_scene_layout_composition(
         at_s=at_seconds,
         command="screenshot",
     )
+    if 'spatial_frame' in render_plan:
+        from moviestar.spatial_inspection import screenshot
+        screenshot(render_plan, plan, output=output, at_s=at_seconds,
+                   paths_only=paths_only, platform=platform, dry_run=dry_run)
+        return
     planned_overlays = _overlay_render_context(
         project,
         spec,
@@ -8995,6 +9018,7 @@ def _paced_segment_render_plan(
         # Internal sampling uses exact times, not millisecond report fields.
         "result_start_s": segment.start_s,
         "result_end_s": segment.end_s,
+        "scene_local_start_s": segment.result_local_from_s,
         "composition_duration": None,
         "result_range": scene_window["result_range"],
         "audio_from": audio_from,
@@ -9206,6 +9230,20 @@ def _scene_render_plan_at(
     lookup_at_s = at_s
     if lookup_at_s >= composition_duration:
         lookup_at_s = max(0.0, round(composition_duration - 0.001, 3))
+
+    if command in {'screenshot', 'inspect'} and (spec.get('spatial') or {}).get('scenes'):
+        from moviestar.spatial_model import spatial_frame_sample_time, _reject_active_transition
+        from moviestar.spatial_inspection import spatial_frame_plan
+        try:
+            canonical = resolve_project(project, spec)
+            lookup_at_s = spatial_frame_sample_time(canonical, at_s)
+            # Never describe one scene as the complete blended transition frame.
+            _reject_active_transition(spec, canonical, at_s)
+            if canonical.span_at(lookup_at_s).scene_id in spec['spatial']['scenes']:
+                return plan, spatial_frame_plan(project, spec, canonical, at_s)
+        except (ValueError, OSError, RuntimeError) as exc:
+            _error_exit_with_hint(command, str(exc),
+                'Use watch or export to view active transitions; use composition model layout for draft geometry.')
 
     timeline = plan["pacing_timeline"]
     segment = timeline.segment_at(lookup_at_s)
