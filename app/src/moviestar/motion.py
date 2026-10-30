@@ -286,6 +286,9 @@ class ResolvedTimeline:
 
 
 def _scene_duration(scene: dict) -> float:
+    if not scene['slots']:
+        from moviestar.spec import _validate_scene_duration
+        return _validate_scene_duration(scene.get('duration'), 'scene.duration')
     first = scene["slots"][0]
     start = parse_timecode_string(first["source_from"], "slot.source_from")
     end = parse_timecode_string(first["source_to"], "slot.source_to")

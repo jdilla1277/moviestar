@@ -406,6 +406,18 @@ def _validate_transition(
         )
 
 
+def _validate_scene_duration(value, where: str) -> float:
+    """Explicit scene seconds at the existing scene-authoring resolution."""
+    try:
+        seconds = float(value) if not isinstance(value, bool) else 0
+    except (TypeError, ValueError, OverflowError):
+        seconds = 0
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or not math.isfinite(seconds) or seconds < .001):
+        raise SpecValidationError(f"{where}: must be finite positive seconds (at least 0.001)")
+    return round(seconds, 6)
+
+
 def _validate_layout_composition(
     scenes: list,
     valid_source_ids: set[str],
@@ -480,8 +492,19 @@ def _validate_layout_composition(
             )
 
         slots = scene["slots"]
-        if not isinstance(slots, list) or not slots:
+        if not isinstance(slots, list):
             raise SpecValidationError(f"{loc}.slots: must be a non-empty array")
+        if not slots:
+            _validate_scene_duration(scene.get('duration'), f'{loc}.duration')
+            if not scene.get('id') or not scene.get('name'):
+                raise SpecValidationError(f'{loc}: a slot-free spatial scene requires id and name')
+            if preset != 'single':
+                raise SpecValidationError(f'{loc}.layout.preset: a slot-free spatial scene uses single')
+            if scene.get('audio_from') is not None:
+                raise SpecValidationError(f'{loc}.audio_from: a slot-free scene has no source-audio slot')
+            continue
+        if 'duration' in scene:
+            raise SpecValidationError(f'{loc}.duration: explicit duration requires empty slots; slot timing remains authoritative')
         expected_slots = set(layout_slots(preset, canvas))
         seen_slots: set[str] = set()
         slot_sources: set[str] = set()
@@ -839,6 +862,10 @@ def validate_spec(spec: dict) -> None:
         validate_spatial_model(spec)
     except SpatialModelError as exc:
         raise SpecValidationError(str(exc)) from exc
+    for index, scene in enumerate(composition or []):
+        if 'slots' in scene and not scene['slots']:
+            if scene.get('id') not in (spec.get('spatial') or {}).get('scenes', {}):
+                raise SpecValidationError(f'composition[{index}]: slot-free scene requires a spatial scene layout')
 
     for field in ("opening_transition", "closing_transition"):
         transition = spec.get(field)
@@ -3013,7 +3040,9 @@ def set_scene_composition(
     """Set one or more layout scenes as the composition.
 
     Each input scene is a dict with ``name``, ``layout``, ``slots`` and
-    optional ``audio_from``. Slot ranges are result-time per source and
+    optional ``audio_from``. An empty slot list with numeric ``duration``
+    creates an explicitly timed spatial scene and a blank visual tree.
+    Slot ranges are result-time per source and
     are snapshotted to source-time, matching ``concat`` and global-layout
     semantics.
     """
@@ -3142,10 +3171,25 @@ def set_scene_composition(
 
         slots = scene_def.get("slots", [])
         expected_slots = set(layout_slots(layout, canvas))
+        explicit_duration = scene_def.get('duration')
+        if not slots and 'duration' in scene_def:
+            try:
+                duration = _validate_scene_duration(explicit_duration, f'{scene_path}.duration')
+            except SpecValidationError as exc:
+                raise SceneValidationError(f'{scene_path}.duration', str(exc).partition(': ')[2]) from exc
+            if layout != 'single':
+                raise SceneValidationError(f'{scene_path}.layout', 'a slot-free spatial scene uses single')
+            if scene_def.get('audio_from') is not None:
+                raise SceneValidationError(f'{scene_path}.audio_from', 'a slot-free scene has no source-audio slot')
+            resolved_scenes.append({'name': name, 'layout': {'preset': layout},
+                                    'slots': [], 'duration': duration})
+            continue
         if not slots:
             raise SceneValidationError(
-                f"{scene_path}.slots", "at least one slot is required"
+                f"{scene_path}.slots", "at least one slot or an explicit duration is required"
             )
+        if 'duration' in scene_def:
+            raise SceneValidationError(f'{scene_path}.duration', 'explicit duration requires empty slots')
         seen_slots = {
             slot_name for slot_name, _sid, _from, _to, _framing in slots
         }
@@ -3284,7 +3328,7 @@ def set_scene_composition(
         scene.get("id")
         or any(slot.get("id") for slot in scene.get("slots", []))
         for scene in old_scenes
-    ) or any(scene_def.get("id") for scene_def in scenes)
+    ) or any(scene_def.get("id") or 'duration' in scene_def for scene_def in scenes)
     if identity_active:
         used = {
             value
@@ -3295,6 +3339,8 @@ def set_scene_composition(
             ]
             if isinstance(value, str) and value
         }
+        used.update(scene_def['id'] for scene_def in scenes if scene_def.get('id'))
+        used.update(value for scene_def in scenes for value in scene_def.get('slot_ids', {}).values() if value)
         counters = {"scene": 0, "slot": 0}
 
         def next_identity(kind: str) -> str:
@@ -3363,6 +3409,13 @@ def set_scene_composition(
             scene_id: tree for scene_id, tree in spatial["scenes"].items()
             if scene_id in retained_ids
         }
+    for scene in resolved_scenes:
+        if not scene['slots']:
+            if new_spec.get('spatial') is None:
+                new_spec['spatial'] = {}
+            spatial = new_spec['spatial']
+            spatial.setdefault('scenes', {}).setdefault(
+                scene['id'], {'layout': {'background_color': '#000000', 'children': []}})
     validate_spec(new_spec)
     return new_spec
 
