@@ -9237,8 +9237,8 @@ def _scene_render_plan_at(
         try:
             canonical = resolve_project(project, spec)
             lookup_at_s = spatial_frame_sample_time(canonical, at_s)
-            # Never describe one scene as the complete blended transition frame.
-            _reject_active_transition(spec, canonical, at_s)
+            # Check the selected frame: exact end can sample inside a transition.
+            _reject_active_transition(spec, canonical, lookup_at_s)
             if canonical.span_at(lookup_at_s).scene_id in spec['spatial']['scenes']:
                 return plan, spatial_frame_plan(project, spec, canonical, at_s)
         except (ValueError, OSError, RuntimeError) as exc:

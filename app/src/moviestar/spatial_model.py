@@ -515,7 +515,7 @@ def compile_spatial_frame(
     next compiler stage. A short media range becomes transparent after its end.
     """
     lookup_time = spatial_frame_sample_time(timeline, result_time_s)
-    _reject_active_transition(spec, timeline, result_time_s)
+    _reject_active_transition(spec, timeline, lookup_time)
     # The exact project end addresses its last output-grid frame. Subtracting
     # one frame duration from a non-aligned end can land in the previous scene.
     span = timeline.span_at(lookup_time)

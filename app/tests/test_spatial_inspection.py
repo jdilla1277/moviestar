@@ -344,3 +344,44 @@ def test_active_preset_side_of_mixed_transition_also_requires_complete_video(pro
     result = CliRunner().invoke(cli, [*args, '--dry-run'])
     assert result.exit_code == 1
     assert 'transition' in json.loads(result.stdout)['error']
+
+
+def _end_sample_transition(spec, *, spatial_owner):
+    footage = deepcopy(spec['composition'][0])
+    footage['slots'][0]['source_to'] = '0:00:00.110'
+    _static(spec, .03)
+    if spatial_owner:
+        spec['spatial']['scenes']['interview'] = deepcopy(spec['spatial']['scenes']['title'])
+    spec['composition'][0]['transition_in'] = {'type': 'dissolve', 'duration': .04}
+    spec['composition'].insert(0, footage)
+
+
+@pytest.mark.parametrize('spatial_owner', [False, True])
+@pytest.mark.parametrize('dry_run', [False, True])
+def test_exact_end_screenshot_rejects_transition_at_selected_output_sample(
+        project, tmp_path, monkeypatch, spatial_owner, dry_run):
+    spec, metadata = project
+    _end_sample_transition(spec, spatial_owner=spatial_owner)
+    _save(spec, metadata, tmp_path, monkeypatch)
+    # At 10 fps the .14s endpoint selects .1s, inside the .09-.13s
+    # dissolve, even though the requested endpoint is past the transition.
+    Path('prior.png').write_bytes(b'prior')
+    for at_s in ('.1', '.14'):
+        args = ['screenshot', '--at', at_s, '--out', 'prior.png']
+        result = CliRunner().invoke(cli, args + (['--dry-run'] if dry_run else []))
+        assert result.exit_code == 1, result.output
+        assert 'transition' in json.loads(result.stdout)['error']
+        assert Path('prior.png').read_bytes() == b'prior'
+
+
+def test_exact_end_compiler_rejects_transition_at_selected_output_sample(project):
+    from moviestar.resolved import resolve_project
+    from moviestar.spatial_model import SpatialModelError, compile_spatial_frame
+
+    spec, metadata = project
+    _end_sample_transition(spec, spatial_owner=True)
+    timeline = resolve_project(metadata, spec)
+    assert timeline.duration_s == .14 and timeline.output_fps == 10
+    for at_s in (.1, timeline.duration_s):
+        with pytest.raises(SpatialModelError, match='transition'):
+            compile_spatial_frame(spec, timeline, at_s)
