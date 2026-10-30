@@ -167,16 +167,16 @@ def test_file_authoring_assigns_ids_without_existing_spatial_document(project, t
 
 @pytest.mark.parametrize('args', [['screenshot', '--at', '.1', '--out', 'prior.png'],
                                  ['inspect', '--from', '0', '--to', '.3']])
-def test_legacy_frame_commands_direct_slot_free_scenes_to_model_preview(project, tmp_path, monkeypatch, args):
+def test_standard_frame_commands_plan_slot_free_scenes(project, tmp_path, monkeypatch, args):
     spec, metadata = project
     _static(spec)
     save_spec(spec, cwd=tmp_path)
     save_project(metadata, cwd=tmp_path)
     monkeypatch.chdir(tmp_path)
     Path('prior.png').write_bytes(b'prior frame')
-    result = CliRunner().invoke(cli, args)
-    assert result.exit_code == 1, result.output
-    assert 'composition model preview' in json.loads(result.stdout)['hint']
+    result = CliRunner().invoke(cli, [*args, '--dry-run'])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)['status'] == 'would_extract'
     assert Path('prior.png').read_bytes() == b'prior frame'
 
 

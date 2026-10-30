@@ -489,6 +489,18 @@ def edit_spatial_model(spec: dict, request: dict) -> tuple[dict, dict]:
     return edit(spec, request)
 
 
+def spatial_frame_sample_time(timeline: ResolvedProject, result_time_s: float) -> float:
+    """Address the requested point, or the last output sample at exact end."""
+    if not _finite_number(result_time_s) or not 0 <= result_time_s <= timeline.duration_s:
+        _fail("result time", f"must be within 0-{timeline.duration_s} seconds")
+    if timeline.shape != "scenes":
+        _fail("spatial frame", "requires a scene composition timeline")
+    if result_time_s == timeline.duration_s:
+        frame_count = ceil(round(timeline.duration_s * timeline.output_fps, 9))
+        return max(0, frame_count - 1) / timeline.output_fps
+    return result_time_s
+
+
 def compile_spatial_frame(
     spec: dict,
     timeline: ResolvedProject,
@@ -502,17 +514,10 @@ def compile_spatial_frame(
     This resolves content and media clocks; measured boxes and pixels are the
     next compiler stage. A short media range becomes transparent after its end.
     """
-    if not _finite_number(result_time_s) or not 0 <= result_time_s <= timeline.duration_s:
-        _fail("result time", f"must be within 0-{timeline.duration_s} seconds")
-    if timeline.shape != "scenes":
-        _fail("spatial frame", "requires a scene composition timeline")
-    _reject_active_transition(spec, timeline, result_time_s)
+    lookup_time = spatial_frame_sample_time(timeline, result_time_s)
+    _reject_active_transition(spec, timeline, lookup_time)
     # The exact project end addresses its last output-grid frame. Subtracting
     # one frame duration from a non-aligned end can land in the previous scene.
-    lookup_time = result_time_s
-    if result_time_s == timeline.duration_s:
-        frame_count = ceil(round(timeline.duration_s * timeline.output_fps, 9))
-        lookup_time = max(0, frame_count - 1) / timeline.output_fps
     span = timeline.span_at(lookup_time)
     if span.scene_id is None:
         _fail("spatial frame", "resolved scene has no stable id")

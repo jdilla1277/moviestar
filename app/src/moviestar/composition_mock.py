@@ -618,10 +618,8 @@ def model_layout(at_time: str, canvas: str | None, out: Path | None) -> None:
 
 
 def _model_frame_context(at_time: str, canvas: str | None) -> tuple[dict, dict, dict]:
-    from moviestar.cli import _caption_staleness, _refresh_caption_tracks
     from moviestar.project import load_project
     from moviestar.resolved import resolve_project
-    from moviestar.spatial_model import compile_spatial_frame
     from moviestar.spec import load_spec, parse_timecode_string
 
     at_s = parse_timecode_string(at_time, "--at")
@@ -636,36 +634,8 @@ def _model_frame_context(at_time: str, canvas: str | None) -> tuple[dict, dict, 
         if match is None:
             raise ValueError("canvas: use WIDTHxHEIGHT")
         dimensions = {"width": int(match[1]), "height": int(match[2])}
-    durations = {source["id"]: source["duration"]["seconds"] for source in project.get("sources", [])
-                 if isinstance(source.get("duration"), dict)
-                 and isinstance(source["duration"].get("seconds"), (int, float))}
-    frame = compile_spatial_frame(spec, timeline, at_s, source_durations=durations)
-
-    def caption_nodes(nodes: list[dict]):
-        for node in nodes:
-            if node.get('type') == 'caption':
-                yield node
-            yield from caption_nodes(node.get('children', []))
-
-    tracks = {node['caption']['track'] for node in caption_nodes(frame['children'])
-              if node['caption']['track'] is not None}
-    # Refresh only tracks placed in this scene, in memory. All three views must
-    # observe the same current cues; unplaced drafts do not trigger derivation.
-    if tracks:
-        spec = _refresh_caption_tracks(project, spec, tracks=tracks)
-        frame = compile_spatial_frame(spec, timeline, at_s, source_durations=durations)
-    stale_tracks = {recipe['track'] for recipe in spec.get('captions', [])
-                    if recipe['track'] in tracks and not recipe.get('frozen')
-                    and _caption_staleness(project, spec, recipe)}
-
-    for node in caption_nodes(frame['children']):
-        track = node['caption']['track']
-        if track in stale_tracks:
-            frame['diagnostics'].append({
-                'code': 'stale_caption_track', 'path': node['occurrence_path'], 'track': track,
-                'reason': 'live caption cues could not be refreshed; check the transcript and audio routing',
-            })
-    return spec, frame, dimensions
+    from moviestar.spatial_inspection import spatial_frame_context
+    return spatial_frame_context(project, spec, timeline, at_s, dimensions)
 
 
 @model.command("preview")
@@ -677,8 +647,10 @@ def model_preview(at_time: str, canvas: str | None, out: Path, layout_out: Path 
     """Render a real spatial frame with Chrome graphics and FFmpeg source pixels.
 
     Includes video, images, text, timed caption elements, shapes, and nested
-    components. Required content must be bound and available. Motion, transitions, and video export
-    follow in later slices. The saved project is read-only.
+    components, including scene-relative motion. Required content must be bound
+    and available. Standard screenshot/inspect share this frame path; watch and
+    export also render transitions. A still preview rejects active transitions.
+    The saved project is read-only.
     """
     from moviestar.cli import _error_exit
     from moviestar.project import get_project_dir
