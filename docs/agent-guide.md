@@ -89,6 +89,9 @@ or emails an existing link; keep the same recipient/key for retries and check
 not undo a confirmed public link, and provider acceptance does not prove inbox
 delivery. `shares` lists owned links, `unshare LINK_ID` revokes one, and `download URL
 --out FILE` lets a recipient agent start another edit without an account.
+`delete VIDEO_ID` permanently removes an uploaded video and all its links,
+freeing quota after cleanup. Preview with `--dry-run`; retry the same ID if the
+result is pending or unknown. Local files are preserved.
 Unlisted links are forwardable and downloadable; email does not restrict access
 to its recipient. See [sharing and download](sharing.md) for availability, safe
 retries after partial success, pagination, revocation, and Preview origins.

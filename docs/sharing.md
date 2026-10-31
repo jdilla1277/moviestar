@@ -141,8 +141,31 @@ Revocation is retryable and keeps the video, other links, and storage usage.
 A revoked request key cannot reopen its link; deliberately choose a new key
 if the owner wants a new link. A previously issued media URL can remain usable
 for up to 60 seconds; transfers already started can finish, and downloaded
-copies cannot be recalled. Live video deletion (`shares delete`) is not
-implemented; its dry-run does not remove anything or release quota.
+copies cannot be recalled.
+
+## Delete an uploaded video
+
+```sh
+moviestar delete VIDEO_ID --dry-run
+moviestar delete VIDEO_ID
+```
+
+Use the `video_id` from upload or share. `shares delete VIDEO_ID` is an alias.
+Deletion permanently removes the hosted video and disables **all** its links;
+local files and projects stay intact. A dry-run is an offline preview and does
+not check ownership or contact the service.
+
+`deleted` and `already_deleted` confirm that hosted cleanup completed and its
+quota is available. Retrying the same video ID is safe and never affects a new
+upload. `deletion_pending` means links are disabled but cleanup has not finished;
+the slot and bytes remain charged. Retry the same ID to finish cleanup. If the
+request or acknowledgement is lost, `deletion_outcome: "unknown"` and null
+result flags mean the command cannot confirm what happened. Retry the same ID;
+do not assume the video is still available or quota is unchanged.
+
+Deletion remains available when new uploads or publication are paused, when the
+account is full, or when it needs to renew hosted terms. Already downloaded
+copies and transfers that started earlier cannot be recalled.
 
 ## Download for the next edit
 
