@@ -30,8 +30,8 @@ requested sample; video checks every rendered output sample, including positions
 between motion keyframes, and retains the command's atomic publication boundary.
 Dry-runs do not claim measured collision readiness. Without declarations, the
 browser performs no intersection-observer work and layering remains unchanged.
-Active-transition still inspection and real-content acceptance remain separate
-gates; no rendered-clip reuse or cache invalidation is added.
+Mixed/preset and overlapping-internal transition still inspection, plus real-content
+acceptance, remain separate gates; no rendered-clip reuse or cache invalidation is added.
 
 ## Explicit scene time without carrier footage
 
@@ -60,7 +60,7 @@ and preset-to-static dissolve/dip pixels and silence beside routed footage audio
 
 The model frame/layout/preview commands and standard screenshot/thumbnail inspect
 render these scenes through the same compiler and renderer. Entirely source-free project
-initialization and active-transition frame inspection are separate
+initialization and mixed/preset transition frame inspection are separate
 work; a loaded project's unused source need not be available to render a static
 scene. No rendered-clip reuse or cache invalidation is introduced.
 
@@ -73,6 +73,36 @@ pin makes the CI renderer explicit rather than depending on the runner image's
 desktop browser; it does not change startup, request, or fidelity budgets.
 Intermittent cold desktop Chrome startup failures observed before frame
 measurement are tracked separately in [#86](https://github.com/jdilla1277/moviestar/issues/86).
+
+## Spatial transition stills
+
+`spatial_transition.py` compiles a result-time description with owned scene layers,
+weights, authored windows, sampled progress, and black/white contributions. It
+uses existing transition resolvers for bounds/handles and the shared linear
+weight sampler used by transition visual-sample reports. Each layer uses
+`compile_spatial_scene_frame`; ordinary frame shapes stay unchanged outside
+transitions. Caption refresh collects placed tracks across participating trees.
+
+Measurement and rendering dispatch on `kind: transition`. Each tree follows the
+ordinary CSS/media/caption/motion/reservation path, then FFmpeg combines the full
+RGB scene images at 16-bit intermediate precision. Edge fades compose after the
+internal transition, matching export order. This does not change video export's
+existing scene clips, audio routing, or FFmpeg transition filters. Pixel tests
+compare the still compositor with exported frames at aligned and fractional cuts
+and edge fades, retaining the existing H.264 comparison tolerances.
+
+Labeled views overlay both scenes' original measured rectangles rather than
+fading away diagnostic labels at a dip's color peak. The browser receives only
+internally generated guide styles and text labels; original scene measurements
+remain the report's geometry. A single owned session serves the layers and guide
+page. All layer assets and combined outputs are staged until successful browser
+shutdown and composition; inspect retains its complete-batch publication boundary.
+
+This slice supports one active internal spatial/spatial transition and any
+intersecting project-edge fades on a spatial scene. Mixed/preset participation
+and multiple overlapping internal transitions remain explicit guards. It does
+not complete milestone 2, add a render cache, or change fidelity/performance
+budgets. Real-content acceptance remains separate work.
 
 ## Standard still-image surfaces
 
@@ -228,7 +258,7 @@ checks retain cues, wrapping, and scaled content-box overflow measurement.
 File-based CLI tests cover dry-run/save/read-only preview, equal rendered and
 labeled boxes, and revision undo. Unsupported containing-block changes preserve
 prior artifacts. This is still-frame evidence; interval-wide collision checks,
-single-frame transition inspection, release-throughput verification, custom
+mixed/preset single-frame transition inspection, release-throughput verification, custom
 easing, and render caching remain separate gates.
 
 ### Responsive canvas rules
@@ -316,7 +346,7 @@ positions and rejection after source end.
 
 This establishes still-frame geometry and paint parity on synthetic content.
 It is not evidence for export throughput or every source decoder.
-Real-content watch/export friction tests and single-frame transition inspection
+Real-content watch/export friction tests and mixed/preset transition still inspection
 remain separate delivery gates.
 
 The browser reference is a paint check, not a promise that FFmpeg's video scaler
@@ -371,8 +401,8 @@ rejected.
 
 The existing source-handle planner and FFmpeg transition compositor blend both
 structured and mixed scene clips. `compile_spatial_scene_frame` is an explicit
-owned-layer compiler for handles; normal `compile_spatial_frame` retains its
-active-transition guard. Handle footage follows edge pacing; component motion
+owned-layer compiler for handles; `compile_spatial_frame` also describes supported
+spatial transitions as weighted scene layers. Handle footage follows edge pacing; component motion
 and caption cues hold scene endpoint state. Placed media handles are checked
 against asset duration in addition to the legacy carrier-slot checks. Watches
 expand to cover intersecting transition windows, align the render origin to the

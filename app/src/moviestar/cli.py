@@ -9232,18 +9232,18 @@ def _scene_render_plan_at(
         lookup_at_s = max(0.0, round(composition_duration - 0.001, 3))
 
     if command in {'screenshot', 'inspect'} and (spec.get('spatial') or {}).get('scenes'):
-        from moviestar.spatial_model import spatial_frame_sample_time, _reject_active_transition
+        from moviestar.spatial_model import spatial_frame_sample_time
+        from moviestar.spatial_transition import active_transitions
         from moviestar.spatial_inspection import spatial_frame_plan
         try:
             canonical = resolve_project(project, spec)
             lookup_at_s = spatial_frame_sample_time(canonical, at_s)
-            # Check the selected frame: exact end can sample inside a transition.
-            _reject_active_transition(spec, canonical, lookup_at_s)
-            if canonical.span_at(lookup_at_s).scene_id in spec['spatial']['scenes']:
+            if (canonical.span_at(lookup_at_s).scene_id in spec['spatial']['scenes']
+                    or active_transitions(spec, canonical, lookup_at_s)):
                 return plan, spatial_frame_plan(project, spec, canonical, at_s)
         except (ValueError, OSError, RuntimeError) as exc:
             _error_exit_with_hint(command, str(exc),
-                'Use watch or export to view active transitions; use composition model layout for draft geometry.')
+                'Use watch or export for mixed or overlapping internal transitions; use composition model layout for draft geometry.')
 
     timeline = plan["pacing_timeline"]
     segment = timeline.segment_at(lookup_at_s)

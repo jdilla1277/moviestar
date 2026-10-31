@@ -192,6 +192,19 @@ def _slot_handle(
     )
 
 
+def transition_weights(transition_type: str, progress: float) -> tuple[float, float, float]:
+    """Outgoing, incoming, and dip-color weights on the authored linear curve."""
+    if transition_type not in {'dissolve', 'dip-black', 'dip-white'}:
+        raise TransitionResolutionError(f'Unknown transition type {transition_type!r}.')
+    if not math.isfinite(progress) or not 0 <= progress <= 1:
+        raise TransitionResolutionError('Transition progress must be within 0-1.')
+    progress = float(progress)
+    if transition_type == 'dissolve':
+        return 1-progress, progress, 0.0
+    outgoing, incoming = max(0.0, 1-2*progress), max(0.0, 2*progress-1)
+    return outgoing, incoming, 1-outgoing-incoming
+
+
 def _visual_samples(
     transition_type: str,
     *,
@@ -199,10 +212,7 @@ def _visual_samples(
     cut_s: float,
     window_to_s: float,
 ) -> tuple[TransitionVisualSample, ...]:
-    if transition_type == "dissolve":
-        weights = ((1.0, 0.0, 0.0), (0.5, 0.5, 0.0), (0.0, 1.0, 0.0))
-    else:
-        weights = ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, 1.0, 0.0))
+    weights = [transition_weights(transition_type, progress) for progress in (0, .5, 1)]
     return tuple(
         TransitionVisualSample(position, _round(at_s), outgoing, incoming, color)
         for position, at_s, (outgoing, incoming, color) in zip(
