@@ -316,6 +316,63 @@ def test_fractional_cut_and_combined_edge_fades_keep_export_blend_weights(projec
     assert max(abs(a-b) for a,b in zip(actual[offset:offset+3], expected[offset:offset+3])) <= 12
 
 
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
+@pytest.mark.parametrize('kind', ['dip-black', 'dip-white'])
+@pytest.mark.parametrize('fps', [10, 30])
+def test_fractional_dip_stills_and_watch_match_export_on_both_sides(
+        project, tmp_path, monkeypatch, kind, fps):
+    from moviestar.transitions import transition_weights
+    spec, metadata = project
+    metadata['sources'][0]['fps'] = fps
+    _transition_project(spec, metadata, kind=kind)
+    spec['composition'][0]['slots'][0]['source_to'] = '0:00:00.550'
+    spec['spatial']['scenes']['first']['layout']['children'][0]['content']['source']['end'] = .55
+    _save(spec, metadata, tmp_path, monkeypatch)
+    _invoke(['export', '--out', 'whole.mp4', '--quiet', '--video-encoder', 'x264'])
+    _invoke(['watch', '--from', '.3', '--to', '.6', '--out', 'part.mp4', '--video-encoder', 'x264'])
+    offset = (70*160+100)*3
+    for index in range(round(.3*fps), round(.6*fps)):
+        at = index/fps
+        result = _invoke(['screenshot', '--at', str(at), '--out', 'shot.png'])
+        still = _rgb(Path('shot.png'))[offset:offset+3]
+        whole = _pixels('whole.mp4', index)[offset:offset+3]
+        part = _pixels('part.mp4', index-round(.3*fps))[offset:offset+3]
+        outgoing, incoming, color = transition_weights(kind, min(1, max(0, (at-.25)/.2)))
+        white = color if kind == 'dip-white' else 0
+        expected = (255*(outgoing+white), 255*white, 255*(incoming+white))
+        assert max(abs(a-b) for a,b in zip(still, expected)) <= 2
+        assert max(abs(a-b) for a,b in zip(whole, expected)) <= 12, (at, list(whole), expected)
+        assert max(abs(a-b) for a,b in zip(still, whole)) <= 12
+        assert max(abs(a-b) for a,b in zip(part, whole)) <= 8
+        if .25 <= at < .45:
+            assert [layer['weight'] for layer in result['spatial_frame']['layers']] == pytest.approx([outgoing, incoming])
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
+@pytest.mark.parametrize('kind', ['dip-black', 'dip-white'])
+def test_fractional_dip_after_dissolve_keeps_outgoing_phase_and_partial_watch(
+        project, tmp_path, monkeypatch, kind):
+    spec, metadata = project
+    _transition_project(spec, metadata)
+    spec['composition'][0]['slots'][0]['source_to'] = '0:00:00.550'
+    spec['spatial']['scenes']['first']['layout']['children'][0]['content']['source']['end'] = .55
+    third = deepcopy(spec['composition'][1])
+    third.update({'id': 'third', 'name': 'Third', 'transition_in': {'type': kind, 'duration': .2}})
+    spec['composition'].append(third)
+    spec['spatial']['scenes']['third'] = deepcopy(spec['spatial']['scenes']['first'])
+    _save(spec, metadata, tmp_path, monkeypatch)
+    _invoke(['export', '--out', 'whole.mp4', '--quiet', '--video-encoder', 'x264'])
+    _invoke(['watch', '--from', '.65', '--to', '.9', '--out', 'part.mp4', '--video-encoder', 'x264'])
+    offset = (70*160+100)*3
+    for index in (7, 8):
+        _invoke(['screenshot', '--at', str(index/10), '--out', 'shot.png'])
+        still = _rgb(Path('shot.png'))[offset:offset+3]
+        whole = _pixels('whole.mp4', index)[offset:offset+3]
+        part = _pixels('part.mp4', index-7)[offset:offset+3]
+        assert max(abs(a-b) for a,b in zip(still, whole)) <= 12, (index, list(still), list(whole))
+        assert max(abs(a-b) for a,b in zip(part, whole)) <= 8
+
+
 def test_overlapping_internal_transitions_remain_an_explicit_guard(project):
     spec, metadata = project
     _transition_project(spec, metadata)

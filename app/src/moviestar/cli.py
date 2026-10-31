@@ -5500,10 +5500,11 @@ def _scene_video_render_artifacts(
             first, count = _frame_window(render_plan)
             # Keep whole sampled frames through encoding and fractional handles.
             render_plan['frame_encode_duration'] = count / render_plan['output_fps']
+            start = render_plan['result_start_s'] - render_plan.get('transition_preroll', 0)
+            render_plan['video_sample_offset'] = max(0.0, first / render_plan['output_fps'] - start)
             scene_id = render_plan['scene'].get('id')
             if scene_id not in spec['spatial']['scenes']:
-                start = render_plan['result_start_s'] - render_plan.get('transition_preroll', 0)
-                render_plan['preset_sample_offset'] = max(0.0, first / render_plan['output_fps'] - start)
+                render_plan['preset_sample_offset'] = render_plan['video_sample_offset']
     # Scene clips render separately then concat, so each scene's
     # overlay plan is windowed to that scene's global result range;
     # enable times land relative to the clip's local t=0.
@@ -5609,6 +5610,7 @@ def _scene_video_render_artifacts(
             else None
         ),
         video_transitions=transition_render_plan if separate_video_audio else None,
+        **({'video_sample_offsets': [p['video_sample_offset'] for p in render_plans]} if global_frame_grid else {}),
     )
     setup_commands = _dry_run_setup_commands_for_outputs(
         [*scene_clip_paths, abs_output]
@@ -5884,6 +5886,8 @@ def _render_scene_video_artifacts(
         ),
         video_transitions=(artifacts['transition_render_plan']
             if artifacts.get('separate_video_audio', bool(artifacts['transition_render_plan'])) else None),
+        **({'video_sample_offsets': [p['video_sample_offset'] for p in artifacts['render_plans']]}
+           if artifacts.get('global_frame_grid') else {}),
         progress_cb=_render_progress_cb(quiet),
     )
     expected_duration = sum(end - start for _path, start, end in artifacts['concat_segments'])

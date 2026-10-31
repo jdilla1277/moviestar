@@ -585,7 +585,10 @@ A partial watch includes any transition context needed around its range, renders
 that context from an origin on the global output frame grid through the same
 compositor, then selects the requested frames. Audio retains its exact requested
 result-time window, independently of video sampling. This keeps a watch
-inside a dissolve consistent with the corresponding export frames.
+inside a dissolve or dip consistent with the corresponding export frames.
+When a dip cut falls between output frames, its fade still uses the authored
+cut time: the first incoming frame includes the elapsed fraction of the fade,
+matching the screenshot rather than restarting at full black or white.
 
 Dry-run reports `spatial_render_plan` with scene IDs, frame counts, result ranges,
 and temporary PNG-sequence inputs, plus scene encoding/concat/finish commands

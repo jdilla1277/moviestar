@@ -86,10 +86,14 @@ transitions. Caption refresh collects placed tracks across participating trees.
 Measurement and rendering dispatch on `kind: transition`. Each tree follows the
 ordinary CSS/media/caption/motion/reservation path, then FFmpeg combines the full
 RGB scene images at 16-bit intermediate precision. Edge fades compose after the
-internal transition, matching export order. This does not change video export's
-existing scene clips, audio routing, or FFmpeg transition filters. Pixel tests
-compare the still compositor with exported frames at aligned and fractional cuts
-and edge fades, retaining the existing H.264 comparison tolerances.
+internal transition, matching export order. Video dip filters receive each
+scene clip's first-sample offset from its authored origin, including any dissolve
+preroll. They sample the fade at that phase, then restore local timestamps before
+concatenation. This prevents a fractional cut from restarting the incoming fade
+at the next output frame. Scene clips and audio routing retain their existing
+boundaries. Pixel tests compare stills, partial watch, and export at aligned and
+fractional cuts (both black and white dips at 10 and 30 fps), chained dissolves
+and dips, and edge fades, retaining the existing H.264 comparison tolerances.
 
 Labeled views overlay both scenes' original measured rectangles rather than
 fading away diagnostic labels at a dip's color peak. The browser receives only

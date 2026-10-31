@@ -3272,6 +3272,7 @@ def build_render_segments_command(
     video_segment_durations: list[float] | None = None,
     video_transitions: list[dict] | None = None,
     video_encoder: str = "x264",
+    video_sample_offsets: list[float] | None = None,
 ) -> list[str]:
     """Render multiple source-time ranges concatenated to one output.
 
@@ -3312,6 +3313,11 @@ def build_render_segments_command(
     timeline. Video clips may be longer than their matching ``segments`` entry;
     audio is still trimmed to the original segment duration. Each transition
     names the incoming clip index, Moviestar transition type, and duration.
+
+    ``video_sample_offsets`` records how far each clip's first global output
+    sample lies after its authored video origin (including dissolve preroll).
+    Dip fades use this phase before timestamps are rebased for concatenation;
+    audio and the number/order of sampled frames remain unchanged.
 
     ``audio_from_input``: when set, replaces per-segment
     audio with a single audio track sourced from one named source. The
@@ -3354,6 +3360,15 @@ def build_render_segments_command(
             "render_segments: video_segment_durations and video_transitions "
             "must be supplied together"
         )
+    if video_sample_offsets is not None:
+        if video_transitions is None or len(video_sample_offsets) != len(segments):
+            raise ValueError(
+                "render_segments: video_sample_offsets requires video transitions "
+                "and one offset per segment"
+            )
+        if any(isinstance(offset, bool) or not isinstance(offset, (int, float))
+               or not math.isfinite(offset) or offset < 0 for offset in video_sample_offsets):
+            raise ValueError("render_segments: video_sample_offsets must be finite and non-negative")
     if video_segment_durations is not None:
         if len(video_segment_durations) != len(segments):
             raise ValueError(
@@ -3610,6 +3625,15 @@ def build_render_segments_command(
                 segment_framings[i],
             )
         incoming_transition = transitions_by_index.get(i)
+        outgoing_transition = transitions_by_index.get(i + 1)
+        # Clip PTS starts at zero, but its first global sample can be later
+        # than the authored origin. Expose that elapsed phase to both fades,
+        # then restore the sampled clip clock before concat/xfade.
+        dip_phase = (video_sample_offsets[i] if video_sample_offsets is not None
+                     and any(t and t['type'] in {'dip-black', 'dip-white'}
+                             for t in (incoming_transition, outgoing_transition)) else 0)
+        if dip_phase:
+            video_chain += f",setpts=PTS+{_audio_number(dip_phase)}/TB"
         if incoming_transition is not None and incoming_transition["type"] in {
             "dip-black", "dip-white"
         }:
@@ -3622,7 +3646,6 @@ def build_render_segments_command(
             video_chain += (
                 f",fade=t=in:st=0:d={_audio_number(half)}:color={color}"
             )
-        outgoing_transition = transitions_by_index.get(i + 1)
         if outgoing_transition is not None and outgoing_transition["type"] in {
             "dip-black", "dip-white"
         }:
@@ -3637,6 +3660,8 @@ def build_render_segments_command(
                 f",fade=t=out:st={_audio_number(fade_start)}:"
                 f"d={_audio_number(half)}:color={color}"
             )
+        if dip_phase:
+            video_chain += f",setpts=PTS-{_audio_number(dip_phase)}/TB"
         filter_parts.append(f"{video_chain}[v{i}]")
         # Per-segment audio only when there is no override.
         if audio_from_input is None and use_audio:
@@ -3840,6 +3865,7 @@ def render_segments(
     video_transitions: list[dict] | None = None,
     progress_cb=None,
     video_encoder: str = "x264",
+    video_sample_offsets: list[float] | None = None,
 ) -> list[str]:
     """Render multiple source-time ranges concatenated to one output.
 
@@ -3892,6 +3918,7 @@ def render_segments(
         output_fps=output_fps,
         video_segment_durations=video_segment_durations,
         video_transitions=video_transitions,
+        video_sample_offsets=video_sample_offsets,
     )
 
     # Single-segment stream-copy shortcut skips the progress wiring —
