@@ -274,6 +274,7 @@ from moviestar.subscribe import subscribe as subscribe_command
 from moviestar.account import account as account_command
 from moviestar.upload import upload as upload_command
 from moviestar.sharing import (
+    delete as delete_command,
     download as download_command,
     share as share_command,
     shares as shares_command,
@@ -992,6 +993,7 @@ ACCOUNT COMMANDS
   share FILE_OR_VIDEO_ID Create an unlisted watch/download link when enabled.
   shares                 List owned links; --video filters and --cursor paginates.
   unshare LINK_ID        Revoke a link without deleting the video.
+  delete VIDEO_ID        Delete a hosted video and all its links, freeing quota.
   download WATCH_URL     Save a shared MP4 without a recipient account.
 
 \b
@@ -1132,6 +1134,7 @@ cli.add_command(download_command)
 cli.add_command(share_command)
 cli.add_command(shares_command)
 cli.add_command(unshare_command)
+cli.add_command(delete_command)
 
 
 # ---------- Browsing ----------

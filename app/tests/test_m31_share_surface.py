@@ -143,7 +143,7 @@ def test_share_asks_for_an_exact_email_and_a_finished_mp4(tmp_path):
 
 def test_revoke_and_delete_are_distinct_and_never_mutate_in_surface_preview():
     revoke, revocation = invoke("unshare", "lnk_example", "--dry-run")
-    delete, deletion = invoke("shares", "delete", "vid_example", "--dry-run")
+    delete, deletion = invoke("shares", "delete", "123e4567-e89b-42d3-a456-426614174001", "--dry-run")
 
     assert revoke.exit_code == delete.exit_code == 0
     assert revocation["status"] == "would_revoke_link"
@@ -151,7 +151,7 @@ def test_revoke_and_delete_are_distinct_and_never_mutate_in_surface_preview():
     assert revocation["video_deleted"] is False
     assert revocation["link_revoked"] is False
     assert deletion["status"] == "would_delete_video"
-    assert deletion["video_id"] == "vid_example"
+    assert deletion["video_id"] == "123e4567-e89b-42d3-a456-426614174001"
     assert deletion["video_deleted"] is False
     assert deletion["all_links_revoked"] is False
     assert deletion["quota_released"] is False
