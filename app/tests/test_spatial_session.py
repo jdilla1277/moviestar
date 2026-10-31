@@ -259,3 +259,65 @@ globalThis.WebSocket = class extends EventTarget {
         except (ProcessLookupError, PermissionError):
             pass
         process.communicate()
+
+
+@pytest.mark.skipif(os.name != 'posix', reason='POSIX process-group ownership')
+@pytest.mark.parametrize('mode', ['session', 'single'])
+def test_browser_helper_inheriting_stderr_cannot_hold_a_completed_session_open(tmp_path, monkeypatch, mode):
+    """A Chrome helper can retain stderr after the browser parent exits."""
+    import shutil
+    import moviestar.spatial_session as worker
+
+    if not shutil.which('node'):
+        pytest.skip('Node is required')
+    marker = tmp_path / 'helper.json'
+    chrome = tmp_path / 'fake-chrome'
+    chrome.write_text('#!' + sys.executable + '''
+import json, subprocess, sys, time
+from pathlib import Path
+profile = Path(next(arg.split('=', 1)[1] for arg in sys.argv if arg.startswith('--user-data-dir=')))
+profile.mkdir(parents=True, exist_ok=True)
+(profile / 'DevToolsActivePort').write_text('12345\\n/owned-target')
+# Only stderr is inherited: its open pipe delays ChildProcess.close even when
+# SIGTERM has already stopped this browser parent. The Python owner must reap
+# this descendant after the driver exits, before completing session cleanup.
+helper = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'],
+                          stdout=subprocess.DEVNULL)
+Path(''' + repr(str(marker)) + ''').write_text(json.dumps({'pid': helper.pid, 'profile': str(profile)}))
+time.sleep(60)
+''')
+    chrome.chmod(0o755)
+    preload = tmp_path / 'cdp.mjs'
+    preload.write_text('''
+globalThis.fetch = async () => Response.json([{type: 'page', webSocketDebuggerUrl: 'ws://owned-target'}]);
+globalThis.WebSocket = class extends EventTarget {
+  constructor() { super(); queueMicrotask(() => this.dispatchEvent(new Event('open'))); }
+  send(data) {
+    const {id, method} = JSON.parse(data);
+    const result = method === 'Runtime.evaluate'
+      ? {result: {value: {boxes: [], diagnostics: [], scene_layout: {}, video_planes: [], media_planes: []}}}
+      : {};
+    queueMicrotask(() => this.dispatchEvent(new MessageEvent('message', {data: JSON.stringify({id, result})})));
+  }
+  close() { this.dispatchEvent(new Event('close')); }
+};
+''')
+    monkeypatch.setenv('NODE_OPTIONS', '--import=' + preload.as_uri())
+    monkeypatch.setattr(worker, '_chrome_path', lambda: str(chrome))
+    monkeypatch.setattr('moviestar.spatial_layout._chrome_path', lambda: str(chrome))
+    session = BrowserSession()
+    try:
+        if mode == 'session':
+            session.run({'canvas': {'width': 320, 'height': 180}})
+            session.close()
+            assert session._process.poll() == 0
+        else:
+            _run_browser({'canvas': {'width': 320, 'height': 180}})
+        helper_info = json.loads(marker.read_text())
+        assert not Path(helper_info['profile']).exists()
+        helper = helper_info['pid']
+        state = subprocess.run(['ps', '-o', 'stat=', '-p', str(helper)],
+                               capture_output=True, text=True).stdout.strip()
+        assert not state or state.startswith('Z'), state
+    finally:
+        session.close(abort=True)

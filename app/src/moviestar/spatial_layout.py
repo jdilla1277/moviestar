@@ -265,8 +265,10 @@ def _run_browser(request: dict) -> dict:
                 os.killpg(process.pid, signal.SIGKILL)
             else:
                 process.kill()
-        except ProcessLookupError:
-            pass
+        except (ProcessLookupError, PermissionError):
+            # Darwin can report EPERM for an already reaped group.
+            if process.poll() is None:
+                process.kill()
 
     try:
         # The parent owns both the profile and a separate process group, so a
@@ -281,8 +283,9 @@ def _run_browser(request: dict) -> dict:
                 kill_owned_browser(process)
                 process.communicate()
                 raise
-            if process.returncode:
-                kill_owned_browser(process)
+            # The driver can exit while Chrome helpers still hold inherited
+            # pipes. Reap the owned group before releasing the profile.
+            kill_owned_browser(process)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise SpatialLayoutError(f"browser layout failed: {exc}") from exc
     if process.returncode:

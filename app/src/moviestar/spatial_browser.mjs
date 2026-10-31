@@ -24,7 +24,9 @@ if (process.getuid?.() === 0 || process.env.MOVIESTAR_CHROME_NO_SANDBOX === '1')
   args.unshift('--no-sandbox');
 }
 const chrome = spawn(chromePath, args, {stdio: ['ignore', 'ignore', 'pipe']});
-const chromeClosed = new Promise(resolve => chrome.once('close', resolve));
+// A helper may inherit Chrome's stderr after the browser parent exits. The
+// ChildProcess close event waits for that pipe and is not an exit signal.
+const chromeExited = new Promise(resolve => chrome.once('exit', resolve));
 let chromeError = '';
 chrome.stderr.on('data', chunk => { chromeError = (chromeError + chunk.toString()).slice(-8192); });
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -510,7 +512,7 @@ try {
   requests?.close();
   if (sessionMode) process.stdin.pause();
   try { socket?.close(); } catch {}
-  const cleanupError = await stopBrowser(chrome, chromeClosed, profile);
+  const cleanupError = await stopBrowser(chrome, chromeExited, profile);
   if (cleanupError && !process.exitCode) {
     process.stderr.write(`Chrome profile cleanup failed: ${cleanupError.message}\n`);
     process.exitCode = 1;

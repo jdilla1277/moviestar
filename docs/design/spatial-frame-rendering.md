@@ -453,3 +453,23 @@ exercise stderr backpressure, malformed/truncated replies, driver death,
 request/blocked-write timeouts, descendant termination, profile cleanup, and
 shutdown/primary-error behavior. Video tests count one worker across two scenes
 and verify that late caption failures and failed shutdown preserve prior output.
+
+### Browser exit and inherited stderr
+
+Browser teardown waits for the Chrome parent process's `exit` event. Node's
+`ChildProcess.close` also waits for inherited stdio descriptors, so a surviving
+Chrome helper can hold it open after Chrome and its debugging socket have exited.
+A desktop Chrome trace reproduced that case: Chrome exited about 70 ms after
+SIGTERM, but an inherited stderr pipe kept the worker alive until Python's
+four-second shutdown deadline. Teardown now releases the captured stderr stream
+after confirmed process exit. Both one-shot and session Python owners reap their
+remaining process group; normal completion still requires successful cleanup.
+
+The existing two-second TERM grace, one-second KILL grace, four-second Python
+worker-exit deadline, and sixty-second request deadlines remain unchanged. A
+browser that never confirms exit produces a cleanup error without removing its
+profile. Profile removal errors and genuine worker-shutdown failures still fail
+publication, and an earlier rendering error keeps priority. No frames are retried
+or replayed. A deterministic regression uses a fake Chrome parent with a helper
+that inherits stderr; both one-shot measurement and a reused session must exit,
+reap the helper, and remove the temporary profile.
