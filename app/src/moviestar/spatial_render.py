@@ -277,15 +277,7 @@ def _publish(staged: Path, destination: Path) -> None:
         target.unlink(missing_ok=True)
 
 
-def render_spatial_frame(spec: dict, frame: dict, canvas: dict, *,
-                         output_path: Path, project_root: Path | None = None,
-                         layout_output_path: Path | None = None,
-                         reference_path: Path | None = None, browser_session=None) -> dict:
-    """Render a single PNG; the optional browser reference supports parity tests."""
-    root = (project_root or Path.cwd()).resolve()
-    for diagnostic in frame.get('diagnostics', []):
-        if diagnostic.get('severity') != 'warning':
-            raise SpatialRenderError(f"{diagnostic['code']} at {'/'.join(diagnostic['path'])}")
+def _validate_frame_destinations(spec, root, output_path, layout_output_path, reference_path):
     destinations = [Path(path).resolve() for path in (output_path, layout_output_path, reference_path) if path]
     asset_paths = {_asset_path(source['path'], root) for source in spec['sources']}
     asset_paths.update(_asset_path(asset['path'], root) for asset in spec.get('spatial', {}).get('assets', {}).values())
@@ -296,6 +288,22 @@ def render_spatial_frame(spec: dict, frame: dict, canvas: dict, *,
             raise SpatialRenderError('preview output must be a PNG in an existing directory')
         if destination in asset_paths:
             raise SpatialRenderError('preview output cannot overwrite a project asset')
+
+
+def render_spatial_frame(spec: dict, frame: dict, canvas: dict, *,
+                         output_path: Path, project_root: Path | None = None,
+                         layout_output_path: Path | None = None,
+                         reference_path: Path | None = None, browser_session=None) -> dict:
+    """Render a single PNG; the optional browser reference supports parity tests."""
+    root = (project_root or Path.cwd()).resolve()
+    for diagnostic in frame.get('diagnostics', []):
+        if diagnostic.get('severity') != 'warning':
+            raise SpatialRenderError(f"{diagnostic['code']} at {'/'.join(diagnostic['path'])}")
+    if frame.get('kind') == 'transition':
+        from moviestar.spatial_transition import render_transition_frame
+        return render_transition_frame(spec, frame, canvas, output_path=output_path, project_root=root,
+            layout_output_path=layout_output_path, reference_path=reference_path, browser_session=browser_session)
+    _validate_frame_destinations(spec, root, output_path, layout_output_path, reference_path)
     prepared = prepare_layout_frame(frame, canvas)
     for diagnostic in prepared['diagnostics']:
         if diagnostic.get('severity') == 'error':

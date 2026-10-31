@@ -523,7 +523,10 @@ def compile_spatial_frame(
     next compiler stage. A short media range becomes transparent after its end.
     """
     lookup_time = spatial_frame_sample_time(timeline, result_time_s)
-    _reject_active_transition(spec, timeline, lookup_time)
+    from moviestar.spatial_transition import compile_transition_frame
+    transition = compile_transition_frame(spec, timeline, result_time_s, lookup_time, source_durations or {})
+    if transition is not None:
+        return transition
     # The exact project end addresses its last output-grid frame. Subtracting
     # one frame duration from a non-aligned end can land in the previous scene.
     span = timeline.span_at(lookup_time)
@@ -537,7 +540,7 @@ def compile_spatial_scene_frame(spec: dict, timeline: ResolvedProject, scene_ind
     """Compile an owned scene layer, including source handles for a transition.
 
     The caller composes these layers through the existing transition renderer.
-    Single-frame preview still rejects incomplete active-transition frames.
+    Single-frame transition preview composes these same owned scene layers.
     Visual motion and captions hold the owning scene's endpoint during handles;
     footage follows that scene's edge playback speed and checks asset bounds.
     """
@@ -678,26 +681,3 @@ def _place_captions(spec: dict, nodes: list[dict], at_s: float, diagnostics: lis
             visit(node.get("children", []))
 
     visit(nodes)
-
-
-def _reject_active_transition(spec: dict, timeline: ResolvedProject, at_s: float) -> None:
-    """Do not present a single scene tree as a complete transition frame."""
-    opening = spec.get("opening_transition")
-    if opening and at_s < round(opening["duration"], 6):
-        _fail("opening_transition", f"spatial frame at {at_s}s has an unsupported project-edge transition")
-    closing = spec.get("closing_transition")
-    if closing and at_s >= round(timeline.duration_s - closing["duration"], 6):
-        _fail("closing_transition", f"spatial frame at {at_s}s has an unsupported project-edge transition")
-    starts = {span.scene_index: span.scene_start_s for span in timeline.spans}
-    for index, scene in enumerate(spec["composition"]):
-        transition = scene.get("transition_in")
-        if not transition or index not in starts:
-            continue
-        cut = starts[index]
-        half = transition["duration"] / 2
-        if round(cut - half, 6) <= at_s < round(cut + half, 6):
-            outgoing = spec["composition"][index - 1].get("id")
-            incoming = scene.get("id")
-            _fail(f"composition[{index}].transition_in",
-                  f"spatial frame at {at_s}s has an unsupported {transition['type']} "
-                  f"between {outgoing!r} and {incoming!r}")
