@@ -27,8 +27,8 @@ def _captions(nodes):
 
 
 def spatial_frame_context(project, spec, timeline, at_s, dimensions):
-    """Refresh only placed live caption tracks, in memory, for every still view."""
-    from moviestar.cli import _caption_staleness, _refresh_caption_tracks
+    """Refresh placed spatial tracks and eligible preset recipes in memory."""
+    from moviestar.cli import _caption_recipe_tracks, _caption_staleness, _refresh_caption_tracks
 
     durations = {s['id']: s['duration']['seconds'] for s in project.get('sources', [])
                  if isinstance(s.get('duration'), dict)
@@ -37,8 +37,12 @@ def spatial_frame_context(project, spec, timeline, at_s, dimensions):
     from moviestar.spatial_transition import scene_frames
     tracks = {node['caption']['track'] for child in scene_frames(frame) for node in _captions(child['children'])
               if node['caption']['track'] is not None}
-    tracks.update(overlay['track'] for child in scene_frames(frame)
-        for overlay in (child.get('preset_overlays') or {}).get('plans', []) if overlay['kind'] == 'caption')
+    # A timeline edit can move a cue into an empty cached sample. Presets
+    # implicitly render live caption recipes, so determine eligibility from
+    # those recipes before selecting their newly derived active overlays.
+    preset_tracks = (_caption_recipe_tracks(spec)
+        if any(child.get('kind') == 'preset' for child in scene_frames(frame)) else set())
+    tracks.update(preset_tracks)
     if tracks:
         spec = _refresh_caption_tracks(project, spec, tracks=tracks)
         frame = compile_spatial_frame(spec, timeline, at_s, source_durations=durations, project=project, canvas=dimensions)
@@ -51,10 +55,17 @@ def spatial_frame_context(project, spec, timeline, at_s, dimensions):
                 'track': node['caption']['track'],
                 'reason': 'live caption cues could not be refreshed; check the transcript and audio routing'})
     for child in scene_frames(frame):
+        active_stale = set()
         for overlay in (child.get('preset_overlays') or {}).get('plans', []):
             if overlay['kind'] == 'caption' and overlay['track'] in stale:
+                active_stale.add(overlay['track'])
                 frame['diagnostics'].append({'code': 'stale_caption_track',
                     'path': [child['scene_id'], 'overlays', overlay['id']], 'track': overlay['track'],
+                    'reason': 'live caption cues could not be refreshed; check the transcript and audio routing'})
+        if child.get('kind') == 'preset':
+            for track in sorted((preset_tracks & stale) - active_stale):
+                frame['diagnostics'].append({'code': 'stale_caption_track',
+                    'path': [child['scene_id'], 'captions', track], 'track': track,
                     'reason': 'live caption cues could not be refreshed; check the transcript and audio routing'})
     return spec, frame, dimensions
 

@@ -127,8 +127,14 @@ participant through the existing transition still compositor. Preset reference
 pixels are the native FFmpeg result; only the spatial side has an independent
 browser paint reference.
 
-Active preset caption tracks participate in the in-memory refresh and stale
-checks. Spoken-word highlights freeze the selected word for a single frame on
+Preset participants refresh eligible live caption recipes in memory before
+selecting the sample's overlays. Eligibility comes from recipes, including
+tracks whose old cue cache has nothing active at this time. Failed refresh
+reports `stale_caption_track` at an active cue path or, with no active cue, at
+`[scene_id, "captions", track]`. Rendering stays blocked while frame/layout
+inspection retains the diagnostic. Frozen recipes keep their saved cues, and
+spatial-only frames still refresh only explicitly placed tracks.
+Spoken-word highlights freeze the selected word for a single frame on
 ASS's 10ms event grid. Generated ASS files are staged beside other temporary
 layer assets, with no new project files from still commands. The existing outer
 publication and browser shutdown boundary covers every participant.

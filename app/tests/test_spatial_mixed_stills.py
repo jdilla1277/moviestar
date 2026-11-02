@@ -1,10 +1,14 @@
 """Preset transition participants retain their existing rendering semantics."""
 from copy import deepcopy
+import json
 from pathlib import Path
 
 import pytest
+from click.testing import CliRunner
 
+from moviestar.cli import cli
 from moviestar.resolved import resolve_project
+from moviestar.spec import load_spec, save_spec
 from moviestar.spatial_model import compile_spatial_frame
 from moviestar.spatial_layout import browser_available
 from moviestar.spatial_render import render_spatial_frame
@@ -265,7 +269,7 @@ def test_legacy_caption_estimates_and_highlight_render_without_project_writes(pr
     assert max(abs(a-b) for a,b in zip(still, exported)) <= 1
 
 
-def test_preset_caption_refresh_and_staleness_use_only_active_tracks(project, monkeypatch):
+def test_preset_caption_refresh_and_staleness_address_active_cached_cues(project, monkeypatch):
     import moviestar.cli as c
     from moviestar.spatial_inspection import spatial_frame_context
     spec, metadata = project
@@ -350,3 +354,111 @@ def test_preset_only_inspect_window_in_spatial_project_stages_masks_and_stays_fr
     assert all(Path(item['path']).is_file() for item in first['thumbnails'])
     assert not (tmp_path / 'moviestar' / 'masks').exists()
     assert not list(Path(first['extraction']['frames_dir']).rglob('*.png'))
+
+
+def _stale_preset_caption_gap(project, tmp_path, monkeypatch):
+    from tests.conftest import inject_synthetic_transcript, make_segment, make_word
+    spec, metadata = project
+    first = spec['composition'][0]
+    first['slots'][0].update({'source_from': '0:00:00.000', 'source_to': '0:00:01.000'})
+    first['audio_from'] = 'camera'
+    second = deepcopy(first)
+    second.update({'id': 'second', 'name': 'Second'})
+    second['slots'][0].update({'source_from': '0:00:01.000', 'source_to': '0:00:02.000'})
+    spec['composition'] = [first, second]
+    spec['spatial']['scenes'] = {'second': {'layout': {'children': []}}}
+    spec['opening_transition'] = {'type': 'dip-black', 'duration': .5}
+    metadata['sources'][0]['has_audio'] = True
+    _save(spec, metadata, tmp_path, monkeypatch)
+    inject_synthetic_transcript(tmp_path, [make_word('Opening', .6, .9), make_word('Closing', 1.1, 1.4)],
+        [make_segment('Opening', .6, .9), make_segment('Closing', 1.1, 1.4)])
+    _invoke(['captions', 'generate', '--highlight', 'none'])
+    spec = load_spec()
+    assert not any(cue['from'] <= '0:00:00.250' < cue['to'] for cue in spec['overlays'])
+    first_slot, second_slot = (scene['slots'][0] for scene in spec['composition'])
+    for field in ('source_from', 'source_to'):
+        first_slot[field], second_slot[field] = second_slot[field], first_slot[field]
+    save_spec(spec)
+    return Path('moviestar/spec.json').read_bytes()
+
+
+@pytest.mark.parametrize('command', ['frame', 'layout', 'preview'])
+def test_model_refreshes_preset_recipe_before_selecting_a_previously_empty_sample(
+        project, tmp_path, monkeypatch, command):
+    before = _stale_preset_caption_gap(project, tmp_path, monkeypatch)
+    args = ['composition', 'model', command, '--at', '0:00:00.250']
+    if command == 'preview':
+        args += ['--out', 'model.png']
+    result = _invoke(args)
+    overlays = result['frame']['layers'][0]['frame']['preset_overlays']['plans']
+    assert [cue['text'] for cue in overlays] == ['Closing']
+    assert overlays[0]['from_result'] == pytest.approx(.1)
+    assert overlays[0]['to_result'] == pytest.approx(.4)
+    assert not any(d['code'] == 'stale_caption_track' for d in result['frame']['diagnostics'])
+    shot = _invoke(['screenshot', '--at', '.25', '--out', 'shot.png'])
+    assert shot['spatial_frame']['layers'][0]['frame']['preset_overlays']['plans'] == overlays
+    if command == 'preview':
+        assert Path('model.png').read_bytes() == Path('shot.png').read_bytes()
+    elif command == 'layout':
+        assert result['layout']['boxes'] == shot['spatial_preview']['boxes']
+    assert Path('moviestar/spec.json').read_bytes() == before
+
+
+@pytest.mark.parametrize('command', ['frame', 'layout', 'preview', 'screenshot', 'inspect'])
+def test_empty_cached_preset_sample_reports_failed_refresh_and_preserves_outputs(
+        project, tmp_path, monkeypatch, command):
+    import moviestar.cli as c
+    from moviestar.spatial_session import BrowserSession
+    before = _stale_preset_caption_gap(project, tmp_path, monkeypatch)
+    def unavailable(*args, **kwargs):
+        raise SystemExit(1)
+    def unexpected(*args, **kwargs):
+        raise AssertionError('stale caption rendering launched a browser')
+    monkeypatch.setattr(c, '_derive_caption_records', unavailable)
+    monkeypatch.setattr(BrowserSession, '_start', unexpected)
+    Path('prior.png').write_bytes(b'prior image')
+    if command == 'screenshot':
+        args = ['screenshot', '--at', '.25', '--out', 'prior.png']
+    elif command == 'inspect':
+        args = ['inspect', '--from', '.25', '--to', '.3']
+    else:
+        args = ['composition', 'model', command, '--at', '0:00:00.250']
+        if command == 'preview':
+            args += ['--out', 'prior.png']
+    result = CliRunner().invoke(cli, args)
+    data = json.loads(result.stdout)
+    if command in {'frame', 'layout'}:
+        assert result.exit_code == 0, result.output
+        stale = [d for d in data['frame']['diagnostics'] if d['code'] == 'stale_caption_track']
+        assert [d['path'] for d in stale] == [['interview', 'captions', 'captions']]
+        assert data['frame']['layers'][0]['frame']['preset_overlays']['plans'] == []
+        if command == 'layout':
+            assert stale[0] in data['layout']['diagnostics']
+    else:
+        assert result.exit_code == 1, result.output
+        assert 'stale_caption_track' in data['error']
+    assert Path('prior.png').read_bytes() == b'prior image'
+    assert Path('moviestar/spec.json').read_bytes() == before
+    assert not (tmp_path / 'moviestar' / 'inspect-frames').exists()
+
+
+@pytest.mark.parametrize('preset', [False, True])
+def test_recipe_eligibility_preserves_frozen_and_spatial_caption_policies(project, monkeypatch, preset):
+    import moviestar.cli as c
+    from moviestar.spatial_inspection import spatial_frame_context
+    spec, metadata = project
+    _transition_project(spec, metadata, incoming='legacy' if preset else 'structured')
+    spec['captions'] = [{'track': 'live'}, {'track': 'another-live'}, {'track': 'frozen', 'frozen': True}]
+    calls = []
+    def refresh(project, document, *, tracks):
+        calls.append(tracks)
+        return document
+    def current(project, document, recipe):
+        assert not recipe.get('frozen')
+        return False
+    monkeypatch.setattr(c, '_refresh_caption_tracks', refresh)
+    monkeypatch.setattr(c, '_caption_staleness', current)
+    _, frame, _ = spatial_frame_context(metadata, spec, resolve_project(metadata, spec), .35,
+                                        {'width': 160, 'height': 90})
+    assert calls == ([{'live', 'another-live'}] if preset else [])
+    assert frame['diagnostics'] == []

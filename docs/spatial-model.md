@@ -254,6 +254,14 @@ browser-measured glyphs or wrapping. Spatial text retains exact browser metrics.
 `--canvas` replans preset geometry and camera crops without saving; two-up roles
 adapt to portrait/landscape while inspection paths retain the saved slot roles.
 
+For a preset participant, all eligible live caption recipes refresh before
+selecting active cues. A timeline edit can move a cue into a sample where the
+old cache was empty. If refresh fails, `stale_caption_track` addresses the active
+cue or `[scene_id, "captions", track]` when no cached cue is active. Frame and
+layout inspection return this diagnostic; preview, screenshot, and inspect
+reject rendering and preserve previous artifacts. Frozen recipes keep their
+saved cues. A spatial-only frame still refreshes only explicitly placed tracks.
+
 Dissolves extend each scene's footage through the existing handle mapping.
 For spatial participants, component motion and captions hold their owning
 scene's edge during handles. Preset camera, layout motion, and captions retain
