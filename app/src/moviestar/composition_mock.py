@@ -576,7 +576,8 @@ def model_frame(at_time: str) -> None:
 
     This is the temporal input for layout measurement and pixel rendering. It does
     not measure boxes or draw an image.
-    Spatial transitions return named scene layers and blend weights.
+    Transitions return named scene layers and blend weights, including preset
+    participants in spatial projects. Preset frames identify their native plan.
     """
     from moviestar.cli import _error_exit
     from moviestar.resolved import ResolvedProjectError
@@ -652,7 +653,8 @@ def model_preview(at_time: str, canvas: str | None, out: Path, layout_out: Path 
     components, including scene-relative motion. Required content must be bound
     and available. Standard screenshot/inspect share this frame path; watch and
     export also render transitions. Stills support spatial-scene transitions and
-    project-edge fades; mixed/preset transitions require watch or export.
+    project-edge fades, including preset participants in spatial projects.
+    Overlapping internal transition windows require watch or export.
     The saved project is read-only.
     """
     from moviestar.cli import _error_exit

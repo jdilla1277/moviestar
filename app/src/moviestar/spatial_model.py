@@ -515,6 +515,8 @@ def compile_spatial_frame(
     result_time_s: float,
     *,
     source_durations: dict[str, float] | None = None,
+    project: dict | None = None,
+    canvas: dict | None = None,
 ) -> dict:
     """Resolve visual content at one point on the canonical result timeline.
 
@@ -524,7 +526,8 @@ def compile_spatial_frame(
     """
     lookup_time = spatial_frame_sample_time(timeline, result_time_s)
     from moviestar.spatial_transition import compile_transition_frame
-    transition = compile_transition_frame(spec, timeline, result_time_s, lookup_time, source_durations or {})
+    transition = compile_transition_frame(spec, timeline, result_time_s, lookup_time, source_durations or {},
+                                           project=project, canvas=canvas)
     if transition is not None:
         return transition
     # The exact project end addresses its last output-grid frame. Subtracting

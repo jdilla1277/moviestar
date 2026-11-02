@@ -166,6 +166,9 @@ def prepare_layout_frame(frame: dict, canvas: dict) -> dict:
     if isinstance(frame, dict) and frame.get('kind') == 'transition':
         from moviestar.spatial_transition import prepare_transition_frame
         return prepare_transition_frame(frame, canvas)
+    if isinstance(frame, dict) and frame.get('kind') == 'preset':
+        from moviestar.spatial_preset import prepare_preset_frame
+        return prepare_preset_frame(frame, canvas)
     if not isinstance(frame, dict) or not isinstance(frame.get("children"), list):
         raise SpatialLayoutError("frame.children: expected an expanded scene")
     size = _canvas(canvas)
@@ -245,6 +248,9 @@ def measure_spatial_layout(frame: dict, canvas: dict, *, output_path: Path | Non
     if frame.get('kind') == 'transition':
         from moviestar.spatial_transition import measure_transition_layout
         return measure_transition_layout(frame, canvas, output_path=output_path, browser_session=browser_session)
+    if frame.get('kind') == 'preset':
+        from moviestar.spatial_preset import measure_preset_layout
+        return measure_preset_layout(frame, canvas, output_path=output_path, browser_session=browser_session)
     prepared = prepare_layout_frame(frame, canvas)
     request = {**prepared, "output_path": str(output_path.resolve()) if output_path else None}
     measured = browser_session.run(request) if browser_session is not None else _run_browser(request)

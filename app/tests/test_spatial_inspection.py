@@ -334,7 +334,7 @@ def test_spatial_frame_commands_plan_complete_edge_transition_views(project, tmp
 
 
 @pytest.mark.parametrize('command', ['screenshot', 'inspect'])
-def test_active_preset_side_of_mixed_transition_also_requires_complete_video(project, tmp_path, monkeypatch, command):
+def test_active_preset_side_of_mixed_transition_plans_both_layers(project, tmp_path, monkeypatch, command):
     from tests.test_spatial_video import _transition_project
     spec, metadata = project
     _transition_project(spec, metadata, incoming='legacy')
@@ -342,8 +342,8 @@ def test_active_preset_side_of_mixed_transition_also_requires_complete_video(pro
     args = ([command, '--at', '.4', '--out', 'cut.png'] if command == 'screenshot'
             else [command, '--from', '.4', '--to', '.5'])
     result = CliRunner().invoke(cli, [*args, '--dry-run'])
-    assert result.exit_code == 1
-    assert 'transition' in json.loads(result.stdout)['error']
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)['render_available'] is True
 
 
 def _end_sample_transition(spec, *, spatial_owner):
@@ -357,9 +357,11 @@ def _end_sample_transition(spec, *, spatial_owner):
 
 
 @pytest.mark.parametrize('dry_run', [False, True])
-def test_exact_end_screenshot_rejects_mixed_transition_at_selected_output_sample(
+def test_exact_end_screenshot_renders_mixed_transition_at_selected_output_sample(
         project, tmp_path, monkeypatch, dry_run):
     spec, metadata = project
+    if not dry_run and not browser_available():
+        pytest.skip('Chrome and Node are required')
     _end_sample_transition(spec, spatial_owner=False)
     _save(spec, metadata, tmp_path, monkeypatch)
     # At 10 fps the .14s endpoint selects .1s, inside the .09-.13s
@@ -368,9 +370,14 @@ def test_exact_end_screenshot_rejects_mixed_transition_at_selected_output_sample
     for at_s in ('.1', '.14'):
         args = ['screenshot', '--at', at_s, '--out', 'prior.png']
         result = CliRunner().invoke(cli, args + (['--dry-run'] if dry_run else []))
-        assert result.exit_code == 1, result.output
-        assert 'transition' in json.loads(result.stdout)['error']
-        assert Path('prior.png').read_bytes() == b'prior'
+        assert result.exit_code == 0, result.output
+        frame = json.loads(result.stdout)['spatial_frame']
+        assert frame['sample_time_s'] == .1
+        assert [layer['weight'] for layer in frame['layers']] == [.75, .25]
+        if dry_run:
+            assert Path('prior.png').read_bytes() == b'prior'
+        else:
+            assert Path('prior.png').read_bytes().startswith(b'\x89PNG')
 
 
 def test_exact_end_compiler_describes_transition_at_selected_output_sample(project):

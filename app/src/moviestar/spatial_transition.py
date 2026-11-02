@@ -41,7 +41,7 @@ def _fail(message):
     raise SpatialModelError(message)
 
 
-def compile_transition_frame(spec, timeline, result_time_s, sample_time_s, source_durations):
+def compile_transition_frame(spec, timeline, result_time_s, sample_time_s, source_durations, *, project=None, canvas=None):
     from moviestar.spatial_model import compile_spatial_scene_frame
 
     transitions = active_transitions(spec, timeline, sample_time_s)
@@ -54,10 +54,6 @@ def compile_transition_frame(spec, timeline, result_time_s, sample_time_s, sourc
     indices = ([internal[0]['incoming_index']-1, internal[0]['incoming_index']]
                if internal else [owner.scene_index])
     scenes = (spec.get('spatial') or {}).get('scenes', {})
-    for index in indices:
-        identity = spec['composition'][index].get('id')
-        if identity not in scenes:
-            _fail(f'spatial transition: preset scene {identity!r} is unsupported in a still; use watch or export')
     weights = [1.0] * len(indices)
     colors = {'black': 0.0, 'white': 0.0}
     if internal:
@@ -92,7 +88,12 @@ def compile_transition_frame(spec, timeline, result_time_s, sample_time_s, sourc
         # its owning edge, without inventing footage beyond the authored range.
         if internal and internal[0]['type'] != 'dissolve':
             local = max(0, min(local, end-start-.000001))
-        frame = compile_spatial_scene_frame(spec, timeline, index, local, source_durations=source_durations)
+        if spec['composition'][index].get('id') in scenes:
+            frame = compile_spatial_scene_frame(spec, timeline, index, local, source_durations=source_durations)
+        else:
+            from moviestar.spatial_preset import compile_preset_scene_frame
+            frame = compile_preset_scene_frame(spec, timeline, index, local,
+                source_durations=source_durations, project=project, canvas=canvas)
         layers.append({'scene_id': frame['scene_id'], 'scene_index': index,
             'role': ('outgoing' if index == indices[0] else 'incoming') if internal else 'scene',
             'weight': round(max(0, min(1, weight)), 12), 'frame': frame})
@@ -100,7 +101,7 @@ def compile_transition_frame(spec, timeline, result_time_s, sample_time_s, sourc
     metadata = {key: deepcopy(anchor[key]) for key in ('scene_id', 'scene_time_s', 'scene_duration_s',
         'scene_source_time_s', 'scene_source_duration_s', 'pacing_segment_id')}
     return {**metadata, 'kind': 'transition', 'result_time_s': round(result_time_s, 6),
-        'sample_time_s': round(sample_time_s, 6), 'canvas': deepcopy(timeline.canvas),
+        'sample_time_s': round(sample_time_s, 6), 'canvas': deepcopy(canvas or timeline.canvas),
         'transitions': [{**t, 'progress': round((sample_time_s-t['from_s'])/t['duration_s'], 12)} for t in transitions], 'layers': layers,
         'color_weights': {key: round(max(0, min(1, value)), 12) for key, value in colors.items()},
         'diagnostics': [d for layer in layers for d in layer['frame']['diagnostics']]}
@@ -152,6 +153,7 @@ def _report(frame, canvas, reports, *, view, artifact=None, layout_artifact=None
         diagnostics.extend(d for d in report['diagnostics'] if d not in diagnostics)
         # Layer artifact paths are temporary and must not escape in JSON.
         layers.append({**{key: value for key, value in layer.items() if key != 'frame'},
+                       'renderer': report.get('renderer', 'spatial'),
                        'scene_time_s': layer['frame']['scene_time_s'],
                        'scene_source_time_s': layer['frame']['scene_source_time_s'],
                        'scene_layout': report['scene_layout']})
@@ -176,7 +178,9 @@ def _draw_transition_guides(frame, canvas, reports, output, browser):
                     'top': f"{box['rect']['y']}px", 'width': f"{box['rect']['width']}px",
                     'height': f"{box['rect']['height']}px"},
                 'guide_outline': f"{2 if region else 1}px {'dashed' if region else 'solid'} {color}",
-                'guide_label': f"({layer['role']} {layer['weight']:.0%})" + (f" reserved: {region}" if region else '')})
+                'guide_label': f"({layer['role']} {layer['weight']:.0%})"
+                    + (' estimated' if box.get('geometry_is') == 'estimated' else '')
+                    + (f" reserved: {region}" if region else '')})
     summary = ', '.join(f"{t['scope']} {t['type']}" for t in frame['transitions'])
     browser.run({'canvas': canvas, 'scene_id': frame['scene_id'], 'root_style': {'background-color': '#102030'},
         'nodes': nodes, 'scene_layout': {}, 'diagnostics': [], 'output_path': str(output),

@@ -33,13 +33,15 @@ def spatial_frame_context(project, spec, timeline, at_s, dimensions):
     durations = {s['id']: s['duration']['seconds'] for s in project.get('sources', [])
                  if isinstance(s.get('duration'), dict)
                  and isinstance(s['duration'].get('seconds'), (int, float))}
-    frame = compile_spatial_frame(spec, timeline, at_s, source_durations=durations)
+    frame = compile_spatial_frame(spec, timeline, at_s, source_durations=durations, project=project, canvas=dimensions)
     from moviestar.spatial_transition import scene_frames
     tracks = {node['caption']['track'] for child in scene_frames(frame) for node in _captions(child['children'])
               if node['caption']['track'] is not None}
+    tracks.update(overlay['track'] for child in scene_frames(frame)
+        for overlay in (child.get('preset_overlays') or {}).get('plans', []) if overlay['kind'] == 'caption')
     if tracks:
         spec = _refresh_caption_tracks(project, spec, tracks=tracks)
-        frame = compile_spatial_frame(spec, timeline, at_s, source_durations=durations)
+        frame = compile_spatial_frame(spec, timeline, at_s, source_durations=durations, project=project, canvas=dimensions)
     stale = {recipe['track'] for recipe in spec.get('captions', [])
              if recipe['track'] in tracks and not recipe.get('frozen')
              and _caption_staleness(project, spec, recipe)}
@@ -48,6 +50,12 @@ def spatial_frame_context(project, spec, timeline, at_s, dimensions):
             frame['diagnostics'].append({'code': 'stale_caption_track', 'path': node['occurrence_path'],
                 'track': node['caption']['track'],
                 'reason': 'live caption cues could not be refreshed; check the transcript and audio routing'})
+    for child in scene_frames(frame):
+        for overlay in (child.get('preset_overlays') or {}).get('plans', []):
+            if overlay['kind'] == 'caption' and overlay['track'] in stale:
+                frame['diagnostics'].append({'code': 'stale_caption_track',
+                    'path': [child['scene_id'], 'overlays', overlay['id']], 'track': overlay['track'],
+                    'reason': 'live caption cues could not be refreshed; check the transcript and audio routing'})
     return spec, frame, dimensions
 
 
@@ -104,11 +112,12 @@ def _convert_image(source, output, *, width=None):
 def _platform_preview(plan, output, platform, report=None):
     from moviestar import cli as c
 
-    # The platform adapter calls this field estimated_bounds; these rectangles
-    # are actual browser measurements, including component motion.
+    # The platform adapter calls this field estimated_bounds. Spatial boxes
+    # are browser measurements; preset overlays retain their estimate marker.
     text = [{'id': '/'.join(box['path']), 'estimated_bounds': box['rect']}
             for box in (report or {}).get('boxes', []) if box['kind'] in {'text', 'caption'}
-            and box.get('text_lines') and box.get('transition_weight', 1) > 0]
+            and (box.get('text_lines') or box.get('geometry_is') == 'estimated')
+            and box.get('transition_weight', 1) > 0]
     media = [{'slot': '/'.join(item['path']), 'region': item['rect']}
              for item in (report or {}).get('media', []) if item.get('transition_weight', 1) > 0]
     return c._plan_platform_preview(platform, plan['canvas_tuple'], str(output),
@@ -218,10 +227,12 @@ def inspect_frames(project, spec, composition_plan, window_plans, samples, frame
                         full = stage / 'preset.png'
                         context = c._overlay_render_context(project, spec, plan['canvas_tuple'],
                             sample['result_time'], sample['result_time']+.001, 'inspect')
-                        c._write_highlight_ass(context)
-                        c.render_layout_frame(plan['render_slots'], str(full), plan['canvas_tuple'],
-                            overlay_plans=context['plans'] if context else None,
-                            highlight_ass=c._highlight_ass_arg(context))
+                        from moviestar.spatial_preset import render_preset_frame
+                        preset = {'kind': 'preset', 'scene_id': plan['scene'].get('id') or f"preset:{plan['scene_window']['index']}",
+                            'children': [], 'canvas': plan['canvas'], 'diagnostics': [],
+                            'preset_plan': plan, 'preset_overlays': context}
+                        render_preset_frame(spec, preset, plan['canvas'], output_path=full, project_root=root,
+                            browser_session=browser)
                         _convert_image(full, rendered, width=width)
                         full.unlink()
                     thumbnail = {'path': str(path.resolve()), 'timecode': format_timecode(sample['result_time']),
