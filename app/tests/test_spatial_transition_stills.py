@@ -213,14 +213,14 @@ def test_exact_end_transition_reports_layers_for_the_last_global_sample(project,
 
 
 @pytest.mark.parametrize('incoming,outgoing', [('legacy','structured'), ('structured','legacy')])
-def test_mixed_transitions_stay_guarded_from_both_sides(project, tmp_path, monkeypatch, incoming, outgoing):
+def test_mixed_transitions_plan_both_sides(project, tmp_path, monkeypatch, incoming, outgoing):
     spec, metadata = project
     _transition_project(spec, metadata, incoming=incoming, outgoing=outgoing)
     _save(spec, metadata, tmp_path, monkeypatch)
     for at in ('.3', '.4', '.499'):
         result = CliRunner().invoke(cli, ['screenshot', '--at', at, '--out', 'frame.png', '--dry-run'])
-        assert result.exit_code == 1
-        assert 'preset scene' in json.loads(result.stdout)['error']
+        assert result.exit_code == 0, result.output
+        assert len(json.loads(result.stdout)['spatial_frame']['layers']) == 2
         assert not Path('frame.png').exists()
 
 

@@ -135,7 +135,7 @@ async function render(input) {
       element.style.whiteSpace = 'pre-line';
       element.textContent = node.content;
     } else if (!input.paint_dir && (node.kind === 'video' || node.kind === 'image')) {
-      element.style.backgroundColor = '#a9bed0';
+      element.style.backgroundColor = node.guide_outline ? 'transparent' : '#a9bed0';
     }
     applyStyles(element, node.style, node.path.join('/'));
     parent.append(element);
@@ -350,7 +350,9 @@ async function render(input) {
     for (const {node, element} of entries) {
       element.style.outline = node.guide_outline ?? '1px solid #ffb000';
       if (node.kind === 'text' || node.kind === 'caption') element.style.color = 'transparent';
-      if (node.kind === 'video' || node.kind === 'image') element.style.backgroundColor = '#a9bed0';
+      if (node.kind === 'video' || node.kind === 'image') {
+        element.style.backgroundColor = node.guide_outline ? 'transparent' : '#a9bed0';
+      }
     }
     for (const box of boxes) {
       const label = document.createElement('div');

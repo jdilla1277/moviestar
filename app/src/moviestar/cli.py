@@ -5105,6 +5105,7 @@ def _inspect_scene_layout_composition(
         start_s=from_s,
         end_s=to_s,
         command="inspect",
+        prepare_assets=not bool((spec.get('spatial') or {}).get('scenes')),
     )
     frame_samples = _scene_inspect_samples(render_plans, interval)
     expected_frame_count = len(frame_samples)
@@ -5133,7 +5134,7 @@ def _inspect_scene_layout_composition(
         )[1]
         for frame_time in frame_times
     ]
-    if any('spatial_frame' in item for item in frame_render_plans):
+    if (spec.get('spatial') or {}).get('scenes'):
         from moviestar.spatial_inspection import inspect_frames
         inspect_frames(project, spec, plan, render_plans, frame_samples, frame_render_plans,
             from_s=from_s, to_s=to_s, interval=interval, width=width,
@@ -8759,7 +8760,7 @@ def _stored_slot_shape(layout: dict, slot_name: str) -> dict | None:
     return shape if isinstance(shape, dict) else None
 
 
-def _render_slot_shape(shape_block: dict, region: dict) -> dict:
+def _render_slot_shape(shape_block: dict, region: dict, *, masks_dir=None) -> dict:
     """Materialize a stored shape for the renderer: generate (or reuse)
     the cached masks sized to the resolved region."""
     kind = shape_block["kind"]
@@ -8770,7 +8771,7 @@ def _render_slot_shape(shape_block: dict, region: dict) -> dict:
         return render_shape
     border = shape_block.get("border")
     masks = _shape_mask_files(
-        kind, region, shape_block.get("radius"), border
+        kind, region, shape_block.get("radius"), border, directory=masks_dir
     )
     render_shape: dict = {"kind": kind, "content_mask": masks["content"]}
     if border is not None:
@@ -8793,6 +8794,8 @@ def _paced_segment_render_plan(
     output_fps: float,
     layout_motion_time_s: float,
     global_audio: tuple[str, str, float, tuple] | None = None,
+    probe_media: bool = True,
+    materialize_shapes: bool = True,
 ) -> dict:
     """Turn one resolved pacing segment into an ffmpeg-ready layout clip."""
     from moviestar.spec import slice_audio_from_anchor
@@ -8821,7 +8824,8 @@ def _paced_segment_render_plan(
         )
         video_seek_from = resolved_slot.source_from_s
         if (
-            not resolved_slot.held
+            probe_media
+            and not resolved_slot.held
             and video_seek_from > 0
             and os.path.exists(source["path"])
         ):
@@ -8859,7 +8863,8 @@ def _paced_segment_render_plan(
             scene["layout"], resolved_slot.slot_name
         )
         if shape_block is not None:
-            render_slot["shape"] = _render_slot_shape(shape_block, region)
+            render_slot["shape"] = (_render_slot_shape(shape_block, region) if materialize_shapes
+                                    else copy.deepcopy(shape_block))
         render_slots.append(render_slot)
         report_region, geometry_metadata = _slot_envelope_record(
             layout=scene["layout"],
@@ -9048,6 +9053,7 @@ def _scene_render_plans_for_range(
     start_s: float,
     end_s: float,
     command: str,
+    prepare_assets: bool = True,
 ) -> tuple[dict, list[dict]]:
     plan = _scene_composition_plan(
         spec=spec,
@@ -9100,6 +9106,8 @@ def _scene_render_plans_for_range(
                 plan["canvas"],
             ),
             global_audio=global_audio,
+            probe_media=prepare_assets,
+            materialize_shapes=prepare_assets,
         )
         camera_states: dict[str, dict] = {}
         animated_slots: list[str] = []
@@ -9247,11 +9255,33 @@ def _scene_render_plan_at(
                 return plan, spatial_frame_plan(project, spec, canonical, at_s)
         except (ValueError, OSError, RuntimeError) as exc:
             _error_exit_with_hint(command, str(exc),
-                'Use watch or export for mixed or overlapping internal transitions; use composition model layout for draft geometry.')
+                'Use watch or export for overlapping internal transitions; use composition model layout for draft geometry.')
 
+    return plan, _preset_scene_render_plan_at(project=project, spec=spec,
+        composition=composition, at_s=lookup_at_s, command=command, plan=plan,
+        prepare_assets=not (command == 'inspect' and bool((spec.get('spatial') or {}).get('scenes'))))
+
+
+def _preset_scene_render_plan_at(*, project, spec, composition, at_s, command,
+                                 plan=None, scene_index=None, canvas=None, prepare_assets=True):
+    """Existing preset still plan, optionally sampling a named scene's handles.
+
+    The explicit scene selection never switches owners at a cut. Transition
+    inspection can disable packet probing until the real render boundary.
+    """
+    plan = plan or _scene_composition_plan(spec=spec, composition=composition, command=command)
+    if canvas is not None:
+        plan = {**plan, 'canvas': canvas}
     timeline = plan["pacing_timeline"]
-    segment = timeline.segment_at(lookup_at_s)
-    resolved_scene = timeline.scenes[segment.scene_index]
+    requested_at_s = at_s
+    if scene_index is None:
+        segment = timeline.segment_at(at_s)
+        resolved_scene = timeline.scenes[segment.scene_index]
+        lookup_at_s = at_s
+    else:
+        resolved_scene = next(scene for scene in timeline.scenes if scene.index == scene_index)
+        lookup_at_s = max(resolved_scene.start_s, min(at_s, resolved_scene.end_s-.000001))
+        segment = timeline.segment_at(lookup_at_s)
     if not resolved_scene.scene['slots']:
         _error_exit_with_hint(
             command,
@@ -9262,6 +9292,7 @@ def _scene_render_plan_at(
     frame_segment = segment.clipped(
         lookup_at_s, min(segment.end_s, lookup_at_s + 0.001)
     )
+    motion_time = timeline.layout_motion_time_at(resolved_scene.index, requested_at_s, plan['canvas'])
     render_plan = _paced_segment_render_plan(
         project=project,
         spec=spec,
@@ -9270,15 +9301,28 @@ def _scene_render_plan_at(
         canvas=plan["canvas"],
         command=command,
         output_fps=resolve_project(project, spec).output_fps,
-        layout_motion_time_s=timeline.layout_motion_time_at(
-            resolved_scene.index,
-            frame_segment.start_s,
-            plan["canvas"],
-        ),
+        layout_motion_time_s=max(0, motion_time),
         global_audio=_scene_global_audio_route(
             project, spec, composition, command
         ),
+        probe_media=prepare_assets,
+        materialize_shapes=prepare_assets,
     )
+    if scene_index is not None:
+        from moviestar.spec import _bounce_coordinate
+        for slot, report in zip(render_plan['render_slots'], render_plan['slots']):
+            if slot.get('motion'):
+                motion = slot['motion']
+                motion['result_time_offset'] = motion_time
+                slot['region'] = {**slot['region'], **{axis: _bounce_coordinate(
+                    motion['origin'][axis], motion['bounds'][axis], motion['velocity'][axis], motion_time)
+                    for axis in ('x', 'y')}}
+            if not slot['held']:
+                slot['source_from'] = round(slot['source_from'] + (requested_at_s-lookup_at_s)*slot['speed'], 6)
+                slot['source_to'] = round(slot['source_from'] + .001*slot['speed'], 6)
+                slot['video_seek_from'] = slot['source_from']
+                report['source_range'] = {'from': format_timecode(slot['source_from']),
+                    'to': format_timecode(slot['source_to']), 'duration': format_timecode(.001*slot['speed'])}
     try:
         camera_plan = resolve_camera(
             composition,
@@ -9293,7 +9337,7 @@ def _scene_render_plan_at(
         )
     except CameraResolutionError as exc:
         _error_exit(command, f"Could not resolve scene camera: {exc}")
-    local_at = lookup_at_s - resolved_scene.start_s
+    local_at = requested_at_s - resolved_scene.start_s
     camera_states: dict[str, dict] = {}
     for render_slot in render_plan["render_slots"]:
         state = camera_plan.state_at(
@@ -9309,7 +9353,7 @@ def _scene_render_plan_at(
             render_slot["camera_crop"] = state.resolved_crop_pixels
     render_plan["camera_states"] = camera_states
     render_plan["camera_render_status"] = "active"
-    return plan, render_plan
+    return render_plan
 
 
 
@@ -11230,7 +11274,7 @@ def _parse_shape_border(value: str) -> dict | None:
 
 
 def _shape_mask_files(
-    kind: str, region: dict, radius: float | None, border: dict | None
+    kind: str, region: dict, radius: float | None, border: dict | None, *, directory=None
 ) -> dict:
     """Generate the real masks for a resolved shape into the workspace.
 
@@ -11238,7 +11282,7 @@ def _shape_mask_files(
     composites UNDER the content, never as an annulus over it (a ring
     over the content leaves a coverage seam at the shared edge).
     """
-    masks_dir = os.path.realpath(os.path.join(MOVIESTAR_DIR, "masks"))
+    masks_dir = os.path.realpath(directory or os.path.join(MOVIESTAR_DIR, "masks"))
     width = int(region["width"])
     height = int(region["height"])
     radius_px = (

@@ -199,10 +199,12 @@ existing 640-pixel inspection width. `spatial_preview.canvas` and box coordinate
 remain in the authored canvas; `image_dimensions` reports the thumbnail size.
 Use `--inline` to include image bytes in the JSON response.
 
-An inspection containing spatial frames always renders fresh thumbnails into a
+An inspection of a project containing spatial scenes always renders fresh thumbnails into a
 new directory under `moviestar/inspect-frames`. This avoids stale assets, captions,
 or shared definitions without introducing an asset or rendered-clip cache.
-Preset-only inspection keeps its existing cache. One browser session serves a
+Preset-only projects keep their existing inspection cache. Isolated preset
+windows in a spatial project also plan without creating assets and stage shape
+masks/ASS files only for rendering. One browser session serves a
 spatial inspection batch; its complete directory is published after every frame
 and normal browser shutdown succeed. Failures remove partial batches and preserve
 previous artifacts. Screenshot conversion and platform annotation are staged
@@ -212,16 +214,18 @@ Both commands support dry-run plans without launching Chrome, decoding assets,
 or creating output directories. Runtime asset, CSS, and measured overflow errors
 can still reject rendering. At the exact project end, frame selection uses the
 last global output sample, even if that sample belongs to the previous scene.
-Transitions between spatial scenes and spatial project-edge fades use the same
-layered still-frame path. Mixed/preset transitions and overlapping internal
-transition windows still return an explicit JSON error; use `watch` or `export`
-for those cases. `model layout` remains the labeled-box and draft-placeholder view.
+Transitions and project-edge fades in spatial projects use the same layered
+still-frame path, including preset participants. Overlapping internal transition
+windows still return an explicit JSON error; use `watch` or `export` for those
+cases. `model layout` remains the labeled-box and draft-placeholder view.
 
 ## Inspecting a spatial transition at one moment
 
 The existing frame, layout, preview, screenshot, and inspect commands support
-`dissolve`, `dip-black`, and `dip-white` between two spatial scenes, plus opening
-and closing fades on a spatial scene. There is no new command or saved object.
+`dissolve`, `dip-black`, and `dip-white` between spatial and/or preset scenes,
+plus opening and closing fades, in projects containing spatial layouts.
+There is no new command or saved object. Preset-only projects retain their
+existing screenshot/inspect renderer and cache behavior.
 The existing timeline still determines the cut, transition window, pacing,
 source handles, and result time. At exact project end, transition selection uses
 the last global output sample, which can fall before the final scene begins.
@@ -234,8 +238,34 @@ and motion. `transitions` describes the authored windows and sampled progress;
 `color_weights` records any black/white contribution. Ordinary frame responses
 retain their existing shape outside transition windows.
 
-Dissolves extend each scene's footage through the existing handle mapping;
-component motion and captions hold their owning scene's edge during handles.
+A preset participant has `frame.kind: "preset"`, empty `children`, a native
+`preset_plan`, and its sampled `preset_overlays`. It remains a preset, with no
+editable spatial elements or new saved definitions. Its video, framing, camera,
+mask/border, motion, and caption pixels use the existing FFmpeg preset renderer.
+Layer reports identify `renderer: "preset_ffmpeg"`; slot paths are read-only
+`[scene_id, "slots", slot_role]` and overlay paths use the overlay ID. A preset
+without a saved scene ID uses the explicit positional identity `preset:index`.
+Spatial scene and child identities retain their existing behavior.
+
+Preset slot rectangles come from the native layout plan. Preset text rectangles
+carry `geometry_source: "preset_overlay_estimate"`, `geometry_is: "estimated"`,
+and a warning diagnostic. Their labels say `estimated`; they do not claim
+browser-measured glyphs or wrapping. Spatial text retains exact browser metrics.
+`--canvas` replans preset geometry and camera crops without saving; two-up roles
+adapt to portrait/landscape while inspection paths retain the saved slot roles.
+
+For a preset participant, all eligible live caption recipes refresh before
+selecting active cues. A timeline edit can move a cue into a sample where the
+old cache was empty. If refresh fails, `stale_caption_track` addresses the active
+cue or `[scene_id, "captions", track]` when no cached cue is active. Frame and
+layout inspection return this diagnostic; preview, screenshot, and inspect
+reject rendering and preserve previous artifacts. Frozen recipes keep their
+saved cues. A spatial-only frame still refreshes only explicitly placed tracks.
+
+Dissolves extend each scene's footage through the existing handle mapping.
+For spatial participants, component motion and captions hold their owning
+scene's edge during handles. Preset camera, layout motion, and captions retain
+the native renderer's handle behavior, described in `preset_plan` and `preset_overlays`.
 Dips need no footage handles. An invisible dip layer is described at its owning
 edge without inventing media outside its authored range. Missing content,
 insufficient handles, and scene-local reservation/overflow errors still block
@@ -271,8 +301,7 @@ media, or creating output directories. An inspect dry-run includes contributing
 scene IDs, roles, weights, and color/window state for each transition sample.
 Inspection images are resized after measuring at the authored canvas.
 
-Still rendering deliberately rejects mixed spatial/preset transitions, preset
-project-edge fades, and multiple overlapping internal transition windows.
+Still rendering deliberately rejects multiple overlapping internal transition windows.
 `watch` and `export` continue to support their existing video transition path.
 These limits do not change scene duration or silently substitute one scene for a
 complete blended frame. A single internal transition may overlap opening/closing
@@ -534,9 +563,9 @@ Node setup as layout inspection, plus FFmpeg/ffprobe. Output paths must be disti
 PNG files in existing directories and cannot overwrite a project asset. Asset or
 paint failures preserve an existing preview, and no project revision is written.
 
-`model preview` supports transitions between spatial scenes and project-edge
-fades on a spatial scene. Mixed/preset transitions and multiple overlapping
-internal transitions require `watch` or `export`. See [transition-frame inspection](#inspecting-a-spatial-transition-at-one-moment)
+`model preview` supports transitions and project-edge fades in spatial projects,
+including preset participants. Multiple overlapping internal transitions require
+`watch` or `export`. See [transition-frame inspection](#inspecting-a-spatial-transition-at-one-moment)
 for the layered response and inspection behavior.
 
 ## Video watch and export
@@ -610,8 +639,8 @@ Video generation still calls the shared frame renderer for each spatial frame
 and stores a temporary PNG sequence. Per-frame source decoding, composition,
 and temporary disk use remain; decoder reuse and streaming are follow-on work.
 Export throughput has not been validated against release performance budgets. No unchanged-clip reuse or cache invalidation is added.
-Single-frame inspection of active transitions and the
-remaining layout readiness checks are separate work before release.
+Overlapping internal transition inspection and real-content/performance
+acceptance remain separate work before release.
 
 ## Element and component motion
 
@@ -822,9 +851,8 @@ result is structural and temporal; `model layout` adds measured boxes and an
 optional labeled PNG without changing the frame's media mapping.
 At the exact project end, `frame` samples the last output-grid frame and reports
 that timestamp as `sample_time_s` alongside the requested `result_time_s`.
-At a time inside an authored scene or project-edge transition, `frame` returns
-an explicit JSON error because a complete transition frame needs both visual
-trees and transition state.
+At a time inside a supported transition, `frame` returns named scene layers and
+transition state. Multiple overlapping internal windows remain an explicit error.
 Scenes may use explicit duration with empty slots as described above.
 Local editing of an inherited nested instance's input
 bindings still requires editing its enclosing definition or applying a complete

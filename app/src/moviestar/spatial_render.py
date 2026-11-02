@@ -303,6 +303,10 @@ def render_spatial_frame(spec: dict, frame: dict, canvas: dict, *,
         from moviestar.spatial_transition import render_transition_frame
         return render_transition_frame(spec, frame, canvas, output_path=output_path, project_root=root,
             layout_output_path=layout_output_path, reference_path=reference_path, browser_session=browser_session)
+    if frame.get('kind') == 'preset':
+        from moviestar.spatial_preset import render_preset_frame
+        return render_preset_frame(spec, frame, canvas, output_path=output_path, project_root=root,
+            layout_output_path=layout_output_path, reference_path=reference_path, browser_session=browser_session)
     _validate_frame_destinations(spec, root, output_path, layout_output_path, reference_path)
     prepared = prepare_layout_frame(frame, canvas)
     for diagnostic in prepared['diagnostics']:

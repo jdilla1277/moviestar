@@ -30,8 +30,8 @@ requested sample; video checks every rendered output sample, including positions
 between motion keyframes, and retains the command's atomic publication boundary.
 Dry-runs do not claim measured collision readiness. Without declarations, the
 browser performs no intersection-observer work and layering remains unchanged.
-Mixed/preset and overlapping-internal transition still inspection, plus real-content
-acceptance, remain separate gates; no rendered-clip reuse or cache invalidation is added.
+Overlapping-internal transition still inspection and real-content acceptance
+remain separate gates; no rendered-clip reuse or cache invalidation is added.
 
 ## Explicit scene time without carrier footage
 
@@ -60,8 +60,7 @@ and preset-to-static dissolve/dip pixels and silence beside routed footage audio
 
 The model frame/layout/preview commands and standard screenshot/thumbnail inspect
 render these scenes through the same compiler and renderer. Entirely source-free project
-initialization and mixed/preset transition frame inspection are separate
-work; a loaded project's unused source need not be available to render a static
+initialization is separate work; a loaded project's unused source need not be available to render a static
 scene. No rendered-clip reuse or cache invalidation is introduced.
 
 Linux CI installs Chrome for Testing headless shell 156.0.8078.73 from Google's
@@ -102,11 +101,43 @@ remain the report's geometry. A single owned session serves the layers and guide
 page. All layer assets and combined outputs are staged until successful browser
 shutdown and composition; inspect retains its complete-batch publication boundary.
 
-This slice supports one active internal spatial/spatial transition and any
-intersecting project-edge fades on a spatial scene. Mixed/preset participation
-and multiple overlapping internal transitions remain explicit guards. It does
+This path supports one active internal transition and intersecting project-edge
+fades in spatial projects, including preset participants. Multiple overlapping
+internal transitions remain an explicit guard. It does
 not complete milestone 2, add a render cache, or change fidelity/performance
 budgets. Real-content acceptance remains separate work.
+
+### Native preset participants
+
+`spatial_preset.py` adapts a named preset scene into a read-only `kind: preset`
+frame with empty `children`, a sampled native plan, and active overlays. It
+reuses the existing preset still planner, factored into
+`_preset_scene_render_plan_at`, with explicit scene selection through handles.
+The selected edge pacing owns source time; camera and layout motion remain
+scene-owned. Source packet probes and shape-mask generation are deferred until rendering, so frame and
+layout inspection can describe missing media. Canvas overrides replan regions
+and camera crops; temporary two-up role aliases preserve the saved inspection
+paths. No conversion or saved spatial definitions are introduced.
+
+Preset slots report native layout rectangles and their framing/camera/shape
+state. Native overlay boxes retain an explicit estimate marker, warning, and
+guide label; they are never claimed as browser text measurements. A frame is
+composited by the existing FFmpeg preset renderer, then blended with the spatial
+participant through the existing transition still compositor. Preset reference
+pixels are the native FFmpeg result; only the spatial side has an independent
+browser paint reference.
+
+Preset participants refresh eligible live caption recipes in memory before
+selecting the sample's overlays. Eligibility comes from recipes, including
+tracks whose old cue cache has nothing active at this time. Failed refresh
+reports `stale_caption_track` at an active cue path or, with no active cue, at
+`[scene_id, "captions", track]`. Rendering stays blocked while frame/layout
+inspection retains the diagnostic. Frozen recipes keep their saved cues, and
+spatial-only frames still refresh only explicitly placed tracks.
+Spoken-word highlights freeze the selected word for a single frame on
+ASS's 10ms event grid. Generated ASS files are staged beside other temporary
+layer assets, with no new project files from still commands. The existing outer
+publication and browser shutdown boundary covers every participant.
 
 ## Standard still-image surfaces
 
@@ -125,16 +156,15 @@ only validates/plans and does not claim browser-measured geometry.
 Spatial inspection deliberately disables thumbnail reuse and allocates a fresh
 output directory, including when asset contents change at the same path. It
 borrows one command-owned browser across frames and stages the complete mixed
-batch before publishing its directory. Preset-only paths retain their existing
+batch before publishing its directory, including isolated preset windows in a
+spatial project. Preset-only projects retain their existing
 renderer/cache. This adds no asset fingerprinting or rendered-clip reuse.
 Failures during conversion, annotation, later frames, or browser shutdown cannot
 publish an incomplete batch or replace a prior screenshot.
 
-Active transitions still fail before publishing a single-tree frame, including
-when the scene active at that time is a preset in a mixed project. Full blended
-frame inspection remains follow-on work; watch/export remain the complete
-transition path. Camera preview and source-specific commands retain their
-existing behavior.
+Active transitions dispatch to complete layered frames even when the owner is
+a preset in a mixed project. Overlapping internal windows remain explicit
+errors. Camera preview and source-specific commands retain their existing behavior.
 
 ## Shared boundary
 
@@ -261,9 +291,8 @@ speed changes, holds, scene offsets, and the final output-grid sample. Caption
 checks retain cues, wrapping, and scaled content-box overflow measurement.
 File-based CLI tests cover dry-run/save/read-only preview, equal rendered and
 labeled boxes, and revision undo. Unsupported containing-block changes preserve
-prior artifacts. This is still-frame evidence; interval-wide collision checks,
-mixed/preset single-frame transition inspection, release-throughput verification, custom
-easing, and render caching remain separate gates.
+prior artifacts. Release-throughput verification, custom easing, and render
+caching remain separate work; video checks declared reservations at every sample.
 
 ### Responsive canvas rules
 
@@ -350,8 +379,7 @@ positions and rejection after source end.
 
 This establishes still-frame geometry and paint parity on synthetic content.
 It is not evidence for export throughput or every source decoder.
-Real-content watch/export friction tests and mixed/preset transition still inspection
-remain separate delivery gates.
+Real-content watch/export friction tests remain a separate delivery gate.
 
 The browser reference is a paint check, not a promise that FFmpeg's video scaler
 matches Chrome's image scaler. A larger manual `testsrc2` example measured mean
