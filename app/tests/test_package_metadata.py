@@ -6,6 +6,8 @@ import hashlib
 from pathlib import Path
 import tomllib
 
+from packaging.version import Version
+
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 APACHE_2_LICENSE_SHA256 = (
@@ -17,10 +19,10 @@ def _pyproject() -> dict:
     return tomllib.loads((APP_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
 
-def test_v070_is_declared_as_the_first_apache_release():
+def test_current_package_stays_on_the_apache_release_line():
     pyproject = _pyproject()
 
-    assert pyproject["project"]["version"] == "0.7.0"
+    assert Version(pyproject["project"]["version"]) >= Version("0.7.0")
     assert pyproject["project"]["license"] == "Apache-2.0"
 
 

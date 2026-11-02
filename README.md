@@ -71,6 +71,17 @@ The [getting-started guide](docs/getting-started.md) walks through installation
 and a first verified edit. For the complete command surface, see the
 [CLI reference](app/README.md).
 
+## Share the finished video
+
+With your permission, your agent can upload a finished MP4 privately or email
+an unlisted watch-and-download link to a teammate. Recipients need no account
+and can download the video for another edit. You can revoke links or delete an
+upload to reclaim storage; local files and projects stay intact.
+
+Hosted sharing requires Moviestar v0.8.0 or newer and an account. Unlisted links
+can be forwarded. Start with the [sharing guide](docs/sharing.md) and
+[v0.8.0 release notes](docs/releases/v0.8.0.md).
+
 ## Documentation
 
 - [Getting started](docs/getting-started.md)

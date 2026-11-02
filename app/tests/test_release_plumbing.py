@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 import subprocess
 import sys
+import tomllib
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -18,15 +19,18 @@ PYPI_PUBLISH_ACTION_SHA = "dc37677b2e1c63e2034f94d8a5b11f265b73ba33"
 
 
 def test_release_version_check_accepts_only_the_package_version() -> None:
+    version = tomllib.loads((ROOT / "app" / "pyproject.toml").read_text())["project"]["version"]
+    tag = f"v{version}"
+    mismatched_tag = f"{tag}-mismatch"
     matching = subprocess.run(
-        [sys.executable, str(VERSION_CHECK), "v0.7.0"],
+        [sys.executable, str(VERSION_CHECK), tag],
         cwd=ROOT,
         capture_output=True,
         text=True,
         check=False,
     )
     mismatch = subprocess.run(
-        [sys.executable, str(VERSION_CHECK), "v0.7.1"],
+        [sys.executable, str(VERSION_CHECK), mismatched_tag],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -34,9 +38,9 @@ def test_release_version_check_accepts_only_the_package_version() -> None:
     )
 
     assert matching.returncode == 0, matching.stderr
-    assert "v0.7.0 matches package version 0.7.0" in matching.stdout
+    assert f"{tag} matches package version {version}" in matching.stdout
     assert mismatch.returncode == 1
-    assert "release tag v0.7.1 does not match package version 0.7.0" in mismatch.stderr
+    assert f"release tag {mismatched_tag} does not match package version {version}" in mismatch.stderr
 
 
 def test_publish_workflow_is_release_only_and_uses_trusted_publishing() -> None:
