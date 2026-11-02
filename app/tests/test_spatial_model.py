@@ -173,10 +173,10 @@ def test_model_frame_cli_reports_global_time_and_json_errors(tmp_path, monkeypat
     spec["opening_transition"] = {"type": "dip-black", "duration": 1}
     save_spec(spec, cwd=tmp_path)
     transition = CliRunner().invoke(cli, ["composition", "model", "frame", "--at", "0:00:00.500"])
-    assert transition.exit_code == 1
-    error = json.loads(transition.output)
-    assert error["command"] == "composition model frame"
-    assert "opening_transition" in error["error"]
+    assert transition.exit_code == 0, transition.output
+    resolved = json.loads(transition.output)["frame"]
+    assert resolved["kind"] == "transition"
+    assert resolved["color_weights"]["black"] == .5
 
 
 @pytest.mark.parametrize("pacing,at_s,expected_source_time,expected_scene_duration", [
@@ -240,7 +240,7 @@ def test_spatial_frame_exact_end_uses_last_grid_time_in_short_final_scene():
     assert frame["children"][0]["children"][0]["media"]["source_time_s"] == 0
 
 
-def test_spatial_frame_rejects_active_internal_dissolve_without_partial_scene():
+def test_spatial_frame_describes_both_active_internal_dissolve_layers():
     spec = _project()
     for scene in spec["composition"]:
         scene["slots"][0]["source_from"] = "0:00:02.000"
@@ -253,8 +253,9 @@ def test_spatial_frame_rejects_active_internal_dissolve_without_partial_scene():
     validate_spec(spec)
     timeline = resolve_project(_source_project(spec), spec)
     for at_s in (7.5, 8, 8.499):
-        with pytest.raises(SpatialModelError, match=r"composition\[1\]\.transition_in.*unsupported"):
-            compile_spatial_frame(spec, timeline, at_s)
+        frame = compile_spatial_frame(spec, timeline, at_s, source_durations={source["id"]: 20 for source in spec["sources"]})
+        assert frame['kind'] == 'transition'
+        assert [layer['scene_id'] for layer in frame['layers']] == ['scene_a', 'scene_b']
     assert compile_spatial_frame(spec, timeline, 8.5)["scene_id"] == "scene_b"
 
 
@@ -262,13 +263,14 @@ def test_spatial_frame_rejects_active_internal_dissolve_without_partial_scene():
     ("opening_transition", 0),
     ("closing_transition", 16),
 ])
-def test_spatial_frame_rejects_active_project_edge_transition(field, at_s):
+def test_spatial_frame_describes_active_project_edge_transition(field, at_s):
     spec = _project()
     spec[field] = {"type": "dip-black", "duration": 1}
     validate_spec(spec)
     timeline = resolve_project(_source_project(spec), spec)
-    with pytest.raises(SpatialModelError, match=field + ".*unsupported"):
-        compile_spatial_frame(spec, timeline, at_s)
+    frame = compile_spatial_frame(spec, timeline, at_s)
+    assert frame['kind'] == 'transition'
+    assert frame['transitions'][0]['scope'] == field.split('_')[0]
 
 
 def test_component_is_shared_and_scene_layouts_survive_save_reload_and_undo(tmp_path):

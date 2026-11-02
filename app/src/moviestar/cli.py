@@ -5500,10 +5500,11 @@ def _scene_video_render_artifacts(
             first, count = _frame_window(render_plan)
             # Keep whole sampled frames through encoding and fractional handles.
             render_plan['frame_encode_duration'] = count / render_plan['output_fps']
+            start = render_plan['result_start_s'] - render_plan.get('transition_preroll', 0)
+            render_plan['video_sample_offset'] = max(0.0, first / render_plan['output_fps'] - start)
             scene_id = render_plan['scene'].get('id')
             if scene_id not in spec['spatial']['scenes']:
-                start = render_plan['result_start_s'] - render_plan.get('transition_preroll', 0)
-                render_plan['preset_sample_offset'] = max(0.0, first / render_plan['output_fps'] - start)
+                render_plan['preset_sample_offset'] = render_plan['video_sample_offset']
     # Scene clips render separately then concat, so each scene's
     # overlay plan is windowed to that scene's global result range;
     # enable times land relative to the clip's local t=0.
@@ -5609,6 +5610,7 @@ def _scene_video_render_artifacts(
             else None
         ),
         video_transitions=transition_render_plan if separate_video_audio else None,
+        **({'video_sample_offsets': [p['video_sample_offset'] for p in render_plans]} if global_frame_grid else {}),
     )
     setup_commands = _dry_run_setup_commands_for_outputs(
         [*scene_clip_paths, abs_output]
@@ -5884,6 +5886,8 @@ def _render_scene_video_artifacts(
         ),
         video_transitions=(artifacts['transition_render_plan']
             if artifacts.get('separate_video_audio', bool(artifacts['transition_render_plan'])) else None),
+        **({'video_sample_offsets': [p['video_sample_offset'] for p in artifacts['render_plans']]}
+           if artifacts.get('global_frame_grid') else {}),
         progress_cb=_render_progress_cb(quiet),
     )
     expected_duration = sum(end - start for _path, start, end in artifacts['concat_segments'])
@@ -9232,18 +9236,18 @@ def _scene_render_plan_at(
         lookup_at_s = max(0.0, round(composition_duration - 0.001, 3))
 
     if command in {'screenshot', 'inspect'} and (spec.get('spatial') or {}).get('scenes'):
-        from moviestar.spatial_model import spatial_frame_sample_time, _reject_active_transition
+        from moviestar.spatial_model import spatial_frame_sample_time
+        from moviestar.spatial_transition import active_transitions
         from moviestar.spatial_inspection import spatial_frame_plan
         try:
             canonical = resolve_project(project, spec)
             lookup_at_s = spatial_frame_sample_time(canonical, at_s)
-            # Check the selected frame: exact end can sample inside a transition.
-            _reject_active_transition(spec, canonical, lookup_at_s)
-            if canonical.span_at(lookup_at_s).scene_id in spec['spatial']['scenes']:
+            if (canonical.span_at(lookup_at_s).scene_id in spec['spatial']['scenes']
+                    or active_transitions(spec, canonical, lookup_at_s)):
                 return plan, spatial_frame_plan(project, spec, canonical, at_s)
         except (ValueError, OSError, RuntimeError) as exc:
             _error_exit_with_hint(command, str(exc),
-                'Use watch or export to view active transitions; use composition model layout for draft geometry.')
+                'Use watch or export for mixed or overlapping internal transitions; use composition model layout for draft geometry.')
 
     timeline = plan["pacing_timeline"]
     segment = timeline.segment_at(lookup_at_s)

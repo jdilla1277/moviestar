@@ -163,6 +163,9 @@ def _resolve_styles(base: dict, rules: list, local: dict, canvas: dict,
 
 def prepare_layout_frame(frame: dict, canvas: dict) -> dict:
     """Translate a resolved temporal frame to a safe, explicit CSS layout tree."""
+    if isinstance(frame, dict) and frame.get('kind') == 'transition':
+        from moviestar.spatial_transition import prepare_transition_frame
+        return prepare_transition_frame(frame, canvas)
     if not isinstance(frame, dict) or not isinstance(frame.get("children"), list):
         raise SpatialLayoutError("frame.children: expected an expanded scene")
     size = _canvas(canvas)
@@ -237,11 +240,14 @@ def browser_available() -> bool:
     return check.returncode == 0 and check.stdout.strip() == "true"
 
 
-def measure_spatial_layout(frame: dict, canvas: dict, *, output_path: Path | None = None) -> dict:
+def measure_spatial_layout(frame: dict, canvas: dict, *, output_path: Path | None = None, browser_session=None) -> dict:
     """Return browser-measured boxes and optionally write the labeled layout PNG."""
+    if frame.get('kind') == 'transition':
+        from moviestar.spatial_transition import measure_transition_layout
+        return measure_transition_layout(frame, canvas, output_path=output_path, browser_session=browser_session)
     prepared = prepare_layout_frame(frame, canvas)
     request = {**prepared, "output_path": str(output_path.resolve()) if output_path else None}
-    measured = _run_browser(request)
+    measured = browser_session.run(request) if browser_session is not None else _run_browser(request)
     regions = inspect_reserved_regions(frame, prepared['canvas'], measured['boxes'])
     return {"view": "layout", "canvas": prepared["canvas"],
             "scene_layout": measured['scene_layout'],

@@ -18,6 +18,12 @@ successfully.
    fail at render time; inspect the error and run `doctor` before retrying.
 3. Make a quick `export --preview` or one or more short `watch --precise`
    renders when framing, motion, transitions, captions, or audio need review.
+   For transitions between spatial scenes, use `screenshot --at TIMECODE` or
+   `composition model preview --at TIMECODE --out frame.png --layout-out layout.png`
+   to inspect both named scene layers and weights at one moment. Read `frame.kind`:
+   a transition frame has `layers` rather than root `children`. The labeled view
+   keeps both trees visible with role/weight labels. Mixed/preset transitions and
+   overlapping internal windows still require `watch` or `export`.
 4. View returned image paths with the available image tool. Read video files
    with the available multimodal tool or sample them with `screenshot` and
    `watch`; do not ingest `--inline` Base64 as ordinary text.

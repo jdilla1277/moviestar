@@ -34,7 +34,8 @@ def spatial_frame_context(project, spec, timeline, at_s, dimensions):
                  if isinstance(s.get('duration'), dict)
                  and isinstance(s['duration'].get('seconds'), (int, float))}
     frame = compile_spatial_frame(spec, timeline, at_s, source_durations=durations)
-    tracks = {node['caption']['track'] for node in _captions(frame['children'])
+    from moviestar.spatial_transition import scene_frames
+    tracks = {node['caption']['track'] for child in scene_frames(frame) for node in _captions(child['children'])
               if node['caption']['track'] is not None}
     if tracks:
         spec = _refresh_caption_tracks(project, spec, tracks=tracks)
@@ -42,7 +43,7 @@ def spatial_frame_context(project, spec, timeline, at_s, dimensions):
     stale = {recipe['track'] for recipe in spec.get('captions', [])
              if recipe['track'] in tracks and not recipe.get('frozen')
              and _caption_staleness(project, spec, recipe)}
-    for node in _captions(frame['children']):
+    for node in (node for child in scene_frames(frame) for node in _captions(child['children'])):
         if node['caption']['track'] in stale:
             frame['diagnostics'].append({'code': 'stale_caption_track', 'path': node['occurrence_path'],
                 'track': node['caption']['track'],
@@ -107,9 +108,9 @@ def _platform_preview(plan, output, platform, report=None):
     # are actual browser measurements, including component motion.
     text = [{'id': '/'.join(box['path']), 'estimated_bounds': box['rect']}
             for box in (report or {}).get('boxes', []) if box['kind'] in {'text', 'caption'}
-            and box.get('text_lines')]
+            and box.get('text_lines') and box.get('transition_weight', 1) > 0]
     media = [{'slot': '/'.join(item['path']), 'region': item['rect']}
-             for item in (report or {}).get('media', [])]
+             for item in (report or {}).get('media', []) if item.get('transition_weight', 1) > 0]
     return c._plan_platform_preview(platform, plan['canvas_tuple'], str(output),
         planned_overlays={'plans': text}, slots=media, scene_name=plan['scene_window']['scene'])
 
@@ -178,6 +179,11 @@ def inspect_frames(project, spec, composition_plan, window_plans, samples, frame
     plans = [{'scene_id': p['scene'].get('id'), 'renderer': 'spatial' if 'spatial_frame' in p else 'preset',
               'result_time_s': sample['result_time'], 'out': str(path), 'canvas': p['canvas'],
               'thumbnail_width': width} for sample, p, path in zip(samples, frame_plans, paths)]
+    for summary, plan in zip(plans, frame_plans):
+        frame = plan.get('spatial_frame', {})
+        if frame.get('kind') == 'transition':
+            summary['transition'] = {'transitions': frame['transitions'], 'color_weights': frame['color_weights'],
+                'layers': [{key: layer[key] for key in ('scene_id', 'role', 'weight')} for layer in frame['layers']]}
     result = {'mode': 'spatial_composition', 'composition_type': 'scenes',
         'composition_canvas': composition_plan['canvas'],
         'composition_duration': format_timecode(composition_plan['composition_duration']),

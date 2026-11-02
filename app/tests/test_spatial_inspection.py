@@ -320,16 +320,16 @@ def test_spatial_screenshot_rejects_asset_overwrite_and_unsupported_format(proje
 
 
 @pytest.mark.parametrize('command', ['screenshot', 'inspect'])
-def test_spatial_frame_commands_reject_incomplete_transition_views(project, tmp_path, monkeypatch, command):
+def test_spatial_frame_commands_plan_complete_edge_transition_views(project, tmp_path, monkeypatch, command):
     spec, metadata = project
     _static(spec)
     spec['opening_transition'] = {'type': 'dip-black', 'duration': .2}
     _save(spec, metadata, tmp_path, monkeypatch)
     args = [command, '--at', '.1', '--out', 'prior.png'] if command == 'screenshot' else [command, '--from', '0', '--to', '.3']
     Path('prior.png').write_bytes(b'prior')
-    result = CliRunner().invoke(cli, args)
-    assert result.exit_code == 1
-    assert 'transition' in json.loads(result.stdout)['error']
+    result = CliRunner().invoke(cli, [*args, '--dry-run'])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)['render_available'] is True
     assert Path('prior.png').read_bytes() == b'prior'
 
 
@@ -356,12 +356,11 @@ def _end_sample_transition(spec, *, spatial_owner):
     spec['composition'].insert(0, footage)
 
 
-@pytest.mark.parametrize('spatial_owner', [False, True])
 @pytest.mark.parametrize('dry_run', [False, True])
-def test_exact_end_screenshot_rejects_transition_at_selected_output_sample(
-        project, tmp_path, monkeypatch, spatial_owner, dry_run):
+def test_exact_end_screenshot_rejects_mixed_transition_at_selected_output_sample(
+        project, tmp_path, monkeypatch, dry_run):
     spec, metadata = project
-    _end_sample_transition(spec, spatial_owner=spatial_owner)
+    _end_sample_transition(spec, spatial_owner=False)
     _save(spec, metadata, tmp_path, monkeypatch)
     # At 10 fps the .14s endpoint selects .1s, inside the .09-.13s
     # dissolve, even though the requested endpoint is past the transition.
@@ -374,14 +373,15 @@ def test_exact_end_screenshot_rejects_transition_at_selected_output_sample(
         assert Path('prior.png').read_bytes() == b'prior'
 
 
-def test_exact_end_compiler_rejects_transition_at_selected_output_sample(project):
+def test_exact_end_compiler_describes_transition_at_selected_output_sample(project):
     from moviestar.resolved import resolve_project
-    from moviestar.spatial_model import SpatialModelError, compile_spatial_frame
+    from moviestar.spatial_model import compile_spatial_frame
 
     spec, metadata = project
     _end_sample_transition(spec, spatial_owner=True)
     timeline = resolve_project(metadata, spec)
     assert timeline.duration_s == .14 and timeline.output_fps == 10
     for at_s in (.1, timeline.duration_s):
-        with pytest.raises(SpatialModelError, match='transition'):
-            compile_spatial_frame(spec, timeline, at_s)
+        frame = compile_spatial_frame(spec, timeline, at_s, source_durations={'camera': 2})
+        assert frame['kind'] == 'transition'
+        assert frame['sample_time_s'] == .1

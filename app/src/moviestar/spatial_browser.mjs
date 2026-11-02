@@ -348,13 +348,13 @@ async function render(input) {
       element.style.backgroundClip = 'border-box';
     }
     for (const {node, element} of entries) {
-      element.style.outline = '1px solid #ffb000';
+      element.style.outline = node.guide_outline ?? '1px solid #ffb000';
       if (node.kind === 'text' || node.kind === 'caption') element.style.color = 'transparent';
       if (node.kind === 'video' || node.kind === 'image') element.style.backgroundColor = '#a9bed0';
     }
     for (const box of boxes) {
       const label = document.createElement('div');
-      label.textContent = `${box.kind}: ${box.path.join('/')}`;
+      label.textContent = `${box.kind}: ${box.path.join('/')} ${entries[box.dom_order].node.guide_label ?? ''}`.trim();
       label.style.cssText = 'position:absolute;z-index:2147483647;background:#13263a;color:white;'
         + 'font:12px monospace;padding:2px 4px;max-width:95%;white-space:nowrap;'
         + 'overflow:hidden;text-overflow:ellipsis;pointer-events:none';
@@ -383,6 +383,13 @@ async function render(input) {
       label.style.cssText = 'background:#13263a;position:absolute;bottom:0;left:0;white-space:nowrap';
       guide.append(label);
       document.body.append(guide);
+    }
+    if (input.transition_summary) {
+      const label = document.createElement('div');
+      label.textContent = input.transition_summary;
+      label.style.cssText = 'position:absolute;left:0;top:0;z-index:2147483647;background:#13263a;'
+        + 'color:white;font:12px monospace;padding:3px;max-width:100%;box-sizing:border-box';
+      document.body.append(label);
     }
   }
   window.moviestarLabelView = labelView;

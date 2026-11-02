@@ -212,9 +212,71 @@ Both commands support dry-run plans without launching Chrome, decoding assets,
 or creating output directories. Runtime asset, CSS, and measured overflow errors
 can still reject rendering. At the exact project end, frame selection uses the
 last global output sample, even if that sample belongs to the previous scene.
-Single-frame inspection of active transitions remains an explicit JSON error in
-projects using spatial composition; use `watch` or `export` for the complete
-transition. `model layout` remains the labeled-box and draft-placeholder view.
+Transitions between spatial scenes and spatial project-edge fades use the same
+layered still-frame path. Mixed/preset transitions and overlapping internal
+transition windows still return an explicit JSON error; use `watch` or `export`
+for those cases. `model layout` remains the labeled-box and draft-placeholder view.
+
+## Inspecting a spatial transition at one moment
+
+The existing frame, layout, preview, screenshot, and inspect commands support
+`dissolve`, `dip-black`, and `dip-white` between two spatial scenes, plus opening
+and closing fades on a spatial scene. There is no new command or saved object.
+The existing timeline still determines the cut, transition window, pacing,
+source handles, and result time. At exact project end, transition selection uses
+the last global output sample, which can fall before the final scene begins.
+
+During a supported transition, `frame.kind` is `"transition"`. Unlike an ordinary
+single-scene frame, this frame contains `layers` instead of a root `children`
+array. Each layer has its scene ID/index, role, weight, and the ordinary owned
+scene `frame`, including stable child paths, resolved media positions, captions,
+and motion. `transitions` describes the authored windows and sampled progress;
+`color_weights` records any black/white contribution. Ordinary frame responses
+retain their existing shape outside transition windows.
+
+Dissolves extend each scene's footage through the existing handle mapping;
+component motion and captions hold their owning scene's edge during handles.
+Dips need no footage handles. An invisible dip layer is described at its owning
+edge without inventing media outside its authored range. Missing content,
+insufficient handles, and scene-local reservation/overflow errors still block
+rendering. A zero-weight layer remains inspectable and must be renderable,
+matching the video renderer's scene-level validation. Placed live caption tracks
+from both trees refresh in memory, without saving a project revision or adding
+implicit captions or audio.
+
+Rendered views blend the full scene composites, including text, images, captions,
+and video. Opening and closing fades apply after the internal blend, in the same
+order as video export. PNG screenshots and model previews share pixels and
+measured geometry; H.264 exports have normal codec/color rounding differences.
+`spatial_preview` and `layout` flatten measured boxes with `scene_id`,
+`scene_role`, `transition_weight`, and `layer_index`; their stable `path` and
+per-scene DOM order remain unchanged. The reports also retain layer layout rules,
+scene clocks, media, and reservations. No cross-scene collision warning is added:
+layering the two scene trees is the purpose of a transition.
+
+The labeled PNG draws both trees' measured guides at full visibility on a neutral
+background. Cyan/magenta outlines, stable paths, role/weight labels, and a
+transition heading keep the layout inspectable even at a full dip to black.
+Reserved targets retain dashed guides. These guides describe layout; they are
+not faded source pixels. The JSON still carries exact text wrapping and geometry
+from each original tree. Labeled outputs from `model layout` and preview's
+`--layout-out` use the same measured data. Layout inspection needs no available
+media files and can still show draft diagnostics.
+
+A command-owned browser serves all participating layers. Inspection borrows its
+batch's existing session. Outputs are staged until layer rendering, guide
+creation, blending, and normal owned-browser shutdown succeed; failures retain
+prior artifacts. Dry-runs validate frame plans without starting Chrome, decoding
+media, or creating output directories. An inspect dry-run includes contributing
+scene IDs, roles, weights, and color/window state for each transition sample.
+Inspection images are resized after measuring at the authored canvas.
+
+Still rendering deliberately rejects mixed spatial/preset transitions, preset
+project-edge fades, and multiple overlapping internal transition windows.
+`watch` and `export` continue to support their existing video transition path.
+These limits do not change scene duration or silently substitute one scene for a
+complete blended frame. A single internal transition may overlap opening/closing
+fades; those edge effects are included in the still description and pixels.
 
 ## Reserved regions and intentional overlap
 
@@ -472,13 +534,10 @@ Node setup as layout inspection, plus FFmpeg/ffprobe. Output paths must be disti
 PNG files in existing directories and cannot overwrite a project asset. Asset or
 paint failures preserve an existing preview, and no project revision is written.
 
-`model preview` remains a single-frame view and rejects active transition
-windows rather than showing an incomplete scene layer. `watch` and `export`
-compose the scene layers through the video transition stage described below.
-Static-only scene timing remains a separate contract. Browser graphics, video
-visibility masks, and video frame sequences are temporary artifacts; no
-unchanged-clip cache is introduced. See the [rendering contract](design/spatial-frame-rendering.md)
-for the compositing boundary and parity evidence.
+`model preview` supports transitions between spatial scenes and project-edge
+fades on a spatial scene. Mixed/preset transitions and multiple overlapping
+internal transitions require `watch` or `export`. See [transition-frame inspection](#inspecting-a-spatial-transition-at-one-moment)
+for the layered response and inspection behavior.
 
 ## Video watch and export
 
@@ -526,7 +585,10 @@ A partial watch includes any transition context needed around its range, renders
 that context from an origin on the global output frame grid through the same
 compositor, then selects the requested frames. Audio retains its exact requested
 result-time window, independently of video sampling. This keeps a watch
-inside a dissolve consistent with the corresponding export frames.
+inside a dissolve or dip consistent with the corresponding export frames.
+When a dip cut falls between output frames, its fade still uses the authored
+cut time: the first incoming frame includes the elapsed fraction of the fade,
+matching the screenshot rather than restarting at full black or white.
 
 Dry-run reports `spatial_render_plan` with scene IDs, frame counts, result ranges,
 and temporary PNG-sequence inputs, plus scene encoding/concat/finish commands
