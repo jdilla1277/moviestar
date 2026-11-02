@@ -96,6 +96,11 @@ sharing; never trust arbitrary Preview domains.
 
 `moviestar shares` lists links with optional `--video` and `--cursor` pagination.
 `moviestar unshare LINK_ID` revokes one link, preserving the video and quota.
+When the human requests deletion, `moviestar delete VIDEO_ID` permanently deletes
+that hosted video and all its links, freeing quota after cleanup. Preview with
+`--dry-run`; local files stay intact. Retry the same video ID if deletion is
+pending or unknown. Do not claim quota was released unless the service confirms
+`deleted` or `already_deleted`.
 `moviestar download WATCH_URL --out FILE` saves a finished MP4 anonymously and
 never overwrites a file. The recipient gets no project or source history.
 Anyone holding an unlisted link can watch, download, and forward it. When the
@@ -113,5 +118,6 @@ provider acceptance, not inbox delivery; `email_sent: null` means uncertain.
 Do not re-upload or create another link to recover email. After
 `delivery_unknown`, check with the recipient before deliberately sending again
 with a new key. A new key sends another message subject to service limits.
-Video deletion remains unavailable. If hosting or email is paused, report the
-returned status; never claim a link was created or an email was sent.
+Deletion and revocation remain available when new uploads or publication are
+paused. If hosting or email is paused, report the returned status; never claim
+a link was created or an email was sent.

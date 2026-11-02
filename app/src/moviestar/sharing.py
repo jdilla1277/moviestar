@@ -285,7 +285,7 @@ def shares(ctx: click.Context, video_id: str | None, cursor: str | None) -> None
     """List owned share links, including revoked history, or preview deletion.
 
     The list returns one page and next_cursor. Use --video to filter a video.
-    Deletion of a video and all its links is a separate, future operation.
+    Use moviestar delete VIDEO_ID to delete a video and all its links.
     """
     if ctx.invoked_subcommand is not None:
         return
@@ -356,18 +356,66 @@ def email_history(link_id: str, cursor: str | None) -> None:
     _emit({"command": "shares deliveries", "status": "ok", "link_id": link_id, "deliveries": items, "next_cursor": cursor})
 
 
+def _delete_uploaded_video(video_id: str, dry_run: bool, command: str) -> None:
+    fields = {"video_id": video_id, "video_deleted": False, "all_links_revoked": False,
+              "quota_released": False, "deletion_outcome": "not_attempted"}
+    if not _RESERVATION_RE.fullmatch(video_id):
+        _fail(command, "invalid_request", "Use the video_id returned by upload or share. Local files are not deleted.", **fields)
+    video_id = str(uuid.UUID(video_id))
+    fields["video_id"] = video_id
+    if dry_run:
+        _emit({"command": command, "status": "would_delete_video", **fields,
+               "owner": _owner_from_local_state(),
+               "hint": "This would permanently delete the uploaded video and revoke all its links. Already downloaded copies cannot be recalled. No ownership or service check was performed."})
+        return
+    origin, _, credential = _connection(command, **fields)
+    code, body = _json_request(f"{origin}/api/v1/videos/{video_id}", credential, method="DELETE")
+    status = body.get("status")
+    usage = _usage(body.get("quota"))
+    if (code == 200 and isinstance(status, str) and status in {"deleted", "already_deleted"}
+            and body.get("video_id") == video_id and body.get("video_deleted") is True
+            and body.get("all_links_revoked") is True and body.get("quota_released") is True
+            and usage is not None):
+        _emit({"command": command, "status": status, "video_id": video_id,
+               "video_deleted": True, "all_links_revoked": True, "quota_released": True,
+               "deletion_outcome": status, "quota": usage,
+               "hint": "The hosted video is deleted and its quota is available. Already downloaded copies cannot be recalled."})
+        return
+    if (code == 503 and status == "deletion_pending" and body.get("video_id") == video_id
+            and body.get("all_links_revoked") is True and body.get("video_deleted") is False
+            and body.get("quota_released") is False):
+        _fail(command, "deletion_pending", f"Links are disabled; storage cleanup is pending and quota remains charged. Retry 'moviestar delete {video_id}'.",
+              video_id=video_id, video_deleted=False, all_links_revoked=True, quota_released=False, deletion_outcome="pending")
+    rejected = {400: "invalid_request", 401: "not_connected", 404: "not_found"}
+    if code in rejected and status == rejected[code]:
+        hint = ("Run 'moviestar account status' and reconnect if needed." if code == 401
+                else "Check that this video ID belongs to the connected account.")
+        _fail(command, status, hint, **fields)
+    _fail(command, "deletion_unavailable", f"The deletion outcome is unknown. Retry 'moviestar delete {video_id}' to confirm it; do not assume the video or quota is unchanged.",
+          video_id=video_id, video_deleted=None, all_links_revoked=None, quota_released=None, deletion_outcome="unknown")
+
+
+@click.command("delete")
+@click.argument("video_id")
+@click.option("--dry-run", is_flag=True, help="Preview deletion locally without accessing credentials or the network.")
+def delete(video_id: str, dry_run: bool) -> None:
+    """Permanently delete an uploaded video and all its links, freeing quota.
+
+    VIDEO_ID is returned by upload or share. Local files and projects stay intact.
+    Downloaded copies cannot be recalled. Retry the same ID after interruption.
+    """
+    _delete_uploaded_video(video_id, dry_run, "delete")
+
+
 @shares.command("delete")
 @click.argument("video_id")
 @click.option("--dry-run", is_flag=True, help="Preview deletion without removing the video.")
 def delete_video(video_id: str, dry_run: bool) -> None:
-    """Preview deleting a video and all its links; live deletion is unavailable.
+    """Delete an uploaded video and all its links; alias for moviestar delete.
 
-    Unlike unshare, deletion would free storage. Downloaded copies cannot be recalled.
+    Unlike unshare, deletion frees storage. Downloaded copies cannot be recalled.
     """
-    if not dry_run:
-        _fail("shares delete", "not_available", "Video deletion is not available yet.", video_id=video_id, video_deleted=False)
-    _emit({"command": "shares delete", "status": "would_delete_video", "video_id": video_id,
-                     "video_deleted": False, "all_links_revoked": False, "quota_released": False})
+    _delete_uploaded_video(video_id, dry_run, "shares delete")
 
 
 @click.command("unshare")
@@ -377,7 +425,7 @@ def unshare(link_id: str, dry_run: bool) -> None:
     """Revoke one link, preserving its video, other links, and storage quota.
 
     Downloads cannot be recalled. Previously issued media URLs may remain valid
-    for up to 60 seconds. Video deletion is a separate future operation.
+    for up to 60 seconds. Use moviestar delete VIDEO_ID to delete its hosted video and free quota.
     """
     fields = {"link_id": link_id, "link_revoked": False, "video_deleted": False, "quota_released": False}
     if dry_run:
