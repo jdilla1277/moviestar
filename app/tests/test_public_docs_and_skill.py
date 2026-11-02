@@ -27,6 +27,7 @@ PUBLIC_DOCS = (
     ROOT / "docs" / "plugin-submission.md",
     ROOT / "docs" / "releases" / "v0.7.0.md",
     ROOT / "docs" / "releases" / "v0.7.1.md",
+    ROOT / "docs" / "releases" / "v0.8.0.md",
 )
 
 
