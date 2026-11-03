@@ -474,10 +474,11 @@ def model() -> None:
 @model.group("layouts", invoke_without_command=True)
 @click.pass_context
 def model_layouts(ctx: click.Context) -> None:
-    """Discover, inspect, and copy editable built-in layouts into existing scenes.
+    """Discover built-in layouts and save or inspect project arrangements.
 
     With no subcommand, list the catalog. These layouts use ordinary components,
-    bindings, and CSS-like rules. Saved user-created layouts follow separately.
+    bindings, and CSS-like rules. Saved layouts expose fresh content inputs;
+    applying saved layouts is a separate follow-on.
     """
     if ctx.invoked_subcommand is None:
         ctx.invoke(model_layouts_list)
@@ -485,12 +486,23 @@ def model_layouts(ctx: click.Context) -> None:
 
 @model_layouts.command("list")
 def model_layouts_list() -> None:
-    """List built-in starting layouts and their typed content inputs."""
+    """List built-in starting points and saved project arrangements."""
+    from moviestar.cli import _error_exit
     from moviestar.spatial_catalog import list_builtin_layouts
+    from moviestar.spatial_saved_layouts import inspect_saved_layout
+    from moviestar.spec import SpecValidationError, load_spec
 
+    items = [{**item, 'kind': 'builtin', 'can_apply': True} for item in list_builtin_layouts()]
+    try:
+        spec = load_spec()
+        for identity in sorted(((spec or {}).get('spatial') or {}).get('layouts', {})):
+            view = inspect_saved_layout(spec, identity)
+            items.append({key: view[key] for key in ('id', 'name', 'kind', 'inputs', 'can_apply', 'diagnostics')})
+    except (ValueError, SpecValidationError) as exc:
+        _error_exit('composition model layouts list', str(exc))
     click.echo(json.dumps({"status": "catalog", "writes_spec": False,
-                           "layouts": list_builtin_layouts(),
-                           "hint": "Use layouts show ID, then layouts apply ID --scene SCENE_ID --bindings FILE."}, indent=2))
+                           "layouts": items,
+                           "hint": "Use layouts show ID. Built-ins support apply; save a scene's design with layouts save ID --scene SCENE_ID."}, indent=2))
 
 
 @model_layouts.command("show")
@@ -498,18 +510,70 @@ def model_layouts_list() -> None:
 def model_layouts_show(layout_id: str) -> None:
     """Show an editable arrangement, component definitions, and typed inputs.
 
-    Does not require a loaded project. Targets use catalog prototype IDs; apply
-    allocates fresh occurrence IDs and returns the actual scene tree.
+    Built-ins do not require a project. Use saved:ID to inspect a saved project
+    arrangement and its open inputs. Saved layouts are structural views, without
+    a sampled timeline or measured browser boxes. Built-in apply allocates fresh
+    occurrence IDs and returns the actual scene tree.
     """
     from moviestar.cli import _error_exit
     from moviestar.spatial_catalog import builtin_layout
     from moviestar.spatial_model import SpatialModelError
+    from moviestar.spatial_saved_layouts import inspect_saved_layout
+    from moviestar.spec import SpecValidationError, load_spec
 
     try:
-        item = builtin_layout(layout_id)
-    except SpatialModelError as exc:
+        if layout_id.startswith('saved:'):
+            spec = load_spec()
+            if spec is None:
+                raise SpatialModelError('Load a project before inspecting its saved layouts.')
+            item = inspect_saved_layout(spec, layout_id.removeprefix('saved:'))
+        else:
+            item = builtin_layout(layout_id)
+    except (SpatialModelError, SpecValidationError) as exc:
         _error_exit("composition model layouts show", str(exc))
     click.echo(json.dumps({"status": "catalog", "writes_spec": False, **item}, indent=2))
+
+
+@model_layouts.command('save')
+@click.argument('layout_id')
+@click.option('--scene', 'scene_id', required=True, help='Existing scene ID with a spatial tree.')
+@click.option('--name', help='Display name for the saved arrangement; defaults to its ID.')
+@click.option('--keep-text', is_flag=True, help='Explicitly retain current text as input defaults; media and captions stay unbound.')
+@click.option('--replace', is_flag=True, help='Replace an existing saved layout after reviewing dry-run.')
+@click.option('--expected-state-id', help='Reject a save planned against a different project state.')
+@click.option('--dry-run', is_flag=True, help='Review the design and open inputs without saving.')
+def model_layouts_save(layout_id: str, scene_id: str, name: str | None, keep_text: bool,
+                       replace: bool, expected_state_id: str | None, dry_run: bool) -> None:
+    """Save one scene's design with typed content inputs, recording one undo step.
+
+    Preserves component links, local edits, placement, format rules, and scene-time
+    motion. Footage/ranges, logos, and caption tracks become open inputs, including
+    inherited assignments in nested components. Text is also open unless
+    --keep-text explicitly retains it. The source scene and definitions stay intact.
+
+    Inspect with layouts show saved:ID. This slice saves and inspects layouts;
+    applying them to other scenes follows separately.
+    """
+    from moviestar.cli import _error_exit
+    from moviestar.spatial_saved_layouts import SavedLayoutError, save_layout
+    from moviestar.spec import SpecValidationError, load_spec, save_spec
+
+    try:
+        spec = load_spec()
+        if spec is None:
+            raise ValueError('No spec.json found. Load a project and create a spatial scene first.')
+        changed, report = save_layout(spec, layout_id, scene_id, name=name, keep_text=keep_text,
+                                      replace=replace, expected_state_id=expected_state_id)
+        if not dry_run:
+            saved = save_spec(changed, command=f'composition model layouts save {layout_id} --scene {scene_id}')
+            report.update(writes_spec=True, revision=len(saved['revisions']))
+    except SavedLayoutError as exc:
+        click.echo(json.dumps({'command': 'composition model layouts save', 'error': str(exc),
+                               'diagnostics': exc.diagnostics, 'writes_spec': False}, indent=2))
+        raise SystemExit(1) from exc
+    except (OSError, ValueError, SpecValidationError) as exc:
+        _error_exit('composition model layouts save', str(exc))
+    click.echo(json.dumps({'status': 'preview' if dry_run else 'saved', **report}, indent=2))
 
 
 @model_layouts.command("apply")
@@ -537,6 +601,8 @@ def model_layouts_apply(layout_id: str, scene_id: str, bindings: Path | None,
     from moviestar.spec import SpecValidationError, load_spec, save_spec
 
     try:
+        if layout_id.startswith('saved:'):
+            raise ValueError('Saved layouts support save/show in this slice; applying them to scenes follows separately.')
         values = json.loads(bindings.read_text()) if bindings is not None else {}
         if not isinstance(values, dict):
             raise ValueError("bindings: expected a JSON object mapping input names to typed values")

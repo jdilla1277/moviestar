@@ -130,6 +130,13 @@
             }
           }
         },
+        "layouts": {
+          "description": "Project-owned layout prototypes. Content inputs target expanded leaves; component references remain linked.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/spatial_saved_layout"
+          }
+        },
         "definitions": {
           "type": "object",
           "additionalProperties": { "$ref": "#/$defs/spatial_definition" }
@@ -143,6 +150,38 @@
         }
       },
       "additionalProperties": false
+    },
+    "spatial_saved_layout": {
+      "description": "A linked design prototype with content inputs targeting expanded elements. Only explicit text defaults may be retained.",
+      "type": "object", "required": ["name", "layout", "inputs"], "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "layout": { "$ref": "#/$defs/spatial_layout" },
+        "inputs": {
+          "type": "array", "items": {
+            "type": "object", "required": ["name", "type", "target"], "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "type": { "enum": ["video", "image", "text", "caption"] },
+              "required": { "type": "boolean" },
+              "target": { "$ref": "#/$defs/spatial_region_path" },
+              "default": {
+                "anyOf": [
+                  { "type": "string" },
+                  { "type": "object", "required": ["text"], "additionalProperties": false,
+                    "properties": { "text": { "type": "string" } } },
+                  { "type": "object", "required": ["empty"], "additionalProperties": false,
+                    "properties": { "empty": { "const": true } } }
+                ]
+              }
+            },
+            "allOf": [{
+              "if": { "properties": { "type": { "enum": ["video", "image", "caption"] } } },
+              "then": { "not": { "required": ["default"] } }
+            }]
+          }
+        }
+      }
     },
     "spatial_definition": {
       "type": "object", "required": ["name", "children"],

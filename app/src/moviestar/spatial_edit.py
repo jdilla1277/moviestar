@@ -23,6 +23,9 @@ class SpatialEditConflict(SpatialModelError):
         self.hint = ('Update the affected scene layout reserved_regions paths before removing these targets.'
                      if any(item['code'] == 'unknown_reserved_region_target' for item in conflicts)
                      else 'Reset the affected customization, or save a separate component variation.')
+        if any(item['code'] == 'saved_layout_content_changed'
+               or str(item['path'][0]).startswith('saved:') for item in conflicts):
+            self.hint = 'Replace the affected saved layout after reviewing its content inputs, or preserve the referenced targets.'
         super().__init__(f"shared edit conflict at {', '.join(paths)}; {self.hint}")
 
 
@@ -326,6 +329,8 @@ def _reference_paths(spatial: dict, definition_id: str) -> list[list[str]]:
 
     for scene_id, scene in spatial.get("scenes", {}).items():
         walk(scene["layout"]["children"], [scene_id])
+    for layout_id, layout in spatial.get("layouts", {}).items():
+        walk(layout['layout']['children'], ['layouts', layout_id])
     for owner_id, definition in spatial.get("definitions", {}).items():
         if owner_id != definition_id:
             walk(definition["children"], [owner_id])
@@ -353,6 +358,9 @@ def _asset_reference_paths(spatial: dict, asset_id: str) -> list[list[str]]:
 def _conflicts(spec: dict) -> list[dict]:
     conflicts = []
     spatial = spec.get("spatial", {})
+    from moviestar.spatial_saved_layouts import saved_layout_diagnostics
+    for layout_id in spatial.get('layouts', {}):
+        conflicts.extend(saved_layout_diagnostics(spec, layout_id))
     for scene_id in spatial.get("scenes", {}):
         conflicts.extend(item for item in expand_spatial_scene(spec, scene_id)["diagnostics"]
                          if item["code"] in {"customization_conflict", "unknown_reserved_region_target"})
@@ -413,6 +421,9 @@ def edit_spatial_model(spec: dict, request: dict) -> tuple[dict, dict]:
         _fail("spatial: apply a spatial document before editing")
     before_scenes = {scene_id: _impact_tree(expand_spatial_scene(spec, scene_id))
                      for scene_id in spatial.get("scenes", {})}
+    from moviestar.spatial_saved_layouts import inspect_saved_layout
+    before_layouts = {identity: _impact_tree(inspect_saved_layout(spec, identity)['expanded'])
+                      for identity in spatial.get('layouts', {})}
     before = _conflicts(spec)
     result = deepcopy(spec)
     spatial = result["spatial"]
@@ -464,6 +475,8 @@ def edit_spatial_model(spec: dict, request: dict) -> tuple[dict, dict]:
         _fail(str(exc))
     after_scenes = {scene_id: _impact_tree(expand_spatial_scene(result, scene_id))
                     for scene_id in spatial.get("scenes", {})}
+    affected_layouts = [f'saved:{identity}' for identity, before_layout in before_layouts.items()
+                        if before_layout != _impact_tree(inspect_saved_layout(result, identity)['expanded'])]
     new_conflicts = [item for item in _conflicts(result) if item not in before]
     if new_conflicts:
         raise SpatialEditConflict(new_conflicts)
@@ -475,6 +488,7 @@ def edit_spatial_model(spec: dict, request: dict) -> tuple[dict, dict]:
         affected_occurrences.extend(list(path) for path in sorted(prior.keys() | current.keys())
                                     if prior.get(path) != current.get(path))
     return result, {"op": op, "affected": sorted(affected), "created": created,
+                    "affected_layouts": sorted(affected_layouts),
                     "affected_occurrences": affected_occurrences,
                     "conflicts": [], "writes_spec": False,
                     "state_id_before": current_state_id, "state_id_after": spatial_state_id(result)}

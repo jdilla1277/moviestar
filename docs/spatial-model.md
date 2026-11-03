@@ -93,8 +93,89 @@ legacy camera/framing/motion/overlays are not migrated into that tree. Bind medi
 and captions explicitly, then inspect the result. Reusing a video visually does
 not add another audio route. A portrait preview changes layout rules without
 changing timing. These are editable starting points, not pixel-identical
-conversions of the legacy presets. Saving user-created layouts for reuse is a
-separate follow-on.
+conversions of the legacy presets.
+
+## Save a scene's arrangement
+
+Save an editable spatial scene as a named project layout:
+
+```sh
+moviestar composition model layouts save interview --scene scene_a --name "Interview" --dry-run
+moviestar composition model layouts save interview --scene scene_a --name "Interview"
+moviestar composition model layouts list
+moviestar composition model layouts show saved:interview
+```
+
+Saving preserves placement, styles, portrait/landscape rules, reserved regions,
+scene-relative motion, component references, and local property/structural edits.
+The source scene and project component definitions remain unchanged. Saving
+records one undo revision; `undo` restores the previous catalog. Use
+`--expected-state-id` with the dry-run response's `state_id_before` to reject a
+stale plan. Replacing a saved record requires `--replace`.
+
+Every video, image, caption, and text element becomes a typed named input. This
+includes inherited content inside nested components and locally inserted children.
+No footage asset, source range, logo assignment, or caption track becomes an
+implicit content default. Missing or unavailable original content can be saved
+because new content must be supplied later. Text is open by default too; pass
+`--keep-text` to explicitly retain current text as defaults. Media and caption
+defaults are always prohibited. Cycles, unresolved component references,
+conflicting local edits, unsupported inherited content, and source-specific
+metadata report paths and stop saving before any revision is written.
+
+Empty optional image/caption regions remain optional inputs; they do not become
+mandatory content just because the arrangement was saved.
+
+The response shows open inputs, referenced component IDs, font-family design
+dependencies, and the latest scene-relative motion keyframe. It does not copy
+scene identity, duration, timeline position, audio routes, overlays/transcript
+cues, or source-specific timing. The current motion model accepts scene-relative
+keyframes only. Applying a saved arrangement will need to validate those
+keyframes against the destination scene's duration.
+
+Project IDs are stored without a prefix (`interview`), and appear alongside
+built-ins as `saved:interview`. Each input has a generated name and a `target`
+path from the layout root to an expanded content element, omitting the source
+scene ID. For example:
+
+```json
+{
+  "name": "speaker_card_video",
+  "type": "video",
+  "required": true,
+  "target": ["speaker", "card", "video"]
+}
+```
+
+The record lives under `spatial.layouts`. Its `layout` preserves the ordinary
+tree and component links, with local content/bindings masked as explicitly empty;
+`inputs` describes the content to substitute at expanded leaves. `show` returns
+this prototype plus an `expanded` structural view with input placeholders or
+explicit text defaults, never the old inherited media. This is a structural
+inspection, without a timeline clock or browser measurement.
+
+These leaf inputs are the saved arrangement's content contract. Component
+content defaults are not fallback content for an unfilled layout input, even
+when the unchanged shared definition still contains an old asset assignment.
+
+Shared style edits and additions of design-only shapes flow into that view.
+`model edit` reports affected saved arrangements in `affected_layouts`, including
+when their source scene no longer exists.
+Shared edits that add, remove, or change a content target conflict before writing;
+replace the saved layout after reviewing its inputs, or preserve the target.
+Saved arrangements also prevent deletion of referenced components, even if the
+source scene is gone. A bulk file edit can leave a readable stale layout;
+`list`/`show` return diagnostics instead of exposing newly inherited footage.
+For a deliberate shared content change, a replacement `model apply` document
+can update the definition and saved input targets together in one revision.
+Retain the rest of the spatial document and review the changed inputs first.
+Fonts remain design dependencies in the project; this does not package fonts or
+create a cross-project library.
+
+This slice supports saving, listing, and inspecting arrangements, with
+`can_apply: false` on saved catalog entries. Applying them to other scenes with
+new content, sampled preview, and their editing/deletion workflow are the next
+slice. Built-in `layouts apply` continues to work.
 
 ## Authoring
 
@@ -218,7 +299,7 @@ black; replace that layout with elements or reusable component instances using
 ```
 
 `model apply` replaces the entire spatial document; retain other scene trees,
-definitions, and image assets when applying a replacement. Renaming a scene
+definitions, image assets, and saved layouts when applying a replacement. Renaming a scene
 with the same ID preserves its tree, and undo restores duration, identity, and
 layout together. Deleting a slot-free scene's required tree is rejected before
 writing the spec.

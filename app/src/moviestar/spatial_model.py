@@ -291,7 +291,7 @@ def validate_spatial_model(spec: dict) -> None:
         if not isinstance(asset, dict) or asset.get("type") != "image":
             _fail(f"spatial.assets.{asset_id}.type", "must be image")
         _identifier(asset.get("path"), f"spatial.assets.{asset_id}.path")
-    if set(spatial) - {"definitions", "scenes", "assets"}:
+    if set(spatial) - {"definitions", "scenes", "assets", "layouts"}:
         _fail("spatial", "unknown field")
     for definition_id, definition in definitions.items():
         path = f"spatial.definitions.{definition_id}"
@@ -323,6 +323,8 @@ def validate_spatial_model(spec: dict) -> None:
         except SpatialRegionError as exc:
             raise SpatialModelError(str(exc)) from exc
         _children(scene["layout"].get("children"), f"{path}.layout.children", definitions, {})
+    from moviestar.spatial_saved_layouts import validate_saved_layouts
+    validate_saved_layouts(spec)
 
 
 def expand_spatial_scene(spec: dict, scene_id: str) -> dict:

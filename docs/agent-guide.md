@@ -62,6 +62,13 @@ as drafts. Inspect both rendered and labeled views, then use `model edit` for
 local/shared changes. See the [spatial model guide](spatial-model.md#editable-starting-layouts)
 for inputs, portrait rules, replacement, and undo.
 
+To keep a custom arrangement for reuse, run `composition model layouts save ID
+--scene SCENE_ID --dry-run`, then save and inspect `layouts show saved:ID`.
+Content becomes named inputs, including nested footage, logos, and captions;
+`--keep-text` explicitly retains text defaults. The source design is unchanged
+and saving is undoable. Saved layouts can be listed and inspected; applying them
+to new scenes follows separately. See [saving arrangements](spatial-model.md#save-a-scenes-arrangement).
+
 Large scene, overlay, caption, and audio changes are easier to audit through
 their dump/edit/set JSON workflows. Always validate replacement files with
 `--dry-run` before committing them to project state.
