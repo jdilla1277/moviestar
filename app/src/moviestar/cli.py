@@ -7072,6 +7072,7 @@ def _screenshot_scene_layout_composition(
         at_seconds,
         at_seconds + 0.001,
         "screenshot",
+        point_in_time=True,
     )
     overlay_plans = planned_overlays["plans"] if planned_overlays else None
     if output is None:
@@ -15435,6 +15436,7 @@ def _render_composition_frame(
         at_s,
         at_s + 0.001,
         command,
+        point_in_time=True,
     )
     _write_highlight_ass(planned_overlays)
     try:
@@ -18995,10 +18997,15 @@ def _overlay_render_context(
     window_from: float,
     window_to: float,
     command: str,
+    *,
+    point_in_time: bool = False,
 ) -> dict | None:
-    """Plan the overlays active in a render window, or None when the
-    spec has no overlays. Font and style-resolution failures exit with
-    structured errors — exported video never silently changes fonts."""
+    """Plan overlays in a render window, or exactly at its start for stills.
+
+    Static renderers draw every plan without its enable window, so select
+    point membership before planning geometry and highlight assets. Font and
+    style failures exit with structured errors rather than changing fonts.
+    """
     stored_overlays = spec.get("overlays") or []
     if not stored_overlays:
         return None
@@ -19006,9 +19013,12 @@ def _overlay_render_context(
         overlay_state = resolve_overlays(
             resolve_project(project, spec), stored_overlays
         )
-        planned = plan_overlays(
-            list(overlay_state.records), canvas_tuple, window_from, window_to
-        )
+        records = list(overlay_state.records)
+        if point_in_time:
+            records = [record for record in records
+                       if parse_timecode(record["from"]) <= window_from
+                       < parse_timecode(record["to"])]
+        planned = plan_overlays(records, canvas_tuple, window_from, window_to)
         planned["highlight_ass"] = _highlight_ass_assets(planned, canvas_tuple)
     except FontResolutionError as exc:
         _error_exit_with_hint(

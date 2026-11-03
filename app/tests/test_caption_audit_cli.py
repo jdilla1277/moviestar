@@ -190,3 +190,52 @@ def test_failed_derived_refresh_does_not_audit_an_old_cache_as_current(
     assert result.exit_code == 1
     assert "could not refresh" in json.loads(result.stdout)["error"]
     assert snapshot(tmp_path / "moviestar") == before
+
+
+def test_proof_contains_only_text_active_at_its_exact_timestamp(
+    loaded_project, tmp_path
+):
+    source = tmp_path / "black.mp4"
+    subprocess.run([
+        "ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i",
+        "color=black:s=320x240:r=30:d=1", "-c:v", "libx264", str(source),
+    ], check=True)
+    loaded_project(source, frames=False)
+    invoke("scenes", "set", "--canvas", "320x240", "--scene", "proof=single",
+           "--slot", "proof:main=src_0", "--from", "0", "--to", "1")
+    add_text("FLASH", 0.030, 0.034)
+    add_text("NEXT", 0.034, 1)
+    before = snapshot(tmp_path / "moviestar")
+    report = invoke("captions", "audit", "--track", "titles",
+                    "--proof-dir", str(tmp_path / "proof"))
+    frame = report["proofs"]["frames"][0]
+    assert frame["at"]["seconds"] == 1 / 30
+    state = next(s for s in report["states"] if s["id"] in frame["state_ids"])
+    assert [c["text"] for c in state["text_components"]] == ["FLASH"]
+    assert snapshot(tmp_path / "moviestar") == before
+
+    # Independent reference: remove NEXT entirely, rather than trusting the
+    # renderer's overlay envelope to prove which text reached the pixels.
+    spec_path = tmp_path / "moviestar" / "spec.json"
+    spec_bytes = spec_path.read_bytes()
+    spec = json.loads(spec_bytes)
+    spec["overlays"] = [o for o in spec["overlays"] if o["text"] == "FLASH"]
+    spec_path.write_text(json.dumps(spec))
+    reference = tmp_path / "flash-only.jpg"
+    invoke("screenshot", "--at", str(1 / 30), "--out", str(reference))
+    spec_path.write_bytes(spec_bytes)
+
+    def pixels(path):
+        return subprocess.check_output([
+            "ffmpeg", "-v", "error", "-i", str(path), "-pix_fmt", "gray",
+            "-f", "rawvideo", "-",
+        ])
+
+    expected = pixels(reference)
+    assert sum(value > 200 for value in expected) > 40
+    assert pixels(frame["out"]) == expected
+    # Include exact start/end membership, and an instant just before FLASH.
+    for at, expected_text in [(0.0295, []), (0.030, ["FLASH"]),
+                              (0.034, ["NEXT"])]:
+        result = invoke("screenshot", "--at", str(at), "--dry-run")
+        assert [o["text"] for o in result["overlays"]["items"]] == expected_text

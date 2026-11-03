@@ -65,7 +65,9 @@ Zero disables duration warnings. Connector checks are disabled unless requested.
 moviestar captions audit --track titles --connector-word y --connector-word de
 ```
 
-The heuristic matches whole words and does not infer grammar or meaning.
+The heuristic matches whole words, normalizes canonically equivalent Unicode
+spellings, and retains combining marks (for example, `कि` and decomposed accented
+words). It does not infer grammar or meaning.
 Intentional emphasis may legitimately contain short or connector-only text.
 Geometry changes are reported as facts, without automatically calling them
 mistakes: a longer caption naturally changes its estimated width.
@@ -83,7 +85,9 @@ moviestar captions audit --language en \
 
 `caption-proof` must be a new directory whose parent already exists. It receives
 project screenshots and `report.json`; the response's `out` names that report.
-Each frame links to its sampled states and result time. Sampling keeps timeline
+Each frame links to its sampled states and result time. Text is selected at
+that exact instant using half-open intervals (`from <= at < to`), so a caption
+starting just after the sample is excluded. Sampling keeps timeline
 endpoints and distributes findings across the edit, with duplicate frame times
 shared between tracks. The report states how many frames were planned and
 rendered. An interval falling entirely between expected output-frame times is

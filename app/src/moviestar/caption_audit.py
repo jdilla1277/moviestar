@@ -10,9 +10,9 @@ from collections import defaultdict
 import json
 import math
 from pathlib import Path
-import re
 import subprocess
 import sys
+import unicodedata
 
 from moviestar.overlays import plan_overlays, render_order_key
 from moviestar.timecodes import format_timecode, parse_timecode
@@ -23,7 +23,29 @@ _ENGLISH_CONNECTORS = frozenset({
     "a", "an", "and", "as", "at", "but", "by", "for", "from", "in",
     "nor", "of", "on", "or", "so", "the", "to", "with", "yet",
 })
-_WORD = re.compile(r"[^\W_]+(?:['’][^\W_]+)*", re.UNICODE)
+
+
+def _normalize_words(text: str) -> str:
+    # Case folding can introduce combining marks too (for example İ).
+    return unicodedata.normalize("NFC", unicodedata.normalize("NFC", text).casefold())
+
+
+def _words(text: str) -> list[str]:
+    """Tokenize letters/numbers with attached marks and internal apostrophes."""
+    text = _normalize_words(text)
+    words, current = [], []
+    for index, char in enumerate(text):
+        if (char.isalnum()
+                or (current and unicodedata.category(char).startswith("M"))
+                or (current and char in "'’" and index + 1 < len(text)
+                    and text[index + 1].isalnum())):
+            current.append(char)
+        elif current:
+            words.append("".join(current))
+            current = []
+    if current:
+        words.append("".join(current))
+    return words
 
 
 def _timecode(seconds: float) -> dict:
@@ -46,8 +68,8 @@ def _connectors(language: str | None, words) -> list[str]:
                          "connector words for another language.")
     selected = set(_ENGLISH_CONNECTORS if language == "en" else ())
     for word in words:
-        word = word.strip().casefold()
-        if not _WORD.fullmatch(word):
+        word = _normalize_words(word.strip())
+        if _words(word) != [word]:
             raise ValueError("Each connector word must be one word; repeat the "
                              "option to supply several words.")
         selected.add(word)
@@ -210,8 +232,7 @@ def audit_caption_states(
                     overlay_ids=active_ids, result_range=state["range"],
                     state_id=state["id"], threshold_seconds=min_duration,
                 ))
-            words = [word.casefold() for component in current
-                     for word in _WORD.findall(component["text"])]
+            words = [word for component in current for word in _words(component["text"])]
             if connectors and words and all(word in connectors for word in words):
                 warnings.append(_finding(
                     "caption_connector_only_state",

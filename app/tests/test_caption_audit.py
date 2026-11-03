@@ -205,3 +205,31 @@ def test_proof_does_not_round_a_frame_before_a_state_into_that_state():
     report = audit([record("flash", "and", 0.1 + 1e-12, 0.11)], 1)
     plan_caption_proofs(report, 30)
     assert report["proofs"]["planned_frames"] == 0
+
+
+@pytest.mark.parametrize("configured,text,normalized", [
+    ("कि", "कि!", "कि"),
+    ("và", "va\u0300!", "và"),
+    ("va\u0300", "VÀ!", "và"),
+    ("İ", "i\u0307!", "i\u0307"),
+])
+def test_connector_words_preserve_marks_and_canonical_equivalence(
+    configured, text, normalized
+):
+    report = audit([record("one", text, 0, 1)], connector_words=(configured,))
+    assert report["policy"]["connector_words"] == [normalized]
+    finding = next(w for w in report["warnings"]
+                   if w["code"] == "caption_connector_only_state")
+    assert finding["words"] == [normalized]
+
+
+@pytest.mark.parametrize("text", ["की", "कि बात", "vàng"])
+def test_connector_marks_and_whole_words_remain_significant(text):
+    report = audit([record("one", text, 0, 1)], connector_words=("कि", "và"))
+    assert "caption_connector_only_state" not in codes(report)
+
+
+@pytest.mark.parametrize("word", ["\u0300", "two words", "and!", "_and"])
+def test_custom_connector_requires_a_complete_word(word):
+    with pytest.raises(ValueError, match="one word"):
+        audit([], connector_words=(word,))
