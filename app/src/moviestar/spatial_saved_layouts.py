@@ -174,7 +174,7 @@ def validate_saved_layouts(spec: dict) -> None:
             raise SpatialModelError(f'{where}.layout: content must be empty and exposed as named inputs, never implicit defaults')
 
 
-def _expand(spec: dict, layout: dict, identity: str) -> dict:
+def _expand(spec: dict, layout: dict, identity: str, *, _identity_trace=None) -> dict:
     # A temporary structural owner lets the existing compiler resolve linked
     # definitions and customizations without a scene clock or an authored scene.
     root = f'saved:{identity}'
@@ -182,7 +182,7 @@ def _expand(spec: dict, layout: dict, identity: str) -> dict:
     probe = {'sources': spec['sources'], 'composition': [{'id': root, 'layout': {}}],
              'spatial': {'assets': spatial.get('assets', {}), 'definitions': spatial.get('definitions', {}),
                          'scenes': {root: {'layout': layout}}}}
-    return expand_spatial_scene(probe, root)
+    return expand_spatial_scene(probe, root, _identity_trace=_identity_trace)
 
 
 def _content_nodes(expanded: dict) -> dict:
@@ -299,15 +299,17 @@ def save_layout(spec: dict, identity: str, scene_id: str, *, name: str | None = 
 
 
 def _copy_layout(spec: dict, item: dict, identity: str, scene_id: str) -> tuple[dict, list]:
-    """Fresh authored IDs; inherited definition IDs stay stable within each use.
+    """Copy identities using the compiler's actual structural replay.
 
-    Remap paths and anchors explicitly, including locally inserted nodes. Never
-    replace arbitrary strings in content, definition references, or CSS values.
+    A path can name an inherited child, then several local replacements in one
+    operation sequence. Each authored node gets its own allocation; references
+    follow the node present when the compiler applies that operation. Property
+    overrides and final input/reservation paths follow the final expanded tree.
     """
     from uuid import NAMESPACE_URL, uuid5
     current = spatial_state_id(spec)
     layout, inputs = deepcopy(item['layout']), deepcopy(item['inputs'])
-    used, allocated = set(), {}
+    used, authored = set(), {}
 
     def scan(value):
         if isinstance(value, dict):
@@ -321,47 +323,82 @@ def _copy_layout(spec: dict, item: dict, identity: str, scene_id: str) -> tuple[
                 scan(child)
     scan(spec.get('spatial', {}))
 
+    # Mark only the temporary copy, never shared definitions. Deep copies during
+    # expansion preserve these private tokens, including removed/replaced nodes.
     def allocate(nodes, parent=()):
         for node in nodes:
             field = 'instance_id' if 'instance_id' in node else 'id'
             path = (*parent, node[field])
-            base = f"{node[field]}_{uuid5(NAMESPACE_URL, f'moviestar:saved:{current}:{scene_id}:{identity}:{path}').hex}"
+            token = len(authored)
+            seed = f'moviestar:saved:{current}:{scene_id}:{identity}:{path}:{token}'
+            base = f"{node[field]}_{uuid5(NAMESPACE_URL, seed).hex}"
             name, suffix = base, 1
             while name in used:
                 name = f'{base}_{suffix}'
                 suffix += 1
-            allocated[path] = name
             used.add(name)
+            authored[token] = (node, field, name)
+            node['_copy_identity'] = token
             allocate(node.get('children', []), path)
             for edit in node.get('customizations', []):
                 if edit['op'] == 'child_add':
                     allocate([edit['node']], (*path, *edit['path']))
     allocate(layout['children'])
+    paths, operations = {}, {}
 
-    def remap(path):
-        return [allocated.get(tuple(path[:index+1]), part) for index, part in enumerate(path)]
+    def materialize(node):
+        if '_copy_identity' not in node:
+            return node.get('id', node.get('instance_id'))
+        original, field, name = authored[node['_copy_identity']]
+        original[field] = name
+        return name
 
-    def rewrite(nodes, parent=()):
-        for node in nodes:
-            field = 'instance_id' if 'instance_id' in node else 'id'
-            path = (*parent, node[field])
-            node[field] = allocated[path]
-            rewrite(node.get('children', []), path)
-            for edit in node.get('customizations', []):
-                old = (*path, *edit['path'])
-                if edit['op'] == 'child_add':
-                    rewrite([edit['node']], old)
-                if edit.get('after_id') is not None:
-                    siblings = old if edit['op'] == 'child_add' else old[:-1]
-                    edit['after_id'] = allocated.get((*siblings, edit['after_id']), edit['after_id'])
-                edit['path'] = remap(old)[len(path):]
-    rewrite(layout['children'])
+    def trace(event, *args):
+        if event == 'node':
+            address, node = args
+            parent = paths.get(tuple(address[:-1]), address[:-1])
+            paths[tuple(address)] = [*parent, materialize(node)]
+        elif event == 'instance':
+            address, node, edits = args
+            if '_copy_identity' in node:
+                owner = authored[node['_copy_identity']][0]
+                for original, expanded in zip(owner.get('customizations', []), edits):
+                    operations[expanded['_token']] = (original, len(address))
+        elif event in {'structural', 'property'}:
+            edit = args[0]
+            if edit['_token'] not in operations:
+                return  # Definition-owned customizations retain their own IDs.
+            original, depth = operations[edit['_token']]
+            if event == 'property':
+                target = paths[tuple(args[1])]
+            else:
+                _, parent, node, anchor = args
+                target = paths.get(tuple(parent), parent)
+                if edit['op'] != 'child_add':
+                    target = [*target, materialize(node)]
+                else:
+                    materialize(node)
+                if anchor is not None:
+                    original['after_id'] = materialize(anchor)
+            original['path'] = target[depth:]
+
+    expanded = _expand(spec, layout, identity, _identity_trace=trace)
+    if expanded['diagnostics']:
+        # Missing prototype content is intentional; all design conflicts have
+        # already been checked by inspect_saved_layout before copying.
+        blocking = [entry for entry in expanded['diagnostics']
+                    if entry['code'] not in {'missing_binding', 'unknown_asset'}]
+        if blocking:
+            raise SavedLayoutError(blocking)
+    root = f'saved:{identity}'
     for entry in inputs:
-        entry['target'] = remap(entry['target'])
+        entry['target'] = paths[(root, *entry['target'])][1:]
     for region in layout.get('reserved_regions', []):
-        region['target'] = remap(region['target'])
+        region['target'] = paths[(root, *region['target'])][1:]
         if 'allow' in region:
-            region['allow'] = [remap(path) for path in region['allow']]
+            region['allow'] = [paths[(root, *path)][1:] for path in region['allow']]
+    for node, _, _ in authored.values():
+        node.pop('_copy_identity')
     return layout, inputs
 
 

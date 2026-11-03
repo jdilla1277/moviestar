@@ -352,13 +352,15 @@ def validate_spatial_model(spec: dict) -> None:
     validate_saved_layouts(spec)
 
 
-def expand_spatial_scene(spec: dict, scene_id: str, *, include_binding_provenance: bool = False) -> dict:
+def expand_spatial_scene(spec: dict, scene_id: str, *, include_binding_provenance: bool = False,
+                         _identity_trace=None) -> dict:
     """Resolve a scene tree using current shared definitions and local bindings.
 
     The result carries stable occurrence paths and addressable diagnostics. A
     cycle or missing definition stops only that branch, never recursion itself.
     Optional binding provenance records each leaf's input requirement, including
     forwarded declarations, independently of deduplicated missing-input errors.
+    An internal identity observer reuses this replay when cloning saved layouts.
     """
     validate_spatial_model(spec)
     spatial = spec.get("spatial") or {}
@@ -369,6 +371,7 @@ def expand_spatial_scene(spec: dict, scene_id: str, *, include_binding_provenanc
     sources = {item["id"] for item in spec["sources"]}
     images = set(spatial.get("assets", {}))
     scene = scenes[scene_id]
+    owns_content_contract = 'inputs' in scene
     scene_inputs = {tuple(entry['target']): entry for entry in scene.get('inputs', [])}
     used_scene_inputs = set()
     # Count original input consumers, including forwarded dependencies. A leaf
@@ -407,8 +410,14 @@ def expand_spatial_scene(spec: dict, scene_id: str, *, include_binding_provenanc
                 item = result.pop(index)
                 identities.pop(index)
                 if op == "child_remove":
+                    if _identity_trace is not None:
+                        _identity_trace('structural', edit, parent, item, None)
                     continue
             after_id = edit.get("after_id")
+            if _identity_trace is not None:
+                anchor = next((child for child in result
+                               if child.get('id', child.get('instance_id')) == after_id), None)
+                _identity_trace('structural', edit, parent, item, anchor)
             if after_id is None:
                 result.insert(0, item)
             elif after_id in identities:
@@ -446,11 +455,15 @@ def expand_spatial_scene(spec: dict, scene_id: str, *, include_binding_provenanc
             node = deepcopy(original)
             identity = node.get("id", node.get("instance_id"))
             address = [*path, identity]
+            if _identity_trace is not None:
+                _identity_trace('node', address, node)
             base_rules = {group: deepcopy(node.get(group, {})) for group in ('layout', 'style')}
             local_overrides: dict[str, dict] = {}
             for edit in edits:
                 if edit["op"] == "property_set" and edit["path"] == address:
                     applied_edits.add(edit["_token"])
+                    if _identity_trace is not None:
+                        _identity_trace('property', edit, address)
                     group, key = edit["property"].split(".")
                     node.setdefault(group, {})[key] = deepcopy(edit["value"])
                     overrides = local_overrides.setdefault(group, {})
@@ -520,13 +533,16 @@ def expand_spatial_scene(spec: dict, scene_id: str, *, include_binding_provenanc
             local_edits = [{**edit, "path": [*address, *edit["path"]], "_token": object()}
                            for edit in node.get("customizations", [])]
             tracked_edits.extend(local_edits)
+            if _identity_trace is not None:
+                _identity_trace('instance', address, node, local_edits)
             bindings = {}
             binding_requirements = {}
             child_dependencies = {}
             declarations = _inputs(definition, f"spatial.definitions.{definition_id}")
             for name, declaration in declarations.items():
                 supplied = node.get("bindings", {}).get(name)
-                dependency = {'uses': 0, 'overrides': 0}
+                dependency = {'uses': 0, 'overrides': 0,
+                              'content': declaration['type'] in {'video', 'image', 'text', 'caption'}}
                 child_dependencies[name] = [dependency]
                 if isinstance(supplied, dict) and 'forward' in supplied:
                     child_dependencies[name].extend(dependencies.get(supplied['forward'], []))
@@ -549,7 +565,7 @@ def expand_spatial_scene(spec: dict, scene_id: str, *, include_binding_provenanc
             for name in mandatory:
                 value = bindings[name]
                 if (value is None or (isinstance(value, dict) and value.get("empty") is True)) and name not in reported_here:
-                    if scene_inputs:
+                    if owns_content_contract:
                         pending_required.append((address, name, child_dependencies[name][0]))
                     else:
                         diagnostics.append({'code': 'missing_binding', 'path': address, 'input': name})
@@ -558,7 +574,10 @@ def expand_spatial_scene(spec: dict, scene_id: str, *, include_binding_provenanc
     layout = scenes[scene_id]["layout"]
     children = expand_nodes(layout["children"], [scene_id], {}, set(), set(), (), [], {}, {})
     for address, name, dependency in pending_required:
-        if not (dependency['uses'] and dependency['uses'] == dependency['overrides']):
+        # A copied leaf contract has no assignment for a content input whose
+        # consumers were all removed. Keep non-content requirements, and any
+        # surviving unoverridden consumers (including forwarded dependencies).
+        if not dependency['content'] or dependency['uses'] != dependency['overrides']:
             diagnostics.append({'code': 'missing_binding', 'path': address, 'input': name})
     for target in sorted(scene_inputs.keys() - used_scene_inputs):
         diagnostics.append({'code': 'content_binding_conflict', 'path': [scene_id, *target],

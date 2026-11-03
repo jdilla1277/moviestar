@@ -118,3 +118,43 @@ def test_saved_draft_has_measurable_placeholders_and_blocks_export(project,tmp_p
     assert result.exit_code==1
     assert json.loads(result.output)['error']
     assert prior.read_bytes()==b'prior output'
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
+@pytest.mark.parametrize('replacement',[False,True])
+def test_replaced_or_removed_last_media_consumer_previews_and_exports(project,tmp_path,monkeypatch,replacement):
+    spec,metadata=project
+    spec['composition'][0]['slots'][0]['source_to']='0:00:00.200'
+    # No source media is needed after the video child is removed/replaced. This
+    # checks readiness at the public commands, not merely structural expansion.
+    spec['sources'][0]['path']='/missing/original-footage.mkv'
+    metadata['sources'][0]['path']='/missing/original-footage.mkv'
+    spec['spatial']['definitions']={'card':{'name':'Card','inputs':[
+        {'name':'footage','type':'video','required':True}], 'children':[
+        {'id':'media','type':'video','content':{'input':'footage'}},
+        {'id':'title','type':'text','content':{'text':'Old'}}]}}
+    edits=[{'op':'child_remove','path':['media']}]
+    if replacement:
+        edits.append({'op':'child_add','path':[],'after_id':'title','node':{
+            'id':'media','type':'image','content':{'asset_id':'logo'},
+            'layout':{'width':32,'height':32}}})
+    spec['spatial']['scenes']['interview']['layout']={'children':[
+        {'instance_id':'card','definition_id':'card','bindings':{'footage':{'asset_id':'camera'}},
+         'customizations':edits}]}
+    spec,_=save_layout(spec,'card','interview')
+    values={'card_title':{'text':'Fresh title'}}
+    if replacement:
+        values['card_media']={'asset_id':'logo'}
+    spec,report=apply_saved_layout(spec,'card','interview',values,replace=True)
+    assert not report['diagnostics']
+    save_spec(spec,cwd=tmp_path)
+    save_project(metadata,cwd=tmp_path)
+    monkeypatch.chdir(tmp_path)
+    before=load_spec()
+    for args in [
+        ['composition','model','preview','--at','0:00:00.100','--out','ready.png','--layout-out','boxes.png'],
+        ['export','--out','ready.mp4','--video-encoder','x264','--quiet']]:
+        result=CliRunner().invoke(cli,args)
+        assert result.exit_code==0,result.output
+    assert (tmp_path/'ready.png').is_file() and (tmp_path/'ready.mp4').stat().st_size>0
+    assert load_spec()==before

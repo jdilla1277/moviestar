@@ -205,13 +205,20 @@ and use `undo` to restore one whole application.
 
 Authored elements, instances, and locally added children receive fresh IDs;
 customization paths/anchors, reservations, and input targets follow those IDs.
+Removing an inherited child and adding a replacement with the same authored ID preserves operation order: earlier removals
+and anchors address the old child; later references address its replacement.
+Property overrides and final input/reservation targets follow the final tree.
 Children inherited from a shared definition retain their definition IDs, with
 unique occurrence paths under each copied instance. Component references remain
 linked, and ordinary local/shared edits still apply. The copied scene owns its
 `inputs` and `bindings`, independent of the saved catalog entry. These inputs
 override content at their expanded leaf targets, including inherited literals
 and defaults. Missing required content reports each leaf; optional empty regions
-stay empty. There is no fallback to previous footage, logos, or caption tracks.
+stay empty. Required component content inputs whose consumers were all removed
+by structural customizations do not create unfillable requirements in a copied
+scene. Surviving consumers and non-content settings still enforce their inputs,
+including through forwarded bindings. There is no fallback to previous footage,
+logos, or caption tracks.
 
 Omit bindings to save a draft and use `model preview --layout-out` to inspect
 placeholders. Supply actual content before rendered preview/export; the usual
