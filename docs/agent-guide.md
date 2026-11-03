@@ -59,6 +59,13 @@ their dump/edit/set JSON workflows. Always validate replacement files with
 
 ## Verification
 
+Run `moviestar captions audit --language en` to inspect caption states across
+the complete result timeline. Duration and connector-word findings are advisory;
+language is opt-in. Select manual text with `--track NAME`, and combine related
+tracks with `--combine-tracks`. Add `--proof-dir NEW_DIRECTORY` for bounded
+rendered samples and a JSON report. See the [caption audit](caption-audit.md)
+for grouping, rules, geometry estimates, and proof coverage.
+
 Use stills for framing and text, `watch` for motion and audio, and `probe` for
 file structure. A final export should have a non-zero duration, expected video
 dimensions, the intended audio/video streams, and representative frames that
