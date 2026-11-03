@@ -125,6 +125,9 @@ metadata report paths and stop saving before any revision is written.
 
 Empty optional image/caption regions remain optional inputs; they do not become
 mandatory content just because the arrangement was saved.
+An unfilled required component input remains required at every element that
+consumes it, including through forwarded bindings in nested components. Child
+order does not change the saved inputs' requirements.
 
 The response shows open inputs, referenced component IDs, font-family design
 dependencies, and the latest scene-relative motion keyframe. It does not copy

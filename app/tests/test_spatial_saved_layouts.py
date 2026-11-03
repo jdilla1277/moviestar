@@ -356,3 +356,99 @@ def test_ignored_or_invalid_fields_cannot_hide_old_content_in_a_saved_prototype(
     assert result.exit_code == 1
     assert json.loads(result.output)['diagnostics']
     assert load_spec() == before
+
+
+def _shared_content_draft(kind, structure, reverse=False, *, required=True):
+    spec = _project()
+    pair_required = required if structure in {'direct', 'inner_required'} else False
+    children = [{'id': side, 'type': kind, 'content': {'input':'asset'}} for side in ('left','right')]
+    if reverse:
+        children.reverse()
+    definitions = {'pair': {'name':'Pair','inputs':[
+        {'name':'asset','type':kind,'required':pair_required}], 'children':children}}
+    root = 'pair'
+    if structure != 'direct':
+        definitions['wrapper'] = {'name':'Wrapper','inputs':[
+            {'name':'asset','type':kind,'required':required if structure != 'inner_required' else False}],
+            'children':[{'instance_id':'pair','definition_id':'pair',
+                         'bindings':{'asset':{'forward':'asset'}}}]}
+        root = 'wrapper'
+    if structure == 'nested':
+        definitions['wrapper']['inputs'][0]['required'] = False
+        definitions['outer'] = {'name':'Outer','inputs':[
+            {'name':'asset','type':kind,'required':required}],
+            'children':[{'instance_id':'wrapper','definition_id':'wrapper',
+                         'bindings':{'asset':{'forward':'asset'}}}]}
+        root = 'outer'
+    spec['spatial'] = {'definitions':definitions,'scenes':{'scene_a':{'layout':{
+        'children':[{'instance_id':'use','definition_id':root}]}}}}
+    validate_spec(spec)
+    return spec
+
+
+@pytest.mark.parametrize('kind', ['image','caption'])
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('structure', ['direct','wrapper','inner_required','nested'])
+def test_every_consumer_of_an_unbound_required_input_stays_required(kind, reverse, structure):
+    from moviestar.spatial_model import expand_spatial_scene
+    from moviestar.spatial_saved_layouts import save_layout
+    spec = _shared_content_draft(kind, structure, reverse)
+    before = deepcopy(spec)
+    expanded = expand_spatial_scene(spec, 'scene_a')
+    # The compiler's one-per-input diagnostic is intentionally not one per leaf.
+    assert len([d for d in expanded['diagnostics'] if d['code']=='missing_binding']) == 1
+    changed, _ = save_layout(spec, 'required_pair','scene_a')
+    inputs = changed['spatial']['layouts']['required_pair']['inputs']
+    assert {entry['target'][-1]: entry['required'] for entry in inputs} == {'left':True,'right':True}
+    assert spec == before
+    assert expand_spatial_scene(spec, 'scene_a') == expanded
+
+
+@pytest.mark.parametrize('kind', ['image','caption'])
+@pytest.mark.parametrize('structure', ['direct','wrapper','nested'])
+def test_all_consumers_of_an_unbound_optional_input_remain_optional(kind, structure):
+    from moviestar.spatial_saved_layouts import save_layout
+    spec = _shared_content_draft(kind, structure, required=False)
+    changed, _ = save_layout(spec,'optional_pair','scene_a')
+    inputs = changed['spatial']['layouts']['optional_pair']['inputs']
+    assert len(inputs) == 2
+    assert all(not entry['required'] for entry in inputs)
+
+
+@pytest.mark.parametrize('kind', ['image','caption'])
+def test_required_shared_draft_inputs_survive_save_reload_list_and_show(project, kind):
+    spec = _shared_content_draft(kind,'nested')
+    save_spec(spec)
+    _invoke('save','required_pair','--scene','scene_a')
+    restored = load_spec()
+    inputs = restored['spatial']['layouts']['required_pair']['inputs']
+    listed = next(i for i in _invoke('list')['layouts'] if i['id']=='saved:required_pair')
+    shown = _invoke('show','saved:required_pair')
+    assert listed['inputs'] == shown['inputs'] == inputs
+    assert len(inputs) == 2 and all(i['required'] for i in inputs)
+
+
+@pytest.mark.parametrize('kind', ['image','caption'])
+@pytest.mark.parametrize('empty_source', ['binding','default'])
+def test_required_empty_binding_or_default_applies_to_every_consumer(kind, empty_source):
+    from moviestar.spatial_saved_layouts import save_layout
+    spec = _shared_content_draft(kind, 'direct')
+    if empty_source == 'binding':
+        spec['spatial']['scenes']['scene_a']['layout']['children'][0]['bindings'] = {'asset':{'empty':True}}
+    else:
+        spec['spatial']['definitions']['pair']['inputs'][0]['default'] = {'empty':True}
+    changed, _ = save_layout(spec,'empty_required','scene_a')
+    assert all(i['required'] for i in changed['spatial']['layouts']['empty_required']['inputs'])
+
+
+@pytest.mark.parametrize('kind', ['image','caption'])
+def test_local_insertions_using_a_required_input_keep_the_same_requirement(kind):
+    from moviestar.spatial_saved_layouts import save_layout
+    spec = _shared_content_draft(kind, 'direct')
+    spec['spatial']['definitions']['pair']['children'].pop()
+    spec['spatial']['scenes']['scene_a']['layout']['children'][0]['customizations'] = [
+        {'op':'child_add','path':[],'after_id':'left',
+         'node':{'id':'local','type':kind,'content':{'input':'asset'}}}]
+    changed, _ = save_layout(spec,'with_local','scene_a')
+    inputs = changed['spatial']['layouts']['with_local']['inputs']
+    assert {i['target'][-1]:i['required'] for i in inputs} == {'left':True, 'local':True}

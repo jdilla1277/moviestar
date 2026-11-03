@@ -261,13 +261,12 @@ def save_layout(spec: dict, identity: str, scene_id: str, *, name: str | None = 
     layouts = spec['spatial'].get('layouts', {})
     if identity in layouts and not replace:
         raise SpatialModelError(f'layouts.{identity}: already exists; use --replace after reviewing dry-run')
-    expanded = expand_spatial_scene(spec, scene_id)
+    expanded = expand_spatial_scene(spec, scene_id, include_binding_provenance=True)
     blocking = [entry for entry in expanded['diagnostics'] if entry['code'] not in {'missing_binding', 'unknown_asset'}]
     if blocking:
         raise SavedLayoutError(blocking)
     _audit(spec, scene['layout'], expanded)
     inputs, names = [], set()
-    missing = {tuple(entry['path'][1:]) for entry in expanded['diagnostics'] if entry['code'] == 'missing_binding'}
     for path, node in _content_nodes(expanded).items():
         base, suffix = '_'.join(path), 2
         candidate = base
@@ -275,7 +274,8 @@ def save_layout(spec: dict, identity: str, scene_id: str, *, name: str | None = 
             candidate = f'{base}_{suffix}'
             suffix += 1
         names.add(candidate)
-        optional_empty = (node['type'] in {'caption', 'image'} and path not in missing
+        optional_empty = (node['type'] in {'caption', 'image'}
+                          and not node.get('content_provenance', {}).get('required', False)
                           and node.get('content') in (None, {'empty': True}))
         entry = {'name': candidate, 'type': node['type'], 'required': not optional_empty, 'target': list(path)}
         if keep_text and node['type'] == 'text' and isinstance(node.get('content'), dict):

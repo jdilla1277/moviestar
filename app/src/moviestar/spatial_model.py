@@ -327,11 +327,13 @@ def validate_spatial_model(spec: dict) -> None:
     validate_saved_layouts(spec)
 
 
-def expand_spatial_scene(spec: dict, scene_id: str) -> dict:
+def expand_spatial_scene(spec: dict, scene_id: str, *, include_binding_provenance: bool = False) -> dict:
     """Resolve a scene tree using current shared definitions and local bindings.
 
     The result carries stable occurrence paths and addressable diagnostics. A
     cycle or missing definition stops only that branch, never recursion itself.
+    Optional binding provenance records each leaf's input requirement, including
+    forwarded declarations, independently of deduplicated missing-input errors.
     """
     validate_spatial_model(spec)
     spatial = spec.get("spatial") or {}
@@ -405,7 +407,8 @@ def expand_spatial_scene(spec: dict, scene_id: str) -> dict:
 
     def expand_nodes(nodes: list, path: list[str], inputs: dict,
                      required: set[str], reported: set[str],
-                     ancestry: tuple[str, ...], edits: list[dict]) -> list[dict]:
+                     ancestry: tuple[str, ...], edits: list[dict],
+                     input_requirements: dict[str, bool]) -> list[dict]:
         expanded = []
         for original in apply_child_edits(nodes, path, edits):
             node = deepcopy(original)
@@ -440,10 +443,15 @@ def expand_spatial_scene(spec: dict, scene_id: str) -> dict:
                 if kind == "caption" and "content" in node and content is None:
                     content = {"empty": True}
                 item = {**common, "type": kind, "content": content}
+                authored_content = node.get('content')
+                if (include_binding_provenance and isinstance(authored_content, dict)
+                        and 'input' in authored_content):
+                    name = authored_content['input']
+                    item['content_provenance'] = {'input': name, 'required': input_requirements.get(name, False)}
                 if "children" in node or any(edit["op"] == "child_add" and edit["path"] == address
                                              for edit in edits):
                     item["children"] = expand_nodes(node.get("children", []), address, inputs,
-                                                    required, reported, ancestry, edits)
+                                                    required, reported, ancestry, edits, input_requirements)
                 expanded.append(item)
                 continue
             definition_id = node["definition_id"]
@@ -460,8 +468,14 @@ def expand_spatial_scene(spec: dict, scene_id: str) -> dict:
                            for edit in node.get("customizations", [])]
             tracked_edits.extend(local_edits)
             bindings = {}
-            for name, declaration in _inputs(definition, f"spatial.definitions.{definition_id}").items():
+            binding_requirements = {}
+            declarations = _inputs(definition, f"spatial.definitions.{definition_id}")
+            for name, declaration in declarations.items():
                 supplied = node.get("bindings", {}).get(name)
+                if include_binding_provenance:
+                    forwarded_required = (input_requirements.get(supplied['forward'], False)
+                                          if isinstance(supplied, dict) and 'forward' in supplied else False)
+                    binding_requirements[name] = bool(declaration.get('required') or forwarded_required)
                 if isinstance(supplied, dict) and "forward" in supplied:
                     supplied = inputs.get(supplied["forward"])
                 if supplied is None and "default" in declaration:
@@ -469,12 +483,11 @@ def expand_spatial_scene(spec: dict, scene_id: str) -> dict:
                     if not isinstance(supplied, dict):
                         supplied = {declaration["type"]: supplied}
                 bindings[name] = supplied
-            declarations = _inputs(definition, f"spatial.definitions.{definition_id}")
             mandatory = {name for name, entry in declarations.items() if entry.get("required")}
             reported_here: set[str] = set()
             item["children"] = expand_nodes(definition["children"], address, bindings,
                                             mandatory, reported_here,
-                                            (*ancestry, definition_id), [*local_edits, *edits])
+                                            (*ancestry, definition_id), [*local_edits, *edits], binding_requirements)
             for name in mandatory:
                 value = bindings[name]
                 if (value is None or (isinstance(value, dict) and value.get("empty") is True)) and name not in reported_here:
@@ -482,7 +495,7 @@ def expand_spatial_scene(spec: dict, scene_id: str) -> dict:
         return expanded
 
     layout = scenes[scene_id]["layout"]
-    children = expand_nodes(layout["children"], [scene_id], {}, set(), set(), (), [])
+    children = expand_nodes(layout["children"], [scene_id], {}, set(), set(), (), [], {})
     from moviestar.spatial_regions import region_reference_diagnostics
     diagnostics.extend(region_reference_diagnostics(layout.get('reserved_regions', []), scene_id, children))
     for edit in tracked_edits:
