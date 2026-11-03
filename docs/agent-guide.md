@@ -72,6 +72,32 @@ dimensions, the intended audio/video streams, and representative frames that
 match the request. Loudness reports help measure a mix but do not replace
 listening when subjective balance matters.
 
+When exporting with `--loudness-target`, check integrated loudness and the
+final encoded true peak separately in `loudness_normalization`:
+
+| Field | Meaning |
+| --- | --- |
+| `target_met` | Integrated LUFS is within `tolerance_lu` (±1 LU); this says nothing about peak compliance. |
+| `true_peak_limit_dbtp` | Requested peak ceiling, currently −1.5 dBTP. |
+| `true_peak_tolerance_db` | Reporting tolerance above that ceiling, currently 0.1 dB. |
+| `true_peak_status` | `compliant`, `exceeded`, `unmeasurable`, or `not_measured` for a dry run. |
+| `true_peak_limit_met` | `true` or `false` after measurement; `null` when unknown. |
+| `true_peak_overshoot_db` | Positive excess above the ceiling, or zero when below it; `null` when unknown. |
+
+A final peak at or below −1.4 dBTP passes the current reporting tolerance.
+An exceeded peak emits `true_peak_limit_exceeded` even when `target_met` is
+true. A missing or non-finite peak is reported as `null`, with
+`true_peak_unmeasurable`; it does not count as a compliance pass. Dry runs
+perform no measurement and emit neither warning.
+
+The gain plan caps the pre-encode waveform's predicted peak. AAC encoding can
+overshoot it, so `gain_limited_by_true_peak` and `max_achievable_lufs` describe
+the gain plan rather than prove the delivered ceiling. An exceeded peak keeps
+the export and its measured warning; no corrective re-encode or limiter is
+applied automatically. Leave additional headroom when needed and remeasure the
+finished artifact with `moviestar probe FINAL.mp4 --loudness`. Metrics do not
+replace listening.
+
 For vertical social delivery, run `moviestar screenshot --at TIMECODE
 --platform tiktok|instagram-reels|youtube-shorts` at representative and
 boundary frames. The returned image shows a versioned player-UI reference mask;
