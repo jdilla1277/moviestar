@@ -5,6 +5,15 @@ successfully.
 
 ## Before the final render
 
+Use `captions audit` to enumerate text states across the complete result clock.
+Add `--language en` or explicit `--connector-word` values for connector-only
+candidates; no language is assumed. `--track NAME` also selects manual text;
+`--combine-tracks` groups selected tracks that form one treatment. Duration
+warnings and estimated geometry changes require contextual review. Optional
+`--proof-dir NEW_DIRECTORY` creates bounded project screenshots and report.json;
+inspect their stated coverage and verify the final export separately. The
+default audit renders nothing and never changes project state.
+
 1. Run `status` and inspect the resolved duration, source selection,
    composition, captions/overlays, and audio configuration.
 2. Run `export --dry-run --out PATH`. Review the resolved output path, render

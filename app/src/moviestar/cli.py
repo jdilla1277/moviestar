@@ -23,6 +23,12 @@ from pathlib import Path
 import click
 
 from moviestar import __version__
+from moviestar.caption_audit import (
+    DEFAULT_MIN_DURATION,
+    audit_caption_states,
+    plan_caption_proofs,
+    render_caption_proofs,
+)
 from moviestar.activity import (
     ACTIVITY_ANALYSIS_WIDTH,
     ACTIVITY_PIXEL_DELTA,
@@ -952,7 +958,7 @@ EDITING COMMANDS
                  speed changes, target durations, holds/freezes.
   scenes transition  Set, inspect, or remove visual transitions at scene
                      boundaries; audio stays on its existing timeline.
-  captions     Generate/import caption overlays for burn-in.
+  captions     Generate/import captions; audit timed text with captions audit.
   overlays     Author timed text overlays; captions compile to this
                same overlay primitive.
   audio        Mix routed source audio with voiceover and music on
@@ -7066,6 +7072,7 @@ def _screenshot_scene_layout_composition(
         at_seconds,
         at_seconds + 0.001,
         "screenshot",
+        point_in_time=True,
     )
     overlay_plans = planned_overlays["plans"] if planned_overlays else None
     if output is None:
@@ -15429,6 +15436,7 @@ def _render_composition_frame(
         at_s,
         at_s + 0.001,
         command,
+        point_in_time=True,
     )
     _write_highlight_ass(planned_overlays)
     try:
@@ -18989,10 +18997,15 @@ def _overlay_render_context(
     window_from: float,
     window_to: float,
     command: str,
+    *,
+    point_in_time: bool = False,
 ) -> dict | None:
-    """Plan the overlays active in a render window, or None when the
-    spec has no overlays. Font and style-resolution failures exit with
-    structured errors — exported video never silently changes fonts."""
+    """Plan overlays in a render window, or exactly at its start for stills.
+
+    Static renderers draw every plan without its enable window, so select
+    point membership before planning geometry and highlight assets. Font and
+    style failures exit with structured errors rather than changing fonts.
+    """
     stored_overlays = spec.get("overlays") or []
     if not stored_overlays:
         return None
@@ -19000,9 +19013,12 @@ def _overlay_render_context(
         overlay_state = resolve_overlays(
             resolve_project(project, spec), stored_overlays
         )
-        planned = plan_overlays(
-            list(overlay_state.records), canvas_tuple, window_from, window_to
-        )
+        records = list(overlay_state.records)
+        if point_in_time:
+            records = [record for record in records
+                       if parse_timecode(record["from"]) <= window_from
+                       < parse_timecode(record["to"])]
+        planned = plan_overlays(records, canvas_tuple, window_from, window_to)
         planned["highlight_ass"] = _highlight_ass_assets(planned, canvas_tuple)
     except FontResolutionError as exc:
         _error_exit_with_hint(
@@ -19616,6 +19632,7 @@ def captions(ctx: click.Context) -> None:
                     "moviestar captions generate",
                     "moviestar captions import <captions.srt|captions.vtt>",
                     "moviestar captions dump",
+                    "moviestar captions audit [--track NAME] [--language en]",
                     "moviestar captions placement [--scene S | --layout L] "
                     "--at A --size S",
                     "moviestar captions break --at T | --at-word W",
@@ -20303,6 +20320,122 @@ def captions_dump(track: str) -> None:
             indent=2,
         )
     )
+
+
+@captions.command("audit")
+@project_workspace_option
+@click.option("--track", "tracks", multiple=True,
+              help="Text track to audit; repeat to select several. Defaults to "
+              "caption tracks. Explicit selection also accepts manual text tracks.")
+@click.option("--combine-tracks", is_flag=True,
+              help="Treat two or more explicitly selected tracks as one caption "
+              "treatment; otherwise tracks are checked independently.")
+@click.option("--min-duration", type=float, default=DEFAULT_MIN_DURATION, show_default=True,
+              help="Advisory minimum seconds for a component or nonempty state. "
+              "Use 0 to disable duration warnings.")
+@click.option("--language", type=click.Choice(["en"]), default=None,
+              help="Enable a connector-word heuristic. Only English is built in; "
+              "no language is assumed by default.")
+@click.option("--connector-word", "connector_words", multiple=True,
+              help="Add one connector word; repeat for a custom word list in any language.")
+@click.option("--proof-dir", type=click.Path(path_type=Path), default=None,
+              help="Render representative JPEG proofs and report.json into a NEW "
+              "directory. Without this option no files or media renders are produced.")
+@click.option("--max-proof-frames", type=click.IntRange(1, 100), default=12, show_default=True,
+              help="Maximum representative proof frames to plan; --proof-dir renders them.")
+def captions_audit(tracks, combine_tracks, min_duration, language,
+                   connector_words, proof_dir, max_proof_frames) -> None:
+    """Audit text visibility states across the complete result timeline.
+
+    Enumerates half-open intervals at every selected cue/overlay boundary,
+    including empty gaps. Reports active IDs, text, durations, and estimated
+    geometry changes. Short components and connector-only states request review;
+    they do not declare an edit wrong or visually approved.
+
+    Default: audit each caption track separately. To check a multi-part manual
+    treatment, pass --track headline --track connector --combine-tracks.
+    Connector checks require --language en or explicit --connector-word values.
+
+    This command never changes the spec or transcripts. The default report
+    requires no media decoding, transcription, model, or network. --proof-dir
+    explicitly renders a bounded sample through project screenshots, creates JPEGs,
+    and writes report.json. Proofs need FFmpeg and may create render caches;
+    sampled frames do not establish full-timeline visual approval. Text bounds
+    remain estimates, not measured glyph ink or background-contrast checks.
+    """
+    command = "captions audit"
+    project, spec = _overlay_project_spec(command)
+    try:
+        if combine_tracks and len(set(tracks)) < 2:
+            raise ValueError("--combine-tracks requires at least two explicit --track options.")
+        if proof_dir is not None:
+            proof_dir = proof_dir.expanduser().resolve()
+            if proof_dir.exists():
+                raise ValueError("--proof-dir must be a new directory; existing proofs are preserved.")
+            if not proof_dir.parent.is_dir():
+                raise ValueError("The parent of --proof-dir must already exist.")
+        timeline = resolve_project(project, spec)
+        canvas = _caption_render_canvas(project, spec)
+        if canvas is None:
+            raise ValueError("Could not determine the caption canvas; select a composition canvas first.")
+        stored = spec.get("overlays", [])
+        available = {item["track"] for item in stored}
+        available.update(recipe["track"] for recipe in spec.get("captions", []))
+        selected = tuple(sorted(set(tracks))) if tracks else tuple(sorted(
+            {item["track"] for item in stored if item.get("kind") == "caption"}
+            | {recipe["track"] for recipe in spec.get("captions", [])}
+        ))
+        for recipe in spec.get("captions", []):
+            if recipe["track"] in selected and not recipe.get("frozen"):
+                if _caption_staleness(project, spec, recipe):
+                    raise ValueError(f"Caption track {recipe['track']!r} could not refresh; "
+                                     "restore its transcript or regenerate captions before auditing.")
+        resolved = resolve_overlays(timeline, stored)
+        report = audit_caption_states(
+            list(resolved.records), timeline.duration_s, canvas=canvas, tracks=selected,
+            combine_tracks=combine_tracks, min_duration=min_duration, language=language,
+            connector_words=connector_words, available_tracks=tuple(sorted(available)),
+        )
+        selected_ids = {item["id"] for item in stored if item["track"] in selected}
+        lifecycle = {
+            "detached": [item for item in resolved.detached if item["id"] in selected_ids],
+            "clipped": [_overlay_clipped_envelope(item) for item in resolved.clipped
+                        if item["id"] in selected_ids],
+        }
+        _add_warnings(report, _overlay_lifecycle_warning_objects(lifecycle))
+        report["coverage"]["detached_overlay_ids"] = [item["id"] for item in lifecycle["detached"]]
+        report["coverage"]["renderer_supports_overlays"] = timeline.overlays_burnable
+        if report["components"] and not timeline.overlays_burnable:
+            _add_warnings(report, [_warning(
+                "caption_audit_render_unsupported",
+                "Text is authored, but this project shape cannot burn overlays. "
+                "Create a scene composition before rendering caption proofs.",
+            )])
+        for recipe in spec.get("captions", []):
+            if recipe["track"] in selected and recipe.get("frozen") and _caption_staleness(project, spec, recipe):
+                _add_warnings(report, [_warning(
+                    "caption_audit_frozen_track_stale",
+                    f"Frozen track {recipe['track']!r} predates timeline changes; "
+                    "its fixed authored intervals may need review.", track=recipe["track"],
+                )])
+        for state in report["states"]:
+            spans = timeline.spans_overlapping(
+                state["range"]["from"]["seconds"], state["range"]["to"]["seconds"],
+            )
+            state["scenes"] = list(dict.fromkeys(span.scene_name for span in spans))
+        report["writes_files"] = False
+        plan_caption_proofs(report, timeline.output_fps, max_proof_frames)
+        report["hint"] = (
+            "Review warnings and geometry changes in context. Re-run with --proof-dir "
+            "NEW_DIRECTORY for rendered samples; use watch for motion and listening."
+        )
+        if proof_dir is not None:
+            if not timeline.overlays_burnable:
+                raise ValueError("This composition cannot burn text overlays; resolve render support before making proofs.")
+            render_caption_proofs(report, get_project_dir().parent, proof_dir)
+    except (ValueError, OSError, RuntimeError, ResolvedProjectError, FontResolutionError) as exc:
+        _error_exit(command, str(exc))
+    click.echo(json.dumps(report, ensure_ascii=False, indent=2))
 
 
 def _require_caption_recipe(spec: dict, track: str, command: str) -> dict:
