@@ -1309,7 +1309,9 @@ def plan_loudness_normalization(
 
     Integrated loudness scales exactly with linear gain, so the exact
     correction is ``target - measured``, capped so the scaled true peak
-    stays at or under ``true_peak_limit``. Single-pass loudnorm was
+    stays at or under ``true_peak_limit`` before encoding. AAC can overshoot
+    this prediction; the final probe, not the gain cap, establishes delivered
+    peak compliance. Single-pass loudnorm was
     retired here because its dynamic mode missed targets by up to 8.7 LU
     and overshot the true-peak ceiling (issue #352); a measured linear
     gain is deterministic and makes "target unachievable" computable.

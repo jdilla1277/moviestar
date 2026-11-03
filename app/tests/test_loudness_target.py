@@ -11,7 +11,8 @@ The contract under test: a measured linear-gain post-pass on the rendered
 artifact.
 
 - Achievable target -> rendered integrated loudness within
-  ``tolerance_lu`` of the request, true peak at or under the ceiling.
+  ``tolerance_lu`` of the request. Final encoded true peak is checked
+  independently; a pre-encode gain cap cannot guarantee the AAC peak.
 - Unachievable target (true-peak-limited) -> honest envelope: measured
   result, delta, limiting constraint, and a structured warning.
 - Dry-run reports the requested target but marks achieved loudness as

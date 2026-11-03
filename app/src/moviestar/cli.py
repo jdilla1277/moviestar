@@ -626,6 +626,9 @@ LOUDNESS_LRA_TARGET = 11.0
 # linear-gain post-pass lands well inside this on real content; the
 # margin absorbs AAC round-trip drift, not normalization error.
 LOUDNESS_TOLERANCE_LU = 1.0
+# A separate reporting tolerance for the measured encoded true peak. This
+# allows a small measurement margin, not a guarantee against AAC overshoot.
+LOUDNESS_TRUE_PEAK_TOLERANCE_DB = 0.1
 
 
 def _parse_loudness_target(value: float | None, command: str) -> float | None:
@@ -650,6 +653,10 @@ def _add_loudness_result(
     envelope: dict = {
         "target_lufs": target,
         "true_peak_limit_dbtp": LOUDNESS_TRUE_PEAK_LIMIT,
+        "true_peak_tolerance_db": LOUDNESS_TRUE_PEAK_TOLERANCE_DB,
+        "true_peak_status": "not_measured",
+        "true_peak_limit_met": None,
+        "true_peak_overshoot_db": None,
         "tolerance_lu": LOUDNESS_TOLERANCE_LU,
         "method": "measured_linear_gain",
         "stage": "post_render_audio_remux",
@@ -660,9 +667,51 @@ def _add_loudness_result(
             "Achieved loudness is measured from the rendered artifact — "
             "a dry run cannot predict it. The real call reports "
             "pre_normalization, applied_gain_db, measured, delta_lu, "
-            "and target_met here."
+            "target_met (integrated LUFS only), and an independent true-peak "
+            "check here."
         )
     result["loudness_normalization"] = envelope
+
+
+def _add_true_peak_check(result: dict) -> None:
+    """Assess the final encoded peak independently of integrated loudness."""
+    envelope = result["loudness_normalization"]
+    peak = envelope["measured"]["true_peak_dbtp"]
+    limit = envelope["true_peak_limit_dbtp"]
+    tolerance = envelope["true_peak_tolerance_db"]
+    met = None if peak is None else peak <= limit + tolerance
+    overshoot = None if peak is None else round(max(0.0, peak - limit), 6)
+    envelope.update({
+        "true_peak_status": ("unmeasurable" if met is None
+                             else "compliant" if met else "exceeded"),
+        "true_peak_limit_met": met,
+        "true_peak_overshoot_db": overshoot,
+    })
+    if met:
+        return
+    if met is None:
+        code = "true_peak_unmeasurable"
+        message = (
+            "Final encoded true peak could not be measured; compliance with "
+            f"the {limit} dBTP ceiling is unknown. Integrated-LUFS "
+            "target_met does not establish peak compliance."
+        )
+    else:
+        code = "true_peak_limit_exceeded"
+        message = (
+            f"Final encoded true peak is {peak} dBTP, {overshoot} dB above "
+            f"the {limit} dBTP ceiling (tolerance {tolerance} dB). "
+            "AAC encoding can overshoot the gain plan's peak headroom. "
+            "Integrated-LUFS target_met does not establish peak compliance; "
+            "leave more headroom and remeasure the finished artifact."
+        )
+    _add_warnings(result, [_warning(
+        code, message,
+        measured_true_peak_dbtp=peak,
+        true_peak_limit_dbtp=limit,
+        true_peak_tolerance_db=tolerance,
+        overshoot_db=overshoot,
+    )])
 
 
 def _finalize_loudness_normalization(
@@ -677,7 +726,8 @@ def _finalize_loudness_normalization(
     finished mix. Issue #352: the previous single-pass loudnorm missed
     requested targets by multiple LU and overshot the true-peak ceiling
     while the envelope claimed success; the envelope now carries the
-    measured result and a structured warning when the target is missed.
+    measured result. Integrated LUFS and final encoded true peak are checked
+    independently, with separate warnings for a miss or unknown peak.
     """
     if target is None:
         return
@@ -694,13 +744,13 @@ def _finalize_loudness_normalization(
     measured = info["measured"]
     envelope = result["loudness_normalization"]
     envelope["pre_normalization"] = {
-        key: info["pre"][key]
+        key: _finite_or_none(info["pre"][key])
         for key in ("integrated_lufs", "true_peak_dbtp", "lra_lu")
     }
     envelope["applied_gain_db"] = plan["gain_db"]
     envelope["gain_limited_by_true_peak"] = plan["limited_by_true_peak"]
     envelope["measured"] = {
-        key: measured[key]
+        key: _finite_or_none(measured[key])
         for key in ("integrated_lufs", "true_peak_dbtp", "lra_lu")
     }
     # --loudness-report measured the mix before this post-pass changed the
@@ -715,7 +765,8 @@ def _finalize_loudness_normalization(
         + _path_for_hint(render_path)
         + " --loudness'."
     )
-    measured_i = measured["integrated_lufs"]
+    _add_true_peak_check(result)
+    measured_i = envelope["measured"]["integrated_lufs"]
     delta = None if measured_i is None else round(measured_i - target, 2)
     envelope["delta_lu"] = delta
     met = delta is not None and abs(delta) <= LOUDNESS_TOLERANCE_LU
@@ -741,8 +792,8 @@ def _finalize_loudness_normalization(
         envelope["max_achievable_lufs"] = max_achievable
     if measured_i is None:
         message = (
-            f"Rendered audio was too quiet to measure; the "
-            f"--loudness-target {target} LUFS request was not applied."
+            "Rendered integrated loudness could not be measured; the "
+            f"--loudness-target {target} LUFS request could not be verified."
         )
     else:
         message = (
@@ -753,9 +804,9 @@ def _finalize_loudness_normalization(
         )
         if max_achievable is not None:
             message += (
-                f" The true-peak limit caps this content at about "
-                f"{max_achievable} LUFS; re-run with a target at or "
-                f"below that to meet it."
+                " Pre-encode peak headroom predicts a target of about "
+                f"{max_achievable} LUFS; re-run with a target at or below "
+                "that and verify the encoded peak independently."
             )
     _add_warnings(
         result,
@@ -26341,7 +26392,9 @@ def _export_composition(
     help="Normalize exported audio to integrated LUFS, e.g. -14 for "
     "shorts. Measured two-pass linear gain: the envelope reports the "
     "achieved loudness (met within ±1 LU), and a structured warning "
-    "flags targets the -1.5 dBTP true-peak limit makes unreachable.",
+    "flags targets the -1.5 dBTP gain cap makes unreachable. Final "
+    "encoded true peak is checked separately (0.1 dB tolerance); "
+    "target_met refers only to integrated LUFS.",
 )
 @click.option(
     "--audio-join-fade",

@@ -47,7 +47,12 @@ default audit renders nothing and never changes project state.
   overlays are not clipped, and the final frame is intentional.
 - When audio matters, inspect or listen to representative sections. Use
   `probe --loudness` or a Moviestar loudness report for measurable levels and
-  clipping risk.
+  clipping risk. For `export --loudness-target`, check both
+  `loudness_normalization.target_met` (integrated LUFS only) and
+  `true_peak_limit_met`. Final encoded peak has its own 0.1 dB reporting
+  tolerance; an exceeded peak emits `true_peak_limit_exceeded`, and an
+  unmeasurable peak remains unknown. A successful render or met LUFS target
+  does not establish peak compliance.
 - Compare actual duration with the intended result. A frame of container drift
   can be normal for re-encoded output; larger unexplained drift needs review.
 
