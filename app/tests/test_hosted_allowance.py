@@ -175,6 +175,52 @@ def test_large_upload_reaches_service_and_returns_specific_quota_recovery(connec
         assert payload["link_created"] is False
 
 
+@pytest.mark.parametrize("command", ["upload", "share"])
+def test_legacy_size_refusal_explains_500_mb_limit_without_transfer(connected, monkeypatch, tmp_path, command):
+    file = tmp_path / "large.mp4"
+    with file.open("wb") as stream:
+        stream.truncate(700_000_000)
+    calls = []
+    def request(url, credential, payload=None):
+        calls.append(payload)
+        return 400, {
+            "status": "invalid_request",
+            "error": "Use an MP4 filename, 1–500 MB size, and a valid idempotency key.",
+            "provider_token": "do-not-print",
+        }
+    monkeypatch.setattr("moviestar.upload._json_request", request)
+    monkeypatch.setattr("moviestar.upload._put_file", lambda *_args: pytest.fail("a refused upload transferred bytes"))
+    monkeypatch.setattr("moviestar.sharing._json_request", lambda *_args: pytest.fail("a refused upload published or emailed"))
+    result = CliRunner().invoke(cli, [command, str(file), "--idempotency-key", "legacy-size-check"])
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "invalid_request"
+    assert "500 MB" in payload["hint"]
+    assert "smaller MP4" in payload["hint"]
+    assert "retry with the same idempotency key" not in payload["hint"]
+    assert payload["idempotency_key"] == "legacy-size-check"
+    assert len(calls) == 1
+    assert calls[0]["size_bytes"] == 700_000_000
+    assert "do-not-print" not in result.output
+    if command == "share":
+        assert payload["publication_outcome"] == "not_attempted"
+        assert payload["link_created"] is False
+
+
+@pytest.mark.parametrize("error", ["Invalid filename.", {"secret": "do-not-print"},
+                                  "Use an MP4 filename, 1–500 MB size, and a valid idempotency key. do-not-print"])
+def test_unrecognized_invalid_request_does_not_invent_a_size_limit(connected, monkeypatch, tmp_path, error):
+    file = tmp_path / "small.mp4"
+    file.write_bytes(b"movie")
+    monkeypatch.setattr("moviestar.upload._json_request", lambda *_args: (400, {"status": "invalid_request", "error": error}))
+    result = CliRunner().invoke(cli, ["upload", str(file)])
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "invalid_request"
+    assert "500 MB" not in payload["hint"]
+    assert "do-not-print" not in result.output
+
+
 def test_existing_consent_recovery_is_preserved(connected, tmp_path, monkeypatch):
     uploads = importlib.import_module("moviestar.upload")
     file = tmp_path / "small.mp4"

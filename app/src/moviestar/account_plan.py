@@ -98,6 +98,13 @@ _CAPACITY_ERRORS = {
 def capacity_failure(code: int, response: dict) -> tuple[str, str, dict] | None:
     """Keep a known refusal and safe usage fields, never provider diagnostics."""
     status = response.get("status")
+    # Older services report the per-file ceiling as a generic validation error.
+    # Match only the known response and supply our own text, never echo errors.
+    if (code == 400 and status == "invalid_request"
+            and response.get("error") == "Use an MP4 filename, 1–500 MB size, and a valid idempotency key."):
+        return status, ("This upload service requires an MP4 filename, a file between 1 byte and 500 MB (decimal), "
+                        "and a valid idempotency key. For an oversized file, export a smaller MP4 before retrying. "
+                        "Run 'moviestar account status' to check your current plan and allowance."), {}
     if code not in {400, 409} or not isinstance(status, str) or status not in _CAPACITY_ERRORS:
         return None
     quota = _fields(response.get("quota"), {"used_videos": _number, "used_bytes": _number})
