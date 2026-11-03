@@ -394,6 +394,9 @@ def _build_mix_layer_graph(
         if track.get("loop", False):
             loop_samples = max(1, round(selected_duration * AUDIO_MIX_SAMPLE_RATE))
             chain += f",aloop=loop=-1:size={loop_samples}"
+        # adelay can emit leading silence before its input timestamps are
+        # known. Restore a zero-based clock before atrim, or those frames
+        # can be discarded and later external audio pulled to the opening.
         chain += (
             f",atrim=start={_audio_number(placed_offset)}:"
             f"end={_audio_number(placed_offset + overlap_duration)},"
@@ -405,7 +408,8 @@ def _build_mix_layer_graph(
                 layer_duration=placed_duration,
                 layer_offset=placed_offset,
             )
-            + f",adelay={local_delay_ms}:all=1,apad,"
+            + f",adelay={local_delay_ms}:all=1,"
+            f"aresample={AUDIO_MIX_SAMPLE_RATE}:async=1:first_pts=0,apad,"
             f"atrim=duration={_audio_number(window_duration)}[{label}]"
         )
         filter_parts.append(chain)
