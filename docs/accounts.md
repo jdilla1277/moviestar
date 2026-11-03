@@ -73,6 +73,42 @@ Temporary authentication state has user-only file permissions and is discarded
 when setup finishes. `account status` checks the grant; `account disconnect`
 revokes it. The owner can also revoke installations on their account page.
 
+## Current plan and capacity
+
+```sh
+moviestar account status
+```
+
+For a connected installation, this reads current account information from the
+service. `status: "connected"` describes the installation grant. When the service
+provides a supported plan response, `plan_status: "ok"` and `plan` describe the
+finished-video allowance:
+
+| Field | Meaning |
+| --- | --- |
+| `plan.plan` | The current plan, such as `free` or `plus` |
+| `plan.limits` | Maximum stored videos, total bytes, and bytes per video |
+| `plan.usage` | Stored and pending counts/bytes, and combined usage |
+| `plan.remaining` | Remaining slots and bytes after pending reservations |
+| `plan.upload` | Whether capacity permits another upload, the reason, and the maximum file size that currently fits |
+| `plan.billing` | Reported payment status, cadence, renewal/paid-through dates, and scheduled changes |
+| `plan.lifecycle` | Reported grace, pause, and deletion dates when applicable |
+| `plan.observed_at` | When this capacity snapshot was read |
+
+All sizes use decimal units: 1 GB is 1,000,000,000 bytes. These allowances cover
+hosted finished videos; Cloud project source storage and compute are separate.
+The service remains responsible for quota admission, consent, access, and
+lifecycle enforcement. Reading status reserves no capacity and changes no
+billing. Use `moviestar account open` to manage the account with the human.
+Paid-plan availability and purchase are controlled by the service.
+
+Older services or unavailable/unsupported plan responses produce
+`plan_status: "unavailable"` and `plan: null` while a valid installation stays
+connected. Unknown capacity is not reported as Free. On the first successful
+approval exchange, a subsequent status read may be needed to obtain the plan.
+Plan snapshots are not saved in the local connection file; ordinary upload/share
+dry-runs stay offline and do not claim live capacity.
+
 ## Existing accounts and hosted consent
 
 Review the current account-wide age affirmation and policies:

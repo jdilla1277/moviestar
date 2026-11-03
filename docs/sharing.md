@@ -20,6 +20,32 @@ an unlisted watch-and-download link for an existing, ready video without using
 another storage slot. Free upload limits are three stored videos, 1 GB total,
 and 500 MB per video. Sharing does not change storage usage.
 
+The CLI accepts finished MP4 files up to a **1 GB client safety ceiling**
+(1,000,000,000 bytes). The account service decides whether a particular file fits
+your current plan and remaining capacity. A 700 MB file can therefore pass local
+preparation and still be rejected by a Free account before transfer.
+
+Read current plan, stored usage, pending reservations, and capacity eligibility:
+
+```sh
+moviestar account status
+```
+
+Upload and share `--dry-run` remain offline: no plan lookup, reservation,
+transfer, publication, or email occurs. Their quota preview uses `plan:
+"unknown"`, `limits_verified: false`, and unavailable current/projected usage.
+The retained `free_limits` field is a compatibility reference to the Free
+offering, not a verified allowance for the connected owner. A status read is
+also only a snapshot; live upload admission checks and reserves capacity
+atomically on the service.
+
+Quota refusals identify the applicable rule, such as `file_too_large`,
+`video_limit`, `storage_limit`, or `existing_video_over_limit`. Payment-grace
+and account-deletion refusals retain their specific status and recovery hint.
+Rejected uploads do not attempt publication or email. Keep the reported
+idempotency key, or reservation ID when resuming, while following the recovery
+instructions before retrying.
+
 You can combine the two operations:
 
 ```sh

@@ -215,6 +215,11 @@ def share(target: str, recipient: str | None, idempotency_key: str | None, dry_r
     Retry the same file/key to recover its upload and original link. If the
     upload succeeds but publication cannot be confirmed, use its video_id and
     the same key to reconcile. An unknown outcome may already be public.
+
+    --dry-run is offline and does not verify allowance or reserve capacity.
+    Use ``moviestar account status`` for the current plan and usage. Local
+    MP4s can be up to the CLI's 1 GB safety ceiling; the service enforces the
+    account's per-video and storage limits before transfer.
     """
     delivery = {"to": recipient, "would_send_email": recipient is not None}
     common = {"upload_performed": False, "email_sent": False, "link_created": False, "publication_outcome": "not_attempted", "delivery": delivery}
@@ -232,17 +237,17 @@ def share(target: str, recipient: str | None, idempotency_key: str | None, dry_r
         except OSError:
             valid = False
         if not valid:
-            _fail("share", "error", "Use a readable finished .mp4 between 1 byte and 500 MB, or a video UUID.", **common)
+            _fail("share", "error", "Use a readable finished .mp4 between 1 byte and the CLI's 1 GB safety ceiling, or a video UUID. The service checks account allowance.", **common)
         details = {"path": str(file.resolve()), "size_bytes": size}
     if dry_run:
         owner = _owner_from_local_state()
         _emit({"command": "share", "status": "would_share", **common,
                **({"video_id": video_id} if video_id else {"file": details}), "owner": owner,
                "access": {"mode": "unlisted", "forwardable": True, "downloadable": True},
-               "quota": {"plan": "unknown", "current_usage": "unavailable", "projected_usage": "unavailable",
+               "quota": {"plan": "unknown", "limits_verified": False, "current_usage": "unavailable", "projected_usage": "unavailable",
                          "free_limits": FREE_LIMITS, "would_use_bytes": details["size_bytes"] if details else 0,
                          "would_use_videos": 1 if file else 0},
-               "hint": "Connect with 'moviestar account connect EMAIL' before publishing; service readiness and quota are checked live. --to sends an unlisted, forwardable link when enabled."})
+               "hint": "Connect with 'moviestar account connect EMAIL' before publishing. This offline preview does not verify allowance; free_limits is a reference only. Run 'moviestar account status' for current plan and usage; capacity is checked live. --to sends an unlisted, forwardable link when enabled."})
         return
     origin, endpoint, credential = _connection("share", **common)
     key = idempotency_key or uuid.uuid4().hex
