@@ -425,6 +425,8 @@ def test_status_exchanges_approval_for_a_stored_device_credential(
         "status": "connected",
         "email": "h***@example.com",
         "handle": "@m24",
+        "plan_status": "unavailable",
+        "plan": None,
         "installation": {
             "id": "123e4567-e89b-42d3-a456-426614174000",
             "name": "James's MacBook",

@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 from urllib.request import Request, build_opener
 
 import click
+from moviestar.account_plan import capacity_failure
 
 from moviestar.account import (
     _CLIENT_MARKER,
@@ -24,8 +25,9 @@ from moviestar.account import (
 )
 
 
-MAX_FILE_BYTES = 500_000_000
-FREE_LIMITS = {"stored_videos": 3, "total_bytes": 1_000_000_000, "per_video_bytes": MAX_FILE_BYTES}
+# A client safety ceiling, not the connected owner's allowance.
+MAX_FILE_BYTES = 1_000_000_000
+FREE_LIMITS = {"stored_videos": 3, "total_bytes": 1_000_000_000, "per_video_bytes": 500_000_000}
 _KEY_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _RESERVATION_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", re.I)
 
@@ -146,6 +148,10 @@ def _validate_result(endpoint: str, credential: str, video_id: str,
 def _complete_result(endpoint: str, credential: str, reservation_id: str,
                        file: Path, size: int, key: str | None) -> dict:
     status, completion = _json_request(f"{endpoint}/{reservation_id}/complete", credential)
+    capacity = capacity_failure(status, completion)
+    if capacity:
+        outcome, hint, fields = capacity
+        _fail(outcome, hint, **fields, reservation_id=reservation_id, **({"idempotency_key": key} if key else {}))
     if status == 409 and completion.get("status") == "consent_required":
         _fail("consent_required", "Run 'moviestar account terms' to finish account setup, then resume this upload.", reservation_id=reservation_id)
     video_id = completion.get("video_id")
@@ -167,7 +173,7 @@ def _complete_result(endpoint: str, credential: str, reservation_id: str,
 @click.argument("file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--idempotency-key", metavar="KEY", help="Reuse KEY when retrying an interrupted upload of this same file.")
 @click.option("--resume", metavar="RESERVATION_ID", help="Retry completion or validation without uploading the file again.")
-@click.option("--dry-run", is_flag=True, help="Preview file size, account target, and Free limits without reserving or uploading.")
+@click.option("--dry-run", is_flag=True, help="Preview offline without checking live allowance, reserving capacity, or uploading.")
 def upload(file: Path, idempotency_key: str | None, resume: str | None, dry_run: bool) -> None:
     """Store a finished MP4 privately in your MovieStar account.
 
@@ -177,6 +183,11 @@ def upload(file: Path, idempotency_key: str | None, resume: str | None, dry_run:
     or validation fails, retry with ``--resume`` and the reported reservation ID.
     The retry key is printed to stderr before any network request so an
     interrupted command can reuse it.
+
+    The CLI accepts files up to 1 GB (decimal). Your service enforces the
+    account's current per-video limit and remaining capacity. --dry-run stays
+    offline and does not confirm quota; use ``moviestar account status`` for a
+    live plan/usage read before uploading. That read reserves no capacity.
 
     Example: moviestar upload final.mp4
     """
@@ -208,7 +219,7 @@ def upload_video(file: Path, *, idempotency_key: str | None = None,
     except OSError:
         _fail("invalid_file", "The video file cannot be read.")
     if size < 1 or size > MAX_FILE_BYTES:
-        _fail("invalid_file", "Use an MP4 between 1 byte and 500 MB.", size_bytes=size)
+        _fail("invalid_file", "Use an MP4 between 1 byte and the CLI's 1 GB safety ceiling; the service checks your account allowance.", size_bytes=size)
     state = _read_state()
     credential = connection[1] if connection else _credential_for_connection(state)
     endpoint = connection[0] if connection else _upload_url()
@@ -224,11 +235,11 @@ def upload_video(file: Path, *, idempotency_key: str | None = None,
         return dict(status="would_upload", file={"path": str(file.resolve()), "size_bytes": size},
               account={"handle": owner.get("handle"), "email": owner.get("email"),
                        "service_origin": f"{parsed.scheme}://{parsed.netloc}"},
-              quota={"free_limits": FREE_LIMITS, "would_use_videos": 1,
+              quota={"plan": "unknown", "limits_verified": False, "free_limits": FREE_LIMITS, "would_use_videos": 1,
                      "would_use_bytes": size, "current_usage": "unavailable",
                      "projected_usage": "unavailable"},
               upload_performed=False, reservation_created=False,
-              hint="Current usage is checked by the service when the upload starts.")
+              hint="This offline preview does not verify your allowance; free_limits is a reference only. Run 'moviestar account status' for current plan and usage. The service checks capacity when upload starts.")
 
     key = idempotency_key or uuid.uuid4().hex
     if not _KEY_RE.fullmatch(key):
@@ -244,6 +255,10 @@ def upload_video(file: Path, *, idempotency_key: str | None = None,
     status, initiation = _json_request(endpoint, credential, {
         "filename": file.name, "size_bytes": size, "idempotency_key": key,
     })
+    capacity = capacity_failure(status, initiation)
+    if capacity:
+        outcome, hint, fields = capacity
+        _fail(outcome, hint, **fields, idempotency_key=key)
     if status == 409 and initiation.get("status") == "consent_required":
         _fail("consent_required", "Run 'moviestar account terms' to review and accept account terms and age confirmation, then retry with the same idempotency key.", idempotency_key=key)
     if status == 200 and initiation.get("status") == "already_completed":

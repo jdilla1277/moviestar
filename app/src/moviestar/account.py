@@ -20,6 +20,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 import click
 
 from moviestar import __version__
+from moviestar.account_plan import plan_fields
 
 
 _ACCOUNT_URL = "https://trymoviestar.com/account"
@@ -528,6 +529,11 @@ def status() -> None:
 
     The completed flow reports ``approval_pending``, ``connected``, ``denied``,
     or ``expired``. A connected result includes the human's public ``@handle``.
+    When supported by the service, ``plan_status: ok`` and ``plan`` report the
+    current finished-video limits, stored and pending usage, upload eligibility,
+    billing status and lifecycle dates. Otherwise ``plan`` is null and
+    ``plan_status`` is unavailable; the installation can remain connected.
+    This read does not reserve capacity or change billing.
 
     On first connection, Moviestar stores the revocable installation
     credential in the OS credential store, never in a Moviestar project.
@@ -634,6 +640,9 @@ def status() -> None:
                 "remote_status_checked": True,
                 "hint": "Run 'moviestar account open' to manage this connection.",
             }
+            payload.update(plan_fields(remote))
+            if payload["plan"] is None:
+                payload["hint"] += " Current plan and usage could not be verified."
             if storage == "private_file":
                 payload["warning"] = (
                     "The OS credential store was unavailable, so the credential "
@@ -774,6 +783,7 @@ def status() -> None:
                 payload = {
                     "command": "account status",
                     "status": "connected",
+                    **plan_fields(remote),
                     "email": remote_email,
                     "handle": handle,
                     "installation": {
