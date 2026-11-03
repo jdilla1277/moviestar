@@ -57,6 +57,27 @@ audio cannot be judged from still frames.
   `scenes motion` only after inspecting their nested help and the current scene
   IDs. Preview camera changes before applying them.
 
+## Build an editable custom scene
+
+- Discover `composition model layouts` (`single`, `two-up`, `pip`, `text-video`)
+  and read the typed inputs and component trees with `layouts show ID`.
+- Create the timeline scenes with `scenes set` first. Apply a starting point
+  using `composition model layouts apply ID --scene SCENE_ID --bindings FILE
+  --dry-run`, then save. This replaces the selected scene's visible design;
+  source slots, duration, and audio routing remain on the timeline.
+- Omit bindings to save a draft. The response's `input_targets` supplies actual
+  occurrence paths and input names for `model edit` / `input.bind`. Bind images
+  from `spatial.assets` and generated captions with an explicit track binding;
+  optional inputs start empty.
+- Use `model edit` to customize one occurrence or update the captured shared
+  definition. Component definitions remain project-owned across package updates.
+- Inspect `model preview --at TIMECODE --out frame.png --layout-out layout.png`
+  and repeat with `--canvas 720x1280` when targeting portrait. Stills and export
+  use the same tree. Check text wrapping and clipping with actual content.
+- Applying over an existing spatial tree needs `--replace`. Review dry-run;
+  `--expected-state-id` rejects a stale plan and `undo` restores one application.
+  Saving custom layouts for reuse is a separate follow-on.
+
 ## Add captions or text
 
 - Use `captions generate` for transcript-derived captions and

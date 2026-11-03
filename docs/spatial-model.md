@@ -18,6 +18,84 @@ without assigning any footage slot.
 Mixed compositions retain the preset renderer for scenes without a spatial tree.
 The existing `--source` option still selects an individual source's edit.
 
+## Editable starting layouts
+
+Discover built-in starting points without loading a project:
+
+```sh
+moviestar composition model layouts
+moviestar composition model layouts show text-video
+```
+
+| ID | Arrangement | Required inputs |
+| --- | --- | --- |
+| `single` | One full-canvas `VideoFrame` | `video` |
+| `two-up` | Equal video frames, stacked in portrait | `left`, `right` |
+| `pip` | A reusable `PictureInPicture` containing two `VideoFrame` instances | `main`, `inset` |
+| `text-video` | A non-video `TextPanel` beside footage, stacked in portrait | `title`, `body`, `video` |
+
+Every layout has an optional `captions` input accepting `{"track": "captions"}`.
+`text-video` also accepts an optional `image` binding to a registered
+`spatial.assets` image. Both optional inputs start explicitly empty. Existing
+project caption settings do not populate them implicitly. `show` returns the
+ordinary editable layout, its component definitions, and typed input targets;
+these prototype IDs become fresh occurrence IDs when applied.
+
+Create an existing scene with `scenes set` first, then write `bindings.json`:
+
+```json
+{
+  "video": {"asset_id": "camera", "source": {"start": 2, "end": 10}},
+  "title": {"text": "A new chapter"},
+  "body": {"text": "Editable text, images, and footage in one arrangement."}
+}
+```
+
+```sh
+moviestar composition model layouts apply text-video --scene scene_a --bindings bindings.json --dry-run
+moviestar composition model layouts apply text-video --scene scene_a --bindings bindings.json
+moviestar composition model inspect scene_a
+moviestar composition model preview --at 0:00:01.000 --out frame.png --layout-out boxes.png
+moviestar composition model preview --at 0:00:01.000 --canvas 720x1280 --out portrait.png
+```
+
+Use the stable timeline scene ID, not its display name. This copies the
+arrangement into that scene and captures the necessary built-in definitions in
+the project. Those definitions are ordinary shared components: use `model edit`
+to bind, customize, reset, update a shared definition, or save a variation.
+Later applications reuse the project's captured definitions **including its
+edits**; package catalog changes never replace them. Definition IDs beginning
+`builtin:` identify these captured definitions, and their `origin` records the
+catalog ID. A collision with an unrelated definition is an error.
+
+The layout copy is independent of other scenes, while component references
+remain linked. Dry-run reports the proposed scene tree, captured/reused
+definitions, diagnostics, and before/after `state_id` values. Fresh IDs are
+allocated deterministically from the current document, so applying the same
+request to the same state produces the previewed tree. Supply
+`--expected-state-id` with `state_id_before` to reject a stale plan. Applying
+records one revision; `undo` restores the tree and definition captures together.
+
+Omit `--bindings` to save a draft with named missing-binding diagnostics, then
+use `model layout` to inspect its placeholders and `model edit` to fill the
+component inputs. The apply response's `input_targets` maps each layout input to
+the actual occurrence path and component input name for `input.bind`. For example,
+layout `video` targets the captured `VideoFrame` instance's `footage` input.
+Unknown inputs or malformed typed bindings fail before saving;
+missing assets remain addressable draft diagnostics. Applying over an existing
+spatial layout requires `--replace`, including the blank tree created for a
+slot-free scene. Replacement allocates fresh occurrence IDs and retains project
+definitions and other scene layouts.
+
+Applying preserves timeline order, duration, source slots, pacing, transitions,
+and audio routing. It replaces the scene's visible design with a spatial tree;
+legacy camera/framing/motion/overlays are not migrated into that tree. Bind media
+and captions explicitly, then inspect the result. Reusing a video visually does
+not add another audio route. A portrait preview changes layout rules without
+changing timing. These are editable starting points, not pixel-identical
+conversions of the legacy presets. Saving user-created layouts for reuse is a
+separate follow-on.
+
 ## Authoring
 
 Create a JSON file containing a `spatial` document, then apply it:
