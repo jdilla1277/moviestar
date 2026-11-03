@@ -53,6 +53,15 @@ routes, or source ranges change over the finished timeline. Scene motion,
 geometry, transitions, captions, overlays, and audio mixing build on that
 persisted composition.
 
+For editable custom scenes, discover `composition model layouts` and inspect a
+starting point with `composition model layouts show text-video`. Use
+`layouts apply ID --scene SCENE_ID --bindings FILE --dry-run` before saving.
+This copies a scene-owned arrangement and captures ordinary reusable components;
+timing and audio stay on the existing timeline. Missing bindings can be saved
+as drafts. Inspect both rendered and labeled views, then use `model edit` for
+local/shared changes. See the [spatial model guide](spatial-model.md#editable-starting-layouts)
+for inputs, portrait rules, replacement, and undo.
+
 Large scene, overlay, caption, and audio changes are easier to audit through
 their dump/edit/set JSON workflows. Always validate replacement files with
 `--dry-run` before committing them to project state.

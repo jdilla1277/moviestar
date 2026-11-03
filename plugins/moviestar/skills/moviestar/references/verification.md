@@ -5,6 +5,19 @@ successfully.
 
 ## Before the final render
 
+For custom scene designs, `composition model layouts` lists editable starting
+points (`single`, `two-up`, `pip`, `text-video`). `layouts show ID` returns typed
+inputs and ordinary component trees. Use `layouts apply ID --scene SCENE_ID
+--bindings FILE --dry-run` before applying; the scene must already exist.
+Bindings use typed values such as `{"video":{"asset_id":"camera"}}` and
+`{"title":{"text":"A new chapter"}}`. Missing inputs are saveable drafts;
+optional image/caption inputs start empty. Captions need an explicit track
+binding. Applying captures project-owned components, preserving existing shared
+edits on later applications. Replacing a spatial tree requires `--replace`;
+review the response and use `undo` if needed. Existing scene timing/audio stay
+in place, but legacy visual overlays/framing are not migrated. Verify the new
+design in both rendered and labeled views, including portrait where relevant.
+
 1. Run `status` and inspect the resolved duration, source selection,
    composition, captions/overlays, and audio configuration.
 2. Run `export --dry-run --out PATH`. Review the resolved output path, render
