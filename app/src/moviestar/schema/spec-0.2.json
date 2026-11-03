@@ -145,7 +145,11 @@
           "type": "object",
           "additionalProperties": {
             "type": "object", "required": ["layout"],
-            "properties": { "layout": { "$ref": "#/$defs/spatial_layout" } }
+            "properties": {
+              "layout": { "$ref": "#/$defs/spatial_layout" },
+              "inputs": { "$ref": "#/$defs/spatial_saved_layout/properties/inputs" },
+              "bindings": { "type": "object", "additionalProperties": { "$ref": "#/$defs/spatial_binding" } }
+            }
           }
         }
       },

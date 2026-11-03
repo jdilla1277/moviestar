@@ -23,6 +23,8 @@ class SpatialEditConflict(SpatialModelError):
         self.hint = ('Update the affected scene layout reserved_regions paths before removing these targets.'
                      if any(item['code'] == 'unknown_reserved_region_target' for item in conflicts)
                      else 'Reset the affected customization, or save a separate component variation.')
+        if any(item['code'] == 'content_binding_conflict' for item in conflicts):
+            self.hint = 'Update the affected scene inputs and targets together, or preserve the referenced content elements.'
         if any(item['code'] == 'saved_layout_content_changed'
                or str(item['path'][0]).startswith('saved:') for item in conflicts):
             self.hint = 'Replace the affected saved layout after reviewing its content inputs, or preserve the referenced targets.'
@@ -311,6 +313,23 @@ def _duplicate_instance(spatial: dict, request: dict) -> None:
     copy = deepcopy(direct)
     copy["instance_id"] = new_id
     siblings.insert(index + 1, copy)
+    scene = spatial['scenes'][path[0]]
+    names = {entry['name'] for entry in scene.get('inputs', [])}
+    for entry in list(scene.get('inputs', [])):
+        if entry['target'][:len(path)-1] != path[1:]:
+            continue
+        cloned = deepcopy(entry)
+        base, suffix = f"{entry['name']}_{new_id}", 1
+        name = base
+        while name in names:
+            name = f'{base}_{suffix}'
+            suffix += 1
+        names.add(name)
+        cloned['name'] = name
+        cloned['target'] = [*path[1:-1], new_id, *entry['target'][len(path)-1:]]
+        scene['inputs'].append(cloned)
+        if entry['name'] in scene.get('bindings', {}):
+            scene['bindings'][name] = deepcopy(scene['bindings'][entry['name']])
 
 
 def _reference_paths(spatial: dict, definition_id: str) -> list[list[str]]:
@@ -363,7 +382,7 @@ def _conflicts(spec: dict) -> list[dict]:
         conflicts.extend(saved_layout_diagnostics(spec, layout_id))
     for scene_id in spatial.get("scenes", {}):
         conflicts.extend(item for item in expand_spatial_scene(spec, scene_id)["diagnostics"]
-                         if item["code"] in {"customization_conflict", "unknown_reserved_region_target"})
+                         if item["code"] in {"customization_conflict", "unknown_reserved_region_target", "content_binding_conflict"})
     # Definitions can contain locally customized nested instances even when
     # no scene currently places them. Probe each definition without writing a
     # synthetic scene to the project; shared edits must preserve those drafts.
@@ -439,6 +458,14 @@ def edit_spatial_model(spec: dict, request: dict) -> tuple[dict, dict]:
         created = _save_variation(spatial, request)
     elif op == "input.bind":
         _bind_input(spatial, request)
+    elif op == 'scene.bind':
+        target = request.get('target')
+        scene_id = target.get('scene_id') if isinstance(target, dict) else None
+        scene = spatial.get('scenes', {}).get(scene_id) if isinstance(scene_id, str) else None
+        name = request.get('input')
+        if scene is None or not isinstance(name, str) or name not in {entry['name'] for entry in scene.get('inputs', [])} or 'value' not in request:
+            _fail('scene.bind: choose a declared scene input and supply a typed value')
+        scene.setdefault('bindings', {})[name] = deepcopy(request['value'])
     elif op == "instance.duplicate":
         _duplicate_instance(spatial, request)
     elif op == "component.rename":

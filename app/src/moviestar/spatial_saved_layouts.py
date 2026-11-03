@@ -242,10 +242,11 @@ def inspect_saved_layout(spec: dict, identity: str) -> dict:
             node['content'] = deepcopy(value) if isinstance(value, dict) else {'text': value}
     expanded.pop('scene_id')
     expanded.pop('diagnostics', None)
+    diagnostics = saved_layout_diagnostics(spec, identity)
     return {'id': f'saved:{identity}', 'kind': 'saved', **deepcopy(item), 'expanded': expanded,
             'design_dependencies': {'components': sorted(components), 'fonts': sorted(fonts)},
             'motion': {'clock': 'scene', 'last_keyframe_s': last_keyframe},
-            'diagnostics': saved_layout_diagnostics(spec, identity), 'can_apply': False}
+            'diagnostics': diagnostics, 'can_apply': not diagnostics}
 
 
 def save_layout(spec: dict, identity: str, scene_id: str, *, name: str | None = None,
@@ -295,3 +296,133 @@ def save_layout(spec: dict, identity: str, scene_id: str, *, name: str | None = 
                       'inputs': view['inputs'], 'design_dependencies': view['design_dependencies'],
                       'motion': view['motion'], 'affected': [], 'replaces_layout': identity in layouts,
                       'writes_spec': False, 'state_id_before': current, 'state_id_after': spatial_state_id(changed)}
+
+
+def _copy_layout(spec: dict, item: dict, identity: str, scene_id: str) -> tuple[dict, list]:
+    """Fresh authored IDs; inherited definition IDs stay stable within each use.
+
+    Remap paths and anchors explicitly, including locally inserted nodes. Never
+    replace arbitrary strings in content, definition references, or CSS values.
+    """
+    from uuid import NAMESPACE_URL, uuid5
+    current = spatial_state_id(spec)
+    layout, inputs = deepcopy(item['layout']), deepcopy(item['inputs'])
+    used, allocated = set(), {}
+
+    def scan(value):
+        if isinstance(value, dict):
+            for field in ('id', 'instance_id'):
+                if isinstance(value.get(field), str):
+                    used.add(value[field])
+            for child in value.values():
+                scan(child)
+        elif isinstance(value, list):
+            for child in value:
+                scan(child)
+    scan(spec.get('spatial', {}))
+
+    def allocate(nodes, parent=()):
+        for node in nodes:
+            field = 'instance_id' if 'instance_id' in node else 'id'
+            path = (*parent, node[field])
+            base = f"{node[field]}_{uuid5(NAMESPACE_URL, f'moviestar:saved:{current}:{scene_id}:{identity}:{path}').hex}"
+            name, suffix = base, 1
+            while name in used:
+                name = f'{base}_{suffix}'
+                suffix += 1
+            allocated[path] = name
+            used.add(name)
+            allocate(node.get('children', []), path)
+            for edit in node.get('customizations', []):
+                if edit['op'] == 'child_add':
+                    allocate([edit['node']], (*path, *edit['path']))
+    allocate(layout['children'])
+
+    def remap(path):
+        return [allocated.get(tuple(path[:index+1]), part) for index, part in enumerate(path)]
+
+    def rewrite(nodes, parent=()):
+        for node in nodes:
+            field = 'instance_id' if 'instance_id' in node else 'id'
+            path = (*parent, node[field])
+            node[field] = allocated[path]
+            rewrite(node.get('children', []), path)
+            for edit in node.get('customizations', []):
+                old = (*path, *edit['path'])
+                if edit['op'] == 'child_add':
+                    rewrite([edit['node']], old)
+                if edit.get('after_id') is not None:
+                    siblings = old if edit['op'] == 'child_add' else old[:-1]
+                    edit['after_id'] = allocated.get((*siblings, edit['after_id']), edit['after_id'])
+                edit['path'] = remap(old)[len(path):]
+    rewrite(layout['children'])
+    for entry in inputs:
+        entry['target'] = remap(entry['target'])
+    for region in layout.get('reserved_regions', []):
+        region['target'] = remap(region['target'])
+        if 'allow' in region:
+            region['allow'] = [remap(path) for path in region['allow']]
+    return layout, inputs
+
+
+def apply_saved_layout(spec: dict, identity: str, scene_id: str, bindings: dict | None = None,
+                       *, replace: bool = False, expected_state_id: str | None = None) -> tuple[dict, dict]:
+    """Copy design and its leaf input contract; preserve timeline and shared design."""
+    from moviestar.spatial_model import _binding
+    current = spatial_state_id(spec)
+    if expected_state_id is not None and expected_state_id != current:
+        raise SpatialModelError(f'expected_state_id: project changed; current state is {current}')
+    view = inspect_saved_layout(spec, identity)
+    if view['diagnostics']:
+        raise SavedLayoutError(view['diagnostics'])
+    if scene_id not in {scene.get('id') for scene in spec.get('composition') or [] if 'layout' in scene}:
+        raise SpatialModelError(f'scene: unknown timeline scene ID {scene_id!r}; use scenes set first')
+    replaces = scene_id in spec['spatial'].get('scenes', {})
+    if replaces and not replace:
+        raise SpatialModelError(f'scene {scene_id!r} already has a spatial layout; use --replace after reviewing dry-run')
+    bindings = {} if bindings is None else bindings
+    declarations = {entry['name']: entry for entry in view['inputs']}
+    if not isinstance(bindings, dict) or bindings.keys() - declarations.keys():
+        raise SpatialModelError('bindings: expected an object containing only declared layout inputs')
+    for name, value in bindings.items():
+        _binding(value, declarations[name]['type'], f'bindings.{name}')
+    layout, inputs = _copy_layout(spec, view, identity, scene_id)
+    result = deepcopy(spec)
+    scene = {'layout': layout, 'inputs': inputs, 'bindings': deepcopy(bindings)}
+    result['spatial'].setdefault('scenes', {})[scene_id] = scene
+    from moviestar.spec import validate_spec
+    validate_spec(result)
+    expanded = expand_spatial_scene(result, scene_id)
+    conflicts = [entry for entry in expanded['diagnostics']
+                 if entry['code'] not in {'missing_binding', 'unknown_asset'}]
+    if conflicts:
+        raise SavedLayoutError(conflicts)
+    from moviestar.motion import resolve_pacing
+    duration = next(item.duration_s for item in resolve_pacing(result['composition'], result.get('motion')).scenes
+                    if item.scene['id'] == scene_id)
+    warnings = []
+    for node in _walk(expanded['children']):
+        for property, frames in node.get('motion', {}).items():
+            if frames[-1]['at'] > duration:
+                warnings.append({'code': 'motion_exceeds_scene_duration', 'severity': 'warning',
+                    'path': node['occurrence_path'], 'property': property,
+                    'last_keyframe_s': frames[-1]['at'], 'scene_duration_s': duration,
+                    'reason': 'later keyframes will not be reached; adjust motion or explicitly change scene duration'})
+    return result, {'layout_id': f'saved:{identity}', 'affected': [scene_id], 'scene': deepcopy(scene),
+        'input_targets': {entry['name']: {'occurrence_path': [scene_id, *entry['target']],
+                                        'scene_id': scene_id, 'input': entry['name']} for entry in inputs},
+        'captured_definitions': [], 'reused_definitions': view['design_dependencies']['components'],
+        'replaces_layout': replaces, 'diagnostics': [*expanded['diagnostics'], *warnings], 'writes_spec': False,
+        'state_id_before': current, 'state_id_after': spatial_state_id(result)}
+
+
+def delete_saved_layout(spec: dict, identity: str, *, expected_state_id: str | None = None) -> tuple[dict, dict]:
+    current = spatial_state_id(spec)
+    if expected_state_id is not None and expected_state_id != current:
+        raise SpatialModelError(f'expected_state_id: project changed; current state is {current}')
+    if identity not in (spec.get('spatial') or {}).get('layouts', {}):
+        raise SpatialModelError(f'layouts.{identity}: unknown saved layout')
+    result = deepcopy(spec)
+    del result['spatial']['layouts'][identity]
+    return result, {'layout_id': f'saved:{identity}', 'affected': [], 'writes_spec': False,
+                    'state_id_before': current, 'state_id_after': spatial_state_id(result)}

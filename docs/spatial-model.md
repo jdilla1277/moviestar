@@ -133,8 +133,8 @@ The response shows open inputs, referenced component IDs, font-family design
 dependencies, and the latest scene-relative motion keyframe. It does not copy
 scene identity, duration, timeline position, audio routes, overlays/transcript
 cues, or source-specific timing. The current motion model accepts scene-relative
-keyframes only. Applying a saved arrangement will need to validate those
-keyframes against the destination scene's duration.
+keyframes only. Applying a saved arrangement reports a warning for keyframes beyond the
+destination scene's paced duration; it never stretches motion or changes timing.
 
 Project IDs are stored without a prefix (`interview`), and appear alongside
 built-ins as `saved:interview`. Each input has a generated name and a `target`
@@ -175,10 +175,82 @@ Retain the rest of the spatial document and review the changed inputs first.
 Fonts remain design dependencies in the project; this does not package fonts or
 create a cross-project library.
 
-This slice supports saving, listing, and inspecting arrangements, with
-`can_apply: false` on saved catalog entries. Applying them to other scenes with
-new content, sampled preview, and their editing/deletion workflow are the next
-slice. Built-in `layouts apply` continues to work.
+### Apply and manage saved arrangements
+
+Use the exact names from `layouts show saved:ID` in a typed JSON binding file:
+
+```json
+{
+  "main": {"asset_id": "new_camera", "source": {"start": 12, "end": 20}},
+  "speaker_card_label": {"text": "Another interview"},
+  "speaker_card_logo": {"asset_id": "new_logo"},
+  "speaker_card_captions": {"track": "new_dialogue"}
+}
+```
+
+```sh
+moviestar composition model layouts apply saved:interview --scene scene_b --bindings bindings.json --dry-run
+moviestar composition model layouts apply saved:interview --scene scene_b --bindings bindings.json
+moviestar composition model inspect scene_b
+moviestar composition model preview --at 0:00:09.000 --out scene.png --layout-out boxes.png
+moviestar composition model preview --at 0:00:09.000 --canvas 720x1280 --out portrait.png --layout-out portrait-boxes.png
+```
+
+Create the destination timeline scene first with `scenes set`. Application copies
+only its visible arrangement, preserving that scene's order, timing, audio, and
+source slots. Video bindings choose fresh source ranges; placing a video does
+not add audio. `--replace` is required if the destination already has a spatial
+tree. Review `--dry-run`, use its `state_id_before` with `--expected-state-id`,
+and use `undo` to restore one whole application.
+
+Authored elements, instances, and locally added children receive fresh IDs;
+customization paths/anchors, reservations, and input targets follow those IDs.
+Children inherited from a shared definition retain their definition IDs, with
+unique occurrence paths under each copied instance. Component references remain
+linked, and ordinary local/shared edits still apply. The copied scene owns its
+`inputs` and `bindings`, independent of the saved catalog entry. These inputs
+override content at their expanded leaf targets, including inherited literals
+and defaults. Missing required content reports each leaf; optional empty regions
+stay empty. There is no fallback to previous footage, logos, or caption tracks.
+
+Omit bindings to save a draft and use `model preview --layout-out` to inspect
+placeholders. Supply actual content before rendered preview/export; the usual
+asset, caption-track, source-range, and readiness checks still apply. Preview
+samples the destination scene on the result timeline. Motion beyond its paced
+duration reports `motion_exceeds_scene_duration` as a warning; revise the motion
+or explicitly change timeline timing if those later keyframes are needed.
+
+`model inspect` lists the copied scene's input declarations and current bindings;
+`input_targets` from apply supplies the new occurrence paths and scene input
+names. To change just one assignment, pass this request to `model edit FILE`:
+
+```json
+{
+  "op": "scene.bind",
+  "target": {"scene_id": "scene_b"},
+  "input": "speaker_card_label",
+  "value": {"text": "A revised title"}
+}
+```
+
+Each edit is undoable. Scene inputs remain available after reload, saved-layout
+replacement, or catalog deletion. Duplicating an instance copies its scene input
+assignments independently. Removing or changing the type of a bound leaf reports
+`content_binding_conflict`; coordinate changes to the scene inputs and their
+targets through `model apply`, or preserve the target. Assets used by scene
+bindings count as references for deletion guards.
+
+To update a saved design, customize a scene copy with normal `model edit`, then
+`layouts save interview --scene scene_b --replace --dry-run` and save it.
+Previously created scenes keep their independent arrangements and bindings.
+`layouts delete saved:interview [--dry-run] [--expected-state-id STATE]` removes
+only the catalog record; existing scenes and shared components stay intact.
+Deletion records one undo step. Built-in catalog entries cannot be deleted.
+
+Saved catalog entries report `can_apply: true` when their current linked design
+is valid. Stale content targets or incompatible components report diagnostics
+and `can_apply: false`; application fails without changing the project. Saved
+layouts remain project-scoped; no cross-project packaging is performed.
 
 ## Authoring
 
