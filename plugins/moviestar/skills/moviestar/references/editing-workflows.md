@@ -76,7 +76,13 @@ audio cannot be judged from still frames.
   use the same tree. Check text wrapping and clipping with actual content.
 - Applying over an existing spatial tree needs `--replace`. Review dry-run;
   `--expected-state-id` rejects a stale plan and `undo` restores one application.
-  Saving custom layouts for reuse is a separate follow-on.
+  To save a custom arrangement, run `layouts save ID --scene SCENE_ID --dry-run`,
+  then save and inspect `layouts show saved:ID`. Review the open footage, image,
+  text, and caption inputs, including inherited content in nested components.
+  Only `--keep-text` retains text defaults; old media/ranges/caption tracks are
+  not content defaults. This keeps the source scene intact and records one undo
+  step. Saved arrangements support save/list/show; applying them to new scenes
+  and editing/deleting them follow separately (`can_apply: false`).
 
 ## Add captions or text
 
