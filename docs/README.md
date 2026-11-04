@@ -27,5 +27,6 @@ The CLI's built-in help is the authoritative command reference. Run
 `moviestar scenes motion --help` before using an unfamiliar surface.
 
 - [Accounts from the CLI](accounts.md) — terminal email verification, signup, age and terms consent, and revocable installation approval.
+- [Personal Cloud projects](cloud-projects.md) — explicitly create, list, and reopen owned projects through an approved installation.
 
 - [Sharing and download](sharing.md) — private uploads, unlisted handoffs, retries, link management, and recipient downloads.

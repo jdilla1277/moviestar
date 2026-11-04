@@ -278,6 +278,7 @@ from moviestar.transcribe import (
 from moviestar.feedback import feedback
 from moviestar.subscribe import subscribe as subscribe_command
 from moviestar.account import account as account_command
+from moviestar.cloud import cloud as cloud_command
 from moviestar.upload import upload as upload_command
 from moviestar.sharing import (
     delete as delete_command,
@@ -1043,6 +1044,7 @@ ACCOUNT COMMANDS
 
 \b
   account connect EMAIL  Ask Moviestar to email the human an account claim.
+  cloud                 Create, list, and reopen owned Cloud project metadata.
   account status         Show approval or connection state for this install.
   account disconnect     Revoke this install; local editing keeps working.
   account open           Open the human's account page; --email-link EMAIL requests sign-in mail.
@@ -1186,6 +1188,7 @@ def cli() -> None:
 cli.add_command(subscribe_command)
 cli.add_command(feedback)
 cli.add_command(account_command)
+cli.add_command(cloud_command)
 cli.add_command(upload_command)
 cli.add_command(download_command)
 cli.add_command(share_command)
