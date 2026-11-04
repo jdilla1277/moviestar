@@ -38,6 +38,7 @@ from moviestar.masks import ensure_mask
 from moviestar.render_profiles import (
     REVIEW_PROFILE_NAME, REVIEW_LONG_EDGE, REVIEW_SHORT_EDGE, review_profile_receipt,
 )
+from moviestar.review_budget import budget_receipt, fit_review_budget
 from moviestar.ffmpeg import (
     resolve_video_encoder,
     select_video_encoder,
@@ -1227,13 +1228,39 @@ def _review_option(f):
     )(f)
 
 
+def _max_bytes_option(f):
+    return click.option(
+        "--max-bytes", type=click.IntRange(min=1, max=2**63 - 1), default=None,
+        help="Maximum final review MP4 size in bytes; requires --review. "
+        "At most two compression retries, preserving resolution and encoded audio. "
+        "Unmet limits return a nonzero exit with the complete output preserved.",
+    )(f)
+
+
+def _configure_review_budget(command: str, review: bool, max_bytes: int | None) -> None:
+    if max_bytes is not None:
+        if not review:
+            _error_exit_with_hint(
+                command, "--max-bytes requires --review.",
+                "Add --review to create a size-constrained review copy.",
+            )
+        click.get_current_context().meta["review_max_bytes"] = max_bytes
+
+
 def _attach_review_profile_result(ctx: click.Context, result: dict) -> None:
     if not ctx.meta.get("review_profile") or "error" in result:
         return
     receipt = review_profile_receipt(ctx.meta["video_encoder"])
+    max_bytes = ctx.meta.get("review_max_bytes")
+    if max_bytes is not None and result.get("dry_run"):
+        result["size_budget"] = budget_receipt(max_bytes)
     if not result.get("dry_run"):
         try:
             output = result["out"]
+            if max_bytes is not None:
+                budget, settings = fit_review_budget(output, ctx.meta["video_encoder"], max_bytes)
+                result["size_budget"] = budget
+                receipt["video_encoding"] = settings
             probe = run_ffprobe(output)
             video = next((stream for stream in probe["streams"]
                           if stream.get("codec_type") == "video"), None)
@@ -1245,6 +1272,11 @@ def _attach_review_profile_result(ctx: click.Context, result: dict) -> None:
                 raise ValueError(f"Unexpected review dimensions: {width}x{height}")
             receipt["actual_dimensions"] = {"width": width, "height": height}
             result["file_size_bytes"] = os.path.getsize(output)
+            actual_duration = float(probe["format"]["duration"])
+            if "actual_duration" in result:
+                result["actual_duration"] = format_timecode(actual_duration)
+            if "actual" in result.get("range", {}):
+                result["range"]["actual"]["duration"] = format_timecode(actual_duration)
         except (RuntimeError, OSError, KeyError, ValueError, TypeError) as exc:
             _error_exit_with_hint(
                 ctx.command.name or "render",
@@ -1252,6 +1284,14 @@ def _attach_review_profile_result(ctx: click.Context, result: dict) -> None:
                 "Inspect the preserved output with 'moviestar probe FILE'.",
             )
     result["render_profile"] = receipt
+    if max_bytes is not None and result.get("size_budget", {}).get("met") is False:
+        result.update(
+            status="size_limit_unmet", command=ctx.command.name or "render",
+            error=f"Review output exceeds the requested {max_bytes}-byte limit.",
+            hint="Do not share this file through the size-limited route. Request a "
+            "shorter clip or a larger byte limit. Resolution and audio were preserved; "
+            "the complete output is available at 'out'.",
+        )
 
 
 def _video_encoder_option(f):
@@ -1292,6 +1332,8 @@ def _echo_render_result(result: dict) -> None:
     if ctx is not None:
         _attach_review_profile_result(ctx, result)
     click.echo(json.dumps(result, indent=2))
+    if result.get("size_budget", {}).get("met") is False:
+        sys.exit(1)
 
 
 def _quiet_option(f):
@@ -4848,6 +4890,7 @@ def inspect(
     "authored watch mix and reports coverage relative to that window.",
 )
 @_review_option
+@_max_bytes_option
 @_video_encoder_option
 def watch(
     from_tc: str,
@@ -4859,6 +4902,7 @@ def watch(
     loudness_report: bool,
     video_encoder: str = "auto",
     review: bool = False,
+    max_bytes: int | None = None,
 ) -> None:
     """Extract a video segment from the loaded project as MP4.
 
@@ -4894,6 +4938,7 @@ def watch(
     if not is_loaded():
         _no_project_error_exit("watch")
 
+    _configure_review_budget("watch", review, max_bytes)
     if review:
         click.get_current_context().meta["review_profile"] = True
         precise = True
@@ -26489,6 +26534,7 @@ def _export_composition(
 )
 @_quiet_option
 @_review_option
+@_max_bytes_option
 @_video_encoder_option
 def export_cmd(
     output: str | None,
@@ -26502,6 +26548,7 @@ def export_cmd(
     quiet: bool,
     video_encoder: str = "auto",
     review: bool = False,
+    max_bytes: int | None = None,
 ) -> None:
     """Render the current edit spec to a final MP4.
 
@@ -26544,6 +26591,7 @@ def export_cmd(
     if not is_loaded():
         _no_project_error_exit("export")
 
+    _configure_review_budget("export", review, max_bytes)
     if review and (fast or preview):
         conflict = "--fast" if fast else "--preview"
         _error_exit_with_hint(
