@@ -68,7 +68,7 @@ Every source-specific command takes `--source <id>`, required only when a projec
 - `moviestar overlays add` — one timed text overlay: title, lower third, label, or creative emphasis text. Position presets (including all four corners and both sides) or normalized `--x/--y`, `--z-index` stacking, style presets plus a CSS-like subset (`--css "font-size: 72px; color: white; -moviestar-stroke: 4px black; transform: rotate(-8deg)"`). Sizes accept canvas-relative units such as `font-size: 6vmin`.
 - `moviestar overlays dump` / `moviestar overlays set` — round-trip the complete overlay state as editable JSON: fix caption text, shift timing, restyle, then atomically replace after validation.
 - `moviestar fonts list` / `moviestar fonts add path/to/font.ttf --name "My Font"` — see bundled fonts and install custom `.ttf`, `.otf`, or `.ttc` files without touching package internals. Inside a loaded project, fonts install to `moviestar/fonts`; outside a project, they install to `~/.moviestar/fonts`. Use them from captions or overlays with `--css "font-family: My Font"`.
-- Overlays render on every verification surface — `screenshot`, `inspect`, `watch`, and `export` all burn them in, with bundled or installed fonts resolved before rendering.
+- Overlays render on every verification surface — `screenshot`, `inspect`, `watch`, and `export` all burn them in, with bundled or installed fonts resolved before rendering. Text prefers outlines from the selected font file to avoid incompatible embedded bitmap strikes. Bitmap-only fonts can still require an outline variant; unsupported monochrome-glyph errors include active font names, sizes, paths, and guidance.
 
 **Audio mix:**
 - `moviestar audio source` — inspect, mute, or adjust the gain of routed source audio.
