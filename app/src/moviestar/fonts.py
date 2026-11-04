@@ -10,7 +10,6 @@ not quietly change its look between machines.
 from __future__ import annotations
 
 import json
-import shutil
 import struct
 import subprocess
 from datetime import datetime, timezone
@@ -210,7 +209,9 @@ def add_font(path: str | Path, *, name: str | None = None, scope: str | None = N
         digest = source_bytes[:4096].hex()[:10]
         target = font_dir / _safe_font_filename(f"{display_name}_{digest}", source.suffix)
     if source != target.resolve():
-        shutil.copy2(source, target)
+        # System fonts can be readable while their flags/xattrs are protected.
+        # Register the content without transferring filesystem metadata.
+        target.write_bytes(source_bytes)
 
     manifest = _load_manifest(font_dir)
     entry = {
