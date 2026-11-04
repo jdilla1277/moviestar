@@ -891,7 +891,18 @@ def preflight_shape_render_capabilities(layout_slots: list[dict]) -> None:
         check_ffmpeg_shape_filters_available()
 
 
-def _failure_message(tool: str, result: subprocess.CompletedProcess) -> str:
+def _has_bitmap_glyph_error(stderr: str) -> bool:
+    """Some FFmpeg versions log this error but still exit successfully."""
+    diagnostic = stderr.lower()
+    return "1bpp" in diagnostic and "not supported" in diagnostic
+
+
+def _failure_message(
+    tool: str,
+    result: subprocess.CompletedProcess,
+    *,
+    overlay_plans: list[dict] | None = None,
+) -> str:
     """Compose a non-empty failure message for ffmpeg/ffprobe.
 
     Falls back to the exit code when stderr is empty so the message
@@ -901,7 +912,26 @@ def _failure_message(tool: str, result: subprocess.CompletedProcess) -> str:
     """
     stderr = result.stderr.strip()
     detail = stderr if stderr else f"exit code {result.returncode}"
-    return f"{tool} failed: {detail}"
+    message = f"{tool} failed: {detail}"
+    # A bitmap-only face can still fail after no_bitmap requests outlines.
+    # Do not attribute unrelated generic filter errors to font rasterization.
+    if tool == "ffmpeg" and _has_bitmap_glyph_error(stderr):
+        fonts = list(dict.fromkeys(
+            f"{plan['font']['family']} at {plan['font_size']}px "
+            f"({plan['font']['path']})"
+            for plan in overlay_plans or [] if not plan.get("highlight")
+        ))
+        if fonts:
+            context = "; ".join(fonts[:10])
+            if len(fonts) > 10:
+                context += f"; and {len(fonts) - 10} other font/size combinations"
+            message += (
+                f" Requested text fonts: {context}. FFmpeg cannot render these "
+                "monochrome bitmap glyphs. Select a font "
+                "with usable outlines, for example --css 'font-family: Inter', "
+                "and render again. No replacement font was selected automatically."
+            )
+    return message
 
 
 def build_ffprobe_command(video_path: str) -> list[str]:
@@ -2846,6 +2876,9 @@ def _drawtext_filter(
         f"drawtext=fontfile={_filtergraph_escape(plan['font']['path'])}",
         f"text={_filtergraph_escape(line)}",
         "expansion=none",
+        # Prefer outlines from the selected face over embedded bitmap strikes:
+        # drawtext cannot render 1bpp strikes or apply its outline stroke to them.
+        "ft_load_flags=no_bitmap",
         f"fontsize={plan['font_size']}",
         f"fontcolor={plan['font_color']}",
     ]
@@ -3890,8 +3923,8 @@ def render_segments(
             result = subprocess.run(
                 execution_command, capture_output=True, text=True,
             )
-            if result.returncode != 0:
-                raise RuntimeError(_failure_message("ffmpeg", result))
+            if result.returncode != 0 or _has_bitmap_glyph_error(result.stderr):
+                raise RuntimeError(_failure_message("ffmpeg", result, overlay_plans=overlay_plans))
             return cmd
 
         if progress_cb is None:
@@ -3941,12 +3974,11 @@ def render_segments(
                 error_lines.append(line)
 
         proc.wait()
-        if proc.returncode != 0:
-            # Synthesize the same shape _failure_message would produce
-            # from a captured CompletedProcess.
-            stderr_text = "\n".join(error_lines).strip()
-            detail = stderr_text if stderr_text else f"exit code {proc.returncode}"
-            raise RuntimeError(f"ffmpeg failed: {detail}")
+        stderr_text = "\n".join(error_lines).strip()
+        if proc.returncode != 0 or _has_bitmap_glyph_error(stderr_text):
+            # Synthesize the same shape as a captured CompletedProcess.
+            result = subprocess.CompletedProcess(cmd, proc.returncode, stderr=stderr_text)
+            raise RuntimeError(_failure_message("ffmpeg", result, overlay_plans=overlay_plans))
     return cmd
 
 
@@ -4029,10 +4061,10 @@ def render_layout_video(
                 error_lines.append(line)
 
         proc.wait()
-        if proc.returncode != 0:
-            stderr_text = "\n".join(error_lines).strip()
-            detail = stderr_text if stderr_text else f"exit code {proc.returncode}"
-            raise RuntimeError(f"ffmpeg failed: {detail}")
+        stderr_text = "\n".join(error_lines).strip()
+        if proc.returncode != 0 or _has_bitmap_glyph_error(stderr_text):
+            result = subprocess.CompletedProcess(cmd, proc.returncode, stderr=stderr_text)
+            raise RuntimeError(_failure_message("ffmpeg", result, overlay_plans=overlay_plans))
     return cmd
 
 
@@ -4060,8 +4092,8 @@ def render_layout_frame(
         highlight_ass=highlight_ass,
     )
     result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(_failure_message("ffmpeg", result))
+    if result.returncode != 0 or _has_bitmap_glyph_error(result.stderr):
+        raise RuntimeError(_failure_message("ffmpeg", result, overlay_plans=overlay_plans))
     return cmd
 
 
@@ -4099,7 +4131,7 @@ def render_layout_frames(
         highlight_ass=highlight_ass,
     )
     result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(_failure_message("ffmpeg", result))
+    if result.returncode != 0 or _has_bitmap_glyph_error(result.stderr):
+        raise RuntimeError(_failure_message("ffmpeg", result, overlay_plans=overlay_plans))
     paths = sorted(output_dir.glob(f"{output_prefix}_*.jpg"))
     return paths, cmd
