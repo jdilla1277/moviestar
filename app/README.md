@@ -77,6 +77,7 @@ Every source-specific command takes `--source <id>`, required only when a projec
 - `watch` and `export` render the same resolved mix. `watch --from ... --to ... --loudness-report` measures every routed layer and the final mix over one result-time window. Non-default mixes use a final clipping-protection limiter, with optional loudness normalization applied after the complete mix.
 
 **Output:**
+- `moviestar export --review` / `moviestar watch --from X --to Y --review` — create a 720p review rendition using intermediate encoder settings and final downscaling after authored composition/text. Read measured dimensions and settings in `render_profile`; [review-export details](../docs/review-exports.md).
 - `moviestar export` — render the composition, scene composition, layout composition, or a single source's edit to MP4, `moviestar-clips/export.mp4` by default. Use `--loudness-target -14` to normalize shorts-style audio (check integrated-LUFS `target_met` and final encoded `true_peak_limit_met` separately), and `--audio-join-fade 0.08` to smooth sequential cut/scene joins without changing result timing.
 - `moviestar clip` — extract one standalone clip to its own MP4 (source-time, leaves the edit spec untouched).
 - `moviestar batch` — extract many standalone clips from a JSON recipe in one atomic, frame-exact pass.

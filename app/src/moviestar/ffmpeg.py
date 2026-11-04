@@ -19,6 +19,8 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
+from moviestar.render_profiles import REVIEW_VIDEO_FILTER, review_video_args
+
 
 class FFmpegNotFoundError(RuntimeError):
     """Raised when ffmpeg/ffprobe is not on PATH."""
@@ -2027,13 +2029,17 @@ def compose_storyboard_tiles(
     return cmd
 
 
-def _h264_video_args(preview: bool, video_encoder: str = "x264") -> list[str]:
+def _h264_video_args(preview: bool, video_encoder: str = "x264", review: bool = False) -> list[str]:
     """Encoder-specific quality controls for preview and full-quality renders.
 
     Pins yuv420p: filters such as xfade and alpha masks negotiate 4:4:4
     formats, and x264 would otherwise encode High 4:4:4 Predictive, which
     QuickTime, iOS, and many browsers cannot play.
     """
+    if review:
+        if preview:
+            raise ValueError("Review and preview profiles cannot be combined.")
+        return review_video_args(video_encoder)
     if video_encoder == "videotoolbox":
         # Independent bitrate targets, not an approximation of x264 CRF.
         return [
@@ -2072,6 +2078,7 @@ def build_extract_clip_command(
     precise: bool = False,
     preview: bool = False,
     video_encoder: str = "x264",
+    review: bool = False,
 ) -> list[str]:
     """Return the argv used to extract a video segment.
 
@@ -2095,7 +2102,11 @@ def build_extract_clip_command(
         "-i", video_path,
         "-t", str(duration),
     ]
-    if preview:
+    if review:
+        if preview:
+            raise ValueError("Review and preview profiles cannot be combined.")
+        cmd += ["-vf", REVIEW_VIDEO_FILTER, *review_video_args(video_encoder), "-c:a", "aac"]
+    elif preview:
         cmd += ["-vf", "scale=-2:480", *_h264_video_args(True, video_encoder), "-c:a", "aac"]
     elif precise:
         cmd += [
@@ -2119,6 +2130,7 @@ def extract_clip(
     precise: bool = False,
     preview: bool = False,
     video_encoder: str = "x264",
+    review: bool = False,
 ) -> list[str]:
     """Extract a video segment. Returns the ffmpeg argv that was run.
 
@@ -2137,7 +2149,7 @@ def extract_clip(
 
     cmd = build_extract_clip_command(
         video_path, start_time, duration, output_path,
-        precise=precise, preview=preview, video_encoder=video_encoder,
+        precise=precise, preview=preview, video_encoder=video_encoder, review=review,
     )
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
@@ -3270,6 +3282,7 @@ def build_render_segments_command(
     video_segment_durations: list[float] | None = None,
     video_transitions: list[dict] | None = None,
     video_encoder: str = "x264",
+    review: bool = False,
 ) -> list[str]:
     """Render multiple source-time ranges concatenated to one output.
 
@@ -3529,7 +3542,7 @@ def build_render_segments_command(
         path, src_from, src_to = segments[0]
         return build_extract_clip_command(
             path, src_from, src_to - src_from, output_path,
-            precise=precise, preview=preview, video_encoder=video_encoder,
+            precise=precise, preview=preview, video_encoder=video_encoder, review=review,
         )
 
     # Multi-segment path. One -i per segment so each decoder fast-
@@ -3679,7 +3692,7 @@ def build_render_segments_command(
 
     a_count = 1 if (use_audio and audio_from_input is None) else 0
     video_output_label = (
-        "vraw" if (preview or overlay_plans or output_fps is not None) else "outv"
+        "vraw" if (preview or review or overlay_plans or output_fps is not None) else "outv"
     )
     concat_outputs = (
         f"[{video_output_label}][outa]" if a_count else f"[{video_output_label}]"
@@ -3734,7 +3747,7 @@ def build_render_segments_command(
 
     if overlay_plans:
         assert overlay_canvas is not None
-        overlay_out = "vov" if (preview or output_fps is not None) else "outv"
+        overlay_out = "vov" if (preview or review or output_fps is not None) else "outv"
         filter_parts.extend(
             build_overlay_filter_parts(
                 overlay_plans,
@@ -3747,12 +3760,14 @@ def build_render_segments_command(
         )
         video_output_label = overlay_out
     if output_fps is not None:
-        fps_out = "vfps" if preview else "outv"
+        fps_out = "vfps" if (preview or review) else "outv"
         filter_parts.append(
             f"[{video_output_label}]fps={output_fps}[{fps_out}]"
         )
         video_output_label = fps_out
-    if preview:
+    if review:
+        filter_parts.append(f"[{video_output_label}]{REVIEW_VIDEO_FILTER}[outv]")
+    elif preview:
         filter_parts.append(f"[{video_output_label}]scale=-2:480[outv]")
     elif output_canvas is None:
         # Canvas renders are validated even; source-sized ones may not be.
@@ -3773,7 +3788,7 @@ def build_render_segments_command(
     # fallback both land here; the caller's intent of "fast" can't be
     # honored across a filter graph, so the envelope layer is responsible
     # for surfacing the override in the response.
-    cmd += _h264_video_args(preview, video_encoder)
+    cmd += _h264_video_args(preview, video_encoder, review=review)
     if use_audio:
         cmd += ["-c:a", "aac"]
     cmd.append(output_path)
@@ -3860,6 +3875,7 @@ def render_segments(
     video_transitions: list[dict] | None = None,
     progress_cb=None,
     video_encoder: str = "x264",
+    review: bool = False,
 ) -> list[str]:
     """Render multiple source-time ranges concatenated to one output.
 
@@ -3897,7 +3913,7 @@ def render_segments(
 
     cmd = build_render_segments_command(
         segments, output_path,
-        precise=precise, preview=preview, video_encoder=video_encoder,
+        precise=precise, preview=preview, video_encoder=video_encoder, review=review,
         segment_has_audio=segment_has_audio,
         segment_fps=segment_fps,
         fill_missing_audio_with_silence=fill_missing_audio_with_silence,

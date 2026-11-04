@@ -65,6 +65,13 @@ their dump/edit/set JSON workflows. Always validate replacement files with
 
 ## Verification
 
+Use `export --review` for a 720p review copy of the current edit, or
+`watch --from X --to Y --review` for a scene-composition window. Check the
+returned `render_profile.actual_dimensions`, encoding settings, and measured
+`file_size_bytes`. The profile preserves authored layout and text wrapping;
+see [review exports](review-exports.md) for sizing, source-time watch behavior,
+and the full-resolution review limits.
+
 Run `moviestar captions audit --language en` to inspect caption states across
 the complete result timeline. Duration and connector-word findings are advisory;
 language is opt-in. Select manual text with `--track NAME`, and combine related
