@@ -35,6 +35,9 @@ from moviestar.activity import (
     analyze_visual_activity,
 )
 from moviestar.masks import ensure_mask
+from moviestar.render_profiles import (
+    REVIEW_PROFILE_NAME, REVIEW_LONG_EDGE, REVIEW_SHORT_EDGE, review_profile_receipt,
+)
 from moviestar.ffmpeg import (
     resolve_video_encoder,
     select_video_encoder,
@@ -1215,6 +1218,42 @@ def _error_exit(command: str, message: str) -> None:
     sys.exit(1)
 
 
+def _review_option(f):
+    return click.option(
+        "--review", is_flag=True,
+        help="720p review profile: fit within 1280x720 (or 720x1280 portrait), "
+        "without upscaling. Preserve authored layout/text, then resize. "
+        "Re-encodes with the selected encoder's review settings.",
+    )(f)
+
+
+def _attach_review_profile_result(ctx: click.Context, result: dict) -> None:
+    if not ctx.meta.get("review_profile") or "error" in result:
+        return
+    receipt = review_profile_receipt(ctx.meta["video_encoder"])
+    if not result.get("dry_run"):
+        try:
+            output = result["out"]
+            probe = run_ffprobe(output)
+            video = next((stream for stream in probe["streams"]
+                          if stream.get("codec_type") == "video"), None)
+            if video is None:
+                raise ValueError("The output contains no measurable video stream.")
+            width, height = int(video["width"]), int(video["height"])
+            short, long = sorted((width, height))
+            if short <= 0 or short > REVIEW_SHORT_EDGE or long > REVIEW_LONG_EDGE:
+                raise ValueError(f"Unexpected review dimensions: {width}x{height}")
+            receipt["actual_dimensions"] = {"width": width, "height": height}
+            result["file_size_bytes"] = os.path.getsize(output)
+        except (RuntimeError, OSError, KeyError, ValueError, TypeError) as exc:
+            _error_exit_with_hint(
+                ctx.command.name or "render",
+                f"Could not verify the review output: {exc}",
+                "Inspect the preserved output with 'moviestar probe FILE'.",
+            )
+    result["render_profile"] = receipt
+
+
 def _video_encoder_option(f):
     return click.option(
         "--video-encoder", type=click.Choice(["auto", "x264", "videotoolbox"]),
@@ -1250,6 +1289,8 @@ def _echo_render_result(result: dict) -> None:
                 "Run 'moviestar doctor' and inspect the FFmpeg error. "
                 "The selected encoder was not retried or substituted."
             )
+    if ctx is not None:
+        _attach_review_profile_result(ctx, result)
     click.echo(json.dumps(result, indent=2))
 
 
@@ -2092,7 +2133,7 @@ def _resolve_unique_output_path(
     return candidate
 
 
-def _default_export_output_path(*, create_parent: bool) -> str:
+def _default_export_output_path(*, create_parent: bool, review: bool = False) -> str:
     """Return the default export path under the user-facing clips dir.
 
     ``moviestar/`` is internal workspace state; rendered media lands in
@@ -2102,7 +2143,8 @@ def _default_export_output_path(*, create_parent: bool) -> str:
     clips_dir = get_project_dir().parent / CLIPS_DIR
     if create_parent:
         clips_dir.mkdir(parents=True, exist_ok=True)
-    return _resolve_unique_output_path(str(clips_dir / "export.mp4"))
+    filename = f"{REVIEW_PROFILE_NAME}.mp4" if review else "export.mp4"
+    return _resolve_unique_output_path(str(clips_dir / filename))
 
 
 def _directory_stats(path: Path) -> tuple[int, int]:
@@ -4770,7 +4812,7 @@ def inspect(
     help="Output MP4 path. Auto-named 'watch_<from>s_<to>s.mp4' in cwd if "
     "omitted (e.g. 'watch_5.0s_15.0s.mp4'); suffixes _2, _3, ... on repeat "
     "invocations rather than overwriting. Explicit --out paths overwrite "
-    "via ffmpeg's -y.",
+    "via ffmpeg's -y. --review adds '_review-720p' to automatic names.",
 )
 @click.option(
     "--precise",
@@ -4805,6 +4847,7 @@ def inspect(
     "plus the final mix over the requested --from/--to window. Uses the "
     "authored watch mix and reports coverage relative to that window.",
 )
+@_review_option
 @_video_encoder_option
 def watch(
     from_tc: str,
@@ -4815,6 +4858,7 @@ def watch(
     source_arg: str | None,
     loudness_report: bool,
     video_encoder: str = "auto",
+    review: bool = False,
 ) -> None:
     """Extract a video segment from the loaded project as MP4.
 
@@ -4832,7 +4876,9 @@ def watch(
     same extraction engine).
 
     Default is stream-copy (fast, ±keyframe alignment). Pass --precise
-    for frame-accurate re-encoding when exact boundaries matter.
+    for frame-accurate re-encoding when exact boundaries matter. --review
+    also re-encodes, fitting the finished image inside an orientation-aware
+    720p box without changing this command's existing clock/routing contract.
 
     With ``--dry-run``, watch validates everything
     a real call would (project loaded, range parses + within source,
@@ -4847,6 +4893,10 @@ def watch(
     """
     if not is_loaded():
         _no_project_error_exit("watch")
+
+    if review:
+        click.get_current_context().meta["review_profile"] = True
+        precise = True
 
     try:
         project = load_project()
@@ -4884,6 +4934,7 @@ def watch(
                 to_s=to_s,
                 output=output,
                 preview=False,
+                review=review,
                 dry_run=dry_run,
                 loudness_report=loudness_report,
                 video_encoder=video_encoder,
@@ -4922,8 +4973,10 @@ def watch(
     # so iterating agents don't silently overwrite prior outputs (#25).
     # Explicit --out paths are honored as-given (and overwrite via -y).
     if output is None:
-        base = f"watch_{round(from_s, 3)}s_{round(to_s, 3)}s.mp4"
-        output = _resolve_unique_output_path(base)
+        base = f"watch_{round(from_s, 3)}s_{round(to_s, 3)}s"
+        if review:
+            base += f"_{REVIEW_PROFILE_NAME}"
+        output = _resolve_unique_output_path(base + ".mp4")
     abs_output = os.path.realpath(output)
 
     output_parent = os.path.dirname(abs_output)
@@ -4933,7 +4986,7 @@ def watch(
             f"Cannot write to {abs_output}: parent directory does not exist",
         )
 
-    mode = "precise" if precise else "stream-copy"
+    mode = "review" if review else "precise" if precise else "stream-copy"
     note = None
     if not precise:
         note = (
@@ -4954,6 +5007,7 @@ def watch(
             range_duration,
             abs_output,
             precise=precise,
+            review=review,
             video_encoder=video_encoder,
         )
         result: dict = {
@@ -5015,6 +5069,7 @@ def watch(
             range_duration,
             abs_output,
             precise=precise,
+            review=review,
             video_encoder=video_encoder,
         )
     except FFmpegNotFoundError as exc:
@@ -5361,6 +5416,7 @@ def _watch_scene_layout_composition(
     dry_run: bool,
     loudness_report: bool = False,
     video_encoder: str = "auto",
+    review: bool = False,
 ) -> None:
     plan, render_plans = _scene_render_plans_for_range(
         project=project,
@@ -5374,8 +5430,10 @@ def _watch_scene_layout_composition(
         "watch", spec, plan["composition_duration"], get_project_dir()
     )
     if output is None:
-        base = f"watch_{round(from_s, 3)}s_{round(to_s, 3)}s.mp4"
-        output = _resolve_unique_output_path(base)
+        base = f"watch_{round(from_s, 3)}s_{round(to_s, 3)}s"
+        if review:
+            base += f"_{REVIEW_PROFILE_NAME}"
+        output = _resolve_unique_output_path(base + ".mp4")
     abs_output = os.path.realpath(output)
     output_parent = os.path.dirname(abs_output)
     if output_parent and not os.path.isdir(output_parent) and not dry_run:
@@ -5403,9 +5461,11 @@ def _watch_scene_layout_composition(
         work_dir=(
             get_project_dir()
             / "scene-renders"
-            / f"watch_{round(from_s, 3)}_{round(to_s, 3)}"
+            / (f"watch_{round(from_s, 3)}_{round(to_s, 3)}"
+               + (f"_{REVIEW_PROFILE_NAME}" if review else ""))
         ),
         preview=preview,
+        review=review,
     )
     audio_dropped_note = artifacts["audio_dropped_note"]
     base_result: dict = {
@@ -5524,6 +5584,7 @@ def _scene_video_render_artifacts(
     preview: bool,
     audio_join_fade: float | None = None,
     video_encoder: str = "auto",
+    review: bool = False,
 ) -> dict:
     video_encoder = _resolve_video_encoder(command, video_encoder)
     render_plans, transition_render_plan = _apply_internal_transition_rendering(
@@ -5610,6 +5671,7 @@ def _scene_video_render_artifacts(
         precise=True,
         video_encoder=video_encoder,
         preview=False,
+        review=review,
         segment_has_audio=segment_has_audio,
         fill_missing_audio_with_silence=True,
         audio_join_fade=audio_join_fade,
@@ -5632,6 +5694,7 @@ def _scene_video_render_artifacts(
         )
     return {
         "video_encoder": video_encoder,
+        "review": review,
         "work_dir": work_dir,
         "render_plans": render_plans,
         "scene_clip_paths": scene_clip_paths,
@@ -5862,6 +5925,7 @@ def _render_scene_video_artifacts(
         precise=True,
         video_encoder=video_encoder,
         preview=False,
+        review=artifacts.get("review", False),
         segment_has_audio=artifacts["segment_has_audio"],
         fill_missing_audio_with_silence=True,
         audio_join_fade=audio_join_fade,
@@ -25947,6 +26011,7 @@ def _export_scene_layout_composition(
     loudness_report: bool = False,
     quiet: bool = False,
     video_encoder: str = "auto",
+    review: bool = False,
 ) -> None:
     plan, render_plans = _scene_render_plans_for_range(
         project=project,
@@ -25965,7 +26030,7 @@ def _export_scene_layout_composition(
     )
     default_output = output is None
     if default_output:
-        output = _default_export_output_path(create_parent=not dry_run)
+        output = _default_export_output_path(create_parent=not dry_run, review=review)
     abs_output = os.path.realpath(output)
     output_parent = os.path.dirname(abs_output)
     if (
@@ -25993,8 +26058,10 @@ def _export_scene_layout_composition(
         spec=spec,
         render_plans=render_plans,
         abs_output=abs_output,
-        work_dir=get_project_dir() / "scene-renders" / "export",
+        work_dir=(get_project_dir() / "scene-renders"
+                  / (f"export-{REVIEW_PROFILE_NAME}" if review else "export")),
         preview=preview,
+        review=review,
         audio_join_fade=audio_join_fade,
     )
     if (
@@ -26301,6 +26368,7 @@ def _export_composition(
     loudness_report: bool = False,
     quiet: bool = False,
     video_encoder: str = "auto",
+    review: bool = False,
 ) -> None:
     """Render a populated composition to one MP4.
 
@@ -26327,6 +26395,7 @@ def _export_composition(
                 output=output,
                 fast=fast,
                 preview=preview,
+                review=review,
                 dry_run=dry_run,
                 loudness_target=loudness_target,
                 audio_join_fade=audio_join_fade,
@@ -26353,7 +26422,8 @@ def _export_composition(
     "--out",
     "output",
     default=None,
-    help="Output MP4 path (default 'moviestar-clips/export.mp4' in cwd).",
+    help="Output MP4 path (default 'moviestar-clips/export.mp4' in cwd; "
+    "--review uses 'moviestar-clips/review-720p.mp4').",
 )
 @click.option(
     "--fast",
@@ -26418,6 +26488,7 @@ def _export_composition(
     "(e.g. music drowning dialogue) without listening to the export.",
 )
 @_quiet_option
+@_review_option
 @_video_encoder_option
 def export_cmd(
     output: str | None,
@@ -26430,6 +26501,7 @@ def export_cmd(
     loudness_report: bool,
     quiet: bool,
     video_encoder: str = "auto",
+    review: bool = False,
 ) -> None:
     """Render the current edit spec to a final MP4.
 
@@ -26440,7 +26512,9 @@ def export_cmd(
     "what you asked for == what you got". For long renders where the
     re-encode time matters, ``--fast`` opts into stream-copy (sub-second
     on any clip but snaps to the nearest keyframe). ``--preview``
-    re-encodes at 480p with the selected encoder's preview profile.
+    re-encodes at 480p with the selected encoder's preview profile. --review
+    fits the completed composition and text inside a 720p box, with intermediate
+    encoding quality. Review copies use a separate default filename.
 
     ``actual_duration`` is probed from the rendered file and may drift
     ±1 frame from ``result_duration`` due to container framing on
@@ -26469,6 +26543,15 @@ def export_cmd(
     """
     if not is_loaded():
         _no_project_error_exit("export")
+
+    if review and (fast or preview):
+        conflict = "--fast" if fast else "--preview"
+        _error_exit_with_hint(
+            "export", f"--review and {conflict} cannot be combined.",
+            "Choose --review, --preview, --fast, or the default full export.",
+        )
+    if review:
+        click.get_current_context().meta["review_profile"] = True
 
     if fast and preview:
         _error_exit_with_hint(
@@ -26508,6 +26591,7 @@ def export_cmd(
             output=output,
             fast=fast,
             preview=preview,
+            review=review,
             dry_run=dry_run,
             loudness_target=loudness_target,
             audio_join_fade=audio_join_fade,
@@ -26575,7 +26659,7 @@ def export_cmd(
     # Resolve output path. Auto-name in moviestar-clips/ if omitted.
     default_output = output is None
     if default_output:
-        output = _default_export_output_path(create_parent=not dry_run)
+        output = _default_export_output_path(create_parent=not dry_run, review=review)
     abs_output = os.path.realpath(output)
 
     output_parent = os.path.dirname(abs_output)
@@ -26599,7 +26683,11 @@ def export_cmd(
     )
     fast_overridden_for_segments = False
     fast_overridden_for_overlays = False
-    if preview:
+    if review:
+        precise_arg = True
+        preview_arg = False
+        mode = "review"
+    elif preview:
         precise_arg = False
         preview_arg = True
         mode = "preview"
@@ -26648,6 +26736,7 @@ def export_cmd(
             precise=precise_arg,
             video_encoder=video_encoder,
             preview=preview_arg,
+            review=review,
             segment_has_audio=[bool(source.get("audio_codec"))] * len(render_inputs),
             segment_fps=[float(source.get("fps") or 30.0)] * len(render_inputs),
             audio_join_fade=audio_join_fade,
@@ -26754,6 +26843,7 @@ def export_cmd(
             precise=precise_arg,
             video_encoder=video_encoder,
             preview=preview_arg,
+            review=review,
             segment_has_audio=[bool(source.get("audio_codec"))] * len(render_inputs),
             segment_fps=[float(source.get("fps") or 30.0)] * len(render_inputs),
             audio_join_fade=audio_join_fade,

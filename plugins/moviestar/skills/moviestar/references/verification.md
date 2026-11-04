@@ -5,6 +5,14 @@ successfully.
 
 ## Before the final render
 
+Use `export --review` to inspect a 720p rendition with the authored framing and
+caption wrapping, or `watch --from X --to Y --review` for a scene-composition
+window. Read `render_profile.actual_dimensions`, video encoding settings, and
+`file_size_bytes`; a 720p profile does not establish attachment-size compliance.
+Watch retains its source-time extraction behavior outside scene compositions;
+use export for a complete edited-source rendition. Check the full-resolution
+artifact for details too fine to judge at 720p.
+
 Use `captions audit` to enumerate text states across the complete result clock.
 Add `--language en` or explicit `--connector-word` values for connector-only
 candidates; no language is assumed. `--track NAME` also selects manual text;

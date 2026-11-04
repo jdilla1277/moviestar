@@ -7,6 +7,8 @@ AI agents. Start with the path that matches your task:
   first verified edit.
 - [Agent guide](agent-guide.md) — understand project state, time spaces,
   structured output, composition, and verification.
+- [Review exports](review-exports.md) — create a 720p rendition while preserving
+  authored composition and typography.
 - [Caption timing audit](caption-audit.md) — inspect text visibility intervals,
   short flashes, connector-only candidates, and optional proof frames.
 - [Install the Moviestar skill](install-skill.md) — add the GitHub-distributed
