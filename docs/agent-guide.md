@@ -16,6 +16,12 @@ Use `--workspace PATH` when a command should target a project other than the
 current directory or one of its parents. Use `status`, `history`, and the
 various `dump`/`list` commands to inspect persisted state before changing it.
 
+For account-owned remote project metadata, use the explicit `moviestar cloud`
+group. Start with `cloud capabilities`, then `cloud projects create`, `list`,
+and `show`. Keep a create's original title and idempotency key for recovery.
+This does not redirect local editing commands or upload media. See
+[Personal Cloud projects](cloud-projects.md).
+
 ## Structured command loop
 
 1. Discover the relevant surface with `moviestar --help` and nested help.

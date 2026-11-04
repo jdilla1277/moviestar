@@ -3,6 +3,10 @@
 Local editing needs no account. Hosted videos use a human-owned account and a
 revocable grant for each CLI installation.
 
+Where the service enables personal Cloud projects, the same approved
+installation can explicitly create, list, and reopen project metadata. See
+[Personal Cloud projects](cloud-projects.md).
+
 ## Return to the website with an email link
 
 ```sh
