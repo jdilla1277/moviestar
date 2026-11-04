@@ -17,7 +17,7 @@ VENV="$REPO_ROOT/app/.venv"
 if [[ ! -d "$VENV" ]]; then
   echo "error: virtualenv not found at $VENV" >&2
   echo "create it with:" >&2
-  echo "  python3 -m venv $VENV && source $VENV/bin/activate && pip install -e $REPO_ROOT/app pytest" >&2
+  echo "  python3 -m venv $VENV && source $VENV/bin/activate && pip install -e '$REPO_ROOT/app[transcribe]' pytest" >&2
   exit 1
 fi
 

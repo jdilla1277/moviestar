@@ -11,7 +11,7 @@ Make sure FFmpeg is on PATH (`brew install ffmpeg` on Mac), create a Python 3.10
 ```
 Create a Python 3.10+ virtual environment, then:
 
-pip install moviestar
+pip install 'moviestar[transcribe]'
 moviestar --help
 
 Read the --help output — it's your operational briefing.
@@ -117,12 +117,22 @@ Run `moviestar --help` for the operational contract exposed to agents.
 ## Requirements
 
 - **Python 3.10+**
-- **FFmpeg** on `PATH` (`brew install ffmpeg` / `apt install ffmpeg`)
+- **FFmpeg** on `PATH` for local media operations (`brew install ffmpeg` / `apt install ffmpeg`)
 
 Run `moviestar doctor` after installation to verify that the FFmpeg build has
 the filters and encoders required by the features you plan to use.
 
-The package weighs ~210MB on install — `faster-whisper` ships local transcription out of the box (no API keys, no cloud round-trip). Diarization is opt-in: `pip install moviestar[diarize]`. Fetching captions from a video page URL with `load --captions URL` is opt-in too: `pip install 'moviestar[url-captions]'` adds [yt-dlp](https://github.com/yt-dlp/yt-dlp).
+The base installation supports account/Cloud metadata commands without FFmpeg
+or Whisper. Local speech recognition is optional:
+`python -m pip install 'moviestar[transcribe]'` adds faster-whisper and compatible
+PyAV (no API keys or cloud transcription). Load with `--no-transcribe` or
+`--captions FILE.vtt` to edit locally without Whisper; FFmpeg is still required
+for local media operations. Diarization is opt-in and includes transcription:
+`pip install 'moviestar[diarize]'`. See [installation profiles](../docs/installation.md).
+
+Fetching captions from a video page URL with `load --captions URL` is opt-in
+too: `pip install 'moviestar[url-captions]'` adds
+[yt-dlp](https://github.com/yt-dlp/yt-dlp).
 
 ## License and status
 

@@ -26,9 +26,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "av<19",  # faster-whisper 1.2.1 passes av.open(metadata_errors=...), removed in av 19
     "click>=8.0",
-    "faster-whisper>=1.0",
     "keyring>=25.0",
     "rapidfuzz>=3.0",
 ]
@@ -40,7 +38,12 @@ Repository = "https://github.com/jdilla1277/moviestar"
 Issues = "https://github.com/jdilla1277/moviestar/issues"
 
 [project.optional-dependencies]
-diarize = ["pyannote.audio>=3.0"]
+transcribe = [
+    "av<19",  # faster-whisper 1.2.1 passes av.open(metadata_errors=...), removed in av 19
+    "faster-whisper>=1.0",
+]
+# Diarization also needs local transcription, as it did before the split.
+diarize = ["av<19", "faster-whisper>=1.0", "pyannote.audio>=3.0"]
 # --captions URL fetches caption tracks with yt-dlp (Unlicense).
 url-captions = ["yt-dlp>=2026.8.19"]
 

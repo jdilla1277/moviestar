@@ -28,7 +28,7 @@ Create a development environment with:
 ```bash
 python3 -m venv app/.venv
 source app/.venv/bin/activate
-python -m pip install -e app pytest
+python -m pip install -e './app[transcribe]' pytest
 ```
 
 ### Conductor

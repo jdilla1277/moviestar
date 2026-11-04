@@ -56,3 +56,6 @@ case "$suite" in
 esac
 
 "$REPO_ROOT/app/.venv/bin/python" "$REPO_ROOT/bin/check-dependency-licenses"
+if [[ "$suite" != docs ]]; then
+  "$REPO_ROOT/app/.venv/bin/python" "$REPO_ROOT/bin/check-dependency-licenses" --extra transcribe
+fi

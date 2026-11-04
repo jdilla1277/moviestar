@@ -21,6 +21,7 @@ TEXT_SUFFIXES = {".json", ".md", ".svg", ".yaml", ".yml"}
 PUBLIC_DOCS = (
     ROOT / "docs" / "README.md",
     ROOT / "docs" / "getting-started.md",
+    ROOT / "docs" / "installation.md",
     ROOT / "docs" / "agent-guide.md",
     ROOT / "docs" / "install-skill.md",
     ROOT / "docs" / "skill-validation.md",
@@ -28,6 +29,7 @@ PUBLIC_DOCS = (
     ROOT / "docs" / "releases" / "v0.7.0.md",
     ROOT / "docs" / "releases" / "v0.7.1.md",
     ROOT / "docs" / "releases" / "v0.8.0.md",
+    ROOT / "docs" / "releases" / "unreleased.md",
 )
 
 

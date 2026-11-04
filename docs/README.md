@@ -3,6 +3,8 @@
 Moviestar is a deterministic, non-destructive video editing CLI designed for
 AI agents. Start with the path that matches your task:
 
+- [Installation profiles](installation.md) — choose the base CLI, local
+  transcription, supplied captions, or diarization.
 - [Getting started](getting-started.md) — install Moviestar and produce a
   first verified edit.
 - [Agent guide](agent-guide.md) — understand project state, time spaces,
@@ -13,6 +15,8 @@ AI agents. Start with the path that matches your task:
   Codex plugin or copy the portable skill to another compatible agent.
 - [Skill validation](skill-validation.md) — review the scaffold, installation,
   and source-blind editing evidence.
+- [Upcoming installation change](releases/unreleased.md) — local transcription
+  becomes an explicit extra; existing environments keep installed dependencies.
 - [v0.8.0 release notes](releases/v0.8.0.md) — private uploads, agent-directed
   sharing, recipient downloads, and hosted-video deletion.
 - [v0.7.1 release notes](releases/v0.7.1.md) — the transcription fix for new
