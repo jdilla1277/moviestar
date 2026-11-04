@@ -81,6 +81,22 @@ these decisions. Keep verification codes and passwords out of arguments, project
 files, and logs. Connected accounts can review account-wide consent with
 `moviestar account terms`. Uploads remain private and need no per-video approval.
 
+## Return the human to their website account
+
+When the human asks for an emailed website sign-in link, use
+`moviestar account open --email-link EMAIL`; `--dry-run` previews the destination
+and pending-claim continuation. The command returns a neutral receipt with a
+masked email and request UUID. The human opens the email privately; never ask
+them to paste its link into the agent. A receipt does not prove delivery,
+browser sign-in, terms acceptance or installation approval.
+
+After an uncertain request, preserve its email/claim and retry with the returned
+`--request-id` UUID to avoid duplicate emails. Honor `retry_after_seconds` when
+rate limited. To request a fresh message after an expired/used link, use a new
+request UUID after the cooldown. A live pending claim for the same email and
+service is resumed automatically; approval is still the human's explicit choice.
+Plain `account open` opens the account page without requesting email.
+
 ## Hand off a finished video
 
 When the user authorizes hosting, `moviestar upload FILE` stores an MP4 privately;
