@@ -6,6 +6,8 @@ It does not publish a package or change an existing installation automatically.
 New base installations support account and Cloud metadata commands without
 installing the local Whisper/PyAV stack. Local media editing remains available
 with FFmpeg and supplied captions or `--no-transcribe`.
+Videos with no audio stream also load normally without the transcription extra,
+including with `--no-download`.
 
 **Installation migration:** local speech recognition now requires an explicit
 extra:

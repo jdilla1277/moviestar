@@ -3185,12 +3185,17 @@ def load(
         )
         return
 
-    # Resolve a cold-model requirement before any workspace mutation. Probe
-    # only while the selected model is uncached so silent inputs do not fail
-    # --no-download and warm loads do not pay an extra ffprobe call.
+    # Before mutation, probe cold-model or missing-extra inputs to determine
+    # whether Whisper would actually run. No-audio inputs need neither an
+    # extra nor a model; warm loads still avoid an extra ffprobe call.
     whisper_runs = not no_transcribe and (not abs_captions or transcribe_windows)
-    requirement = _model_download_requirement("load", model) if whisper_runs else None
-    if requirement is not None:
+    dependency_error = None
+    try:
+        requirement = model_download_requirement(model) if whisper_runs else None
+    except TranscriptionDependencyError as exc:
+        requirement = None
+        dependency_error = exc
+    if requirement is not None or dependency_error is not None:
         source_has_audio = False
         for abs_path in abs_paths:
             try:
@@ -3207,6 +3212,9 @@ def load(
                 break
 
         if source_has_audio:
+            if dependency_error is not None:
+                _error_exit_with_hint("load", str(dependency_error), dependency_error.hint,
+                                      code="transcription_not_installed")
             if no_download:
                 _error_exit_with_hint(
                     "load",

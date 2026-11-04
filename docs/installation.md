@@ -20,10 +20,14 @@ unsupported operations on the remote service; inspect `moviestar cloud capabilit
 
 For local speech recognition, `load` still transcribes by default. Without the
 extra, `load`, `retranscribe`, and `models pull` return structured installation
-guidance before replacing a workspace or downloading a model. Use supplied
-captions or skip transcription deliberately; the CLI does not silently change
-your requested editing workflow. Caption imports combined with a transcription
-range still require the extra.
+guidance when speech recognition is needed, before replacing a workspace or
+downloading a model. Videos with no audio stream load without the extra,
+including with `--no-download`; dry-run reports the same `no_audio` skip. If any
+input in a multi-source load needs speech recognition, the dependency check
+still runs before the workspace changes. Use supplied captions or skip
+transcription deliberately; the CLI does not silently change your requested
+editing workflow. Transcription ranges on inputs with audio still require the
+extra.
 
 Run `moviestar doctor` to check local media requirements. Its FFmpeg diagnostics
 do not determine whether account and Cloud metadata commands can run.
