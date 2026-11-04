@@ -42,7 +42,7 @@ def _number(value: object, minimum=0) -> bool:
     return type(value) is int and minimum <= value <= 9_007_199_254_740_991
 
 
-def _connection(*, viewer: bool) -> tuple[str, str, str]:
+def _connection(*, viewer: bool) -> tuple[str, str]:
     if viewer:
         try:
             configured_watch_origin()
@@ -57,10 +57,7 @@ def _connection(*, viewer: bool) -> tuple[str, str, str]:
     credential = _credential_for_connection(state)
     if not endpoint or not credential:
         raise ReplacementError("not_connected", "Run 'moviestar account connect EMAIL', then 'moviestar account status'.")
-    connection = state.get("connection", {})
-    grant = connection.get("device_grant_id") if isinstance(connection, dict) else None
-    identity = _uuid(grant) or hashlib.sha256(credential.encode()).hexdigest()
-    return origin, credential, identity
+    return origin, credential
 
 
 class Source:
@@ -244,6 +241,8 @@ def _validate_record(record: dict, source: Source | None = None):
             or not isinstance(record.get("filename"), str) or not _number(record.get("size_bytes"), 1)
             or (record.get("expected_version") is not None and not _number(record["expected_version"], 1))
             or (record.get("replacement_id") is not None and _uuid(record["replacement_id"]) is None)
+            or (record.get("reservation_attempted") is True and record.get("expected_version") is None)
+            or (record.get("completion_started") is True and record.get("replacement_id") is None)
             or ("remote_status" in record and (not isinstance(record["remote_status"], str)
                 or record["remote_status"] not in {"reserved", "processing", "replaced", "replacement_closed", "invalid_video"}))
             or ("cleanup_pending" in record and type(record["cleanup_pending"]) is not bool)
@@ -255,6 +254,26 @@ def _validate_record(record: dict, source: Source | None = None):
 
 def _finished(record: dict) -> bool:
     return record.get("remote_status") in {"replaced", "replacement_closed", "invalid_video"} and record.get("cleanup_pending") is False
+
+
+def _adopt(store, record: dict, origin: str, video: str) -> dict:
+    """Bind an explicitly reconciled older intent without losing another one."""
+    _validate_record(record)
+    if record.get("video_id") != video:
+        raise StateError("Recovery video mismatch")
+    active = store.current()
+    if active is not None:
+        _validate_record(active)
+        if active["idempotency_key"] != record["idempotency_key"] and active["reservation_attempted"] and not _finished(active):
+            raise StateError("Another request requires reconciliation")
+    record = {**record, "service_origin": origin}
+    store.save(record, active=True)
+    return record
+
+
+def _reconciliation_error(record: dict) -> ReplacementError:
+    _validate_record(record)
+    return ReplacementError("replacement_reconciliation_required", "An older recovery record needs reconciliation. Select its original service and retry with the original --idempotency-key or --resume ID, or read/cancel its replacement ID. No fresh key was selected.")
 
 
 def _safe_upload(body: dict, record: dict, origin: str) -> tuple[str, dict]:
@@ -380,19 +399,34 @@ def replace(video_id: str, file: Path, dry_run: bool, idempotency_key: str | Non
     try:
         if video is None or (resume is not None and _uuid(resume) is None) or (idempotency_key is not None and not _KEY_RE.fullmatch(idempotency_key)) or (dry_run and resume):
             raise ReplacementError("invalid_request", "Use a video UUID, an optional original key, and either --dry-run or --resume.")
-        origin, credential, identity = _connection(viewer=True)
-        scope = origin + "\n" + identity + "\n" + video
+        origin, credential = _connection(viewer=True)
+        # Video UUIDs identify an immutable owner/resource at this service.
+        # Every recovery request still authorizes the current credential remotely.
+        # Grants, credentials, installation IDs and public handles can all change.
+        scope = origin + "\n" + video
         with ExitStack() as contexts:
             store = contexts.enter_context(locked_requests(scope)) if not dry_run else None
             if store is not None:
                 active = store.current()
                 record = store.find(_uuid(resume)) if resume else store.read(idempotency_key) if idempotency_key else active
+                if record is None:
+                    legacy = store.legacy(video)
+                    matches = [item for item in legacy if (resume and item.get("replacement_id") == _uuid(resume))
+                        or (idempotency_key and item.get("idempotency_key") == idempotency_key)]
+                    if len(matches) == 1:
+                        record = matches[0]
+                        record = _adopt(store, record, origin, video)
+                    elif legacy:
+                        record = legacy[0]
+                        raise _reconciliation_error(record)
                 if resume and record is None:
                     raise ReplacementError("replacement_state_missing", "Use replacement-status to inspect this ID. Resume requires the original private recovery record; it never guesses file bytes or starts a new request.")
                 if record is not None:
                     _validate_record(record)
-                    if record.get("video_id") != video:
-                        raise StateError("Recovery video mismatch")
+                    if record.get("video_id") != video or record.get("service_origin") != origin:
+                        raise StateError("Recovery service/video mismatch")
+                    if store.current() is None:
+                        store.save(record, active=True)
             if file.suffix.lower() != ".mp4" or not file.name or len(file.name) > 255 or any(ord(c) < 32 or ord(c) == 127 for c in file.name):
                 raise ReplacementError("invalid_file", "Choose a readable finished .mp4 file.")
             descriptor = os.open(file, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
@@ -408,12 +442,16 @@ def replace(video_id: str, file: Path, dry_run: bool, idempotency_key: str | Non
                             else:
                                 record = None
                     if record is None:
+                        legacy = store.legacy(video)
+                        if legacy:
+                            record = legacy[0]
+                            raise _reconciliation_error(record)
                         if active is not None:
                             _validate_record(active)
                             if active.get("reservation_attempted") and not _finished(active):
                                 record = active
                                 raise ReplacementError("replacement_in_progress", "Inspect or cancel the original replacement before starting another request with different input or a different key.")
-                        record = {"schema_version": 1, "video_id": video, **source.fingerprint(),
+                        record = {"schema_version": 1, "video_id": video, "service_origin": origin, **source.fingerprint(),
                             "idempotency_key": idempotency_key or uuid.uuid4().hex, "expected_version": None, "replacement_id": None,
                             "reservation_attempted": False, "completion_started": False, "upload_confirmed": False}
                         store.save(record, active=True)
@@ -447,21 +485,32 @@ def _inspect(video_id: str, replacement_id: str, cancel: bool):
         video, job = _uuid(video_id), _uuid(replacement_id)
         if not video or not job:
             raise ReplacementError("invalid_request", "Use the original video and replacement UUIDs.")
-        origin, credential, identity = _connection(viewer=False)
+        origin, credential = _connection(viewer=False)
         code, raw = _json_request(f"{origin}/api/v1/videos/{video}/replacements/{job}", credential, method="DELETE" if cancel else "GET")
         allowed = {200: ("replaced", "replacement_closed")} if cancel else _READ
         entry = _ack(code, raw, allowed, video, job)
         if entry is None:
             raise _service_error(code, raw)
         result = _result(entry, None)
-        scope = origin + "\n" + identity + "\n" + video
+        scope = origin + "\n" + video
         try:
             if has_records(scope):
                 with locked_requests(scope) as store:
                     record = store.find(job)
+                    if record is None:
+                        matches = [item for item in store.legacy(video) if item.get("replacement_id") == job]
+                        if len(matches) == 1:
+                            candidate = matches[0]
+                            _validate_record(candidate)
+                            if _status(raw, video, job, candidate) is not None:
+                                record = _adopt(store, candidate, origin, video)
                     if record:
                         _validate_record(record)
+                        if record.get("service_origin") != origin:
+                            raise StateError("Recovery service mismatch")
                         if _status(raw, video, job, record) is not None:
+                            if store.current() is None:
+                                store.save(record, active=True)
                             _remember(store, record, entry)
                             result["idempotency_key"] = record["idempotency_key"]
         except (StateError, OSError):

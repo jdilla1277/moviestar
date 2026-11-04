@@ -1,5 +1,7 @@
 """Replacement previews, durable retries and explicit failure outcomes."""
 import json
+import hashlib
+import shutil
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -139,6 +141,210 @@ def test_retry_after_lost_publication_reply_reads_status_without_reserving_or_up
     assert len(calls) == 1 and calls[0][1] == "GET"
 
 
+def reconnect(account, monkeypatch):
+    """Replace the entire forgotten connection, including its grant and credential."""
+    connection = json.loads(account.read_text())
+    credential = "mvs_" + "n" * 43
+    connection["installation_id"] = "10000000-0000-4000-8000-000000000001"
+    connection["connection"] = {"device_grant_id": "10000000-0000-4000-8000-000000000002",
+        "handle": "@renamed_maker", "email": "new@example.test", "credential_storage": "private_file",
+        "credential_fallback": credential}
+    account.write_text(json.dumps(connection))
+    original = replacement._json_request
+    def request(url, token, *args, **kwargs):
+        assert token == credential
+        return original(url, TOKEN, *args, **kwargs)
+    monkeypatch.setattr(replacement, "_json_request", request)
+
+
+@pytest.mark.parametrize("retry_option", ["default", "key", "resume", "status", "cancel"])
+def test_reconnection_recovers_uncertain_completion_without_overwriting_a_later_cut(service, monkeypatch, retry_option):
+    file, account, calls, uploads, state, _ = service
+    state["lost_reply"] = True; state["status_error"] = True
+    _, first = invoke("replace", VIDEO, str(file))
+    reconnect(account, monkeypatch)
+    state["status_error"] = False
+    state["version"] = 3  # Another cut was published after this request committed version 2.
+    calls.clear()
+    if retry_option in {"status", "cancel"}:
+        # Cancellation of a committed operation returns its original receipt.
+        original = replacement._json_request
+        def request(url, token, payload=None, *, method="POST"):
+            return original(url, token, payload, method="GET" if method == "DELETE" else method)
+        monkeypatch.setattr(replacement, "_json_request", request)
+        result, body = invoke("replacement-status" if retry_option == "status" else "cancel-replacement", VIDEO, JOB)
+    else:
+        options = [] if retry_option == "default" else ["--idempotency-key", first["idempotency_key"]] if retry_option == "key" else ["--resume", JOB]
+        result, body = invoke("replace", VIDEO, str(file), *options)
+    assert result.exit_code == 0, result.output
+    assert body["idempotency_key"] == first["idempotency_key"]
+    assert body["replacement_id"] == JOB and body["base_version"] == 1 and body["version"] == 2
+    assert len(uploads) == 1 and state["version"] == 3
+    assert len(calls) == 1 and calls[0][1] == "GET"
+
+
+def test_reconnection_preserves_original_reservation_input_after_a_lost_reply(service, monkeypatch):
+    file, account, calls, uploads, state, _ = service
+    state["lost_reservation"] = True
+    _, first = invoke("replace", VIDEO, str(file))
+    reconnect(account, monkeypatch)
+    state["version"] = 7; calls.clear()
+    result, body = invoke("replace", VIDEO, str(file))
+    assert result.exit_code == 0, result.output
+    assert body["idempotency_key"] == first["idempotency_key"] and len(uploads) == 1
+    assert calls[0][2]["expected_version"] == 1
+    assert not any(url.endswith("/preflight") for url, _, _ in calls)
+
+
+def test_reconnecting_to_another_owner_cannot_rebind_the_original_request(service, monkeypatch):
+    file, account, calls, uploads, state, _ = service
+    state["lost_reply"] = True; state["status_error"] = True
+    _, first = invoke("replace", VIDEO, str(file))
+    reconnect(account, monkeypatch)
+    requests = []
+    def unavailable(url, token, payload=None, *, method="POST"):
+        requests.append((url, method))
+        return 404, {"status": "not_found"}
+    monkeypatch.setattr(replacement, "_json_request", unavailable)
+    result, body = invoke("replace", VIDEO, str(file))
+    assert result.exit_code == 1 and body["status"] == "not_found"
+    assert body["idempotency_key"] == first["idempotency_key"] and body["video_replaced"] is None
+    assert len(uploads) == 1 and requests == [(f"{API}/api/v1/videos/{VIDEO}/replacements/{JOB}", "GET")]
+
+
+def move_to_old_grant_scope(account):
+    """Recreate recovery records written by the original PR implementation."""
+    root = account.parent / "replacement-requests"
+    directory = next(p for p in root.iterdir() if p.is_dir())
+    scope = API + "\n" + hashlib.sha256(TOKEN.encode()).hexdigest() + "\n" + VIDEO
+    legacy = root / hashlib.sha256(scope.encode()).hexdigest()
+    for path in directory.glob("request-*.json"):
+        record = json.loads(path.read_text()); record.pop("service_origin", None)
+        path.write_text(json.dumps(record))
+    if directory != legacy:
+        shutil.move(str(directory), str(legacy))
+
+
+@pytest.mark.parametrize("reconcile", ["key", "resume", "status", "cancel"])
+def test_older_grant_scoped_records_require_reconciliation_before_a_new_key(service, monkeypatch, reconcile):
+    file, account, calls, uploads, state, _ = service
+    state["lost_reply"] = True; state["status_error"] = True
+    _, first = invoke("replace", VIDEO, str(file))
+    move_to_old_grant_scope(account)
+    reconnect(account, monkeypatch)
+    state["status_error"] = False; state["version"] = 3; calls.clear()
+    result, body = invoke("replace", VIDEO, str(file))
+    assert result.exit_code == 1 and body["status"] == "replacement_reconciliation_required"
+    assert body["idempotency_key"] == first["idempotency_key"] and body["video_replaced"] is None
+    assert not calls and len(uploads) == 1
+    if reconcile in {"status", "cancel"}:
+        original = replacement._json_request
+        def request(url, token, payload=None, *, method="POST"):
+            return original(url, token, payload, method="GET" if method == "DELETE" else method)
+        monkeypatch.setattr(replacement, "_json_request", request)
+        result, body = invoke("replacement-status" if reconcile == "status" else "cancel-replacement", VIDEO, JOB)
+    else:
+        options = ["--idempotency-key", first["idempotency_key"]] if reconcile == "key" else ["--resume", JOB]
+        result, body = invoke("replace", VIDEO, str(file), *options)
+    assert result.exit_code == 0, result.output
+    assert body["idempotency_key"] == first["idempotency_key"]
+    calls.clear()
+    result, body = invoke("replace", VIDEO, str(file))
+    assert result.exit_code == 0 and body["version"] == 2
+    assert len(calls) == 1 and calls[0][1] == "GET" and len(uploads) == 1
+
+
+@pytest.mark.parametrize("reconcile", ["key", "status"])
+def test_adoption_interrupted_before_the_current_pointer_cannot_start_a_new_request(service, monkeypatch, reconcile):
+    from moviestar.replacement_state import Requests, StateError
+    file, account, calls, uploads, state, _ = service
+    state["lost_reply"] = True; state["status_error"] = True
+    _, first = invoke("replace", VIDEO, str(file))
+    move_to_old_grant_scope(account); reconnect(account, monkeypatch)
+    original = Requests.save
+    def incomplete_save(self, record, *, active=False):
+        original(self, record)
+        if active:
+            raise StateError("Lost current pointer write")
+    monkeypatch.setattr(Requests, "save", incomplete_save)
+    result, body = invoke("replace", VIDEO, str(file), "--idempotency-key", first["idempotency_key"])
+    assert result.exit_code == 1 and body["status"] == "replacement_state_unavailable"
+    monkeypatch.setattr(Requests, "save", original)
+    calls.clear(); state["status_error"] = False
+    result, body = invoke("replace", VIDEO, str(file))
+    assert result.exit_code == 1 and body["status"] == "replacement_reconciliation_required"
+    assert not calls and len(uploads) == 1
+    if reconcile == "key":
+        result, body = invoke("replace", VIDEO, str(file), "--idempotency-key", first["idempotency_key"])
+    else:
+        result, body = invoke("replacement-status", VIDEO, JOB)
+    assert result.exit_code == 0, result.output
+    calls.clear()
+    result, body = invoke("replace", VIDEO, str(file))
+    assert result.exit_code == 0 and body["idempotency_key"] == first["idempotency_key"]
+    assert len(calls) == 1 and calls[0][1] == "GET" and len(uploads) == 1
+
+
+def test_changed_file_after_reconnection_never_selects_a_new_request(service, monkeypatch):
+    file, account, calls, uploads, state, _ = service
+    state["lost_reply"] = True; state["status_error"] = True
+    _, first = invoke("replace", VIDEO, str(file))
+    reconnect(account, monkeypatch)
+    file.write_bytes(b"x" * file.stat().st_size); calls.clear()
+    result, body = invoke("replace", VIDEO, str(file))
+    assert result.exit_code == 1 and body["status"] == "file_changed"
+    assert body["idempotency_key"] == first["idempotency_key"] and body["video_replaced"] is None
+    assert not calls and len(uploads) == 1
+
+
+def test_another_service_has_its_own_video_recovery_namespace(service, monkeypatch):
+    file, _, calls, uploads, state, _ = service
+    state["lost_reply"] = True; state["status_error"] = True
+    _, first = invoke("replace", VIDEO, str(file))
+    other = "https://other.example.test"
+    monkeypatch.setenv("MOVIESTAR_ACCOUNT_INSTALLATION_URL", other + "/api/v1/account/installation")
+    state.update(published=False, status_error=False, version=1); calls.clear()
+    result, body = invoke("replace", VIDEO, str(file))
+    assert result.exit_code == 0, result.output
+    assert body["idempotency_key"] != first["idempotency_key"] and len(uploads) == 2
+    assert calls[0][0] == f"{other}/api/v1/videos/{VIDEO}/replacements/preflight"
+
+
+def test_a_second_unresolved_older_request_blocks_a_different_file_after_reconciliation(service, monkeypatch):
+    from moviestar.replacement_state import Requests
+    file, account, calls, uploads, state, _ = service
+    state["lost_reply"] = True; state["status_error"] = True
+    _, first = invoke("replace", VIDEO, str(file))
+    move_to_old_grant_scope(account)
+    journal = next(account.parent.glob("replacement-requests/**/request-*.json"))
+    second = json.loads(journal.read_text())
+    second.update(idempotency_key="another-uncertain-cut", replacement_id="c8000000-0000-4000-8000-000000000099")
+    other_directory = journal.parent.parent / ("f" * 64)
+    other_directory.mkdir(mode=0o700)
+    Requests(other_directory).save(second, active=True)
+    reconnect(account, monkeypatch); state["status_error"] = False
+    result, body = invoke("replace", VIDEO, str(file), "--idempotency-key", first["idempotency_key"])
+    assert result.exit_code == 0, result.output
+    file.write_bytes(b"x" * file.stat().st_size); calls.clear()
+    result, body = invoke("replace", VIDEO, str(file))
+    assert result.exit_code == 1 and body["status"] == "replacement_reconciliation_required"
+    assert body["idempotency_key"] == "another-uncertain-cut"
+    assert not calls and len(uploads) == 1
+
+
+def test_older_lost_reservation_can_recover_its_key_without_losing_the_original_binding(service, monkeypatch):
+    file, account, calls, uploads, state, _ = service
+    state["lost_reservation"] = True
+    _, first = invoke("replace", VIDEO, str(file))
+    move_to_old_grant_scope(account); reconnect(account, monkeypatch)
+    result, body = invoke("replace", VIDEO, str(file), "--idempotency-key", first["idempotency_key"])
+    assert result.exit_code == 0 and body["status"] == "replaced", result.output
+    # A subsequent deliberate request must not treat the recovered ID as a conflict.
+    from moviestar.replacement_state import locked_requests
+    with locked_requests(API + "\n" + VIDEO) as store:
+        assert store.legacy(VIDEO) == []
+
+
 @pytest.mark.parametrize("retry_option", ["default", "key", "resume"])
 def test_missing_file_does_not_erase_an_earlier_uncertain_completion(service, retry_option):
     file, _, calls, _, state, _ = service
@@ -153,7 +359,8 @@ def test_missing_file_does_not_erase_an_earlier_uncertain_completion(service, re
     assert not calls
 
 
-@pytest.mark.parametrize("field,value", [("remote_status", []), ("cleanup_pending", "false")])
+@pytest.mark.parametrize("field,value", [("remote_status", []), ("cleanup_pending", "false"),
+    ("expected_version", None), ("replacement_id", None)])
 def test_corrupt_recovery_outcome_is_rejected_before_network_work(service, field, value):
     file, account, calls, _, state, _ = service
     state["lost_reply"] = True; state["status_error"] = True
@@ -275,8 +482,8 @@ def test_lost_local_receipt_does_not_hide_a_confirmed_publication(service, monke
 def test_second_process_cannot_start_a_competing_request(service):
     from moviestar.replacement_state import locked_requests
     file, _, calls, _, _, _ = service
-    origin, _, identity = replacement._connection(viewer=True)
-    with locked_requests(origin + "\n" + identity + "\n" + VIDEO):
+    origin, _ = replacement._connection(viewer=True)
+    with locked_requests(origin + "\n" + VIDEO):
         result, body = invoke("replace", VIDEO, str(file))
     assert result.exit_code == 1 and body["status"] == "replacement_busy_local" and not calls
 

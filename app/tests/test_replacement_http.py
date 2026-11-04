@@ -20,7 +20,7 @@ def test_conditional_transfer_and_uncertain_reply_recovery(tmp_path, monkeypatch
     file.write_bytes(Path(test_video).read_bytes())
     original = file.read_bytes()
     expires = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
-    state = {"object": None, "published": False, "dropped": False, "status_down": False,
+    state = {"object": None, "published": False, "dropped": False, "status_down": False, "credential": token,
              "puts": 0, "reservations": 0, "completions": 0, "trap": 0, "errors": []}
 
     class Handler(BaseHTTPRequestHandler):
@@ -48,7 +48,7 @@ def test_conditional_transfer_and_uncertain_reply_recovery(tmp_path, monkeypatch
                 "cleanup_pending": not state["published"]}
 
         def authenticated(self):
-            if self.headers.get("Authorization") != "Bearer " + token or self.headers.get("x-moviestar-client") != "moviestar-cli-v1":
+            if self.headers.get("Authorization") != "Bearer " + state["credential"] or self.headers.get("x-moviestar-client") != "moviestar-cli-v1":
                 state["errors"].append("missing owner authentication")
                 self.reply(401, {})
                 return False
@@ -146,6 +146,13 @@ def test_conditional_transfer_and_uncertain_reply_recovery(tmp_path, monkeypatch
         if lost_reply == "redirect":
             assert state["trap"] == state["completions"] == 0
         else:
+            if lost_reply == "completion":
+                # Forget/reconnect the account between uncertain publication and retry.
+                state["credential"] = "mvs_" + "r" * 43
+                account.write_text(json.dumps({"installation_url": origin + "/api/v1/account/installation",
+                    "installation_id": "c8000000-0000-4000-8000-000000000011", "connection": {
+                        "device_grant_id": "c8000000-0000-4000-8000-000000000012",
+                        "credential_storage": "private_file", "credential_fallback": state["credential"]}}))
             retry, body = invoke()
             assert retry.exit_code == 0, retry.output
             assert body["video_replaced"] is True and body["version"] == 2

@@ -151,3 +151,6 @@ with the original saved record. `shares cancel-replacement VIDEO_ID REPLACEMENT_
 closes an unpublished request and cannot undo a committed cut. Wait for cleanup
 before starting another replacement. Human consent is never accepted implicitly.
 Replacement requires separate service enablement; report pauses honestly.
+Reconnecting the same account preserves replacement recovery. If an older
+record reports `replacement_reconciliation_required`, select its original
+service and reconcile the returned key/ID explicitly before any fresh request.

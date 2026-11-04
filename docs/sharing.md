@@ -95,6 +95,18 @@ the same command to recover its saved request. Changing bytes or the filename
 cannot silently reuse an interrupted request. A confirmed result reports
 `status: "replaced"`, `video_replaced: true` and the new version.
 
+Recovery stays bound to the service and the video's immutable UUID when you
+reconnect the same account, even if the installation, credential or public
+handle changes. Every retry authorizes the current connection with the service;
+connecting a different account cannot take over the original request.
+
+Older CLI recovery records used an installation grant as part of their location.
+If one is found, `replacement_reconciliation_required` preserves its original
+key and replacement ID and prevents a fresh request. Select the original
+service, then explicitly retry with that key or `--resume`, or use
+`replacement-status`/`cancel-replacement` for its ID. Reconciliation retains the
+original expected version and file digest; it never substitutes a newer cut.
+
 A lost completion reply can mean the new cut is already published:
 `video_replaced: null` and `replacement_outcome: "unknown"` preserve that
 uncertainty. Read `replacement-status` or retry the original request; do not

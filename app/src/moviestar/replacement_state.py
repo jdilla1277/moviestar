@@ -25,7 +25,8 @@ def _directory(scope: str) -> Path:
 
 
 def has_records(scope: str) -> bool:
-    return _directory(scope).exists()
+    # Old grant-scoped records may exist even when the stable scope is new.
+    return _directory(scope).parent.exists()
 
 
 def _read(path: Path) -> dict | None:
@@ -108,6 +109,43 @@ class Requests:
                     raise StateError("Recovery key mismatch")
                 return value
         return None
+
+    def legacy(self, video: str) -> list[dict]:
+        """Find old active intents whose service cannot be inferred from disk.
+
+        Old directories hashed the service together with an ephemeral grant,
+        but never stored the service itself. Never guess their origin or silently
+        abandon an attempted request. Explicit reconciliation can adopt them.
+        """
+        records = []
+        for index, directory in enumerate(self.directory.parent.iterdir()):
+            if index >= 10000:
+                raise StateError("Recovery history is too large")
+            if directory == self.directory or not directory.is_dir():
+                continue
+            if directory.is_symlink():
+                raise StateError("Unsafe recovery directory")
+            record = Requests(directory).current()
+            if not record or record.get("video_id") != video or "service_origin" in record:
+                continue
+            if record.get("reservation_attempted") is False:
+                continue  # No request ever reached the service.
+            known = self.read(record.get("idempotency_key"))
+            if known is not None:
+                binding = ("video_id", "idempotency_key", "filename", "size_bytes", "sha256", "expected_version")
+                if (any(known.get(field) != record.get(field) for field in binding)
+                        or (record.get("replacement_id") is not None and known.get("replacement_id") != record["replacement_id"])):
+                    raise StateError("Conflicting recovery records")
+                active = self.current()
+                reconciled = known.get("reservation_attempted") is False or (
+                    known.get("remote_status") in ("replaced", "replacement_closed", "invalid_video")
+                    and known.get("cleanup_pending") is False)
+                if reconciled or (active and active.get("idempotency_key") == record["idempotency_key"]):
+                    continue  # Adopted and still discoverable, or safely resolved.
+                # The request file may have landed before its current pointer.
+                # Until explicit reconciliation finishes, never allow a fresh key.
+            records.append(record)
+        return records
 
     def save(self, record: dict, *, active: bool = False) -> None:
         _write(self._path(record["idempotency_key"]), record)
