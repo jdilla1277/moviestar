@@ -244,6 +244,9 @@ def _validate_record(record: dict, source: Source | None = None):
             or not isinstance(record.get("filename"), str) or not _number(record.get("size_bytes"), 1)
             or (record.get("expected_version") is not None and not _number(record["expected_version"], 1))
             or (record.get("replacement_id") is not None and _uuid(record["replacement_id"]) is None)
+            or ("remote_status" in record and (not isinstance(record["remote_status"], str)
+                or record["remote_status"] not in {"reserved", "processing", "replaced", "replacement_closed", "invalid_video"}))
+            or ("cleanup_pending" in record and type(record["cleanup_pending"]) is not bool)
             or not all(type(record.get(field)) is bool for field in ("reservation_attempted", "completion_started", "upload_confirmed"))):
         raise StateError("Invalid recovery record")
     if source is not None and any(record.get(key) != value for key, value in source.fingerprint().items()):

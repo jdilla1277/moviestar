@@ -153,6 +153,20 @@ def test_missing_file_does_not_erase_an_earlier_uncertain_completion(service, re
     assert not calls
 
 
+@pytest.mark.parametrize("field,value", [("remote_status", []), ("cleanup_pending", "false")])
+def test_corrupt_recovery_outcome_is_rejected_before_network_work(service, field, value):
+    file, account, calls, _, state, _ = service
+    state["lost_reply"] = True; state["status_error"] = True
+    invoke("replace", VIDEO, str(file))
+    journal = next(account.parent.glob("replacement-requests/**/request-*.json"))
+    record = json.loads(journal.read_text()); record[field] = value
+    journal.write_text(json.dumps(record))
+    file.write_bytes(b"x" * file.stat().st_size); calls.clear()
+    result, body = invoke("replace", VIDEO, str(file))
+    assert result.exit_code == 1 and body["status"] == "replacement_state_unavailable"
+    assert body["video_replaced"] is None and not calls
+
+
 def test_lost_reservation_reply_reuses_saved_expected_version_and_key(service):
     file, _, calls, _, state, _ = service
     state["lost_reservation"] = True
