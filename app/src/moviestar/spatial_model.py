@@ -547,7 +547,7 @@ def expand_spatial_scene(spec: dict, scene_id: str, *, include_binding_provenanc
                     item['content_provenance'] = {'input': name, 'required': input_requirements.get(name, False)}
                 if include_binding_provenance and declaration is not None:
                     item['content_provenance'] = {'input': declaration['name'], 'required': declaration.get('required', False)}
-                if "children" in node or any(edit["op"] == "child_add" and edit["path"] == address
+                if "children" in node or any(edit["op"] == "child_add" and reference_path(edit["path"]) == address
                                              for edit in edits):
                     item["children"] = expand_nodes(node.get("children", []), address, inputs,
                                                     required, reported, ancestry, edits, input_requirements, dependencies)

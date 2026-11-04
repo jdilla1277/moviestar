@@ -130,6 +130,56 @@ def test_inherited_descendant_removal_follows_the_replaced_parent():
     assert group['children'][0]['style']['opacity']==.5
 
 
+@pytest.mark.parametrize('depth',[1,2])
+@pytest.mark.parametrize('explicit_children',[False,True])
+def test_inherited_insertion_expands_a_renamed_leaf_parent(tmp_path,depth,explicit_children):
+    spec=_project()
+    group={'id':'group','type':'shape'}
+    if explicit_children:
+        group['children']=[]
+    definitions={
+        'card':{'name':'Card','children':[deepcopy(group)]},
+        'wrapper':{'name':'Wrapper','children':[{
+            'instance_id':'inner','definition_id':'card','customizations':[
+                {'op':'child_add','path':['group'],
+                 'node':{'id':'label','type':'text','content':{'text':'Original'}}}]}]}}
+    root='wrapper'
+    prefix=['inner']
+    if depth==2:
+        definitions['outer']={'name':'Outer','children':[
+            {'instance_id':'nested','definition_id':root}]}
+        root='outer'
+        prefix=['nested',*prefix]
+    spec['spatial']['definitions']=definitions
+    spec['spatial']['scenes']={'scene_a':{'layout':{'children':[
+        {'instance_id':'use','definition_id':root,'customizations':[
+            {'op':'child_remove','path':[*prefix,'group']},
+            {'op':'child_add','path':prefix,'node':deepcopy(group)}]}]}}}
+    assert not expand_spatial_scene(spec,'scene_a')['diagnostics']
+    spec,_=save_layout(spec,'inserted','scene_a')
+    name=spec['spatial']['layouts']['inserted']['inputs'][0]['name']
+    spec,report=apply_saved_layout(spec,'inserted','scene_b',{name:{'text':'Fresh'}})
+    assert not report['diagnostics']
+    path=report['input_targets'][name]['occurrence_path']
+    assert path[-2]!='group'
+    assert _at(expand_spatial_scene(spec,'scene_b'),path[1:])['content']=={'text':'Fresh'}
+    assert spec['spatial']['definitions']==definitions
+    # The inherited insertion remains linked through another copy and reload,
+    # while its content is supplied by the destination scene's leaf contract.
+    spec,_=save_layout(spec,'again','scene_b')
+    next_name=spec['spatial']['layouts']['again']['inputs'][0]['name']
+    spec,second=apply_saved_layout(spec,'again','scene_a',
+        {next_name:{'text':'Again'}},replace=True)
+    save_spec(spec,cwd=tmp_path)
+    spec=load_spec(cwd=tmp_path)
+    expanded=expand_spatial_scene(spec,'scene_a')
+    assert not expanded['diagnostics']
+    next_path=second['input_targets'][next_name]['occurrence_path']
+    assert next_path!=path
+    assert _at(expanded,next_path[1:])['content']=={'text':'Again'}
+    assert spec['spatial']['definitions']==definitions
+
+
 @pytest.mark.parametrize('references',[None,'left',[{}],['left','left'],['use']])
 def test_invalid_reference_id_metadata_is_rejected(references):
     from moviestar.spec import SpecValidationError,validate_spec
