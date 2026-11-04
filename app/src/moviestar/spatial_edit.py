@@ -312,6 +312,9 @@ def _duplicate_instance(spatial: dict, request: dict) -> None:
         _fail(f"new_instance_id: duplicate sibling identity {new_id!r}")
     copy = deepcopy(direct)
     copy["instance_id"] = new_id
+    # The duplicate is a new sibling, rather than another target for the source
+    # sibling's inherited references. Descendant references keep their new scope.
+    copy.pop('reference_ids', None)
     siblings.insert(index + 1, copy)
     scene = spatial['scenes'][path[0]]
     names = {entry['name'] for entry in scene.get('inputs', [])}

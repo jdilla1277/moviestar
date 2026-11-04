@@ -208,6 +208,15 @@ customization paths/anchors, reservations, and input targets follow those IDs.
 Removing an inherited child and adding a replacement with the same authored ID preserves operation order: earlier removals
 and anchors address the old child; later references address its replacement.
 Property overrides and final input/reservation targets follow the final tree.
+Copied children inside components retain prior child identities in
+`reference_ids`. Inherited customizations resolve those references against the
+children present at each structural step, and properties against the final tree.
+This keeps an inherited style or motion edit linked when a local replacement
+receives a fresh ID, including through nested replacements and later shared
+edits. Shared definitions remain unchanged; values are not baked into a local
+property override. Inspection and authoring still use the current occurrence
+paths. Ambiguous sibling references report a customization conflict. Duplicating
+an instance starts a new sibling identity while retaining descendant references.
 Children inherited from a shared definition retain their definition IDs, with
 unique occurrence paths under each copied instance. Component references remain
 linked, and ordinary local/shared edits still apply. The copied scene owns its

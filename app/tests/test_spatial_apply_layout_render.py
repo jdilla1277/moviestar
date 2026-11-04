@@ -158,3 +158,42 @@ def test_replaced_or_removed_last_media_consumer_previews_and_exports(project,tm
         assert result.exit_code==0,result.output
     assert (tmp_path/'ready.png').is_file() and (tmp_path/'ready.mp4').stat().st_size>0
     assert load_spec()==before
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
+def test_inherited_style_on_replacement_keeps_pixels_and_remains_live(project,tmp_path):
+    from tests.test_spatial_inherited_replacements import _project_with_inherited_edit
+    from moviestar.spec import pop_revision
+    fixture,metadata=project
+    spec,_,_=_project_with_inherited_edit(descendants=True)
+    spec['sources']=fixture['sources']
+    spec['composition']=fixture['composition']
+    spec['composition_canvas']=fixture['composition_canvas']
+    source=spec['spatial']['scenes'].pop('scene_a')
+    spec['spatial']['scenes']={'interview':source}
+    spec['spatial']['assets']=fixture['spatial']['assets']
+    source['layout']['background_color']='#102030'
+    replacement=source['layout']['children'][0]['customizations'][1]['node']['children'][0]
+    replacement['content']={'asset_id':'logo'}
+    replacement['layout']={'width':64,'height':64}
+    spec['composition'][0]['slots'][0]['source_to']='0:00:00.200'
+    frame=compile_spatial_frame(spec,resolve_project(metadata,spec),.1,source_durations={'camera':2})
+    canvas={'width':320,'height':180}
+    render_spatial_frame(spec,frame,canvas,output_path=tmp_path/'before.png',project_root=tmp_path)
+    save_spec(spec,cwd=tmp_path)
+    spec=load_spec(cwd=tmp_path)
+    spec,_=save_layout(spec,'replacement','interview')
+    name=spec['spatial']['layouts']['replacement']['inputs'][0]['name']
+    spec,report=apply_saved_layout(spec,'replacement','interview',{name:{'asset_id':'logo'}},replace=True)
+    assert not report['diagnostics']
+    save_spec(spec,cwd=tmp_path,command='apply saved replacement layout')
+    spec=load_spec(cwd=tmp_path)
+    frame=compile_spatial_frame(spec,resolve_project(metadata,spec),.1,source_durations={'camera':2})
+    render_spatial_frame(spec,frame,canvas,output_path=tmp_path/'copied.png',project_root=tmp_path)
+    assert (tmp_path/'copied.png').read_bytes()==(tmp_path/'before.png').read_bytes()
+    spec['spatial']['definitions']['wrapper']['children'][0]['customizations'][0]['value']=.25
+    frame=compile_spatial_frame(spec,resolve_project(metadata,spec),.1,source_durations={'camera':2})
+    render_spatial_frame(spec,frame,canvas,output_path=tmp_path/'updated.png',project_root=tmp_path)
+    assert (tmp_path/'updated.png').read_bytes()!=(tmp_path/'copied.png').read_bytes()
+    restored,_=pop_revision(load_spec(cwd=tmp_path))
+    assert restored['spatial']['scenes']['interview']==source

@@ -224,6 +224,11 @@ def _children(children: object, path: str, definitions: dict, inputs: dict[str, 
         if identity in seen:
             _fail(f"{here}.{field}", f"duplicate sibling identity {identity!r}")
         seen.add(identity)
+        references = node.get('reference_ids', [])
+        if (not isinstance(references, list)
+                or any(not isinstance(value, str) or not value.strip() for value in references)
+                or len(set(references)) != len(references) or identity in references):
+            _fail(f'{here}.reference_ids', 'expected unique prior child IDs distinct from the current ID')
         if "layout" in node and not isinstance(node["layout"], dict):
             _fail(f"{here}.layout", "must be an object")
         if "style" in node and not isinstance(node["style"], dict):
@@ -381,39 +386,64 @@ def expand_spatial_scene(spec: dict, scene_id: str, *, include_binding_provenanc
     diagnostics = []
     tracked_edits: list[dict] = []
     applied_edits: set[object] = set()
+    reference_targets = {}
 
     def conflict(path: list[str], reason: str) -> None:
         diagnostics.append({"code": "customization_conflict", "path": path, "reason": reason})
 
+    def reference_path(path):
+        result = []
+        for identity in path:
+            result.append(reference_targets.get(tuple(result), {}).get(identity, identity))
+        return result
+
+    def remember_references(parent, nodes):
+        # References address the children present at this exact replay step.
+        # Rebuild only this sibling scope; descendant scopes are visited later.
+        targets = {}
+        identities = {node.get('id', node.get('instance_id')) for node in nodes}
+        for node in nodes:
+            identity = node.get('id', node.get('instance_id'))
+            for previous in node.get('reference_ids', []):
+                if previous in identities or (previous in targets and targets[previous] != identity):
+                    conflict([*parent, previous], 'prior child identity is ambiguous; use distinct reference_ids')
+                else:
+                    targets[previous] = identity
+        reference_targets[tuple(parent)] = targets
+
     def apply_child_edits(nodes: list, parent: list[str], edits: list[dict]) -> list:
         result = deepcopy(nodes)
+        remember_references(parent, result)
         for edit in edits:
-            op, target = edit["op"], edit["path"]
-            if op == "property_set" or (op == "child_add" and target != parent):
+            op, target = edit['op'], reference_path(edit['path'])
+            if op == 'property_set' or (op == 'child_add' and target != parent):
                 continue
-            if op != "child_add" and target[:-1] != parent:
+            if op != 'child_add' and target[:-1] != parent:
                 continue
-            applied_edits.add(edit["_token"])
-            identities = [item.get("id", item.get("instance_id")) for item in result]
-            if op == "child_add":
-                identity = edit["node"].get("id", edit["node"].get("instance_id"))
+            applied_edits.add(edit['_token'])
+            identities = [item.get('id', item.get('instance_id')) for item in result]
+            if op == 'child_add':
+                identity = edit['node'].get('id', edit['node'].get('instance_id'))
                 if identity in identities:
-                    conflict([*parent, identity], "local child duplicates a sibling")
+                    conflict([*parent, identity], 'local child duplicates a sibling')
                     continue
-                item = deepcopy(edit["node"])
+                item = deepcopy(edit['node'])
             else:
                 identity = target[-1]
                 if identity not in identities:
-                    conflict(target, "customized child no longer exists")
+                    conflict(target, 'customized child no longer exists')
                     continue
                 index = identities.index(identity)
                 item = result.pop(index)
                 identities.pop(index)
-                if op == "child_remove":
+                if op == 'child_remove':
                     if _identity_trace is not None:
                         _identity_trace('structural', edit, parent, item, None)
+                    remember_references(parent, result)
                     continue
-            after_id = edit.get("after_id")
+            after_id = edit.get('after_id')
+            if after_id is not None:
+                after_id = reference_path([*parent, after_id])[-1]
             if _identity_trace is not None:
                 anchor = next((child for child in result
                                if child.get('id', child.get('instance_id')) == after_id), None)
@@ -423,9 +453,10 @@ def expand_spatial_scene(spec: dict, scene_id: str, *, include_binding_provenanc
             elif after_id in identities:
                 result.insert(identities.index(after_id) + 1, item)
             else:
-                conflict([*parent, identity], f"anchor {after_id!r} no longer exists")
-                if op == "child_move":
+                conflict([*parent, identity], f'anchor {after_id!r} no longer exists')
+                if op == 'child_move':
                     result.insert(index, item)
+            remember_references(parent, result)
         return result
 
     def resolve_value(value: object, inputs: dict, path: list[str], kind: str,
@@ -460,7 +491,7 @@ def expand_spatial_scene(spec: dict, scene_id: str, *, include_binding_provenanc
             base_rules = {group: deepcopy(node.get(group, {})) for group in ('layout', 'style')}
             local_overrides: dict[str, dict] = {}
             for edit in edits:
-                if edit["op"] == "property_set" and edit["path"] == address:
+                if edit["op"] == "property_set" and reference_path(edit["path"]) == address:
                     applied_edits.add(edit["_token"])
                     if _identity_trace is not None:
                         _identity_trace('property', edit, address)
@@ -473,6 +504,8 @@ def expand_spatial_scene(spec: dict, scene_id: str, *, include_binding_provenanc
                     overrides[key] = deepcopy(edit['value'])
             common = {"occurrence_path": address, "layout": deepcopy(node.get("layout", {})),
                       "style": deepcopy(node.get("style", {}))}
+            if node.get('reference_ids'):
+                common['reference_ids'] = deepcopy(node['reference_ids'])
             if 'motion' in node:
                 _motion(node['motion'], '/'.join(address) + '.motion')
                 common['motion'] = deepcopy(node['motion'])

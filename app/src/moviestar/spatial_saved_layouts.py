@@ -16,7 +16,7 @@ from moviestar.spatial_model import (
 
 
 CONTENT_TYPES = {'video', 'image', 'caption', 'text'}
-_COMMON_FIELDS = {'layout', 'style', 'format_rules', 'motion'}
+_COMMON_FIELDS = {'layout', 'style', 'format_rules', 'motion', 'reference_ids'}
 
 
 def _node_fields(node):
@@ -316,6 +316,9 @@ def _copy_layout(spec: dict, item: dict, identity: str, scene_id: str) -> tuple[
             for field in ('id', 'instance_id'):
                 if isinstance(value.get(field), str):
                     used.add(value[field])
+            references = value.get('reference_ids')
+            if isinstance(references, list):
+                used.update(reference for reference in references if isinstance(reference, str))
             for child in value.values():
                 scan(child)
         elif isinstance(value, list):
@@ -325,7 +328,7 @@ def _copy_layout(spec: dict, item: dict, identity: str, scene_id: str) -> tuple[
 
     # Mark only the temporary copy, never shared definitions. Deep copies during
     # expansion preserve these private tokens, including removed/replaced nodes.
-    def allocate(nodes, parent=()):
+    def allocate(nodes, parent=(), *, referenced=False):
         for node in nodes:
             field = 'instance_id' if 'instance_id' in node else 'id'
             path = (*parent, node[field])
@@ -337,19 +340,24 @@ def _copy_layout(spec: dict, item: dict, identity: str, scene_id: str) -> tuple[
                 name = f'{base}_{suffix}'
                 suffix += 1
             used.add(name)
-            authored[token] = (node, field, name)
+            authored[token] = (node, field, name, referenced)
             node['_copy_identity'] = token
-            allocate(node.get('children', []), path)
+            allocate(node.get('children', []), path, referenced=referenced)
             for edit in node.get('customizations', []):
                 if edit['op'] == 'child_add':
-                    allocate([edit['node']], (*path, *edit['path']))
+                    allocate([edit['node']], (*path, *edit['path']), referenced=True)
     allocate(layout['children'])
     paths, operations = {}, {}
 
     def materialize(node):
         if '_copy_identity' not in node:
             return node.get('id', node.get('instance_id'))
-        original, field, name = authored[node['_copy_identity']]
+        original, field, name, referenced = authored[node['_copy_identity']]
+        if referenced:
+            previous = node[field]
+            references = original.setdefault('reference_ids', [])
+            if previous != name and previous not in references:
+                references.append(previous)
         original[field] = name
         return name
 
@@ -367,7 +375,9 @@ def _copy_layout(spec: dict, item: dict, identity: str, scene_id: str) -> tuple[
         elif event in {'structural', 'property'}:
             edit = args[0]
             if edit['_token'] not in operations:
-                return  # Definition-owned customizations retain their own IDs.
+                # Shared definitions retain their authored paths. Copied nodes'
+                # reference_ids keep those paths live, including later edits.
+                return
             original, depth = operations[edit['_token']]
             if event == 'property':
                 target = paths[tuple(args[1])]
@@ -397,7 +407,7 @@ def _copy_layout(spec: dict, item: dict, identity: str, scene_id: str) -> tuple[
         region['target'] = paths[(root, *region['target'])][1:]
         if 'allow' in region:
             region['allow'] = [paths[(root, *path)][1:] for path in region['allow']]
-    for node, _, _ in authored.values():
+    for node, _, _, _ in authored.values():
         node.pop('_copy_identity')
     return layout, inputs
 
