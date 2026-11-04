@@ -911,13 +911,27 @@ def disconnect(local_only: bool) -> None:
 
 
 @account.command("open")
-def open_account() -> None:
+@click.option("--email-link", metavar="EMAIL", help="Request an emailed browser sign-in link for an existing account.")
+@click.option("--request-id", metavar="UUID", help="Reuse this request ID after an uncertain response to avoid duplicate emails.")
+@click.option("--claim-id", metavar="UUID", help="Resume this pending installation claim after browser sign-in.")
+@click.option("--dry-run", is_flag=True, help="Preview an email-link request without sending mail or changing account state.")
+def open_account(email_link: str | None = None, request_id: str | None = None,
+                 claim_id: str | None = None, dry_run: bool = False) -> None:
     """Open the human's Moviestar account page.
 
     The account page shows the human's handle and lets them revoke connected
     installations. It is separate from local Moviestar projects.
 
+    With --email-link EMAIL, request a short-lived browser sign-in email and
+    return a neutral receipt instead. The human opens the email; the agent never
+    receives the login link. --dry-run previews the request. A matching live
+    pending claim is resumed automatically; signing in never approves it.
     """
+    if email_link is not None or request_id is not None or claim_id is not None or dry_run:
+        from moviestar.account_email_link import request_browser_sign_in
+
+        request_browser_sign_in(email_link, request_id, claim_id, dry_run)
+        return
     url = _account_url()
     try:
         opened = bool(webbrowser.open(url))

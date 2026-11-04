@@ -1045,7 +1045,7 @@ ACCOUNT COMMANDS
   account connect EMAIL  Ask Moviestar to email the human an account claim.
   account status         Show approval or connection state for this install.
   account disconnect     Revoke this install; local editing keeps working.
-  account open           Open the human's account page in a browser.
+  account open           Open the human's account page; --email-link EMAIL requests sign-in mail.
   upload FILE            Store a finished MP4 privately when hosting is enabled.
   share FILE_OR_VIDEO_ID Create an unlisted watch/download link when enabled.
   shares                 List owned links; --video filters and --cursor paginates.

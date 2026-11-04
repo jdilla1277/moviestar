@@ -3,6 +3,57 @@
 Local editing needs no account. Hosted videos use a human-owned account and a
 revocable grant for each CLI installation.
 
+## Return to the website with an email link
+
+```sh
+moviestar account open
+moviestar account open --email-link human@example.com --dry-run
+moviestar account open --email-link human@example.com
+```
+
+Plain `account open` opens the account page in your browser. With `--email-link`,
+the command asks the hosted service to email a short-lived sign-in link for an
+existing account. It returns JSON immediately after the service acknowledges
+the request; it does not open a browser or receive the login link. The human
+opens the email and chooses **Continue with email link**, completing any extra
+verification in their browser. Keep that email and its link out of agent input,
+project files and logs.
+
+`status: "email_link_requested"` and `delivery: "unconfirmed"` describe a neutral
+request receipt. They do not prove that the address has an account, delivery
+succeeded, a browser signed in or an installation was approved. The output masks
+the address. The command does not change local account state or access the OS
+credential store.
+`--dry-run` reports the selected service, request UUID and optional claim UUID
+without making a network request or sending mail.
+
+Keep the returned `request_id` after a timeout or `request_unconfirmed` result.
+Retry the same email and claim using `--request-id` with that UUID so a request
+that reached the service does not send duplicate emails. A 429 result includes
+`retry_after_seconds`; wait before retrying. Reusing an accepted request UUID
+returns its earlier receipt without another email. For a fresh email after an
+expired/used link or a lost message, invoke the command again without
+`--request-id` after the cooldown. Changing the email or claim under a reused
+UUID returns `request_conflict`.
+
+A live pending claim for the same email and service is included automatically,
+so browser sign-in can return to its installation approval page. You can also
+pass that claim's public request UUID using `--claim-id`. The server checks the
+recipient and claim status; a claim UUID itself gives no access. Expired claims
+or claims for another email/service are not automatically attached. Browser
+sign-in remains separate from installation connection: approve the requesting
+installation explicitly, then use `moviestar account status` to check it.
+
+The email request uses the service selected by
+`MOVIESTAR_ACCOUNT_INSTALLATION_URL`, then `MOVIESTAR_ACCOUNT_CLAIM_URL`, then
+the remembered profile's service, defaulting to `https://trymoviestar.com`.
+Only that origin is used with `/api/v1/account/sign-in-links`; HTTPS is required
+outside loopback. `MOVIESTAR_ACCOUNT_URL` controls the plain browser-opening
+command. Use a separate `MOVIESTAR_ACCOUNT_STATE` profile for Preview testing.
+If the service has not enabled email requests, the command returns `unavailable`
+and exits unsuccessfully. It never silently substitutes a browser-opening action
+for an email request.
+
 ## Terminal signup and sign-in
 
 When the service has enabled terminal setup:
