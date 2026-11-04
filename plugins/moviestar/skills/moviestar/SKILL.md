@@ -137,3 +137,17 @@ with a new key. A new key sends another message subject to service limits.
 Deletion and revocation remain available when new uploads or publication are
 paused. If hosting or email is paused, report the returned status; never claim
 a link was created or an email was sent.
+
+When the human authorizes changing the cut behind all existing links, use
+`moviestar shares replace VIDEO_ID FILE`. First review its `--dry-run`: this
+preview contacts the service read-only and lists the owner, every active URL
+and projected storage. Replacement uses no new video slot, preserves existing
+access and revoked links, sends no email and leaves local files unchanged.
+Retry the original file/key after interruption. An unknown completion may
+already have published; never silently select another key. Read
+`shares replacement-status VIDEO_ID REPLACEMENT_ID` without a local file, or
+use `shares replace VIDEO_ID FILE --resume REPLACEMENT_ID` for completion only
+with the original saved record. `shares cancel-replacement VIDEO_ID REPLACEMENT_ID`
+closes an unpublished request and cannot undo a committed cut. Wait for cleanup
+before starting another replacement. Human consent is never accepted implicitly.
+Replacement requires separate service enablement; report pauses honestly.

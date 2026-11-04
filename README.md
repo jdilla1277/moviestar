@@ -78,6 +78,10 @@ an unlisted watch-and-download link to a teammate. Recipients need no account
 and can download the video for another edit. You can revoke links or delete an
 upload to reclaim storage; local files and projects stay intact.
 
+The current source also includes `moviestar shares replace VIDEO_ID new-cut.mp4`
+to update the cut behind all existing links when the service enables replacement.
+Its `--dry-run` reads the owning account, affected URLs and projected storage.
+
 Hosted sharing requires Moviestar v0.8.0 or newer and an account. Unlisted links
 can be forwarded. Start with the [sharing guide](docs/sharing.md) and
 [v0.8.0 release notes](docs/releases/v0.8.0.md).

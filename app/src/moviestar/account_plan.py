@@ -63,6 +63,12 @@ def public_plan(value: object) -> dict | None:
         if group is None:
             return None
         result[name] = group
+    replacement_fields = ("replacement_reserved_bytes", "replacement_temporary_bytes")
+    if any(name in value["usage"] for name in replacement_fields):
+        replacement = _fields(value["usage"], dict.fromkeys(replacement_fields, _number))
+        if replacement is None:
+            return None
+        result["usage"].update(replacement)
     billing = value["billing"]
     if "scheduled_change" not in billing:
         return None
