@@ -82,6 +82,13 @@ Hosted sharing requires Moviestar v0.8.0 or newer and an account. Unlisted links
 can be forwarded. Start with the [sharing guide](docs/sharing.md) and
 [v0.8.0 release notes](docs/releases/v0.8.0.md).
 
+For a video already accepted into the recipient's account, `moviestar shared
+videos` finds it and `moviestar shared download VIDEO_ID --out received.mp4`
+saves the finished MP4 using the approved installation. These commands require
+recipient access to be enabled on the connected service. See
+[accepted shared videos](docs/sharing.md#find-videos-shared-with-your-account)
+for browser acceptance, pagination, offline previews and revocation.
+
 ## Documentation
 
 - [Getting started](docs/getting-started.md)

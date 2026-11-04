@@ -282,6 +282,7 @@ from moviestar.feedback import feedback
 from moviestar.subscribe import subscribe as subscribe_command
 from moviestar.account import account as account_command
 from moviestar.cloud import cloud as cloud_command
+from moviestar.incoming import shared as shared_command
 from moviestar.upload import upload as upload_command
 from moviestar.sharing import (
     delete as delete_command,
@@ -1057,6 +1058,8 @@ ACCOUNT COMMANDS
   unshare LINK_ID        Revoke a link without deleting the video.
   delete VIDEO_ID        Delete a hosted video and all its links, freeing quota.
   download WATCH_URL     Save a shared MP4 without a recipient account.
+  shared videos          List accepted account-restricted videos; --cursor paginates.
+  shared download ID     Save an accepted video using this approved installation.
 
 \b
 TIMECODE FORMATS
@@ -1192,6 +1195,7 @@ cli.add_command(subscribe_command)
 cli.add_command(feedback)
 cli.add_command(account_command)
 cli.add_command(cloud_command)
+cli.add_command(shared_command)
 cli.add_command(upload_command)
 cli.add_command(download_command)
 cli.add_command(share_command)
