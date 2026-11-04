@@ -124,6 +124,56 @@ def test_revocation_and_missing_projects_have_safe_actionable_errors(service):
     assert "account status" in body["hint"] and TOKEN not in result.output
 
 
+@pytest.mark.parametrize("saved_origin", [None, "", 42])
+@pytest.mark.parametrize("args", [
+    ("capabilities",),
+    ("projects", "list"),
+    ("projects", "show", PROJECT),
+    ("projects", "create", "Highlights", "--idempotency-key", "origin-recovery"),
+])
+def test_missing_service_origin_blocks_credential_access_until_explicitly_supplied(service, monkeypatch, args, saved_origin):
+    from moviestar import cloud
+
+    state = json.loads(service[1].read_text())
+    installation = state.pop("installation_url")
+    if saved_origin is not None:
+        state["installation_url"] = saved_origin
+    service[1].write_text(json.dumps(state))
+    before = service[1].read_bytes()
+    real_credential = cloud._credential_for_connection
+    credential_reads = []
+
+    def credential(saved_state):
+        credential_reads.append(saved_state)
+        return real_credential(saved_state)
+
+    requests = []
+    real_request = cloud._request
+
+    def request(url, token, **kwargs):
+        requests.append(url)
+        # Keep the regression test offline if the production fallback returns.
+        if not url.startswith(installation.removesuffix("/installation") + "/cloud/"):
+            return 0, {}
+        return real_request(url, token, **kwargs)
+
+    monkeypatch.setattr(cloud, "_credential_for_connection", credential)
+    monkeypatch.setattr(cloud, "_request", request)
+    result, failure = invoke(*args)
+    assert result.exit_code == 1 and failure["status"] == "invalid_configuration"
+    assert "MOVIESTAR_ACCOUNT_INSTALLATION_URL" in failure["hint"]
+    assert "approved this installation" in failure["hint"]
+    assert credential_reads == [] and requests == [] and service[0]["calls"] == []
+    assert TOKEN not in result.output and service[1].read_bytes() == before
+
+    monkeypatch.setenv("MOVIESTAR_ACCOUNT_INSTALLATION_URL", installation)
+    result, body = invoke(*args)
+    assert len(credential_reads) == 1 and service[0]["calls"]
+    assert all(url.startswith(installation.removesuffix("/installation") + "/cloud/") for url in requests)
+    assert result.exit_code == (1 if args[:2] == ("projects", "show") else 0), body
+    assert service[1].read_bytes() == before
+
+
 @pytest.mark.parametrize("args", [
     ("projects", "show", "../other"),
     ("projects", "create", " ", "--idempotency-key", "good"),

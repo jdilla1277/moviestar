@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from http.client import HTTPException
 from urllib.error import HTTPError, URLError
@@ -40,6 +41,11 @@ def _fail(command: str, status: str, hint: str, **fields) -> None:
 
 
 def _connection(command: str) -> tuple[str, str]:
+    state = _read_state()
+    recorded = state.get("installation_url")
+    if not (isinstance(recorded, str) and recorded) and not os.environ.get("MOVIESTAR_ACCOUNT_INSTALLATION_URL"):
+        _fail(command, "invalid_configuration",
+              "Set MOVIESTAR_ACCOUNT_INSTALLATION_URL to the service that approved this installation, then retry.")
     installation = _installation_url()
     try:
         parsed = urlsplit(installation)
@@ -49,7 +55,7 @@ def _connection(command: str) -> tuple[str, str]:
         valid = False
     if not valid:
         _fail(command, "invalid_configuration", "Use the service origin recorded by account connection.")
-    credential = _credential_for_connection(_read_state())
+    credential = _credential_for_connection(state)
     if not credential or not re.fullmatch(r"mvs_[A-Za-z0-9_-]{43}", credential):
         _fail(command, "credential_invalid", _HINTS["credential_invalid"])
     return f"{parsed.scheme}://{parsed.netloc}/api/v1/account/cloud", credential

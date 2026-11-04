@@ -19,6 +19,12 @@ the same installation credential and service origin as that connection. They
 do not request another credential, accept terms, or approve an installation.
 Never supply a partner key as a personal login.
 
+If an older saved connection has no service URL, Cloud commands stop before
+loading its credential or contacting a service. Set
+`MOVIESTAR_ACCOUNT_INSTALLATION_URL` to the installation endpoint of the
+service that approved it (for example,
+`https://your-service.example/api/v1/account/installation`), then retry.
+
 ## Create once, then reopen
 
 Choose a new key for a deliberate new project. Keep the key and exact title so
