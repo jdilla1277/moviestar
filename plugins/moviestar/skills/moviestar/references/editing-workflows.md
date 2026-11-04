@@ -81,8 +81,19 @@ audio cannot be judged from still frames.
   text, and caption inputs, including inherited content in nested components.
   Only `--keep-text` retains text defaults; old media/ranges/caption tracks are
   not content defaults. This keeps the source scene intact and records one undo
-  step. Saved arrangements support save/list/show; applying them to new scenes
-  and editing/deleting them follow separately (`can_apply: false`).
+  step. Apply a saved design with `layouts apply saved:ID --scene SCENE_ID
+  --bindings FILE --dry-run`, then save and inspect both rendered and labeled
+  views at a result time. Missing inputs remain drafts with placeholders; old
+  nested media is never fallback content. Apply returns `input_targets`; for a
+  saved design use `model edit` with `op: "scene.bind"`, `target.scene_id`,
+  `input`, and typed `value` to change an assignment after reload.
+- Each copied scene owns its arrangement and content contract while shared
+  components stay linked. Local and shared edits use the usual commands. To
+  update the catalog, customize a scene and `layouts save ID --scene SCENE_ID
+  --replace --dry-run` before saving. `layouts delete saved:ID --dry-run` reviews
+  catalog deletion; existing scenes stay intact. Both save and delete are
+  undoable. Stale linked designs report diagnostics and `can_apply: false`.
+  Check warnings about motion extending past the destination duration.
 
 ## Add captions or text
 

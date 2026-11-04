@@ -66,8 +66,13 @@ To keep a custom arrangement for reuse, run `composition model layouts save ID
 --scene SCENE_ID --dry-run`, then save and inspect `layouts show saved:ID`.
 Content becomes named inputs, including nested footage, logos, and captions;
 `--keep-text` explicitly retains text defaults. The source design is unchanged
-and saving is undoable. Saved layouts can be listed and inspected; applying them
-to new scenes follows separately. See [saving arrangements](spatial-model.md#save-a-scenes-arrangement).
+and saving is undoable. Apply one with `layouts apply saved:ID --scene SCENE_ID
+--bindings FILE --dry-run`, then save and preview both rendered and labeled views.
+The scene owns its content inputs; `model edit` with `scene.bind` changes an
+assignment after reload. Local/shared edits work normally. Save a customized
+scene back with `--replace` to update the catalog, or `layouts delete saved:ID`
+to remove the entry; existing scene copies stay intact. See
+[saving arrangements](spatial-model.md#save-a-scenes-arrangement).
 
 Large scene, overlay, caption, and audio changes are easier to audit through
 their dump/edit/set JSON workflows. Always validate replacement files with

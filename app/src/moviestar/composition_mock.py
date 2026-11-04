@@ -477,8 +477,8 @@ def model_layouts(ctx: click.Context) -> None:
     """Discover built-in layouts and save or inspect project arrangements.
 
     With no subcommand, list the catalog. These layouts use ordinary components,
-    bindings, and CSS-like rules. Saved layouts expose fresh content inputs;
-    applying saved layouts is a separate follow-on.
+    bindings, and CSS-like rules. Use saved:ID to apply a project arrangement
+    with fresh content, or save a scene's design for reuse.
     """
     if ctx.invoked_subcommand is None:
         ctx.invoke(model_layouts_list)
@@ -502,7 +502,7 @@ def model_layouts_list() -> None:
         _error_exit('composition model layouts list', str(exc))
     click.echo(json.dumps({"status": "catalog", "writes_spec": False,
                            "layouts": items,
-                           "hint": "Use layouts show ID. Built-ins support apply; save a scene's design with layouts save ID --scene SCENE_ID."}, indent=2))
+                           "hint": "Use layouts show ID, then apply ID --scene SCENE_ID --bindings FILE --dry-run. Save a scene's design with layouts save ID --scene SCENE_ID."}, indent=2))
 
 
 @model_layouts.command("show")
@@ -513,7 +513,8 @@ def model_layouts_show(layout_id: str) -> None:
     Built-ins do not require a project. Use saved:ID to inspect a saved project
     arrangement and its open inputs. Saved layouts are structural views, without
     a sampled timeline or measured browser boxes. Built-in apply allocates fresh
-    occurrence IDs and returns the actual scene tree.
+    occurrence IDs and returns the actual scene tree. Saved apply does too;
+    stale saved entries report diagnostics and cannot be applied.
     """
     from moviestar.cli import _error_exit
     from moviestar.spatial_catalog import builtin_layout
@@ -551,8 +552,8 @@ def model_layouts_save(layout_id: str, scene_id: str, name: str | None, keep_tex
     inherited assignments in nested components. Text is also open unless
     --keep-text explicitly retains it. The source scene and definitions stay intact.
 
-    Inspect with layouts show saved:ID. This slice saves and inspects layouts;
-    applying them to other scenes follows separately.
+    Inspect with layouts show saved:ID, then apply saved:ID --scene OTHER_SCENE
+    --bindings FILE. Replacing this saved record never changes existing scenes.
     """
     from moviestar.cli import _error_exit
     from moviestar.spatial_saved_layouts import SavedLayoutError, save_layout
@@ -593,30 +594,69 @@ def model_layouts_apply(layout_id: str, scene_id: str, bindings: Path | None,
     intact. This changes the scene's visible design; legacy overlays are not
     migrated. Captions appear only when their input is explicitly bound.
 
+    Use saved:ID for a custom saved arrangement. All content leaves, including
+    nested hardcoded content, use its named inputs with no old media fallback.
     Captured components are project-owned and reused with their existing edits.
-    Use model edit for local/shared changes and undo to restore the whole apply.
+    Saved applications return scene input names for model edit scene.bind.
+    Use model preview after applying to inspect pixels and labeled geometry at a
+    timeline time. Use model edit for local/shared changes and undo to restore
+    the whole apply. Motion past the destination duration reports a warning.
     """
     from moviestar.cli import _error_exit
+    from moviestar.spatial_saved_layouts import SavedLayoutError
     from moviestar.spatial_catalog import apply_builtin_layout
     from moviestar.spec import SpecValidationError, load_spec, save_spec
 
     try:
-        if layout_id.startswith('saved:'):
-            raise ValueError('Saved layouts support save/show in this slice; applying them to scenes follows separately.')
         values = json.loads(bindings.read_text()) if bindings is not None else {}
         if not isinstance(values, dict):
             raise ValueError("bindings: expected a JSON object mapping input names to typed values")
         spec = load_spec()
         if spec is None:
             raise ValueError("No spec.json found. Load a project and create scenes first.")
-        changed, report = apply_builtin_layout(spec, layout_id, scene_id, values,
-                                               replace=replace, expected_state_id=expected_state_id)
+        from moviestar.spatial_saved_layouts import apply_saved_layout
+        apply = apply_saved_layout if layout_id.startswith('saved:') else apply_builtin_layout
+        identity = layout_id.removeprefix('saved:') if layout_id.startswith('saved:') else layout_id
+        changed, report = apply(spec, identity, scene_id, values,
+                                replace=replace, expected_state_id=expected_state_id)
         if not dry_run:
             saved = save_spec(changed, command=f"composition model layouts apply {layout_id} --scene {scene_id}")
             report.update(writes_spec=True, revision=len(saved["revisions"]))
+    except SavedLayoutError as exc:
+        click.echo(json.dumps({'command': 'composition model layouts apply', 'error': str(exc),
+                               'diagnostics': exc.diagnostics, 'writes_spec': False}, indent=2))
+        raise SystemExit(1) from exc
     except (OSError, ValueError, SpecValidationError) as exc:
         _error_exit("composition model layouts apply", str(exc))
     click.echo(json.dumps({"status": "preview" if dry_run else "saved", **report}, indent=2))
+
+
+@model_layouts.command('delete')
+@click.argument('layout_id')
+@click.option('--expected-state-id', help='Reject deletion if the project changed.')
+@click.option('--dry-run', is_flag=True, help='Review deletion without saving.')
+def model_layouts_delete(layout_id: str, expected_state_id: str | None, dry_run: bool) -> None:
+    """Delete a saved:ID catalog entry; existing scene copies stay intact.
+
+    Built-ins cannot be deleted. Undo restores the saved record in one step.
+    """
+    from moviestar.cli import _error_exit
+    from moviestar.spatial_saved_layouts import delete_saved_layout
+    from moviestar.spec import SpecValidationError, load_spec, save_spec
+    try:
+        if not layout_id.startswith('saved:'):
+            raise ValueError('Use saved:ID; built-in catalog entries cannot be deleted.')
+        spec = load_spec()
+        if spec is None:
+            raise ValueError('Load a project before deleting its saved layouts.')
+        changed, report = delete_saved_layout(spec, layout_id.removeprefix('saved:'),
+                                               expected_state_id=expected_state_id)
+        if not dry_run:
+            saved = save_spec(changed, command=f'composition model layouts delete {layout_id}')
+            report.update(writes_spec=True, revision=len(saved['revisions']))
+    except (OSError, ValueError, SpecValidationError) as exc:
+        _error_exit('composition model layouts delete', str(exc))
+    click.echo(json.dumps({'status': 'preview' if dry_run else 'saved', **report}, indent=2))
 
 
 @model.command("apply")
@@ -679,7 +719,9 @@ def model_inspect(scene_id: str) -> None:
     except SpatialModelError as exc:
         _error_exit("composition model inspect", str(exc))
     click.echo(json.dumps({"status": "expanded", "renders_pixels": False,
-                           "state_id": spatial_state_id(spec), "scene": expanded}, indent=2))
+                           "state_id": spatial_state_id(spec), "scene": expanded,
+                           "inputs": spec['spatial']['scenes'][scene_id].get('inputs', []),
+                           "bindings": spec['spatial']['scenes'][scene_id].get('bindings', {})}, indent=2))
 
 
 @model.command("edit")
@@ -692,6 +734,8 @@ def model_edit(document: Path, dry_run: bool) -> None:
     definition_id and element_id. Shared edits fail before writing if they
     conflict with an occurrence customization. Include expected_state_id from
     inspect to reject a stale edit. One edit is one undo revision.
+    For a copied saved layout, scene.bind targets {"scene_id": "SCENE_ID"}
+    and supplies input plus a typed value; inspect lists its scene inputs.
     """
     from moviestar.cli import _error_exit
     from moviestar.spatial_edit import SpatialEditConflict

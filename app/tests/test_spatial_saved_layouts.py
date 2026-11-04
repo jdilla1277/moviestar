@@ -80,7 +80,7 @@ def test_save_exposes_direct_nested_inherited_and_local_content_without_mutating
     assert view['design_dependencies'] == {'components': ['card','outer'], 'fonts': ['sans-serif']}
     assert view['motion']['last_keyframe_s'] == 2
     assert view['diagnostics'] == []
-    assert view['can_apply'] is False
+    assert view['can_apply'] is True
     assert 'scene_a' not in json.dumps(saved)
     assert saved['layout']['reserved_regions'] == before['spatial']['scenes']['scene_a']['layout']['reserved_regions']
     assert report['state_id_before'] == spatial_state_id(before)

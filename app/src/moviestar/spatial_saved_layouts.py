@@ -16,7 +16,7 @@ from moviestar.spatial_model import (
 
 
 CONTENT_TYPES = {'video', 'image', 'caption', 'text'}
-_COMMON_FIELDS = {'layout', 'style', 'format_rules', 'motion'}
+_COMMON_FIELDS = {'layout', 'style', 'format_rules', 'motion', 'reference_ids'}
 
 
 def _node_fields(node):
@@ -174,7 +174,7 @@ def validate_saved_layouts(spec: dict) -> None:
             raise SpatialModelError(f'{where}.layout: content must be empty and exposed as named inputs, never implicit defaults')
 
 
-def _expand(spec: dict, layout: dict, identity: str) -> dict:
+def _expand(spec: dict, layout: dict, identity: str, *, _identity_trace=None) -> dict:
     # A temporary structural owner lets the existing compiler resolve linked
     # definitions and customizations without a scene clock or an authored scene.
     root = f'saved:{identity}'
@@ -182,7 +182,7 @@ def _expand(spec: dict, layout: dict, identity: str) -> dict:
     probe = {'sources': spec['sources'], 'composition': [{'id': root, 'layout': {}}],
              'spatial': {'assets': spatial.get('assets', {}), 'definitions': spatial.get('definitions', {}),
                          'scenes': {root: {'layout': layout}}}}
-    return expand_spatial_scene(probe, root)
+    return expand_spatial_scene(probe, root, _identity_trace=_identity_trace)
 
 
 def _content_nodes(expanded: dict) -> dict:
@@ -242,10 +242,11 @@ def inspect_saved_layout(spec: dict, identity: str) -> dict:
             node['content'] = deepcopy(value) if isinstance(value, dict) else {'text': value}
     expanded.pop('scene_id')
     expanded.pop('diagnostics', None)
+    diagnostics = saved_layout_diagnostics(spec, identity)
     return {'id': f'saved:{identity}', 'kind': 'saved', **deepcopy(item), 'expanded': expanded,
             'design_dependencies': {'components': sorted(components), 'fonts': sorted(fonts)},
             'motion': {'clock': 'scene', 'last_keyframe_s': last_keyframe},
-            'diagnostics': saved_layout_diagnostics(spec, identity), 'can_apply': False}
+            'diagnostics': diagnostics, 'can_apply': not diagnostics}
 
 
 def save_layout(spec: dict, identity: str, scene_id: str, *, name: str | None = None,
@@ -295,3 +296,180 @@ def save_layout(spec: dict, identity: str, scene_id: str, *, name: str | None = 
                       'inputs': view['inputs'], 'design_dependencies': view['design_dependencies'],
                       'motion': view['motion'], 'affected': [], 'replaces_layout': identity in layouts,
                       'writes_spec': False, 'state_id_before': current, 'state_id_after': spatial_state_id(changed)}
+
+
+def _copy_layout(spec: dict, item: dict, identity: str, scene_id: str) -> tuple[dict, list]:
+    """Copy identities using the compiler's actual structural replay.
+
+    A path can name an inherited child, then several local replacements in one
+    operation sequence. Each authored node gets its own allocation; references
+    follow the node present when the compiler applies that operation. Property
+    overrides and final input/reservation paths follow the final expanded tree.
+    """
+    from uuid import NAMESPACE_URL, uuid5
+    current = spatial_state_id(spec)
+    layout, inputs = deepcopy(item['layout']), deepcopy(item['inputs'])
+    used, authored = set(), {}
+
+    def scan(value):
+        if isinstance(value, dict):
+            for field in ('id', 'instance_id'):
+                if isinstance(value.get(field), str):
+                    used.add(value[field])
+            references = value.get('reference_ids')
+            if isinstance(references, list):
+                used.update(reference for reference in references if isinstance(reference, str))
+            for child in value.values():
+                scan(child)
+        elif isinstance(value, list):
+            for child in value:
+                scan(child)
+    scan(spec.get('spatial', {}))
+
+    # Mark only the temporary copy, never shared definitions. Deep copies during
+    # expansion preserve these private tokens, including removed/replaced nodes.
+    def allocate(nodes, parent=(), *, referenced=False):
+        for node in nodes:
+            field = 'instance_id' if 'instance_id' in node else 'id'
+            path = (*parent, node[field])
+            token = len(authored)
+            seed = f'moviestar:saved:{current}:{scene_id}:{identity}:{path}:{token}'
+            base = f"{node[field]}_{uuid5(NAMESPACE_URL, seed).hex}"
+            name, suffix = base, 1
+            while name in used:
+                name = f'{base}_{suffix}'
+                suffix += 1
+            used.add(name)
+            authored[token] = (node, field, name, referenced)
+            node['_copy_identity'] = token
+            allocate(node.get('children', []), path, referenced=referenced)
+            for edit in node.get('customizations', []):
+                if edit['op'] == 'child_add':
+                    allocate([edit['node']], (*path, *edit['path']), referenced=True)
+    allocate(layout['children'])
+    paths, operations = {}, {}
+
+    def materialize(node):
+        if '_copy_identity' not in node:
+            return node.get('id', node.get('instance_id'))
+        original, field, name, referenced = authored[node['_copy_identity']]
+        if referenced:
+            previous = node[field]
+            references = original.setdefault('reference_ids', [])
+            if previous != name and previous not in references:
+                references.append(previous)
+        original[field] = name
+        return name
+
+    def trace(event, *args):
+        if event == 'node':
+            address, node = args
+            parent = paths.get(tuple(address[:-1]), address[:-1])
+            paths[tuple(address)] = [*parent, materialize(node)]
+        elif event == 'instance':
+            address, node, edits = args
+            if '_copy_identity' in node:
+                owner = authored[node['_copy_identity']][0]
+                for original, expanded in zip(owner.get('customizations', []), edits):
+                    operations[expanded['_token']] = (original, len(address))
+        elif event in {'structural', 'property'}:
+            edit = args[0]
+            if edit['_token'] not in operations:
+                # Shared definitions retain their authored paths. Copied nodes'
+                # reference_ids keep those paths live, including later edits.
+                return
+            original, depth = operations[edit['_token']]
+            if event == 'property':
+                target = paths[tuple(args[1])]
+            else:
+                _, parent, node, anchor = args
+                target = paths.get(tuple(parent), parent)
+                if edit['op'] != 'child_add':
+                    target = [*target, materialize(node)]
+                else:
+                    materialize(node)
+                if anchor is not None:
+                    original['after_id'] = materialize(anchor)
+            original['path'] = target[depth:]
+
+    expanded = _expand(spec, layout, identity, _identity_trace=trace)
+    if expanded['diagnostics']:
+        # Missing prototype content is intentional; all design conflicts have
+        # already been checked by inspect_saved_layout before copying.
+        blocking = [entry for entry in expanded['diagnostics']
+                    if entry['code'] not in {'missing_binding', 'unknown_asset'}]
+        if blocking:
+            raise SavedLayoutError(blocking)
+    root = f'saved:{identity}'
+    for entry in inputs:
+        entry['target'] = paths[(root, *entry['target'])][1:]
+    for region in layout.get('reserved_regions', []):
+        region['target'] = paths[(root, *region['target'])][1:]
+        if 'allow' in region:
+            region['allow'] = [paths[(root, *path)][1:] for path in region['allow']]
+    for node, _, _, _ in authored.values():
+        node.pop('_copy_identity')
+    return layout, inputs
+
+
+def apply_saved_layout(spec: dict, identity: str, scene_id: str, bindings: dict | None = None,
+                       *, replace: bool = False, expected_state_id: str | None = None) -> tuple[dict, dict]:
+    """Copy design and its leaf input contract; preserve timeline and shared design."""
+    from moviestar.spatial_model import _binding
+    current = spatial_state_id(spec)
+    if expected_state_id is not None and expected_state_id != current:
+        raise SpatialModelError(f'expected_state_id: project changed; current state is {current}')
+    view = inspect_saved_layout(spec, identity)
+    if view['diagnostics']:
+        raise SavedLayoutError(view['diagnostics'])
+    if scene_id not in {scene.get('id') for scene in spec.get('composition') or [] if 'layout' in scene}:
+        raise SpatialModelError(f'scene: unknown timeline scene ID {scene_id!r}; use scenes set first')
+    replaces = scene_id in spec['spatial'].get('scenes', {})
+    if replaces and not replace:
+        raise SpatialModelError(f'scene {scene_id!r} already has a spatial layout; use --replace after reviewing dry-run')
+    bindings = {} if bindings is None else bindings
+    declarations = {entry['name']: entry for entry in view['inputs']}
+    if not isinstance(bindings, dict) or bindings.keys() - declarations.keys():
+        raise SpatialModelError('bindings: expected an object containing only declared layout inputs')
+    for name, value in bindings.items():
+        _binding(value, declarations[name]['type'], f'bindings.{name}')
+    layout, inputs = _copy_layout(spec, view, identity, scene_id)
+    result = deepcopy(spec)
+    scene = {'layout': layout, 'inputs': inputs, 'bindings': deepcopy(bindings)}
+    result['spatial'].setdefault('scenes', {})[scene_id] = scene
+    from moviestar.spec import validate_spec
+    validate_spec(result)
+    expanded = expand_spatial_scene(result, scene_id)
+    conflicts = [entry for entry in expanded['diagnostics']
+                 if entry['code'] not in {'missing_binding', 'unknown_asset'}]
+    if conflicts:
+        raise SavedLayoutError(conflicts)
+    from moviestar.motion import resolve_pacing
+    duration = next(item.duration_s for item in resolve_pacing(result['composition'], result.get('motion')).scenes
+                    if item.scene['id'] == scene_id)
+    warnings = []
+    for node in _walk(expanded['children']):
+        for property, frames in node.get('motion', {}).items():
+            if frames[-1]['at'] > duration:
+                warnings.append({'code': 'motion_exceeds_scene_duration', 'severity': 'warning',
+                    'path': node['occurrence_path'], 'property': property,
+                    'last_keyframe_s': frames[-1]['at'], 'scene_duration_s': duration,
+                    'reason': 'later keyframes will not be reached; adjust motion or explicitly change scene duration'})
+    return result, {'layout_id': f'saved:{identity}', 'affected': [scene_id], 'scene': deepcopy(scene),
+        'input_targets': {entry['name']: {'occurrence_path': [scene_id, *entry['target']],
+                                        'scene_id': scene_id, 'input': entry['name']} for entry in inputs},
+        'captured_definitions': [], 'reused_definitions': view['design_dependencies']['components'],
+        'replaces_layout': replaces, 'diagnostics': [*expanded['diagnostics'], *warnings], 'writes_spec': False,
+        'state_id_before': current, 'state_id_after': spatial_state_id(result)}
+
+
+def delete_saved_layout(spec: dict, identity: str, *, expected_state_id: str | None = None) -> tuple[dict, dict]:
+    current = spatial_state_id(spec)
+    if expected_state_id is not None and expected_state_id != current:
+        raise SpatialModelError(f'expected_state_id: project changed; current state is {current}')
+    if identity not in (spec.get('spatial') or {}).get('layouts', {}):
+        raise SpatialModelError(f'layouts.{identity}: unknown saved layout')
+    result = deepcopy(spec)
+    del result['spatial']['layouts'][identity]
+    return result, {'layout_id': f'saved:{identity}', 'affected': [], 'writes_spec': False,
+                    'state_id_before': current, 'state_id_after': spatial_state_id(result)}

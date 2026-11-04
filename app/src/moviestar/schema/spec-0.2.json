@@ -145,7 +145,11 @@
           "type": "object",
           "additionalProperties": {
             "type": "object", "required": ["layout"],
-            "properties": { "layout": { "$ref": "#/$defs/spatial_layout" } }
+            "properties": {
+              "layout": { "$ref": "#/$defs/spatial_layout" },
+              "inputs": { "$ref": "#/$defs/spatial_saved_layout/properties/inputs" },
+              "bindings": { "type": "object", "additionalProperties": { "$ref": "#/$defs/spatial_binding" } }
+            }
           }
         }
       },
@@ -282,6 +286,11 @@
       "type": "object", "required": ["id", "type"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
+        "reference_ids": {
+          "description": "Prior child IDs used by inherited customizations after a layout copy; current occurrence paths use the fresh ID.",
+          "type": "array", "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
         "type": { "enum": ["video", "image", "text", "number", "color", "boolean", "caption", "shape"] },
         "content": { "$ref": "#/$defs/spatial_binding" },
         "format_rules": { "type": "array", "items": { "$ref": "#/$defs/spatial_format_rule" } },
@@ -295,6 +304,11 @@
       "type": "object", "required": ["instance_id", "definition_id"],
       "properties": {
         "instance_id": { "type": "string", "minLength": 1 },
+        "reference_ids": {
+          "description": "Prior child IDs used by inherited customizations after a layout copy; current occurrence paths use the fresh ID.",
+          "type": "array", "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
         "definition_id": { "type": "string", "minLength": 1 },
         "format_rules": { "type": "array", "items": { "$ref": "#/$defs/spatial_format_rule" } },
         "motion": { "$ref": "#/$defs/spatial_motion" },
