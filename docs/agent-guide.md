@@ -65,6 +65,14 @@ their dump/edit/set JSON workflows. Always validate replacement files with
 
 ## Verification
 
+Add `--review-report` to export/watch to track evidence for that exact output.
+All dimensions start unreviewed. Use `review record` with the actual reviewer,
+method, limitations, and artifact-local ranges or sampled times; inspect
+`review show --report FILE` for coverage and next steps. A visual sample cannot
+approve motion/listening, and unavailable listening requires a human or capable
+reviewer. Changed media/project state makes a report stale; render a new report
+and review again. See [review evidence](review-evidence.md) for the opt-in workflow.
+
 Use `export --review` for a 720p review copy of the current edit, or
 `watch --from X --to Y --review` for a scene-composition window. Check the
 returned `render_profile.actual_dimensions`, encoding settings, and measured

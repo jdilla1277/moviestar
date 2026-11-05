@@ -5,6 +5,18 @@ successfully.
 
 ## Before the final render
 
+Add `--review-report` to export/watch when review evidence needs to persist.
+Read `review_report.out`, then use `review record --report FILE` to record the
+actual actor, method, judgment, limits, and artifact-local coverage. Use `--at`
+for inspected still instants; use ranges or `--full` for motion/listening.
+If listening is unavailable, record that explicitly and ask the human to listen
+to the specific ranges. Actor names and judgments are caller assertions, not
+authenticated or independently verified perception. `review show --report FILE`
+keeps dimensions separate and reports gaps/next steps. Changed media/project
+state makes the report stale; render again with a new report. Never claim that
+technical success, a sampled visual pass, or a previous revision approves the
+current artifact. Explicit supersession preserves earlier rejected decisions.
+
 Use `export --review` to inspect a 720p rendition with the authored framing and
 caption wrapping, or `watch --from X --to Y --review` for a scene-composition
 window. Read `render_profile.actual_dimensions`, video encoding settings, and

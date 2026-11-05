@@ -23,6 +23,7 @@ PUBLIC_DOCS = (
     ROOT / "docs" / "getting-started.md",
     ROOT / "docs" / "installation.md",
     ROOT / "docs" / "agent-guide.md",
+    ROOT / "docs" / "review-evidence.md",
     ROOT / "docs" / "install-skill.md",
     ROOT / "docs" / "skill-validation.md",
     ROOT / "docs" / "plugin-submission.md",

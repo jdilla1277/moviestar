@@ -1,5 +1,6 @@
 """Byte limits are checked against complete, playable review files."""
 
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -100,7 +101,7 @@ def test_retry_fits_final_mux_and_preserves_audio_geometry_and_original(
     limit = int(master.stat().st_size * .65)
     out = tmp_path / "budget.mp4"
     data = invoke("export", "--review", "--loudness-target", "-18",
-                  "--max-bytes", str(limit), "--out", str(out))
+                  "--max-bytes", str(limit), "--out", str(out), "--review-report")
     budget = data["size_budget"]
     assert budget["met"] is True and budget["actual_bytes"] == out.stat().st_size <= limit
     assert 2 <= len(budget["attempts"]) <= 3
@@ -114,6 +115,10 @@ def test_retry_fits_final_mux_and_preserves_audio_geometry_and_original(
         ])
     assert audio(out) == audio(master)
     assert master.read_bytes() == before
+    report = json.loads(Path(data["review_report"]["out"]).read_text())
+    assert report["artifact"]["sha256"] == hashlib.sha256(out.read_bytes()).hexdigest()
+    assert report["artifact"]["size_bytes"] == out.stat().st_size
+    assert report["render_facts"]["size_budget"]["met"] is True
     assert not list(tmp_path.glob(".moviestar-budget-*"))
 
 

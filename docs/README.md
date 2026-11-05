@@ -11,6 +11,8 @@ AI agents. Start with the path that matches your task:
   structured output, composition, and verification.
 - [Review exports](review-exports.md) — create a 720p rendition while preserving
   authored composition and typography.
+- [Review evidence](review-evidence.md) — keep artifact-bound technical, source,
+  visual, motion, and listening judgments separate, with coverage and staleness.
 - [Caption timing audit](caption-audit.md) — inspect text visibility intervals,
   short flashes, connector-only candidates, and optional proof frames.
 - [Install the Moviestar skill](install-skill.md) — add the GitHub-distributed
