@@ -8,7 +8,11 @@ successfully.
 Use `export --review` to inspect a 720p rendition with the authored framing and
 caption wrapping, or `watch --from X --to Y --review` for a scene-composition
 window. Read `render_profile.actual_dimensions`, video encoding settings, and
-`file_size_bytes`; a 720p profile does not establish attachment-size compliance.
+`file_size_bytes`. For an attachment-size limit, add `--max-bytes N` and require
+`size_budget.met: true` before sharing through that route. Unmet limits return a
+nonzero exit and preserve a complete file; ask for a shorter clip or larger
+limit. A dry run's `met: null` establishes no compliance. Compression preserves
+resolution and encoded audio, but requires separate visual-quality review.
 Watch retains its source-time extraction behavior outside scene compositions;
 use export for a complete edited-source rendition. Check the full-resolution
 artifact for details too fine to judge at 720p.

@@ -42,10 +42,58 @@ With no `--out`, export writes `moviestar-clips/review-720p.mp4`. Watch adds
 `_review-720p` to its usual automatic filename. Existing automatic names receive
 numeric suffixes. An explicit `--out` retains the normal overwrite behavior.
 
-The 720p profile controls rendition size and encoding settings. A maximum byte
-budget is a separate feature; inspect the measured file size before choosing a
-delivery route. Review the full-resolution export when judging details that
-720p cannot preserve.
+Review the full-resolution export when judging details that 720p cannot preserve.
+
+## Maximum file size
+
+Add `--max-bytes N` to request a maximum final MP4 size. It requires `--review`
+and accepts a positive integer byte count, not an `MB` string or a service name:
+
+```bash
+moviestar export --review --max-bytes 20000000 --out review.mp4
+moviestar watch --from 12 --to 20 --review --max-bytes 5000000
+moviestar export --review --max-bytes 20000000 --dry-run
+```
+
+MovieStar checks the completed file after all audio mixing and normalization.
+If it fits, it keeps that rendition without another encode. Otherwise it may
+try at most two compression retries using the selected encoder: two-pass
+target-bitrate encoding for x264, or target-bitrate encoding for VideoToolbox.
+Each retry reads the original completed review, never a previous retry. This
+adds a video compression generation when needed, without rendering the scene
+composition again. Encoded audio is copied unchanged. Resolution, duration,
+frame count, authored text, and layout remain fixed; there is no truncation,
+automatic downscaling, or audio bitrate reduction.
+
+The initial bitrate estimate reserves actual audio packet payload plus the
+larger of 4,096 bytes or 3% of the budget for container overhead, with additional
+headroom for rate-control variation. Estimates do not establish compliance:
+only the final measured file size does. Retry targets stay at or above 300 kb/s;
+this is a compression policy, not proof that typography remains readable.
+Review visual quality separately. An initial review already under the limit is
+kept even if its bitrate is below that retry floor.
+
+The JSON `size_budget` reports `max_bytes`, final `actual_bytes`, nullable `met`,
+the bounded retry policy, attempts and their commands/settings, the selected
+candidate, and `stop_reason`. `render_profile.video_encoding` describes the
+selected output's settings, including a retry's target bitrate when applicable.
+The original render commands remain in their usual fields; compression retry
+commands are under `size_budget.attempts`. Temporary candidate files and pass
+logs are removed after execution.
+
+Success requires `size_budget.met: true`. If the limit is still unmet, the
+command exits with code 1 and `status: "size_limit_unmet"`, reports `met: false`,
+and preserves the smallest complete, verified candidate at `out`. This file
+is **not suitable for the requested size-limited route**. Request a shorter clip
+or a larger limit. A failed retry preserves the last verified candidate, never
+its partial output; its error is included in the attempt. Higher-quality files
+at other paths and the source project remain untouched. Explicit `--out` still
+uses normal overwrite semantics, so use a separate path for a review copy.
+
+Dry runs report the retry policy with `met: null`, `actual_bytes: null`, and no
+attempts. They do not encode media, inspect output bytes, predict a compliant
+bitrate, or write temporary files. The profile without `--max-bytes` retains its
+usual settings and makes no attachment-size guarantee.
 
 ## Choosing a command
 

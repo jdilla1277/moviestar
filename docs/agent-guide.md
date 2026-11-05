@@ -68,7 +68,10 @@ their dump/edit/set JSON workflows. Always validate replacement files with
 Use `export --review` for a 720p review copy of the current edit, or
 `watch --from X --to Y --review` for a scene-composition window. Check the
 returned `render_profile.actual_dimensions`, encoding settings, and measured
-`file_size_bytes`. The profile preserves authored layout and text wrapping;
+`file_size_bytes`. Add `--max-bytes N` when the review must fit a delivery limit;
+share through that route only when `size_budget.met` is true. An unmet limit
+returns a nonzero exit with a complete output and a hint to shorten the clip
+or increase the limit. The profile preserves authored layout and text wrapping;
 see [review exports](review-exports.md) for sizing, source-time watch behavior,
 and the full-resolution review limits.
 
