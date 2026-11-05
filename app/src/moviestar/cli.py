@@ -291,6 +291,7 @@ from moviestar.sharing import (
     shares as shares_command,
     unshare as unshare_command,
 )
+from moviestar.replacement import replace, replacement_status, cancel_replacement
 
 
 CLIPS_DIR = "moviestar-clips"
@@ -1055,6 +1056,7 @@ ACCOUNT COMMANDS
   upload FILE            Store a finished MP4 privately when hosting is enabled.
   share FILE_OR_VIDEO_ID Create an unlisted watch/download link when enabled.
   shares                 List owned links; --video filters and --cursor paginates.
+  shares replace ID FILE Replace a cut behind its existing links when enabled.
   unshare LINK_ID        Revoke a link without deleting the video.
   delete VIDEO_ID        Delete a hosted video and all its links, freeing quota.
   download WATCH_URL     Save a shared MP4 without a recipient account.
@@ -1197,6 +1199,9 @@ cli.add_command(upload_command)
 cli.add_command(download_command)
 cli.add_command(share_command)
 cli.add_command(shares_command)
+shares_command.add_command(replace)
+shares_command.add_command(replacement_status)
+shares_command.add_command(cancel_replacement)
 cli.add_command(unshare_command)
 cli.add_command(delete_command)
 

@@ -62,6 +62,67 @@ quota. Anyone with the unlisted link can
 watch, download, and forward it without signing in. Ask before uploading or
 publishing a user's private video when that action has not been authorized.
 
+## Replace the cut behind existing links
+
+When replacement is enabled on the service, use the existing video UUID to
+publish a new finished MP4 behind **all** its active watch/download links:
+
+```sh
+moviestar shares replace VIDEO_ID new-cut.mp4 --dry-run
+moviestar shares replace VIDEO_ID new-cut.mp4 --idempotency-key cut-v2
+moviestar shares replacement-status VIDEO_ID REPLACEMENT_ID
+moviestar shares replace VIDEO_ID new-cut.mp4 --resume REPLACEMENT_ID
+moviestar shares cancel-replacement VIDEO_ID REPLACEMENT_ID
+```
+
+Review the owning account, current version, every active URL and projected
+storage before replacing. Replacement `--dry-run` contacts the service for a
+**read-only live preview**; it sends the filename and size, reserves nothing,
+transfers no video bytes and writes no recovery record. The preview is a
+snapshot. A live request checks access, version and capacity again.
+
+Replacement uses no additional video slot. Storage is charged for the new cut
+after publication, and temporary processing capacity is reserved separately.
+The original cut stays available until a valid replacement commits, subject
+to independent holds, pauses or deletion. Existing permissions remain in force;
+revoked links stay revoked. Replacement sends no email and never edits the
+local MP4 or project. It cannot target just one of a video's active links.
+
+The CLI saves the original version, request key and file digest in private
+account configuration before network work. It prints the key to stderr and
+returns one JSON result on stdout. Retry the **same file and key**, or repeat
+the same command to recover its saved request. Changing bytes or the filename
+cannot silently reuse an interrupted request. A confirmed result reports
+`status: "replaced"`, `video_replaced: true` and the new version.
+
+Recovery stays bound to the service and the video's immutable UUID when you
+reconnect the same account, even if the installation, credential or public
+handle changes. Every retry authorizes the current connection with the service;
+connecting a different account cannot take over the original request.
+
+Older CLI recovery records used an installation grant as part of their location.
+If one is found, `replacement_reconciliation_required` preserves its original
+key and replacement ID and prevents a fresh request. Select the original
+service, then explicitly retry with that key or `--resume`, or use
+`replacement-status`/`cancel-replacement` for its ID. Reconciliation retains the
+original expected version and file digest; it never substitutes a newer cut.
+
+A lost completion reply can mean the new cut is already published:
+`video_replaced: null` and `replacement_outcome: "unknown"` preserve that
+uncertainty. Read `replacement-status` or retry the original request; do not
+choose a fresh key. `--resume` retries completion without uploading again and
+requires the original local record and matching file. Status and cancellation
+need no local file and remain available when new replacements are paused.
+
+Cancellation closes an unpublished request; it cannot undo a committed cut.
+Wait for pending cleanup before starting a different replacement. Upload
+capabilities expire, and retries never extend them. If bytes were never fully
+uploaded, cancel the original request before deliberately starting another.
+If the local recovery record is missing, inspect or cancel the original ID
+rather than guessing a version or file binding. A fresh key for the same file
+requests another version; use it only for an intentional new replacement.
+Service replacement enablement is separate from ordinary upload and sharing.
+
 ## Email an unlisted link
 
 ```sh

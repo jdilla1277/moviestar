@@ -113,6 +113,18 @@ def test_plan_output_only_contains_allowlisted_service_fields(connected, monkeyp
     assert "private-customer" not in result.output
 
 
+def test_status_preserves_valid_replacement_reservations_without_another_video_slot(connected, monkeypatch):
+    plan = service_plan()
+    plan["usage"].update(replacement_reserved_bytes=20_000_000, replacement_temporary_bytes=100_000_000,
+                         used_bytes=140_000_000)
+    plan["remaining"]["bytes"] = 860_000_000
+    monkeypatch.setattr("moviestar.account._installation_request", lambda *_args: (
+        200, status_response({"plan_status": "ok", "plan": plan}), None))
+    result = CliRunner().invoke(cli, ["account", "status"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["plan"] == plan
+
+
 @pytest.mark.parametrize("command", ["upload", "share"])
 def test_700_mb_offline_preflight_leaves_actual_allowance_unverified(connected, monkeypatch, tmp_path, command):
     file = tmp_path / "large.mp4"
