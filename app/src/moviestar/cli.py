@@ -39,6 +39,8 @@ from moviestar.render_profiles import (
     REVIEW_PROFILE_NAME, REVIEW_LONG_EDGE, REVIEW_SHORT_EDGE, review_profile_receipt,
 )
 from moviestar.review_budget import budget_receipt, fit_review_budget
+from moviestar.review_cli import review as review_command
+from moviestar.review_evidence import create_report, project_state, view_report
 from moviestar.ffmpeg import (
     resolve_video_encoder,
     select_video_encoder,
@@ -1204,6 +1206,7 @@ shares_command.add_command(replacement_status)
 shares_command.add_command(cancel_replacement)
 cli.add_command(unshare_command)
 cli.add_command(delete_command)
+cli.add_command(review_command)
 
 
 # ---------- Browsing ----------
@@ -1250,6 +1253,62 @@ def _configure_review_budget(command: str, review: bool, max_bytes: int | None) 
                 "Add --review to create a size-constrained review copy.",
             )
         click.get_current_context().meta["review_max_bytes"] = max_bytes
+
+
+def _review_report_option(f):
+    return click.option(
+        "--review-report", is_flag=True,
+        help="Create an opt-in review JSON bound to the exact final file and project state. "
+        "All review dimensions start unreviewed. Use 'review record' to record actual "
+        "reviewer judgments; no viewing/listening is performed. Independent of --review.",
+    )(f)
+
+
+def _configure_review_report(enabled: bool, dry_run: bool) -> None:
+    if enabled:
+        ctx = click.get_current_context()
+        workspace = get_project_dir()
+        try:
+            ctx.meta["review_evidence"] = {
+                "workspace": workspace, "state": None if dry_run else project_state(workspace),
+            }
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            _error_exit_with_hint(ctx.command.name, f"Could not snapshot the review project: {exc}",
+                                  "Inspect project inputs before rendering a review report.")
+
+
+def _attach_review_report(ctx: click.Context, result: dict) -> None:
+    request = ctx.meta.get("review_evidence")
+    if request is None or ("error" in result and result.get("status") != "size_limit_unmet"):
+        return
+    if result.get("dry_run"):
+        result["review_report"] = {
+            "dry_run": True, "clock": "artifact_seconds",
+            "would_write_directory": str(request["workspace"] / "reviews"),
+            "note": "No file identity or review evidence exists until a real render completes.",
+        }
+        return
+    try:
+        facts = {key: result[key] for key in (
+            "status", "video_encoder", "render_profile", "range", "loudness_normalization",
+        ) if key in result}
+        facts["command"] = ctx.command.name
+        if "size_budget" in result:
+            facts["size_budget"] = {key: result["size_budget"].get(key) for key in
+                                    ("max_bytes", "actual_bytes", "met", "stop_reason")}
+        path, report = create_report(result["out"], request["workspace"], request["state"], facts)
+        view = view_report(report)
+        result["review_report"] = {
+            "out": str(path), "id": report["id"], "clock": report["clock"],
+            "artifact": report["artifact"], "currency": view["currency"],
+            "dimensions": view["dimensions"], "next_steps": view["next_steps"],
+        }
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError) as exc:
+        _error_exit_with_hint(
+            ctx.command.name, f"Could not create the review report: {exc}",
+            "The encoded artifact is preserved. Inspect inputs and render again with --review-report.",
+            out=result.get("out"),
+        )
 
 
 def _attach_review_profile_result(ctx: click.Context, result: dict) -> None:
@@ -1336,6 +1395,7 @@ def _echo_render_result(result: dict) -> None:
             )
     if ctx is not None:
         _attach_review_profile_result(ctx, result)
+        _attach_review_report(ctx, result)
     click.echo(json.dumps(result, indent=2))
     if result.get("size_budget", {}).get("met") is False:
         sys.exit(1)
@@ -4896,6 +4956,7 @@ def inspect(
 )
 @_review_option
 @_max_bytes_option
+@_review_report_option
 @_video_encoder_option
 def watch(
     from_tc: str,
@@ -4908,6 +4969,7 @@ def watch(
     video_encoder: str = "auto",
     review: bool = False,
     max_bytes: int | None = None,
+    review_report: bool = False,
 ) -> None:
     """Extract a video segment from the loaded project as MP4.
 
@@ -4943,6 +5005,7 @@ def watch(
     if not is_loaded():
         _no_project_error_exit("watch")
 
+    _configure_review_report(review_report, dry_run)
     _configure_review_budget("watch", review, max_bytes)
     if review:
         click.get_current_context().meta["review_profile"] = True
@@ -26540,6 +26603,7 @@ def _export_composition(
 @_quiet_option
 @_review_option
 @_max_bytes_option
+@_review_report_option
 @_video_encoder_option
 def export_cmd(
     output: str | None,
@@ -26554,6 +26618,7 @@ def export_cmd(
     video_encoder: str = "auto",
     review: bool = False,
     max_bytes: int | None = None,
+    review_report: bool = False,
 ) -> None:
     """Render the current edit spec to a final MP4.
 
@@ -26596,6 +26661,7 @@ def export_cmd(
     if not is_loaded():
         _no_project_error_exit("export")
 
+    _configure_review_report(review_report, dry_run)
     _configure_review_budget("export", review, max_bytes)
     if review and (fast or preview):
         conflict = "--fast" if fast else "--preview"
