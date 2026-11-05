@@ -63,6 +63,17 @@ def test_dependencies_cap_pyav_below_19_for_faster_whisper():
     # faster-whisper 1.2.1 (latest) calls av.open(metadata_errors=...),
     # which PyAV 19.0.0 removed; every transcription fails on a fresh
     # install. Lift the cap once a faster-whisper release supports av 19.
-    dependencies = _pyproject()["project"]["dependencies"]
+    dependencies = _pyproject()["project"]["optional-dependencies"]["transcribe"]
 
     assert "av<19" in dependencies
+
+
+def test_base_install_does_not_require_transcription_but_diarize_still_does():
+    from packaging.requirements import Requirement
+
+    project = _pyproject()["project"]
+    assert {Requirement(item).name for item in project["dependencies"]}.isdisjoint(
+        {"av", "faster-whisper"}
+    )
+    for extra in ("transcribe", "diarize"):
+        assert {"av<19", "faster-whisper>=1.0"} <= set(project["optional-dependencies"][extra])

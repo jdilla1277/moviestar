@@ -1,7 +1,8 @@
 # Getting started
 
-Moviestar requires Python 3.10 or newer plus FFmpeg and ffprobe. Install FFmpeg
-with your system package manager, then create an isolated Python environment:
+For local editing, Moviestar requires Python 3.10 or newer plus FFmpeg and
+ffprobe. Install FFmpeg with your system package manager, then create an
+isolated Python environment:
 
 ```bash
 python3 -m venv .venv
@@ -11,8 +12,13 @@ source .venv/bin/activate
 Install the current Moviestar release from PyPI:
 
 ```bash
-python -m pip install --upgrade moviestar
+python -m pip install --upgrade 'moviestar[transcribe]'
 ```
+
+The `transcribe` extra provides local speech recognition. For account and
+Cloud metadata commands, use `python -m pip install --upgrade moviestar`
+without FFmpeg or Whisper. See [installation profiles](installation.md) for
+editing with supplied captions and existing-install migration.
 
 Confirm that `moviestar --version` reports v0.7.0 or newer before using v0.7
 commands.

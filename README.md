@@ -43,14 +43,20 @@ read, verify, and act on.
 
 ## Quick start
 
-Moviestar requires Python 3.10 or newer plus FFmpeg and ffprobe on `PATH`.
+For local editing, Moviestar requires Python 3.10 or newer plus FFmpeg and
+ffprobe on `PATH`. Add the transcription extra for speech recognition:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade moviestar
+python -m pip install --upgrade 'moviestar[transcribe]'
 moviestar doctor
 ```
+
+For account and Cloud metadata commands, use the smaller base installation
+with `python -m pip install --upgrade moviestar`; FFmpeg and Whisper are not
+required. See [installation profiles](docs/installation.md) for supplied-caption
+workflows and upgrading an existing installation.
 
 Then attach a video to your agent and try:
 
@@ -105,7 +111,7 @@ for browser acceptance, pagination, offline previews and revocation.
 ```bash
 python3 -m venv app/.venv
 source app/.venv/bin/activate
-python -m pip install -e app pytest
+python -m pip install -e './app[transcribe]' pytest
 bin/preflight --slow
 ```
 

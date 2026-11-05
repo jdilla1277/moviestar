@@ -11,7 +11,7 @@ Moviestar requires Python 3.10 or newer and FFmpeg plus ffprobe on `PATH`.
 ```bash
 python3 -m venv app/.venv
 source app/.venv/bin/activate
-python -m pip install -e app pytest
+python -m pip install -e './app[transcribe]' pytest
 ```
 
 Use `bin/test` for the fast test suite and `bin/test --run-slow` for the full

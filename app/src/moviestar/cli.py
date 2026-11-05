@@ -269,6 +269,7 @@ from moviestar.transcribe import (
     AVAILABLE_MODELS,
     DEFAULT_MODEL,
     TRANSCRIPTION_CHANNELS,
+    TranscriptionDependencyError,
     TranscriptionError,
     _normalize_vocabulary,
     merge_range_transcript,
@@ -1184,7 +1185,9 @@ class _UsageErrorEnvelopeGroup(click.Group):
 def cli() -> None:
     """Moviestar — video editing CLI for AI agents.
 
-    Requires: FFmpeg on PATH (`brew install ffmpeg` / `apt install ffmpeg`).
+    Local media operations require FFmpeg on PATH. Local speech recognition
+    also requires the 'transcribe' extra: pip install 'moviestar[transcribe]'.
+    Account and Cloud metadata commands need neither FFmpeg nor Whisper.
 
     Load a video, browse its contents, make edits, and export the result.
     All output is structured JSON on stdout; progress goes to stderr.
@@ -1579,14 +1582,21 @@ def _error_exit_with_hint(
 
 @cli.group()
 def models() -> None:
-    """Pre-download local Whisper models used by transcription."""
+    """Pre-download local Whisper models; requires the 'transcribe' extra."""
+
+
+def _model_download_requirement(command: str, model: str) -> dict | None:
+    try:
+        return model_download_requirement(model)
+    except TranscriptionDependencyError as exc:
+        _error_exit_with_hint(command, str(exc), exc.hint, code="transcription_not_installed")
 
 
 @models.command("pull")
 @click.argument("model", type=click.Choice(AVAILABLE_MODELS))
 def models_pull(model: str) -> None:
     """Download MODEL now so later transcription does not need network."""
-    requirement = model_download_requirement(model)
+    requirement = _model_download_requirement("models pull", model)
     if requirement is None:
         cache_path = resolve_cached_model(model)
         result = {
@@ -2733,7 +2743,7 @@ def _emit_load_dry_run(
         ]
     if would_transcribe:
         result["would_use_model"] = model
-        requirement = model_download_requirement(model)
+        requirement = _model_download_requirement("load", model)
         if requirement is not None:
             result["requires_download"] = requirement
     elif would_skip_reason:
@@ -3054,6 +3064,8 @@ def load(
     combined with `--force`.
 
     Transcription runs by default using faster-whisper (local, free).
+    Install it with pip install 'moviestar[transcribe]'. The base installation
+    supports --no-transcribe or supplied --captions without Whisper.
     First run downloads the requested model from HuggingFace:
     tiny ~75 MB · base ~145 MB · small ~480 MB · medium ~1.5 GB · large-v3 ~3.0 GB.
     Use --no-transcribe to skip, or --model tiny|small|medium|large-v3 to
@@ -3266,12 +3278,17 @@ def load(
         )
         return
 
-    # Resolve a cold-model requirement before any workspace mutation. Probe
-    # only while the selected model is uncached so silent inputs do not fail
-    # --no-download and warm loads do not pay an extra ffprobe call.
+    # Before mutation, probe cold-model or missing-extra inputs to determine
+    # whether Whisper would actually run. No-audio inputs need neither an
+    # extra nor a model; warm loads still avoid an extra ffprobe call.
     whisper_runs = not no_transcribe and (not abs_captions or transcribe_windows)
-    requirement = model_download_requirement(model) if whisper_runs else None
-    if requirement is not None:
+    dependency_error = None
+    try:
+        requirement = model_download_requirement(model) if whisper_runs else None
+    except TranscriptionDependencyError as exc:
+        requirement = None
+        dependency_error = exc
+    if requirement is not None or dependency_error is not None:
         source_has_audio = False
         for abs_path in abs_paths:
             try:
@@ -3288,6 +3305,9 @@ def load(
                 break
 
         if source_has_audio:
+            if dependency_error is not None:
+                _error_exit_with_hint("load", str(dependency_error), dependency_error.hint,
+                                      code="transcription_not_installed")
             if no_download:
                 _error_exit_with_hint(
                     "load",
@@ -3613,6 +3633,9 @@ def retranscribe(
     with ``--no-transcribe`` can pick up a transcript by running
     ``moviestar retranscribe`` without ``--force``.
 
+    Speech recognition requires pip install 'moviestar[transcribe]'.
+    Importing --captions without --range works with the base installation.
+
     Pass ``--vocabulary 'Amal,Holden'`` to bias the decoder toward
     names/terms it would otherwise misspell.
 
@@ -3663,7 +3686,7 @@ def retranscribe(
     )
     whisper_runs = not caption_path or bool(windows)
 
-    requirement = model_download_requirement(model) if whisper_runs else None
+    requirement = _model_download_requirement("retranscribe", model) if whisper_runs else None
     if no_download and requirement is not None:
         _error_exit_with_hint(
             "retranscribe",

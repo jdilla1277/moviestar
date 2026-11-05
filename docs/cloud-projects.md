@@ -5,6 +5,18 @@ your connected account. Your service must have personal Cloud project access
 enabled. This initial client supports project metadata; inspect capabilities
 for the operations your service currently advertises.
 
+## Install
+
+Use the base package for account and Cloud metadata commands:
+
+```sh
+python -m pip install moviestar
+```
+
+It does not install Whisper, PyAV, or transcription models and does not require
+FFmpeg. Local speech recognition is available through the `transcribe` extra;
+see [installation profiles](installation.md).
+
 ## Connect and inspect
 
 Use the existing human-approved account connection:
@@ -49,7 +61,7 @@ through this metadata contract; they do not establish that the project has no
 media. Local editing commands retain their current behavior and operate on
 local workspaces. Cloud metadata commands require no local FFmpeg execution or
 transcription and never upload media or select a local workspace. The package's
-standard installation dependencies are unchanged by this client.
+base installation omits the optional local transcription stack.
 
 ## Pagination and recovery
 

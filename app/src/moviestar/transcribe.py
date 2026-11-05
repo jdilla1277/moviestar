@@ -444,6 +444,15 @@ class TranscriptionError(RuntimeError):
     """Raised when transcription fails."""
 
 
+class TranscriptionDependencyError(TranscriptionError):
+    """Local speech recognition requires the optional transcription extra."""
+
+    hint = "Install local transcription with: python -m pip install 'moviestar[transcribe]'. Then retry."
+
+    def __init__(self):
+        super().__init__(f"Local transcription support is not installed. {self.hint}")
+
+
 def _hf_cache_root() -> Path:
     """Default HuggingFace cache location."""
     if "HF_HUB_CACHE" in os.environ:
@@ -455,7 +464,10 @@ def _hf_cache_root() -> Path:
 
 def _download_model(model: str, *, local_files_only: bool) -> Path:
     """Resolve or download a model through faster-whisper's public helper."""
-    from faster_whisper.utils import download_model
+    try:
+        from faster_whisper.utils import download_model
+    except ImportError as exc:
+        raise TranscriptionDependencyError() from exc
 
     return Path(
         download_model(
@@ -504,6 +516,8 @@ def pull_model(model: str) -> Path:
         )
     try:
         return _download_model(model, local_files_only=False)
+    except TranscriptionDependencyError:
+        raise
     except Exception as exc:  # noqa: BLE001 — preserve the upstream download detail
         raise TranscriptionError(f"Failed to download whisper model {model!r}: {exc}") from exc
 
@@ -575,9 +589,7 @@ def transcribe_file(
     try:
         from faster_whisper import WhisperModel
     except ImportError as exc:
-        raise TranscriptionError(
-            "faster-whisper is not installed. Reinstall Moviestar: pip install -e app/"
-        ) from exc
+        raise TranscriptionDependencyError() from exc
 
     cached_model = resolve_cached_model(model)
     if not allow_download and cached_model is None:

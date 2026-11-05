@@ -6,6 +6,29 @@ on:
   pull_request:
 
 jobs:
+  base-wheel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: app/pyproject.toml
+      - name: Build and install the base wheel with normal dependency resolution
+        run: |
+          python -m pip install build
+          python -m build app
+          python -m venv .context/base-wheel
+          .context/base-wheel/bin/python -m pip install app/dist/*.whl pytest packaging
+      - name: Verify account and Cloud commands without local media dependencies
+        env:
+          MOVIESTAR_WHEEL_TEST_PYTHON: ${{ github.workspace }}/.context/base-wheel/bin/python
+        run: |
+          .context/base-wheel/bin/python -m pytest app/tests/test_lightweight_install.py -q
+          .context/base-wheel/bin/python bin/check-dependency-licenses
+
   docs-and-skill:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -65,12 +88,13 @@ jobs:
           python -m venv .venv
           source .venv/bin/activate
           python -m pip install --upgrade pip
-          pip install -e . pytest
+          pip install -e ".[transcribe]" pytest
 
       - name: Check dependency license policy
         run: |
           source app/.venv/bin/activate
           bin/check-dependency-licenses
+          bin/check-dependency-licenses --extra transcribe
 
       # --captions URL needs the url-captions extra (yt-dlp). Install it
       # after the core check so the fast tests cover the real backend too.
@@ -78,7 +102,7 @@ jobs:
         run: |
           source app/.venv/bin/activate
           pip install -e "./app[url-captions]"
-          bin/check-dependency-licenses --extra url-captions
+          bin/check-dependency-licenses --extra transcribe --extra url-captions
 
       # Fast path: everything except slow (whisper) tests. Gives quick
       # signal on most failures even if the slow path breaks.
