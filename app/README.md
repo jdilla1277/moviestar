@@ -126,6 +126,8 @@ the filters and encoders required by the features you plan to use.
 
 The package weighs ~210MB on install — `faster-whisper` ships local transcription out of the box (no API keys, no cloud round-trip). Diarization is opt-in: `pip install moviestar[diarize]`. Fetching captions from a video page URL with `load --captions URL` is opt-in too: `pip install 'moviestar[url-captions]'` adds [yt-dlp](https://github.com/yt-dlp/yt-dlp).
 
+- **Videos shared with your account:** after the human accepts an invitation in their browser, `moviestar shared videos` lists one page of accepted finished videos (`--cursor CURSOR` continues). `moviestar shared download VIDEO_ID --out received.mp4` uses the recipient's approved installation and rechecks access; `--dry-run` is offline and reports `would_write_to` without credentials or file writes. Downloads refuse redirects and never overwrite existing files. These commands require recipient access on the connected service; `shares` remains owner link history and `download WATCH_URL` remains anonymous. See [accepted shared videos](../docs/sharing.md#find-videos-shared-with-your-account).
+
 ## License and status
 
 Moviestar supports multi-source scene composition, authorable slot geometry and

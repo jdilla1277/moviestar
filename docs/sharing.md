@@ -6,6 +6,76 @@ These commands work when their service has enabled the corresponding feature.
 A paused service returns a structured error; CLI availability alone does not
 mean public publication is enabled.
 
+## Find videos shared with your account
+
+Check `moviestar shared --help` for support in the installed CLI build.
+When the service enables recipient access, the human can accept an invitation
+in their browser using the verified invited email. Connect the recipient's
+installation through [account setup](accounts.md), then:
+
+```sh
+moviestar shared videos
+moviestar shared videos --cursor CURSOR
+moviestar shared download VIDEO_ID --out received.mp4 --dry-run
+moviestar shared download VIDEO_ID --out received.mp4
+```
+
+`shared videos` reads one page of at most 50 accepted, currently accessible
+finished videos. Its JSON contains `contract_version`, `videos`, `next_cursor`
+and a next-action `hint`. Each video has its stable `id`, current `filename`,
+sender handle `shared_by`, acceptance timestamp, byte size, duration/dimensions,
+`permissions: ["watch", "download"]`, and validated service-relative paths.
+Use `next_cursor` unchanged with the same account for the next page. There is no
+automatic fetch-all. An empty successful page is different from a service or
+authentication error. Pending invitations remain in the human's email/browser;
+listing never accepts an invitation, creates a link, or sends an email.
+
+`shared download` takes the UUID from that list and uses the installation's
+existing credential. No email link or browser cookie is needed. The list is a
+snapshot: the service checks access again for the metadata HEAD and media GET.
+Revocation, held/deleted media and revoked installations stop future requests.
+The human still accepts in the browser; the CLI does not accept access, agree
+to terms, or approve an installation implicitly. The received file is the
+published finished video, not its project, sources or edit history. Stable video
+IDs follow the owner's current published cut.
+
+Download `--dry-run` is offline and does not read credentials, contact the
+service, create directories or write files. It reports `dry_run: true`,
+`status: "would_download"`, `would_write_to`, `access_verified: false` and
+`download_performed: false`; it does not claim an `out` file exists. The live
+result reports `status: "downloaded"`, absolute `out`, `video_id`, `size_bytes`,
+`account_required: true` and `download_performed: true`. The default filename is
+`VIDEO_ID.mp4`; use `--out` for a chosen name. Server filenames never become
+local paths. Transfers are bounded to the existing 1 GB client ceiling and are
+published atomically only after size/MP4 validation. Existing files, dangling
+symlinks and destinations created during a transfer are preserved. Partial
+temporary files are cleaned up on failure. A replacement between HEAD and GET
+that changes size fails safely; retry the same video with a fresh read.
+
+The service origin comes from the approved account connection or explicit
+legacy-service configuration. A conflicting `MOVIESTAR_ACCOUNT_INSTALLATION_URL`
+is rejected before credential lookup; reconnect explicitly to change services.
+No request follows a redirect. Browser `watch_path` values require an independent
+browser session; `download_path` values must match the fixed installation API.
+The CLI validates these fields and derives its own authenticated destination
+from the chosen UUID, never an arbitrary returned object/redirect URL. Credentials,
+raw provider errors and unexpected response fields are not echoed.
+
+The connected service must expose `recipient-videos-v1` through GET
+`/api/v1/shared-videos` and GET/HEAD `/api/v1/shared-videos/:id/download`. It must
+enable recipient access separately. An unknown version fails with
+`unsupported_contract`; malformed pages fail with `invalid_response`; a paused
+or unavailable service is never reported as an empty library. A revoked
+installation reports `not_connected` on discovery: check `account status` and
+let the human reconnect if needed. `account_action_required` asks the human to
+finish account setup/current terms. `invalid_cursor` asks for a fresh first
+page. An inaccessible download returns `not_found` without publishing a file.
+Downloaded copies and transfers already admitted cannot be recalled.
+
+These commands differ from owner `shares` (unlisted link history) and anonymous
+`download WATCH_URL` below. Having an unlisted link still needs no recipient
+account; accepting a restricted video does not create a forwardable link.
+
 ## Upload privately, then share
 
 ```sh

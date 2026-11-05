@@ -93,6 +93,35 @@ def _open(url: str):
         return response
 
 
+def _save_mp4(response, destination: Path, expected: int) -> int:
+    """Publish validated MP4 bytes once; callers validate their own transport."""
+    temporary = None
+    try:
+        total, prefix = 0, bytearray()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=destination.parent, prefix=".moviestar-download-", delete=False) as output:
+            temporary = Path(output.name)
+            while chunk := response.read(1024 * 1024):
+                total += len(chunk)
+                if total > expected:
+                    raise ValueError("download_unavailable")
+                if len(prefix) < 12:
+                    prefix.extend(chunk[:12 - len(prefix)])
+                output.write(chunk)
+            if total != expected or len(prefix) < 12 or prefix[4:8] != b"ftyp":
+                raise ValueError("download_unavailable")
+            output.flush()
+            os.fsync(output.fileno())
+        # A same-directory hard link publishes the complete file atomically
+        # and fails if any destination appeared during transfer, even a
+        # dangling symlink. os.replace would silently overwrite that race.
+        os.link(temporary, destination)
+        return total
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def _transfer(endpoint: str, origin: str, destination: Path) -> int:
     with _open(endpoint) as redirect:
         if redirect.status not in {302, 303, 307, 308}:
@@ -110,37 +139,13 @@ def _transfer(endpoint: str, origin: str, destination: Path) -> int:
         target = urlsplit(signed)
         if target.scheme == "http" and f"{target.scheme}://{target.netloc}" != origin:
             raise ValueError("download_unavailable")
-    temporary = None
-    try:
-        with _open(signed) as response:
-            if response.status != 200 or response.headers.get_content_type() != "video/mp4":
-                raise ValueError("download_unavailable")
-            length = response.headers.get("Content-Length", "")
-            if not re.fullmatch(r"[0-9]{1,10}", length) or not 1 <= int(length) <= MAX_DOWNLOAD_BYTES:
-                raise ValueError("download_unavailable")
-            expected, total, prefix = int(length), 0, bytearray()
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.NamedTemporaryFile(dir=destination.parent, prefix=".moviestar-download-", delete=False) as output:
-                temporary = Path(output.name)
-                while chunk := response.read(1024 * 1024):
-                    total += len(chunk)
-                    if total > expected:
-                        raise ValueError("download_unavailable")
-                    if len(prefix) < 12:
-                        prefix.extend(chunk[:12 - len(prefix)])
-                    output.write(chunk)
-                if total != expected or len(prefix) < 12 or prefix[4:8] != b"ftyp":
-                    raise ValueError("download_unavailable")
-                output.flush()
-                os.fsync(output.fileno())
-            # A same-directory hard link publishes the complete file atomically
-            # and fails if any destination appeared during transfer, even a
-            # dangling symlink. os.replace would silently overwrite that race.
-            os.link(temporary, destination)
-            return total
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    with _open(signed) as response:
+        if response.status != 200 or response.headers.get_content_type() != "video/mp4":
+            raise ValueError("download_unavailable")
+        length = response.headers.get("Content-Length", "")
+        if not re.fullmatch(r"[0-9]{1,10}", length) or not 1 <= int(length) <= MAX_DOWNLOAD_BYTES:
+            raise ValueError("download_unavailable")
+        return _save_mp4(response, destination, int(length))
 
 
 @click.command("download")

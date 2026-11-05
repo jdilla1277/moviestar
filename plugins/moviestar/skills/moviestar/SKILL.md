@@ -97,6 +97,29 @@ request UUID after the cooldown. A live pending claim for the same email and
 service is resumed automatically; approval is still the human's explicit choice.
 Plain `account open` opens the account page without requesting email.
 
+## Receive an accepted shared video
+
+Use `moviestar shared videos` when the human asks for videos already shared
+with their account. It reads one page of up to 50 accepted accessible videos;
+follow `next_cursor` explicitly with `--cursor CURSOR`. The human must accept
+the original invitation privately in their browser; never accept on their
+behalf or infer acceptance from login, account terms or installation approval.
+
+Use `moviestar shared download VIDEO_ID --out FILE --dry-run` to preview a
+chosen stable ID offline. It returns `dry_run: true`, `would_write_to` and
+`access_verified: false`; no credential lookup, network or file write occurs.
+The live command uses this approved recipient installation and returns the
+completed absolute path as `out`. It refuses redirects, bounds transfers to
+1 GB and never overwrites a destination. Do not forward the bearer to a
+returned watch/object URL or reconnect automatically after a refusal. A saved
+list does not authorize a later download; follow revoked/unavailable account
+or resource hints. A received file is the finished MP4 without project/source
+history, and the sender cannot recall downloaded copies.
+
+These commands require `recipient-videos-v1` and recipient access on the
+connected service. An unavailable service is not an empty library. Owner
+`shares` lists unlisted-link history; `download WATCH_URL` remains anonymous.
+
 ## Hand off a finished video
 
 When the user authorizes hosting, `moviestar upload FILE` stores an MP4 privately;
