@@ -166,6 +166,49 @@ def test_changed_proof_file_does_not_remain_a_pass(test_video, loaded_project, t
     assert view["dimensions"]["visual"]["status"] != "passed"
 
 
+@pytest.mark.parametrize("proof_change", ["replaced", "deleted"])
+def test_stale_proof_on_another_entry_does_not_hide_an_intact_rejection(
+    test_video, loaded_project, tmp_path, proof_change
+):
+    loaded_project(test_video, frames=False)
+    _, report = export_report(tmp_path)
+    rejected = record(report, "visual", "rejected", "--full", "--note", "Caption is unreadable")
+    proof = tmp_path / "frame.jpg"
+    proof.write_bytes(b"reviewed image")
+    passed = record(report, "visual", "passed", "--full", "--evidence", str(proof))
+    assert show(report)["dimensions"]["visual"]["status"] == "rejected"
+    if proof_change == "replaced":
+        proof.write_bytes(b"different image")
+    else:
+        proof.unlink()
+    before = report.read_bytes()
+    view = show(report)
+    assert view["currency"]["current"] is True
+    assert view["entries"][0]["superseded"] is False
+    assert view["entries"][0]["evidence_current"] is True
+    assert view["entries"][1]["evidence_current"] is False
+    assert view["dimensions"]["visual"]["status"] == "rejected"
+    assert any("rejected visual" in step for step in view["next_steps"])
+    assert report.read_bytes() == before
+    # Resolving the rejection must not also clear the other entry's stale proof.
+    record(report, "visual", "passed", "--full", "--supersedes", rejected["entry"]["id"])
+    assert show(report)["dimensions"]["visual"]["status"] == "unknown"
+    record(report, "visual", "passed", "--full", "--supersedes", passed["entry"]["id"])
+    assert show(report)["dimensions"]["visual"]["status"] == "passed"
+
+
+def test_rejection_with_its_own_stale_proof_remains_unknown(test_video, loaded_project, tmp_path):
+    loaded_project(test_video, frames=False)
+    _, report = export_report(tmp_path)
+    proof = tmp_path / "frame.jpg"
+    proof.write_bytes(b"rejected image")
+    record(report, "visual", "rejected", "--full", "--evidence", str(proof), "--note", "Unreadable text")
+    proof.unlink()
+    view = show(report)
+    assert view["entries"][0]["evidence_current"] is False
+    assert view["dimensions"]["visual"]["status"] == "unknown"
+
+
 @pytest.mark.parametrize("dimension,args", [
     ("visual", []), ("visual", ["--at", "2"]), ("visual", ["--from", "1", "--to", "0"]),
     ("visual", ["--from", "0"]), ("visual", ["--full", "--at", ".5"]),

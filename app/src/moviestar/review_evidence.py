@@ -251,10 +251,10 @@ def view_report(report: dict) -> dict:
             status = "stale"
         elif not entries:
             status = "unreviewed"
+        elif any(e["status"] == "rejected" and e["evidence_current"] for e in entries):
+            status = "rejected"
         elif any(not e["evidence_current"] for e in entries):
             status = "unknown"
-        elif any(e["status"] == "rejected" for e in entries):
-            status = "rejected"
         elif any(e["status"] == "unknown" for e in entries):
             status = "unknown"
         elif all(e["status"] == "unavailable" for e in entries):

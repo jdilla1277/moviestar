@@ -83,8 +83,11 @@ not a full-timeline pass. A dimension becomes `passed` only with continuous
 passed coverage over the entire artifact and no active rejected, unknown,
 unavailable, or stale-proof entries in that dimension.
 
-An active rejection remains `rejected` even after a full pass is added. To
-replace a judgment explicitly, use `--supersedes ID` in the same dimension.
+An active rejection with intact evidence remains `rejected` even after a full
+pass is added or another entry's proof becomes stale. Stale-proof flags remain
+visible; resolving the rejection alone does not resolve that other stale proof.
+A rejection whose own attached proof is stale contributes `unknown` instead.
+To replace a judgment explicitly, use `--supersedes ID` in the same dimension.
 Earlier entries stay in history, marked superseded in the view. Unknown or
 unavailable entries likewise remain unresolved until explicitly superseded.
 Changing an edit requires a new render/report; supersession is for re-review of
