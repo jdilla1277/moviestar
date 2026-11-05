@@ -19,8 +19,8 @@ AI agents. Start with the path that matches your task:
   Codex plugin or copy the portable skill to another compatible agent.
 - [Skill validation](skill-validation.md) — review the scaffold, installation,
   and source-blind editing evidence.
-- [Upcoming installation change](releases/unreleased.md) — local transcription
-  becomes an explicit extra; existing environments keep installed dependencies.
+- [v0.8.1 release notes](releases/v0.8.1.md) — audio/font fixes, review exports
+  and evidence, sharing improvements, and lightweight installation profiles.
 - [v0.8.0 release notes](releases/v0.8.0.md) — private uploads, agent-directed
   sharing, recipient downloads, and hosted-video deletion.
 - [v0.7.1 release notes](releases/v0.7.1.md) — the transcription fix for new

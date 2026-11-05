@@ -34,8 +34,8 @@ do not determine whether account and Cloud metadata commands can run.
 
 ## Existing installations
 
-This dependency split is an upcoming source change; see the
-[unreleased migration notes](releases/unreleased.md). Previously the base package
+Starting with v0.8.1, local transcription is an optional extra; see the
+[v0.8.1 migration notes](releases/v0.8.1.md). Previously the base package
 included local transcription. For new environments that need the same behavior,
 install `moviestar[transcribe]` explicitly. The existing `av<19` compatibility
 constraint is preserved in the transcription and diarization extras.
