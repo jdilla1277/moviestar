@@ -35,13 +35,14 @@ def test_package_metadata_routes_users_to_public_project_surfaces():
     }
 
 
-def test_build_metadata_declares_both_distributed_license_files():
+def test_build_metadata_declares_all_distributed_license_files():
     pyproject = _pyproject()
 
     assert pyproject["build-system"]["requires"] == ["setuptools>=77.0.3"]
     assert pyproject["project"]["license-files"] == [
         "LICENSE",
         "src/moviestar/fonts/OFL-LICENSE.txt",
+        "src/moviestar/fonts/DMSerifDisplay-OFL.txt",
     ]
 
 

@@ -1,5 +1,9 @@
 # Spatial component model and measured layout
 
+For a persistent local video player that follows saved edits and undo, see
+[Local preview viewer](local-preview.md). It is separate from the still-frame
+`composition model preview` command described below.
+
 MovieStar can now store reusable component definitions and scene-owned visual
 arrangements in `moviestar/spec.json`. The existing `composition` still owns
 scene order, duration, and audio. Each key in `spatial.scenes` must match a
