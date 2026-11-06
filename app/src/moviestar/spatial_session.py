@@ -25,7 +25,8 @@ class BrowserSession:
     request permanently closes the session: a frame is never silently replayed.
     """
 
-    def __init__(self):
+    def __init__(self, *, own_process_group=True):
+        self._own_process_group = own_process_group
         self._process = None
         self._profile = None
         self._closed = False
@@ -84,7 +85,7 @@ class BrowserSession:
         script = str(files('moviestar').joinpath('spatial_browser.mjs'))
         self._process = subprocess.Popen([node, script, chrome, self._profile.name, '--session'],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            start_new_session=os.name == 'posix')
+            start_new_session=os.name == 'posix' and self._own_process_group)
         for read in (self._read_stdout, self._read_stderr):
             thread = Thread(target=read, daemon=True)
             self._readers.append(thread)
@@ -94,7 +95,7 @@ class BrowserSession:
         if self._process is None:
             return
         try:
-            if os.name == 'posix':
+            if os.name == 'posix' and self._own_process_group:
                 os.killpg(self._process.pid, signal.SIGKILL)
             elif self._process.poll() is None:
                 self._process.kill()

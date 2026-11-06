@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MovieStar · Local preview</title>
+<style>
+:root{color-scheme:dark;font:16px system-ui;background:#10131a;color:#eef1f8}
+body{max-width:1100px;margin:auto;padding:24px}header{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+h1{font-size:22px}select,button{font:inherit;padding:8px;background:#242b39;color:inherit;border:1px solid #56617a;border-radius:6px}
+#stage{position:relative;aspect-ratio:16/9;background:#050609;margin:20px 0;border-radius:10px;overflow:hidden}
+video{width:100%;height:100%;object-fit:contain}video.pending{position:absolute;inset:0;visibility:hidden;pointer-events:none}
+#empty{position:absolute;inset:0;display:grid;place-items:center;color:#b4bed1}
+#empty[hidden]{display:none}
+#status{padding:12px;background:#202838;border-radius:6px}#details,#timing{color:#b4bed1;font-size:14px;line-height:1.6;overflow-wrap:anywhere}
+.error{color:#ffb5a7}a{color:#a9caff}button{cursor:pointer}#error{white-space:pre-wrap}
+</style></head><body>
+<header><h1>MovieStar · Local preview</h1><label>Review <select id="version"><option value="">Follow latest edit</option></select></label></header>
+<p id="status" role="status">Connecting to your project…</p>
+<div id="stage"><div id="empty">Preparing your first preview…</div></div>
+<p id="details"></p><p id="timing"></p><p id="error" class="error"></p>
+<p>Preview quality · Final export is separate. Use your agent to edit or undo; this page follows saved changes.</p>
+<script type="module">
+const $ = id => document.getElementById(id);
+const base = location.pathname;
+const selected = $('version');
+let state = null, current = null, pending = null;
+let selection = new URLSearchParams(location.search).get('request') || '';
+let connected = false, failedRequest = null;
+const results = new Map();
+
+function target() {
+  return selection ? state?.history.find(item => item.request_id === selection) : state?.displayed;
+}
+function allowed(item) {
+  const desired = target();
+  return desired && desired.request_id === item.request_id &&
+    (selection || state?.latest?.request_id === item.request_id);
+}
+function discard() {
+  if (!pending) return;
+  clearTimeout(pending.timer);
+  pending.video.removeAttribute('src'); pending.video.load(); pending.video.remove(); pending = null;
+}
+function describe() {
+  const latest = state?.latest;
+  const upToDate = !selection && current && current.item.request_id === latest?.request_id;
+  let text;
+  if (!connected) text = 'Disconnected — showing the last loaded preview.';
+  else if (selection) text = current?.item.request_id === selection ? 'Historical preview — project unchanged.' : 'Loading historical preview…';
+  else if (latest?.status === 'failed') text = 'Latest preview failed. Any video shown is from an older edit.';
+  else if (upToDate) text = 'Current preview · Play to review video and sound.';
+  else text = current ? 'Updating — showing an older preview.' : 'Generating preview…';
+  $('status').textContent = text;
+  $('error').textContent = selection && !state?.history.some(item => item.request_id === selection) ? 'That historical preview is no longer retained in this session.' : latest?.status === 'failed' ? latest.error :
+    failedRequest ? 'The requested video could not load. The previous preview remains visible.' : '';
+  if (current) {
+    const item = current.item, p = item.profile, range = item.range;
+    $('details').textContent = `Displayed request ${item.request_id} · ${item.state_id} · Range ${range.from}–${range.to}s · ${p.width}×${p.height}, ${p.fps} fps · ${p.name}`;
+    const timing = results.get(item.request_id);
+    $('timing').textContent = `Generation ${item.generation_ms ?? '?'} ms` + (timing ?
+      ` · Playable after ${timing.playable_ready_ms} ms · Play to first presented frame ${timing.play_to_frame_ms ?? 'awaiting Play'} ms · Playback stalls ${timing.stalls}` : '');
+  }
+}
+function load(item) {
+  discard();
+  const video = document.createElement('video');
+  video.className = 'pending'; video.controls = true; video.playsInline = true; video.preload = 'auto';
+  const candidate = {item, video, timer: setTimeout(() => fail(), 30000)};
+  pending = candidate;
+  function fail() {
+    if (pending !== candidate) return;
+    failedRequest = item.request_id; discard(); describe();
+  }
+  video.addEventListener('error', fail, {once:true});
+  video.addEventListener('canplay', async () => {
+    if (pending !== candidate || !allowed(item)) { if (pending === candidate) discard(); return; }
+    const old = current;
+    // Preserve paused state and compatible position, but require Play after each update.
+    // Replacing a clip never silently starts audio or resumes rejected edit playback.
+    if (old) {
+      const position = old.video.ended ? 0 : Math.min(old.video.currentTime, Math.max(0, video.duration - .05));
+      old.video.pause();
+      if (position > 0) {
+        await new Promise(resolve => { video.addEventListener('seeked', resolve, {once:true}); video.currentTime = position; });
+        if (pending !== candidate || !allowed(item)) { if (pending === candidate) discard(); return; }
+      }
+    }
+    clearTimeout(candidate.timer); pending = null; current = candidate;
+    video.className = ''; $('empty').hidden = true;
+    if (old) { old.video.removeAttribute('src'); old.video.load(); old.video.remove(); }
+    const readyAt = Date.now();
+    const timing = {stalls:0, first_presented_ms:null, selection,
+      playable_ready_ms:Math.round(readyAt - item.requested_at * 1000),
+      player_load_ms:Date.now() - candidate.loadStartedAt, user_wait_ms:null, play_to_frame_ms:null};
+    results.set(item.request_id, timing);
+    let started = false;
+    let playAt = null;
+    video.addEventListener('play', () => { if (playAt === null) { playAt = Date.now(); timing.user_wait_ms = playAt - readyAt; } });
+    video.addEventListener('waiting', () => { if (started && !video.paused && !video.ended) { timing.stalls++; describe(); } });
+    video.addEventListener('playing', () => {
+      started = true;
+      const presented = () => {
+        if (current !== candidate || timing.first_presented_ms !== null) return;
+        timing.first_presented_ms = Math.round(Date.now() - item.requested_at * 1000);
+        timing.includes_human_play_delay = true;
+        timing.play_to_frame_ms = Date.now() - (playAt ?? Date.now());
+        describe();
+      };
+      if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(presented);
+      else presented();
+    });
+    describe();
+  }, {once:true});
+  candidate.loadStartedAt = Date.now();
+  video.src = base + 'media/' + item.request_id;
+  $('stage').appendChild(video);
+}
+function update() {
+  if (pending && !allowed(pending.item)) discard();
+  const item = target();
+  if (item && allowed(item) && item.request_id !== current?.item.request_id &&
+      item.request_id !== pending?.item.request_id && item.request_id !== failedRequest) load(item);
+  describe();
+}
+selected.addEventListener('change', () => {
+  selection = selected.value; failedRequest = null;
+  history.replaceState(null, '', base + (selection ? '?request=' + encodeURIComponent(selection) : ''));
+  update();
+});
+async function poll() {
+  try {
+    const response = await fetch(base + 'state', {cache:'no-store', signal:AbortSignal.timeout(4000)});
+    if (!response.ok) throw Error('Disconnected');
+    state = await response.json(); connected = true;
+    selected.replaceChildren(new Option('Follow latest edit', ''));
+    for (const item of state.history) selected.add(new Option(`${item.state_id.slice(7,19)} · ${item.request_id.slice(0,6)}`, item.request_id));
+    if (selection && !state.history.some(item => item.request_id === selection)) {
+      selected.add(new Option('Historical preview expired', selection));
+      $('error').textContent = 'That preview is no longer retained in this session.';
+    }
+    selected.value = selection;
+    update();
+  } catch (_) { connected = false; describe(); }
+  setTimeout(poll, 200);
+}
+// Agent/browser diagnostics: local to this page, no telemetry upload.
+window.movieStarPreview = {get state(){return state;}, get displayed(){return current?.item;},
+  get measurements(){return Object.fromEntries(results);}};
+poll();
+</script></body></html>

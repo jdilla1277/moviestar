@@ -975,6 +975,8 @@ OUTPUT COMMANDS
 
 \b
   export       Render edit spec to moviestar-clips/ by default.
+  preview      Keep a local video player open while editing spatial scenes.
+               Follows saved changes and undo; no upload or account.
   clip         Extract one independent clip to its own MP4
                (source-time, edit spec untouched).
   batch        Extract many independent clips from a JSON recipe
@@ -1128,6 +1130,36 @@ cli.add_command(share_command)
 cli.add_command(shares_command)
 cli.add_command(unshare_command)
 cli.add_command(composition)
+
+
+@cli.command()
+@project_workspace_option
+@click.option("--from", "from_tc", required=True, help="Preview start in composition result time.")
+@click.option("--to", "to_tc", required=True, help="Preview end; at most ten seconds after --from.")
+@click.option("--port", type=click.IntRange(0, 65535), default=8765, show_default=True,
+              help="Local viewer port; 0 chooses a temporary port.")
+@click.option("--open/--no-open", "open_browser", default=True, help="Open the viewer in your local browser.")
+def preview(from_tc, to_tc, port, open_browser):
+    """Keep one local playback page open while an agent edits spatial scenes.
+
+    Runs in the foreground until Ctrl-C. Watches saved edits, including undo,
+    and generates short, versioned MP4 previews with audio. This first viewer
+    uses the existing renderer; it does not yet meet the three-second target.
+    No account, upload, or cloud render is required. The URL works on this
+    machine only. Edit with the existing CLI in another terminal.
+    """
+    from moviestar.local_preview import serve
+    try:
+        start, end = parse_timecode(from_tc), parse_timecode(to_tc)
+        if not 0 <= start < end or end - start > 10:
+            raise ValueError("Preview requires 0 <= --from < --to, with a maximum ten-second range.")
+        if not is_loaded():
+            _no_project_error_exit("preview")
+        root = get_project_dir().parent.resolve()
+        serve(root, start, end, port=port, open_browser=open_browser,
+              ready=lambda result: click.echo(json.dumps(result)))
+    except (ValueError, OSError, RuntimeError, SpecValidationError) as exc:
+        _error_exit("preview", str(exc))
 
 
 # ---------- Browsing ----------
