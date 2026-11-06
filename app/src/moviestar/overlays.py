@@ -42,6 +42,10 @@ def ffmpeg_color(value: str, alpha: float = 1.0) -> str:
     """Convert a CSS-ish color value to an ffmpeg color string with an
     explicit alpha component."""
     value = str(value).strip()
+    # CSS transparent is zero-alpha black, not an FFmpeg named color.
+    # Multiplying by overlay/background opacity must leave it invisible.
+    if value.lower() == "transparent":
+        return "0x000000@0.0"
     match = _RGBA_RE.match(value)
     if match:
         r, g, b = (int(match.group(i)) for i in (1, 2, 3))
