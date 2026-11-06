@@ -328,6 +328,8 @@ class _Handler(BaseHTTPRequestHandler):
         route = path[len(prefix):]
         if route == "":
             self._reply(200, files("moviestar").joinpath("preview_viewer.html").read_bytes(), "text/html; charset=utf-8")
+        elif route in {"fonts/DMSerifDisplay-Regular.ttf", "fonts/Inter-Regular.ttf", "fonts/Inter-Bold.ttf"}:
+            self._reply(200, files("moviestar").joinpath(route).read_bytes(), "font/ttf")
         elif route == "state":
             self._reply(200, json.dumps(self.server.queue.state()).encode())
         elif re.fullmatch(r"media/[a-f0-9]{24}", route):

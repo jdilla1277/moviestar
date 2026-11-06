@@ -12,6 +12,7 @@ license = "Apache-2.0"
 license-files = [
     "LICENSE",
     "src/moviestar/fonts/OFL-LICENSE.txt",
+    "src/moviestar/fonts/DMSerifDisplay-OFL.txt",
 ]
 authors = [{name = "James Dillard"}]
 keywords = ["video", "ffmpeg", "ai", "agents", "cli", "transcript", "whisper", "editing"]
@@ -52,7 +53,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "moviestar.schema" = ["*.json"]
-"moviestar" = ["fonts/*.ttf", "fonts/OFL-LICENSE.txt", "*.mjs", "preview_viewer.html"]
+"moviestar" = ["fonts/*.ttf", "fonts/OFL-LICENSE.txt", "fonts/DMSerifDisplay-OFL.txt", "*.mjs", "preview_viewer.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -6,6 +6,12 @@ saved edits, including `moviestar undo`. No account, upload, or cloud render is
 required. This first transport uses the existing renderer: generation is still
 slow and does **not** yet meet the three-second preview target.
 
+The viewer uses moviestar's gold star, serif wordmark and blue palette in a
+dark interface by default, including when the operating system prefers light
+mode. Docs, guided feedback and account links open the main site in another
+tab without sending your local project or media. Local review requires no
+account. Fonts are bundled, so branding does not require a network connection.
+
 ## Start the viewer
 
 From a project containing saved spatial scenes, in a persistent terminal:
@@ -92,3 +98,12 @@ there is no telemetry upload.
 Final delivery-quality export remains a separate `moviestar export` operation.
 Use this viewer to establish delivery costs before optimizing generation; a
 three-second readiness target and sustained playback still need measurement.
+
+## Bundled viewer typeface
+
+DM Serif Display Regular is bundled unmodified from
+[Google Fonts, revision 7efaaeb](https://github.com/google/fonts/tree/7efaaeb60f72588557a6605b48311611937304ba/ofl/dmserifdisplay).
+Its [SIL Open Font License 1.1](../app/src/moviestar/fonts/DMSerifDisplay-OFL.txt)
+and copyright notice ship alongside the font and in the wheel's license files.
+The font SHA-256 is `8cc3643535edf039aa5d95440a8542735e9197e4f4b8d9303e980fefbf5ab616`.
+The viewer also uses the existing bundled Inter family under its existing OFL.

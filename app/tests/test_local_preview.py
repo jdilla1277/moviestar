@@ -170,6 +170,18 @@ def test_historical_preview_is_read_only_and_independent_of_latest(server):
         assert response.read() == b"0123456789"
 
 
+def test_viewer_serves_bundled_brand_fonts_without_exposing_other_files(server):
+    service, _, _ = server
+    for name in ("DMSerifDisplay-Regular.ttf", "Inter-Regular.ttf", "Inter-Bold.ttf"):
+        with urlopen(service.url + "fonts/" + name) as response:
+            assert response.headers["Content-Type"] == "font/ttf"
+            assert response.read(4) == b"\x00\x01\x00\x00"
+    for name in ("../../spec.json", "OFL-LICENSE.txt", "unknown.ttf"):
+        with pytest.raises(HTTPError) as error:
+            urlopen(service.url + "fonts/" + name)
+        assert error.value.code == 404
+
+
 def test_preview_help_and_invalid_range_have_no_side_effects(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
