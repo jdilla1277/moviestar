@@ -2,6 +2,7 @@
 
 import pytest
 
+from moviestar.ffmpeg import _ass_color
 from moviestar.overlays import ffmpeg_color, overlay_plan_summary, plan_overlays
 
 CANVAS = (1080, 1920)
@@ -57,6 +58,37 @@ class TestFfmpegColor:
 
     def test_eight_digit_hex_folds_alpha(self):
         assert ffmpeg_color("#ff005080") == "0xff0050@0.502"
+
+    @pytest.mark.parametrize("value", ["transparent", "TRANSPARENT", " Transparent "])
+    @pytest.mark.parametrize("opacity", [0.0, 0.4, 1.0])
+    def test_transparent_is_zero_alpha_with_any_opacity(self, value, opacity):
+        assert ffmpeg_color(value, opacity) == "0x000000@0.0"
+        assert _ass_color(value, opacity) == "&HFF000000"
+
+
+@pytest.mark.parametrize("opacity,background_opacity", [(1.0, 1.0), (0.5, 0.65)])
+def test_transparent_colors_preserve_overlay_geometry_and_authored_style(
+    opacity, background_opacity
+):
+    record = _record()
+    resolved = record["style"]["resolved"]
+    resolved.update({"opacity": opacity, "padding": "8px 12px"})
+    [plain] = plan_overlays([record], CANVAS, 0.0, 6.0)["plans"]
+    resolved.update({
+        "color": "transparent", "background_color": "transparent",
+        "background_opacity": background_opacity, "stroke_color": "transparent",
+        "text_shadow": "2px 3px transparent",
+    })
+
+    [transparent] = plan_overlays([record], CANVAS, 0.0, 6.0)["plans"]
+
+    assert transparent["font_color"] == "0x000000@0.0"
+    assert transparent["box"]["color"] == "0x000000@0.0"
+    assert transparent["stroke"]["color"] == "0x000000@0.0"
+    assert transparent["shadow"]["color"] == "0x000000@0.0"
+    assert transparent["estimated_bounds"] == plain["estimated_bounds"]
+    assert transparent["line_exprs"] == plain["line_exprs"]
+    assert resolved["background_color"] == "transparent"
 
 
 class TestWindowFiltering:
