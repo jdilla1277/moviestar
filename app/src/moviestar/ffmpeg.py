@@ -341,11 +341,11 @@ def _build_mix_layer_graph(
     skipped_tracks: list[dict[str, str]] = []
     coverage: dict[str, tuple[float, float]] = {}
 
-    normalize = (
-        f"aresample={AUDIO_MIX_SAMPLE_RATE},"
+    sample_format = (
         f"aformat=sample_fmts={AUDIO_MIX_SAMPLE_FORMAT}:"
         f"channel_layouts={AUDIO_MIX_CHANNEL_LAYOUT}"
     )
+    normalize = f"aresample={AUDIO_MIX_SAMPLE_RATE},{sample_format}"
     source = audio_mix.get("source_audio") or {}
     if source_audio_available and not source.get("muted", False):
         source_volume = _audio_volume_filter(
@@ -355,9 +355,14 @@ def _build_mix_layer_graph(
             layer_duration=result_duration,
             layer_offset=window_start,
         )
+        # This input is already on the rendered movie's clock. Rebasing its
+        # first decoded frame advances a genuinely delayed source (including
+        # AAC/edit-list offsets), then apad conceals the lost ending. Fill or
+        # trim to movie time zero before applying the authored window instead.
         filter_parts.append(
-            f"[0:a]{normalize},atrim=duration={_audio_number(window_duration)},"
-            f"asetpts=PTS-STARTPTS,{source_volume},apad,"
+            f"[0:a]aresample={AUDIO_MIX_SAMPLE_RATE}:async=1:first_pts=0,"
+            f"{sample_format},atrim=duration={_audio_number(window_duration)},"
+            f"{source_volume},apad,"
             f"atrim=duration={_audio_number(window_duration)}[layer_0_raw]"
         )
         raw_labels["source"] = "layer_0_raw"
@@ -1390,7 +1395,9 @@ def build_loudness_normalize_command(
         "-af",
         (
             f"volume={_audio_number(gain_db)}dB,"
-            f"aresample={EXPORT_AUDIO_SAMPLE_RATE}"
+            # Keep decoded audio on the movie clock through the AAC post-pass;
+            # otherwise a positive origin can lose priming/ending coverage.
+            f"aresample={EXPORT_AUDIO_SAMPLE_RATE}:async=1:first_pts=0"
         ),
         "-c:a", "aac",
         "-b:a", LOUDNESS_POSTPASS_AUDIO_BITRATE,
