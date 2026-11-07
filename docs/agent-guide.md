@@ -83,6 +83,14 @@ or increase the limit. The profile preserves authored layout and text wrapping;
 see [review exports](review-exports.md) for sizing, source-time watch behavior,
 and the full-resolution review limits.
 
+Use `moviestar screenshot --at TIMECODE` to check the current result. A flat
+single-source project burns active stored captions and manual overlays onto
+the source-size frame, including spoken-word highlighting. The response's
+`overlays` block reports active IDs and fonts; `--dry-run` reports the plan
+without writing an image or highlight assets. Trims and cuts still map the
+result timecode to the correct source frame. Use `screenshot --file VIDEO`
+to inspect raw or exported file pixels without applying project edits or text.
+
 Run `moviestar captions audit --language en` to inspect caption states across
 the complete result timeline. Duration and connector-word findings are advisory;
 language is opt-in. Select manual text with `--track NAME`, and combine related
