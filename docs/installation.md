@@ -29,6 +29,20 @@ transcription deliberately; the CLI does not silently change your requested
 editing workflow. Transcription ranges on inputs with audio still require the
 extra.
 
+With the transcription extra installed, `load --no-download` and
+`retranscribe --no-download` run the existing channel and speech checks before
+requiring a cached Whisper model. Audio with no detected speech produces an
+empty transcript and a `no_speech_in_audio` warning without loading or
+downloading Whisper. Inputs with speech still require a cached model; the
+structured error occurs before changing a workspace or transcript, including
+multi-source loads and `load --force` / `--add`. The successful no-speech result
+is reused, so audio is decoded and checked once per source or requested window.
+`--no-speech-check` bypasses detection and always requires the model. These
+checks need the transcription extra even for a silent audio track; a video
+with no audio stream remains a separate path that works with the base package.
+`load --dry-run` only probes metadata and reports a possible model download;
+it does not decode audio or run speech detection.
+
 Run `moviestar doctor` to check local media requirements. Its FFmpeg diagnostics
 do not determine whether account and Cloud metadata commands can run.
 

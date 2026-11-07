@@ -2805,7 +2805,7 @@ class TestLoad:
             cli,
             [
                 "load", test_video, "--model", "small", "--force",
-                "--no-download",
+                "--no-download", "--no-speech-check",
             ],
         )
 
@@ -16206,7 +16206,7 @@ class TestRetranscribe:
         )
 
         result = runner.invoke(
-            cli, ["retranscribe", "--model", "small", "--no-download"]
+            cli, ["retranscribe", "--model", "small", "--no-download", "--no-speech-check"]
         )
 
         assert result.exit_code == 1

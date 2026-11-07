@@ -494,6 +494,7 @@ def _build_source_entry(
     captions_path: str | None = None,
     transcribe_windows: list[tuple[float, float]] | None = None,
     captions_provenance: dict | None = None,
+    precomputed_transcript: dict | None = None,
 ) -> dict:
     """Probe, extract frames, transcribe one source. Returns the source
     entry dict for project.json. Used by create_workspace.
@@ -506,6 +507,8 @@ def _build_source_entry(
     only, laid over the imported captions when both are given.
     ``captions_provenance`` (the URL a caption file came from, issue #39)
     is recorded in the transcript's ``captions`` block.
+    ``precomputed_transcript`` reuses a cold-cache offline speech check
+    completed by the CLI before creating or resetting the workspace.
     """
     _log(f"  [{source_id}] Probing metadata...", quiet=quiet)
     probe = run_ffprobe(abs_source)
@@ -583,18 +586,22 @@ def _build_source_entry(
             )
             transcript["captions"].update(captions_provenance or {})
         if transcribe_windows and audio_stream is not None:
-            transcript = merge_range_transcript(
-                transcript,
-                transcribe_ranges(
+            ranged_transcript = precomputed_transcript
+            if ranged_transcript is None:
+                ranged_transcript = transcribe_ranges(
                     abs_source,
                     source_id,
                     transcribe_windows,
                     source_duration=duration_seconds,
                     **whisper_options,
-                ),
+                )
+            transcript = merge_range_transcript(
+                transcript, ranged_transcript,
             )
         elif transcript is None:
-            transcript = transcribe_file(abs_source, source_id, **whisper_options)
+            transcript = precomputed_transcript
+            if transcript is None:
+                transcript = transcribe_file(abs_source, source_id, **whisper_options)
         save_transcript(transcript, source_id, cwd)
         entry["transcript"] = transcript_reference(transcript, source_id)
 
@@ -627,6 +634,7 @@ def create_workspace(
     captions: list[str | None] | None = None,
     transcribe_windows: list[tuple[float, float]] | None = None,
     captions_provenance: list[dict | None] | None = None,
+    precomputed_transcripts: dict[str, dict] | None = None,
 ) -> dict:
     """Create or extend a multi-source moviestar/ workspace.
 
@@ -650,6 +658,8 @@ def create_workspace(
     ``transcribe_windows`` limits Whisper to those windows for every new
     source (issue #29). ``captions_provenance`` pairs the same way and
     records where a fetched caption file came from (issue #39).
+    ``precomputed_transcripts`` maps planned source IDs to transcripts
+    already checked by the CLI before workspace mutation.
 
     Returns the (possibly extended) project dict that was written.
     """
@@ -741,6 +751,7 @@ def create_workspace(
             captions_path=captions_path,
             transcribe_windows=transcribe_windows,
             captions_provenance=provenance,
+            precomputed_transcript=(precomputed_transcripts or {}).get(source_id),
         )
         sources.append(entry)
         new_sources.append(entry)
