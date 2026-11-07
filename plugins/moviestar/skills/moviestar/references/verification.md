@@ -39,6 +39,15 @@ design in both rendered and labeled views, including portrait where relevant.
    `frame.kind: preset` and uses the native FFmpeg plan; preset text bounds and
    labels explicitly say `estimated`, while spatial glyph geometry is measured.
    Overlapping internal windows still require `watch` or `export`.
+   For persistent local human review of spatial scenes, run `moviestar preview
+   --from 0 --to 5 --no-open` in a persistent terminal and return its browser URL.
+   It follows saved edits and CLI undo; historical viewing does not undo the
+   project. Keep the process running until review is finished, then use Ctrl-C
+   to stop it. This first viewer generates completed clips with the existing
+   renderer and can take minutes; wait for playable media rather than treating
+   the returned link as readiness. No account or upload is required. The link
+   works only on the same machine; remote agents need a separately verified
+   forwarding/delivery route.
 4. View returned image paths with the available image tool. Read video files
    with the available multimodal tool or sample them with `screenshot` and
    `watch`; do not ingest `--inline` Base64 as ordinary text.
