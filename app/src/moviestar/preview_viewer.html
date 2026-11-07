@@ -99,7 +99,7 @@ function load(item) {
         if (pending !== candidate || !allowed(item)) { if (pending === candidate) discard(); return; }
       }
     }
-    clearTimeout(candidate.timer); pending = null; current = candidate;
+    clearTimeout(candidate.timer); pending = null; current = candidate; failedRequest = null;
     video.className = ''; $('empty').hidden = true;
     if (old) { old.video.removeAttribute('src'); old.video.load(); old.video.remove(); }
     const readyAt = Date.now();
