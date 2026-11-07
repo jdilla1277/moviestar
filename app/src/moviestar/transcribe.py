@@ -444,6 +444,10 @@ class TranscriptionError(RuntimeError):
     """Raised when transcription fails."""
 
 
+class ModelNotCachedError(TranscriptionError):
+    """Speech requires a Whisper model unavailable in an offline run."""
+
+
 class TranscriptionDependencyError(TranscriptionError):
     """Local speech recognition requires the optional transcription extra."""
 
@@ -591,13 +595,6 @@ def transcribe_file(
     except ImportError as exc:
         raise TranscriptionDependencyError() from exc
 
-    cached_model = resolve_cached_model(model)
-    if not allow_download and cached_model is None:
-        raise TranscriptionError(
-            f"Whisper model {model!r} is not cached. Run "
-            f"'moviestar models pull {model}' before retrying."
-        )
-
     audio_warnings: list[dict] = []
     phase = None
     if channel == "auto":
@@ -670,6 +667,12 @@ def transcribe_file(
                 ],
             }
 
+    cached_model = resolve_cached_model(model)
+    if not allow_download and cached_model is None:
+        raise ModelNotCachedError(
+            f"Whisper model {model!r} is not cached. Run "
+            f"'moviestar models pull {model}' before retrying."
+        )
     if cached_model is None:
         _announce_download_if_needed(model, quiet=quiet)
 

@@ -271,6 +271,7 @@ from moviestar.transcribe import (
     AVAILABLE_MODELS,
     DEFAULT_MODEL,
     TRANSCRIPTION_CHANNELS,
+    ModelNotCachedError,
     TranscriptionDependencyError,
     TranscriptionError,
     _normalize_vocabulary,
@@ -1650,6 +1651,58 @@ def _model_download_requirement(command: str, model: str) -> dict | None:
         return model_download_requirement(model)
     except TranscriptionDependencyError as exc:
         _error_exit_with_hint(command, str(exc), exc.hint, code="transcription_not_installed")
+
+
+def _offline_transcript(
+    command: str,
+    source_path: str,
+    source_id: str,
+    *,
+    requirement: dict,
+    model: str,
+    channel: str,
+    speech_check: bool,
+    quiet: bool,
+    vocabulary: list[str],
+    windows: list[tuple[float, float]],
+    source_duration: float,
+) -> dict:
+    """Finish a no-speech transcript before mutation, or fail offline safely.
+
+    Only empty transcripts survive this cold-cache check. Reuse them during
+    workspace creation: no second decode/VAD pass, and no accumulated PCM
+    buffers across sources or windows.
+    """
+    try:
+        if not speech_check:
+            raise ModelNotCachedError()
+        if not quiet:
+            click.echo(
+                f"Pre-flight: checking {os.path.basename(source_path)} for speech "
+                "before changing the project...",
+                err=True,
+            )
+        options = dict(
+            model=model, channel=channel, quiet=quiet,
+            vocabulary=vocabulary, allow_download=False,
+        )
+        if windows:
+            return transcribe_ranges(
+                source_path, source_id, windows,
+                source_duration=source_duration, **options,
+            )
+        return transcribe_file(source_path, source_id, **options)
+    except ModelNotCachedError:
+        _error_exit_with_hint(
+            command,
+            f"Whisper model {model!r} is not cached and --no-download "
+            "forbids network access.",
+            f"Run 'moviestar models pull {model}' before retrying, or "
+            "remove --no-download.",
+            requires_download=requirement,
+        )
+    except (OSError, RuntimeError) as exc:
+        _error_exit(command, f"Transcription pre-flight failed: {exc}")
 
 
 @models.command("pull")
@@ -3145,8 +3198,10 @@ def load(
     ``transcribed_ranges``.
 
     Use --no-download for hermetic CI or sandboxed runs. If the requested
-    model is not cached, load exits before wiping or creating a workspace;
-    pre-warm it explicitly with ``moviestar models pull MODEL``.
+    model is not cached, audio is checked for speech before any workspace
+    changes. No-speech inputs need no Whisper model. If speech is detected
+    (or --no-speech-check is used), load exits before wiping or creating a
+    workspace; pre-warm it with ``moviestar models pull MODEL``.
 
     Pass --start-offset to store user-supplied inter-source alignment
     metadata. Bare values pair by position with VIDEOS; SOURCE=SECONDS
@@ -3338,10 +3393,12 @@ def load(
         )
         return
 
+    start_time = time.time()
     # Before mutation, probe cold-model or missing-extra inputs to determine
     # whether Whisper would actually run. No-audio inputs need neither an
     # extra nor a model; warm loads still avoid an extra ffprobe call.
     whisper_runs = not no_transcribe and (not abs_captions or transcribe_windows)
+    precomputed_transcripts: dict[str, dict] = {}
     dependency_error = None
     try:
         requirement = model_download_requirement(model) if whisper_runs else None
@@ -3349,8 +3406,7 @@ def load(
         requirement = None
         dependency_error = exc
     if requirement is not None or dependency_error is not None:
-        source_has_audio = False
-        for abs_path in abs_paths:
+        for abs_path, source_id in zip(abs_paths, planned_source_ids):
             try:
                 probe_data = run_ffprobe(abs_path)
             except FFmpegNotFoundError as exc:
@@ -3361,30 +3417,27 @@ def load(
                 stream.get("codec_type") == "audio"
                 for stream in probe_data.get("streams", [])
             ):
-                source_has_audio = True
-                break
-
-        if source_has_audio:
-            if dependency_error is not None:
-                _error_exit_with_hint("load", str(dependency_error), dependency_error.hint,
-                                      code="transcription_not_installed")
-            if no_download:
-                _error_exit_with_hint(
-                    "load",
-                    f"Whisper model {model!r} is not cached and --no-download "
-                    "forbids network access.",
-                    f"Run 'moviestar models pull {model}' before retrying, or "
-                    "remove --no-download.",
-                    requires_download=requirement,
-                )
-            if not quiet:
-                click.echo(
-                    f"Pre-flight: transcription requires downloading the "
-                    f"faster-whisper {model!r} model "
-                    f"(~{requirement['estimated_size_mb']} MB) to "
-                    f"{requirement['cache_dir']}.",
-                    err=True,
-                )
+                if dependency_error is not None:
+                    _error_exit_with_hint("load", str(dependency_error), dependency_error.hint,
+                                          code="transcription_not_installed")
+                if no_download:
+                    precomputed_transcripts[source_id] = _offline_transcript(
+                        "load", abs_path, source_id, requirement=requirement,
+                        model=model, channel=channel, speech_check=not no_speech_check,
+                        quiet=quiet, vocabulary=_normalize_vocabulary(vocabulary),
+                        windows=transcribe_windows,
+                        source_duration=float(probe_data.get("format", {}).get("duration") or 0),
+                    )
+                else:
+                    if not quiet:
+                        click.echo(
+                            f"Pre-flight: transcription requires downloading the "
+                            f"faster-whisper {model!r} model "
+                            f"(~{requirement['estimated_size_mb']} MB) to "
+                            f"{requirement['cache_dir']}.",
+                            err=True,
+                        )
+                    break
 
     # Fetch caption URLs last, so no earlier check wastes the network call,
     # and before the reset, so a missing track leaves the workspace alone.
@@ -3401,9 +3454,7 @@ def load(
                 abs_captions[index] = store_captions(item, captions_dir)
                 captions_provenance[index] = caption_provenance_of(item)
 
-    # First line the user sees — prints IMMEDIATELY so there's no silent window
-    # while probe/frames/model-load run.
-    start_time = time.time()
+    # Announce workspace creation after any read-only offline audio checks.
     summary = ", ".join(os.path.basename(p) for p in abs_paths)
     if not quiet:
         if add:
@@ -3441,6 +3492,7 @@ def load(
             captions=abs_captions or None,
             transcribe_windows=transcribe_windows or None,
             captions_provenance=captions_provenance or None,
+            precomputed_transcripts=precomputed_transcripts or None,
         )
     except WorkspaceConflictError as exc:
         _error_exit("load", str(exc))
@@ -3648,7 +3700,8 @@ def load(
 @click.option(
     "--no-download",
     is_flag=True,
-    help="Never download a Whisper model; error if MODEL is not cached.",
+    help="Never download a Whisper model; no-speech audio needs no model. "
+    "Error before changing the transcript if speech needs an uncached model.",
 )
 @click.option(
     "--captions",
@@ -3746,15 +3799,15 @@ def retranscribe(
     )
     whisper_runs = not caption_path or bool(windows)
 
+    start_time = time.time()
     requirement = _model_download_requirement("retranscribe", model) if whisper_runs else None
+    precomputed_transcript = None
     if no_download and requirement is not None:
-        _error_exit_with_hint(
-            "retranscribe",
-            f"Whisper model {model!r} is not cached and --no-download "
-            "forbids network access.",
-            f"Run 'moviestar models pull {model}' before retrying, or remove "
-            "--no-download.",
-            requires_download=requirement,
+        precomputed_transcript = _offline_transcript(
+            "retranscribe", source_path, source_id, requirement=requirement,
+            model=model, channel=channel, speech_check=not no_speech_check,
+            quiet=quiet, vocabulary=_normalize_vocabulary(vocabulary),
+            windows=windows, source_duration=float(source["duration"]["seconds"]),
         )
 
     fetched_captions = None
@@ -3778,8 +3831,6 @@ def retranscribe(
             "(--quiet silences progress)",
             err=True,
         )
-    start_time = time.time()
-
     whisper_options = {
         "model": model,
         "vocabulary": _normalize_vocabulary(vocabulary),
@@ -3804,18 +3855,22 @@ def retranscribe(
             except (json.JSONDecodeError, FileNotFoundError):
                 transcript = None
         if windows:
-            transcript = merge_range_transcript(
-                transcript,
-                transcribe_ranges(
+            ranged_transcript = precomputed_transcript
+            if ranged_transcript is None:
+                ranged_transcript = transcribe_ranges(
                     source_path,
                     source_id,
                     windows,
                     source_duration=float(source["duration"]["seconds"]),
                     **whisper_options,
-                ),
+                )
+            transcript = merge_range_transcript(
+                transcript, ranged_transcript,
             )
         elif not caption_path:
-            transcript = transcribe_file(source_path, source_id, **whisper_options)
+            transcript = precomputed_transcript
+            if transcript is None:
+                transcript = transcribe_file(source_path, source_id, **whisper_options)
     except CaptionImportError as exc:
         _error_exit_with_hint("retranscribe", str(exc), CAPTIONS_HINT)
     except TranscriptionError as exc:
