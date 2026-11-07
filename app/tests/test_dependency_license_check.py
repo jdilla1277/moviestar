@@ -164,3 +164,21 @@ def test_package_ci_runs_dependency_license_check():
     )
 
     assert "bin/check-dependency-licenses" in workflow
+
+
+def test_explicit_metadata_variant_can_be_reviewed_without_accepting_unknown_changes():
+    current = _record(name='reviewed', expression='BSD-3-Clause AND MIT')
+    older = _record(name='reviewed', license_value='BSD-3-Clause')
+    policy = _policy(reviewed={'reviewed': {
+        'metadata_sha256': checker.metadata_fingerprint(current),
+        'license': 'BSD-3-Clause AND MIT', 'evidence': 'https://example.com/current',
+        'metadata_variants': [{
+            'metadata_sha256': checker.metadata_fingerprint(older),
+            'license': 'BSD-3-Clause', 'evidence': 'https://example.com/older',
+        }],
+    }})
+    assert checker.evaluate_record(older, policy) == (True, 'reviewed: BSD-3-Clause')
+    unknown = _record(name='reviewed', expression='GPL-3.0-only')
+    assert checker.evaluate_record(unknown, policy)[0] is False
+    del policy['reviewed']['reviewed']['metadata_variants'][0]['evidence']
+    assert checker.evaluate_record(older, policy)[0] is False
