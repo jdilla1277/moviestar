@@ -1,23 +1,27 @@
 # Spatial preview generation: compositor experiment
 
-This is a reproducible experiment against the local preview worker. The product
-viewer is shipped by `moviestar preview`; none of these compositor candidates is
-enabled in the installed command. This experiment selects the next production
-work without changing preview/export behavior or adding a public profiling API.
+These tools compare the installed spatial compositor with a frozen FFmpeg
+reference and earlier experiments, using the real local preview worker.
+The installed renderer now uses in-process PyAV placement and row-block NumPy
+mask arithmetic. The other candidates remain experiments; no new public
+profiling command, alternate project model or render cache is introduced.
 
 ## What the experiment isolates
 
-The existing renderer launches FFmpeg once per video plane to scale/place it,
+The frozen reference launches FFmpeg once per video plane to scale/place it,
 then again to combine the Chrome-painted base and visibility masks. All these
 operations happen again for every output frame.
 
-Compare four implementations using exactly the same decoded media and Chrome
+Compare five implementations using exactly the same decoded media and Chrome
 captures:
 
-1. **Baseline:** the installed `_compose` implementation.
-2. **Fused FFmpeg:** the same operations in one FFmpeg filter graph/process.
-3. **In-process filters:** equivalent single-threaded filter graphs through PyAV.
-4. **Vectorized masks:** PyAV scaling/placement and NumPy operations for the
+1. **Baseline:** `ffmpeg_reference`, copied unchanged from the pre-optimization
+   `_compose` at `f01b858`. It stays fixed when the installed renderer changes.
+2. **Production:** the installed `_compose`, with row-block integer arithmetic
+   and opaque RGB placement after the same bilinear scaling.
+3. **Fused FFmpeg:** the same operations in one FFmpeg filter graph/process.
+4. **In-process filters:** equivalent single-threaded filter graphs through PyAV.
+5. **Vectorized masks:** PyAV scaling/placement and NumPy operations for the
    existing 16-bit, per-channel visibility-mask arithmetic.
 
 Each candidate retains the 8-bit media-placement boundary and 16-bit mask math.
@@ -30,12 +34,13 @@ functions here, not production flags, caches, or alternate project models.
 
 Use the normal source-checkout environment, including local rendering
 dependencies, Node.js, FFmpeg/ffprobe, and a pinned Chrome/headless-shell binary.
-The array prototype uses NumPy already installed by this branch's local editing
-dependencies. PyAV and NumPy redistribution terms are covered by the repository's
+NumPy is now an explicit direct package dependency (`numpy>=1.24.4,<3`), rather
+than depending on its presence through transcription dependencies. PyAV and
+NumPy redistribution terms are covered by the repository's
 [dependency license policy](../../app/tests/dependency-license-policy.json);
 run `bin/check-dependency-licenses` in the environment before distributing it.
-Production promotion must declare direct dependencies explicitly, including
-their placement in any lightweight-install/local-render dependency split.
+A future lightweight-install/local-render dependency split must retain these
+requirements in the local-render installation.
 
 From the repository root, with its Python environment active:
 
@@ -51,8 +56,11 @@ python experiments/spatial_preview_performance/profile_preview.py \
   --variant baseline
 
 python experiments/spatial_preview_performance/profile_preview.py \
-  --project /tmp/spatial-compositor-run --out /tmp/preview-vectorized \
-  --variant vectorized
+  --project /tmp/spatial-compositor-run --out /tmp/preview-production \
+  --variant production
+
+python experiments/spatial_preview_performance/resource_probe.py \
+  --out /tmp/compositor-4k-resources --frames 20
 ```
 
 Output directories must be new. The scripts generate synthetic media, saved
@@ -72,14 +80,18 @@ and host load. First-call import costs are included rather than silently removed
 `profile_preview.py` invokes the real completed-preview worker with an explicitly
 selected experimental compositor. It records interpreter/import-inclusive
 generation time, nested stage timings, process/source-decoder counts, browser
-PNG captures, and PNG byte sums observed around composition. It
+PNG captures, and PNG byte sums observed around composition. The parent also
+samples the owned process group's summed RSS every 100 ms and request-folder
+disk usage every second. Shared pages may count twice, and sampling can miss
+brief peaks; those maxima are observations rather than continuous resource
+bounds. Parent/agent memory and other project directories are excluded. It
 checks that review output is 1280×720, 150 frames at 30 fps, with five seconds of
 audio. It does not time an agent editing command, inspection, publication, player
 startup, or human reaction. Interpreter/import startup is outside the child
 stage timer but inside the parent generation timer. Inclusive stage timings must
 not be added together; decoder/PTS work is nested within asset preparation.
 
-## Observations, November 6, 2026
+## Historical observations, November 6, 2026
 
 App source: `383e51e9f39a1633cb3e07e7a4b71fa216613974`. Apple M4, macOS 15.6,
 Python 3.12.12, PyAV 18.1.0, NumPy 2.5.4, FFmpeg 9.0.1, headless Chrome
@@ -131,7 +143,7 @@ the baseline and 42,802,474 bytes for the vectorized candidate. These sums are
 file observations, not total physical I/O or peak disk. Supplemental timings
 were excluded from the comparison because host load was much higher.
 
-## Decision and remaining work
+## Historical decision
 
 Vectorized composition is the strongest candidate for a production parity and
 memory-validation slice. Fusing the same expression graphs saves process startup
@@ -157,4 +169,97 @@ whole-worker profiles still use the current source preparation. No unchanged
 scene reuse or persistent cache invalidation is introduced. The full profiles
 are single observations on a shared host, not edit-to-preview p95, an export
 throughput result, a large-source/project test, or a performance acceptance pass.
-Combined child RSS, peak disk and real-footage reproduction remain unmeasured.
+These historical runs did not measure combined child RSS or peak disk.
+Real-footage reproduction and large-project acceptance remain open.
+
+
+## Production path
+
+`spatial_render._compose` now calls `spatial_composite.compose` for measured
+video planes; graphics-only and moving-video browser paint keep the existing
+copy path. Chrome's geometry, opacity, clipping and stacking model is unchanged.
+Source videos are already validated opaque, so copying the scaled RGB rectangle
+into a black canvas matches the previous opaque overlay, including off-screen
+clipping. PyAV retains the same bilinear scaling and final RGB conversion.
+
+Mask subtraction uses signed 32-bit integers, clamps negative differences, then
+uses unsigned multiplication/division and saturating accumulation before storing
+16-bit values. Arithmetic operates on 64-row blocks over the native frame
+buffers. It does not build full-frame 32-bit arrays for each plane or retain
+plane buffers across frames. PNG codecs use one thread; placement needs no
+filter graph or compositor subprocess. Errors remain `SpatialRenderError`;
+publication still occurs only after a complete staged frame. Interrupts propagate
+through the existing request-owned worker cancellation/cleanup path.
+
+The regression oracle compares actual decoded RGB values, not compressed PNG
+bytes. The direct tests include odd and padded rasters, portrait, row-block
+boundaries, negative/partial/fully off-screen rectangles, multiple planes and
+mask saturation. Browser fidelity and full video/audio tests cover the canonical
+rendering path. Python 3.10 coverage checks the older compatible PyAV/NumPy
+versions as well as the full Python 3.12 suite.
+
+
+## Production measurements, November 7, 2026
+
+Same Apple M4/macOS 15.6 environment, Python 3.12.12, PyAV 18.1.0,
+NumPy 2.5.4, FFmpeg 9.0.1 and pinned Chrome 156.0.8078.73. The production
+module SHA-256 is `920b128dd4ced2ae0bab9c5d0e60edb337c69f1f61d8ac1724c95f67cc227ca1`;
+the wrapper hash is `1acbbb05081e1d27efc111dab0017678004898588981bfce00e69b183d388893`.
+Runners retain exact source hashes, samples, versions and load observations.
+
+Twenty randomized trials per case compared all five methods: **400 exact RGB
+matches**, including 80 installed-production comparisons. Composition medians:
+
+| Case | Frozen FFmpeg | Installed production | Paired median speedup |
+| --- | ---: | ---: | ---: |
+| Landscape, one plane | 921.8 ms | 141.7 ms | 6.49× |
+| Portrait, one plane | 553.5 ms | 76.0 ms | 7.57× |
+| Landscape, two planes | 2,065.0 ms | 276.8 ms | 8.00× |
+
+The moving-video control still copies the browser-painted frame; its
+sub-millisecond measurements are not a meaningful speed improvement.
+
+One real five-second completed-preview run per method, same saved project,
+review profile and source bytes:
+
+| Measurement | Frozen FFmpeg | Installed production |
+| --- | ---: | ---: |
+| Complete worker generation | 410.58 s | 160.05 s |
+| Composition | 306.64 s | 46.82 s |
+| FFmpeg launches | 454 | 154 |
+| Sampled summed worker-group RSS | 951.8 MiB | 1,098.0 MiB |
+| Sampled request-folder disk | 29.35 MiB | 29.47 MiB |
+
+Both full clips have the same decoded video/audio hashes recorded in the
+historical table, 150 frames at 30 fps, five seconds of 48 kHz mono AAC audio,
+and unchanged saved project state. Source decoder opens (150), probes (153),
+browser requests (150) and browser PNG captures (300) are unchanged. Production
+reads 450 PNG inputs in process; no rendered clip or source decoder is cached.
+
+**These are shared-host observations.** Load averages ranged from roughly 27
+to 43 during the complete-worker pair. The observed overall ratio is 2.57×,
+not the stage-only 6–8×; neither ratio establishes edit-to-preview percentiles,
+controlled-host throughput, long-project performance or the three-second gate.
+The common renderer now uses this path for spatial stills, preview and export,
+but the whole workflow remains too slow for interactive review.
+
+The independent 4K probe captured two video planes at 3840×2160, then composed
+that same captured frame 20 times in a fresh process. Its first/last decoded
+pixels match the frozen reference. Worker high-water RSS was **463.2 MiB**;
+post-frame RSS stabilized around 456 MiB after warm-up, with the final hash
+verification included in the reported maximum. This probe excludes browser
+capture/setup and includes hash checking, so it is not a combined 4K renderer
+memory result or a throughput benchmark. The full 1080p worker observation above
+includes its browser/FFmpeg group and stayed below the earlier 2 GiB renderer
+budget, with a higher sampled maximum than the reference in this pair.
+
+The Python 3.10 checks also passed with PyAV 17.1.0 and both NumPy 1.24.4 and
+2.2.6. The license policy records separately reviewed fingerprints and upstream
+wheel/bundled-license evidence for those metadata variants; unknown changes
+still fail closed. Linux CI checks the lowest NumPy version with Python 3.10,
+and runs the complete browser/video suite with Python 3.12.
+
+Next measure request-owned source probing/decoder reuse and repeated browser
+work, then the full edit-to-human-player path. Native/progressive preview remains
+a separate delivery option to evaluate; unchanged-scene reuse, persistent cache
+invalidation and account-session integration remain outside this change.

@@ -26,6 +26,26 @@ jobs:
             app/tests/test_release_plumbing.py \
             -q
 
+  compositor-python310:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+          cache: pip
+          cache-dependency-path: app/pyproject.toml
+      - name: Install FFmpeg and Python dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install -e ./app pytest "numpy==1.24.4"
+      - name: Compare the compositor with FFmpeg on the oldest supported Python
+        run: |
+          python -m pytest app/tests/test_spatial_composite.py -q
+          python bin/check-dependency-licenses
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 25
