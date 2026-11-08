@@ -1142,6 +1142,20 @@ def _usage_error_exit(exc: click.UsageError) -> None:
             "moviestar feedback --quick \"message\". "
             "Run 'moviestar feedback --help' for usage."
         )
+    elif (
+        command == "find"
+        and "unexpected extra argument" in message.lower()
+        and ctx.params.get("source_only")
+    ):
+        hint = (
+            "On find, --source is a boolean flag: it includes trimmed-away "
+            "transcript regions across all sources, not a source ID. "
+            'Pass one quoted query: moviestar find --source "QUERY". '
+            "There is no per-source search selector; filter returned "
+            "matches[].source to select a source's matches. --limit applies "
+            "globally before filtering, so this may omit that source's matches. "
+            "Run 'moviestar find --help' for usage."
+        )
     click.echo(
         json.dumps(
             {
@@ -25976,7 +25990,8 @@ def _find_hint(
     "source_only",
     is_flag=True,
     help="Search the full original transcript including trimmed-away "
-    "regions. Default scope is the current edit's surviving range.",
+    "regions across all sources. Boolean flag, not a source ID selector. "
+    "Default scope is the current edit's surviving range.",
 )
 @click.option(
     "--context",
@@ -26032,6 +26047,13 @@ def find_cmd(
       --source — searches the full original transcript. Matches in
                  trimmed-away regions are flagged with
                  excluded_by_trim: true and result_range: null.
+
+    Both scopes search all loaded sources. --source is a boolean flag,
+    not --source ID. Use one quoted query: find --source "QUERY".
+    There is no per-source search selector. Filter returned matches by
+    their ``source`` field when you need one source; --limit caps the
+    combined results before filtering, so this is not an exhaustive
+    per-source search.
 
     Low-score fuzzy matches: when the best score is below 70, the
     default response is a structured no-match envelope with
