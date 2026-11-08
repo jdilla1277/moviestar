@@ -1467,16 +1467,34 @@ def build_extract_frame_command(
     at_seconds: float,
     output_path: str,
     quality: int = 2,
+    *,
+    overlay_plans: list[dict] | None = None,
+    overlay_canvas: tuple[int, int] | None = None,
+    highlight_ass: tuple[str, str] | None = None,
 ) -> list[str]:
-    """Return the argv used to extract a single frame."""
-    return [
+    """Extract a frame, optionally burning plans selected at an exact instant.
+
+    Overlay and ASS event times are local to the requested result instant;
+    reset the decoded frame's PTS so fractional seeks also render at t=0.
+    The source seek remains independent of that overlay clock.
+    """
+    cmd = [
         "ffmpeg", "-y", "-loglevel", "error",
         "-ss", str(at_seconds),
         "-i", video_path,
-        "-frames:v", "1",
-        "-q:v", str(quality),
-        output_path,
     ]
+    if overlay_plans:
+        if overlay_canvas is None:
+            raise ValueError("Frame overlays require the source canvas dimensions")
+        parts = ["[0:v]setpts=PTS-STARTPTS[vraw]"]
+        parts.extend(build_overlay_filter_parts(
+            overlay_plans, overlay_canvas, LAYOUT_FRAME_DECODE_DURATION,
+            input_label="vraw", output_label="outv", static=True,
+            highlight_ass=highlight_ass,
+        ))
+        cmd += ["-filter_complex", ";".join(parts), "-map", "[outv]"]
+    cmd += ["-frames:v", "1", "-q:v", str(quality), output_path]
+    return cmd
 
 
 def extract_frame(
@@ -1484,6 +1502,10 @@ def extract_frame(
     at_seconds: float,
     output_path: str,
     quality: int = 2,
+    *,
+    overlay_plans: list[dict] | None = None,
+    overlay_canvas: tuple[int, int] | None = None,
+    highlight_ass: tuple[str, str] | None = None,
 ) -> list[str]:
     """Extract a single frame from video_path at at_seconds, writing to output_path.
 
@@ -1499,10 +1521,15 @@ def extract_frame(
 
     check_ffmpeg_available()
 
-    cmd = build_extract_frame_command(video_path, at_seconds, output_path, quality)
+    preflight_overlay_render_capabilities(overlay_plans)
+    cmd = build_extract_frame_command(
+        video_path, at_seconds, output_path, quality,
+        overlay_plans=overlay_plans, overlay_canvas=overlay_canvas,
+        highlight_ass=highlight_ass,
+    )
     result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(_failure_message("ffmpeg", result))
+    if result.returncode != 0 or _has_bitmap_glyph_error(result.stderr):
+        raise RuntimeError(_failure_message("ffmpeg", result, overlay_plans=overlay_plans))
     return cmd
 
 

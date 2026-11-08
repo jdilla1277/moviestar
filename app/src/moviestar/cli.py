@@ -7047,7 +7047,9 @@ def screenshot(
 
     Project mode reports both ``result_timecode`` and ``source_timecode``
     so the agent can map either way. Out-of-bounds errors call out
-    *result duration* explicitly. With ``--file`` or the legacy positional
+    *result duration* explicitly. Flat single-source projects also burn
+    active stored captions and overlays onto the source-size canvas.
+    With ``--file`` or the legacy positional
     VIDEO argument, the project's spec is ignored, making this suitable
     for verifying a rendered export.
 
@@ -7294,6 +7296,22 @@ def _screenshot_in_project(
         )
     abs_output = os.path.realpath(output)
     _validate_output_parent("screenshot", abs_output)
+    planned_overlays = None
+    source_canvas = (int(source.get("width") or 0), int(source.get("height") or 0))
+    if not composition and len(project["sources"]) == 1 and spec.get("overlays"):
+        if not all(source_canvas):
+            _error_exit("screenshot", "Could not determine frame dimensions for overlays.")
+        planned_overlays = _overlay_render_context(
+            project, spec, source_canvas, at_seconds, at_seconds + 0.001,
+            "screenshot", point_in_time=True,
+        )
+    frame_options = {}
+    if planned_overlays is not None:
+        frame_options = {
+            "overlay_plans": planned_overlays["plans"],
+            "overlay_canvas": source_canvas,
+            "highlight_ass": _highlight_ass_arg(planned_overlays),
+        }
     platform_preview = None
     if platform is not None:
         frame_width = int(source.get("width") or 0)
@@ -7304,7 +7322,8 @@ def _screenshot_in_project(
                 "Could not determine frame dimensions for --platform preview.",
             )
         platform_preview = _plan_platform_preview(
-            platform, (frame_width, frame_height), abs_output
+            platform, (frame_width, frame_height), abs_output,
+            planned_overlays=planned_overlays,
         )
 
     if dry_run:
@@ -7318,19 +7337,24 @@ def _screenshot_in_project(
             "source_timecode": format_timecode(source_seconds, fps=fps),
             "operations_applied": timeline.operations_applied,
             "ffmpeg_command": build_extract_frame_command(
-                abs_source, source_seconds, abs_output
+                abs_source, source_seconds, abs_output, **frame_options
             ),
             "hint": (
                 "Dry-run only — no screenshot written. Re-run without "
                 "--dry-run to capture this project frame."
             ),
         }
+        if planned_overlays is not None:
+            _attach_overlay_envelope(result, planned_overlays)
         _attach_platform_preview(result, platform_preview, annotated=False)
         click.echo(json.dumps(result, indent=2))
         return
 
     try:
-        ffmpeg_cmd = extract_frame(abs_source, source_seconds, abs_output)
+        _write_highlight_ass(planned_overlays)
+        ffmpeg_cmd = extract_frame(abs_source, source_seconds, abs_output, **frame_options)
+    except FFmpegCapabilityError as exc:
+        _ffmpeg_capability_error_exit("screenshot", exc)
     except FFmpegNotFoundError as exc:
         _error_exit("screenshot", str(exc))
     except FileNotFoundError as exc:
@@ -7355,6 +7379,8 @@ def _screenshot_in_project(
     }
     if not paths_only:
         result["image"] = _read_image_inline(abs_output)
+    if planned_overlays is not None:
+        _attach_overlay_envelope(result, planned_overlays)
     _attach_platform_preview(result, platform_preview, annotated=True)
     click.echo(json.dumps(result, indent=2))
 
