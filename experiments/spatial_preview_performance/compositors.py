@@ -8,6 +8,44 @@ from pathlib import Path
 import shutil
 
 
+def ffmpeg_reference(temporary: Path, canvas: dict, planes: list[dict], videos: dict, output: Path) -> None:
+    from moviestar.spatial_render import _ffmpeg, SpatialRenderError
+    if not planes:
+        shutil.copyfile(temporary / 'base.png', output)
+        return
+    width, height = canvas['width'], canvas['height']
+    inputs = ['-i', str(temporary / 'base.png')]
+    for index, plane in enumerate(planes):
+        rect = plane['rect']
+        if rect['width'] <= 0 or rect['height'] <= 0:
+            raise SpatialRenderError(f"{'/'.join(plane['path'])}: unresolved video geometry")
+        full = temporary / f'video-layer-{index}.png'
+        # Chrome snaps the media sampling plane to pixels and owns all clipping.
+        _ffmpeg(['-i', str(videos[plane['id']]['decoded']), '-f', 'lavfi',
+                 '-i', f'color=c=black:s={width}x{height}:r=1,format=rgb24',
+                 '-filter_complex',
+                 f"[0:v]scale={rect['width']}:{rect['height']}:flags=bilinear,format=rgb24[media];"
+                 f"[1:v]format=rgb24[blank];[blank][media]overlay=x={rect['x']}:y={rect['y']}:format=rgb:shortest=1[out]",
+                 '-map', '[out]', '-frames:v', '1', '-threads', '1', str(full)])
+        inputs += ['-i', str(temporary / f"{plane['id']}-white.png"), '-i', str(full)]
+    # Sixteen-bit intermediates retain fractional contributions until the final
+    # PNG conversion; source and browser captures remain normal eight-bit RGB.
+    graph = ['[0:v]format=gbrp16le,split=' + str(len(planes) + 1)
+             + '[acc0]' + ''.join(f'[base{i}]' for i in range(len(planes)))]
+    for index in range(len(planes)):
+        white, video = 1 + index * 2, 2 + index * 2
+        graph.extend([
+            f'[{white}:v]format=gbrp16le[white{index}]',
+            f"[white{index}][base{index}]blend=all_expr='max(0,A-B)'[mask{index}]",
+            f'[{video}:v]format=gbrp16le[video{index}]',
+            f"[video{index}][mask{index}]blend=all_expr='A*B/65535'[pixels{index}]",
+            f"[acc{index}][pixels{index}]blend=all_expr='min(65535,A+B)'[acc{index + 1}]",
+        ])
+    graph.append(f'[acc{len(planes)}]format=rgb24[out]')
+    _ffmpeg([*inputs, '-filter_complex', ';'.join(graph), '-map', '[out]',
+             '-frames:v', '1', '-threads', '1', str(output)])
+
+
 def fused_ffmpeg(temporary, canvas, planes, videos, output):
     from moviestar.spatial_render import _ffmpeg
     if not planes:

@@ -12,7 +12,7 @@ from statistics import median
 import subprocess
 import time
 
-from compositors import fused_ffmpeg, in_process, vectorized, rgb_bytes
+from compositors import ffmpeg_reference, fused_ffmpeg, in_process, vectorized, rgb_bytes
 
 
 def fixture(root):
@@ -56,7 +56,7 @@ def capture(root, case, spec, project):
     destination.mkdir()
     original = renderer._compose
     def save_inputs(temporary, canvas, planes, videos, output):
-        original(temporary, canvas, planes, videos, output)
+        ffmpeg_reference(temporary, canvas, planes, videos, output)
         for file in temporary.glob("*.png"):
             shutil.copyfile(file, destination / file.name)
         data = {"canvas":canvas,"planes":planes,"videos":{identity:{"decoded":value["decoded"].name} for identity,value in videos.items()}}
@@ -77,7 +77,7 @@ def compare(directory, runs):
     from moviestar.spatial_render import _compose
     data = json.loads((directory / "inputs.json").read_text())
     videos = {key:{"decoded":directory/value["decoded"]} for key,value in data["videos"].items()}
-    functions = {"baseline":_compose,"fused_ffmpeg":fused_ffmpeg,"in_process":in_process,"vectorized":vectorized}
+    functions = {"baseline":ffmpeg_reference,"production":_compose,"fused_ffmpeg":fused_ffmpeg,"in_process":in_process,"vectorized":vectorized}
     reference = rgb_bytes(directory/"reference.png")
     expected = sha256(reference).hexdigest()
     rows = {name:{"runs_ms":[],"pixel_exact":True,"max_channel_error":0,"ffmpeg_launches":0} for name in functions}
@@ -139,6 +139,8 @@ def main():
     environment = {"platform":platform.platform(),"python":platform.python_version(),"cpu_count":os.cpu_count(),
         "load_start":os.getloadavg(),"av":av.__version__,"av_libraries":av.library_versions,
         "commit":subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip(),
+        "app_hashes":{name:sha256((Path(__file__).resolve().parents[2]/"app"/name).read_bytes()).hexdigest()
+                      for name in ["src/moviestar/spatial_render.py","src/moviestar/spatial_composite.py","pyproject.toml"]},
         "experiment_hashes":{name:sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
                              for name in ["benchmark.py","compositors.py"]},
         "ffmpeg":subprocess.check_output(["ffmpeg","-version"],text=True).splitlines()[0],
@@ -154,7 +156,7 @@ def main():
         (root/"report.json").write_text(json.dumps(report,indent=2))
         print(json.dumps(row),flush=True)
     report["pixel_acceptance"] = {variant:all(case["variants"][variant]["pixel_exact"] for case in report["cases"])
-                                  for variant in ["fused_ffmpeg","in_process","vectorized"]}
+                                  for variant in ["production","fused_ffmpeg","in_process","vectorized"]}
     (root/"report.json").write_text(json.dumps(report,indent=2))
     if not all(report["pixel_acceptance"].values()):
         raise SystemExit("Candidate pixel checks failed; see report.json. Timing alone cannot accept a candidate.")

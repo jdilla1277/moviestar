@@ -1,7 +1,7 @@
 """Profile the real completed-preview worker, optionally replacing composition.
 
-This experiment does not alter installed commands. It records generation only;
-viewer/navigation/agent-edit latency and combined child memory are separate.
+This experiment does not alter installed commands. It records generation and
+samples owned-worker resources; viewer/navigation/agent-edit latency is separate.
 """
 from collections import defaultdict
 from functools import wraps
@@ -14,6 +14,7 @@ import signal
 import subprocess
 import sys
 import time
+import threading
 
 
 def worker(request_file, variant):
@@ -22,7 +23,7 @@ def worker(request_file, variant):
     import moviestar.spatial_render as render
     from moviestar.spatial_session import BrowserSession
     from moviestar.preview_worker import render as run_preview
-    from compositors import fused_ffmpeg, in_process, vectorized
+    from compositors import ffmpeg_reference, fused_ffmpeg, in_process, vectorized
     metrics = defaultdict(lambda: {"calls":0,"inclusive_ms":0,"exclusive_ms":0})
     counts = defaultdict(int)
     stack = []
@@ -43,7 +44,7 @@ def worker(request_file, variant):
                 if stack:
                     stack[-1][1] += elapsed
         return wrapped
-    chosen = {"baseline":render._compose,"fused_ffmpeg":fused_ffmpeg,
+    chosen = {"baseline":ffmpeg_reference,"production":render._compose,"fused_ffmpeg":fused_ffmpeg,
               "in_process":in_process,"vectorized":vectorized}[variant]
     def compose(temporary,canvas,planes,videos,output):
         counts["compose_png_bytes_before_sum"] += sum(path.stat().st_size for path in temporary.glob("*.png"))
@@ -87,15 +88,60 @@ def worker(request_file, variant):
                       "Worker time excludes interpreter/import startup; parent generation_ms includes it.",
                       "Node process count excludes Chrome descendants launched by Node.",
                       "PNG byte sums observe files before/after composition, not total physical I/O or peak disk.",
-                      "No combined child-memory or peak-disk measurement."]}
+                      "Parent report samples owned-process-group RSS and request-folder disk use."]}
         (Path(request_file).parent/"profile.json").write_text(json.dumps(report,indent=2))
+
+
+class Resources:
+    """Sample only the worker's owned process group; no unrelated agent jobs."""
+
+    def __init__(self, group, folder):
+        self.group, self.folder = group, folder
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=self.sample, daemon=True)
+        self.rss_kib = self.disk_bytes = self.samples = 0
+
+    def start(self):
+        self.thread.start()
+
+    def sample(self):
+        next_disk = 0
+        while not self.stop.is_set():
+            try:
+                rows = subprocess.check_output(['ps','-axo','pgid=,rss='],text=True,timeout=2).splitlines()
+                values = [tuple(map(int,row.split())) for row in rows if len(row.split())==2]
+                self.rss_kib = max(self.rss_kib,sum(rss for group,rss in values if group==self.group))
+                self.samples += 1
+                if time.monotonic() >= next_disk:
+                    size = 0
+                    for path in self.folder.rglob('*'):
+                        try:
+                            if path.is_file():
+                                size += path.stat().st_size
+                        except FileNotFoundError:
+                            pass
+                    self.disk_bytes = max(self.disk_bytes,size)
+                    next_disk = time.monotonic()+1
+            except (OSError, ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                pass
+            self.stop.wait(.1)
+
+    def close(self):
+        self.stop.set()
+        self.thread.join(timeout=5)
+
+    def report(self):
+        return {'sampled_peak_group_rss_mib':self.rss_kib/1024,
+                'sampled_peak_request_disk_bytes':self.disk_bytes,'rss_samples':self.samples,
+                'rss_interval_s':.1,'disk_interval_s':1,
+                'scope':'Owned process group RSS sum (shared pages may count twice); request-folder disk only. Sampled maxima, not continuous peaks.'}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project",type=Path)
     parser.add_argument("--out",type=Path)
-    parser.add_argument("--variant",choices=["baseline","fused_ffmpeg","in_process","vectorized"],default="baseline")
+    parser.add_argument("--variant",choices=["baseline","production","fused_ffmpeg","in_process","vectorized"],default="production")
     parser.add_argument("--worker",type=Path,help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.worker:
@@ -121,6 +167,8 @@ def main():
         process = subprocess.Popen([sys.executable,str(Path(__file__).resolve()),"--worker",str(request_file),
             "--variant",args.variant],cwd=root,stdout=log,stderr=subprocess.STDOUT,start_new_session=True,
             env={**os.environ,"TMPDIR":str(temporary)})
+        monitor = Resources(process.pid, output)
+        monitor.start()
         try:
             code = process.wait(timeout=600)
         finally:
@@ -132,6 +180,7 @@ def main():
                 if process.poll() is None:
                     process.kill()
             process.wait(timeout=2)
+            monitor.close()
     elapsed = (time.perf_counter()-start)*1000
     if code:
         raise RuntimeError((output/"worker.log").read_text()[-3000:])
@@ -143,8 +192,10 @@ def main():
     audio = next(row for row in probe["streams"] if row["codec_type"]=="audio")
     assert (video["width"],video["height"],video["nb_frames"],video["r_frame_rate"])==(1280,720,"150","30/1")
     assert abs(float(audio["duration"])-5)<.05
-    report.update(generation_ms=elapsed,state_id=request["state_id"],profile=request["profile"],
+    report.update(resources=monitor.report(), generation_ms=elapsed,state_id=request["state_id"],profile=request["profile"],
         source_commit=source_commit,experiment_hashes=code_hashes,
+        app_hashes={name:sha256((Path(__file__).resolve().parents[2]/"app"/name).read_bytes()).hexdigest()
+                    for name in ["src/moviestar/spatial_render.py","src/moviestar/spatial_composite.py","pyproject.toml"]},
         load_before=load_before,load_after=os.getloadavg(),
         video={key:video.get(key) for key in ["width","height","nb_frames","r_frame_rate","duration"]},
         audio={key:audio.get(key) for key in ["sample_rate","duration","channels","codec_name"]})

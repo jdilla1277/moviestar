@@ -78,9 +78,12 @@ def evaluate_record(record: dict, policy: dict) -> tuple[bool, str]:
     reviewed = policy.get("reviewed", {}).get(name)
     if reviewed is not None:
         actual = metadata_fingerprint(record)
-        expected = reviewed.get("metadata_sha256")
-        if actual != expected:
+        entries = [reviewed, *reviewed.get("metadata_variants", [])]
+        matched = next((entry for entry in entries if entry.get("metadata_sha256") == actual), None)
+        if matched is None:
+            expected = ", ".join(str(entry.get("metadata_sha256")) for entry in entries)
             return False, f"reviewed license metadata changed ({expected} -> {actual})"
+        reviewed = matched
         if not reported and record.get("version") != reviewed.get("version"):
             return False, (
                 "reviewed version changed while license metadata remains missing "

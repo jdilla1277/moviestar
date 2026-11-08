@@ -65,3 +65,10 @@ def test_dependencies_cap_pyav_below_19_for_faster_whisper():
     dependencies = _pyproject()["project"]["dependencies"]
 
     assert "av<19" in dependencies
+
+
+def test_numpy_is_a_direct_dependency_for_local_composition():
+    from packaging.requirements import Requirement
+
+    names = {Requirement(value).name for value in _pyproject()['project']['dependencies']}
+    assert 'numpy' in names

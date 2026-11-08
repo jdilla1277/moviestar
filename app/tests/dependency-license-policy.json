@@ -35,7 +35,25 @@
     "numpy": {
       "metadata_sha256": "ceec730a7e7641cc0d16bca8dd083d729dcd726c10ae8e4aa10376fbc2ef8136",
       "license": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
-      "evidence": "https://github.com/numpy/numpy/blob/main/LICENSE.txt"
+      "evidence": "https://github.com/numpy/numpy/blob/main/LICENSE.txt",
+      "metadata_variants": [
+        {
+          "version": "1.24.4",
+          "metadata_sha256": "18df608ac398e2fc0cb31a3d77e7faa39228ae86b1ba4402d73dfd1eec9b85ef",
+          "license": "BSD-3-Clause AND MIT AND Zlib AND (GPL-3.0-or-later WITH GCC-exception-3.1)",
+          "evidence": "https://github.com/numpy/numpy/blob/v1.24.4/tools/wheels/LICENSE_osx.txt",
+          "bundled_evidence": "https://github.com/numpy/numpy/blob/v1.24.4/LICENSES_bundled.txt",
+          "linux_evidence": "https://github.com/numpy/numpy/blob/v1.24.4/tools/wheels/LICENSE_linux.txt"
+        },
+        {
+          "version": "2.2.6",
+          "metadata_sha256": "667c9abdfba6d75e12b865976db35b685ec0075ceb691ed2be3d24743df081e4",
+          "license": "BSD-3-Clause AND BSD-3-Clause-Attribution AND MIT AND Zlib AND Apache-2.0 AND (GPL-3.0-only WITH GCC-exception-3.1) AND LGPL-2.1-or-later",
+          "evidence": "https://github.com/numpy/numpy/blob/v2.2.6/tools/wheels/LICENSE_osx.txt",
+          "bundled_evidence": "https://github.com/numpy/numpy/blob/v2.2.6/LICENSES_bundled.txt",
+          "linux_evidence": "https://github.com/numpy/numpy/blob/v2.2.6/tools/wheels/LICENSE_linux.txt"
+        }
+      ]
     },
     "packaging": {
       "metadata_sha256": "f125334683dee8b6c37ca607a93e51afdc982819b97892884afe8a0b0a5fcf52",

@@ -448,3 +448,34 @@ def test_preview_cli_writes_real_pixels_and_stays_read_only(project, tmp_path, m
     assert json.loads(failure.output)['command'] == 'composition model preview'
     assert 'interview/logo' in json.loads(failure.output)['error']
     assert (tmp_path / 'preview.png').read_bytes() == before
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
+@pytest.mark.parametrize('failure', ['error', 'interrupt'])
+def test_in_process_composition_failure_keeps_output_and_cleans_frames(project, tmp_path, monkeypatch, failure):
+    import moviestar.spatial_composite as composite
+    import moviestar.spatial_render as renderer
+
+    spec, metadata = project
+    output = tmp_path / 'previous.png'
+    output.write_bytes(b'previous result')
+    original_place = composite._place_video
+    original_temporary = renderer.TemporaryDirectory
+    calls = []
+    def place(*args):
+        calls.append(True)
+        if len(calls) == 2:
+            if failure == 'interrupt':
+                raise KeyboardInterrupt()
+            raise ValueError('injected placement failure')
+        return original_place(*args)
+    monkeypatch.setattr(composite, '_place_video', place)
+    monkeypatch.setattr(renderer, 'TemporaryDirectory',
+                        lambda **kwargs: original_temporary(dir=tmp_path, **kwargs))
+    expected = KeyboardInterrupt if failure == 'interrupt' else SpatialRenderError
+    with pytest.raises(expected):
+        render_spatial_frame(spec, _frame(spec, metadata), {'width': 320, 'height': 180},
+                             output_path=output, project_root=tmp_path)
+    assert len(calls) == 2
+    assert output.read_bytes() == b'previous result'
+    assert not list(tmp_path.glob('moviestar-frame-*'))

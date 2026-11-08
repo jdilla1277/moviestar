@@ -3,8 +3,9 @@
 Keep one browser page open while a coding agent edits a spatial scene project.
 The viewer runs on the agent's machine, plays a short MP4 with sound, and follows
 saved edits, including `moviestar undo`. No account, upload, or cloud render is
-required. This first transport uses the existing renderer: generation is still
-slow and does **not** yet meet the three-second preview target.
+required. It uses the shared spatial renderer, including in-process video
+composition. Generation is still slow and does **not** yet meet the three-second
+preview target.
 
 The viewer uses moviestar's gold star, serif wordmark and blue palette in a
 dark interface by default, including when the operating system prefers light
@@ -75,7 +76,11 @@ The existing spatial renderer first generates at the authored raster, then the
 review encode fits within a 1280-pixel long edge and 720-pixel short edge without
 upscaling. Output is H.264, yuv420p, x264 `fast`/CRF 23, optional AAC audio at
 48 kHz, with MP4 fast-start metadata. This preserves geometry but does not yet
-reduce per-frame composition work. There is no segmented/progressive delivery:
+reduce the authored pixel workload. Video composition now uses PyAV scaling
+and bounded NumPy mask arithmetic instead of per-plane FFmpeg subprocesses.
+Chrome still supplies the layout, clips and visibility masks. NumPy is a direct
+local-render dependency, with its redistribution terms recorded in the
+dependency license policy. There is no segmented/progressive delivery:
 the completed short MP4 must be ready before this transport can play it.
 
 The status page identifies the displayed request, version, range and quality.
