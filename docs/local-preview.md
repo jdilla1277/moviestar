@@ -56,6 +56,11 @@ audio. The source clock must be unit speed, matching the indexed output rate
 canonical sampled translation/scale/opacity are supported. Media wrappers must
 be relative/absolute, without padding, border widths or nested children.
 
+Audio can be explicitly selected for the scene, inferred from its single
+audio-capable slot, or selected by `composition_audio_from`. These routes are
+accepted when the canonical resolved audio follows the visible video's source
+and clock. A scene's `audio_from: null` allows inference; it does not mute audio.
+
 Cuts/source operations, transitions, multiple video clocks, audio mixing,
 gain/fades, held/speed-changed media and live caption derivation are rejected.
 Other codecs, VFR, HDR/color parity and general large-project behavior have not

@@ -133,11 +133,38 @@ def test_native_history_prunes_private_asset_registrations(live_project,tmp_path
     assert len(session.assets)==8
 
 
+@pytest.fixture
+def loaded_native_project(live_project, monkeypatch):
+    """Index real media through load; keep the authored supported scene."""
+    from moviestar.project import load_project
+    spec, _, root = live_project
+    source = root / 'camera.mp4'
+    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i',
+        'color=c=blue:s=96x64:r=30', '-f', 'lavfi', '-i', 'sine=frequency=880:sample_rate=48000',
+        '-t', '8', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', str(source)],
+        check=True, timeout=20)
+    monkeypatch.chdir(root)
+    loaded = CliRunner().invoke(cli, ['load', str(source), '--as', 'camera', '--force',
+        '--no-transcribe', '--no-frames'])
+    assert loaded.exit_code == 0, loaded.output
+    project = load_project(root)
+    assert project['sources'][0]['audio_codec'] == 'aac'
+    assert 'has_audio' not in project['sources'][0]
+    save_spec(spec, cwd=root)
+    return spec, project, root
+
+
 @pytest.mark.skipif(sys.platform=='win32',reason='POSIX foreground service')
-def test_real_native_cli_recovers_after_unsupported_edit_and_cleans_up(live_project):
+@pytest.mark.parametrize('route', ['explicit', 'inferred', 'global'])
+def test_real_native_cli_recovers_after_unsupported_edit_and_cleans_up(loaded_native_project, route):
     import selectors
     import time
-    spec,_,root=live_project
+    spec,_,root=loaded_native_project
+    if route != 'explicit':
+        spec['composition'][0]['audio_from'] = None
+    if route == 'global':
+        spec['composition_audio_from'] = 'camera'
+    save_spec(spec,cwd=root)
     process=subprocess.Popen([sys.executable,'-m','moviestar.cli','preview','--workspace',str(root),
         '--mode','native','--from','0','--to','5','--port','0','--no-open'],
         stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)

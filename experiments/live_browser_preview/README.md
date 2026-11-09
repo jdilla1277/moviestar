@@ -165,6 +165,13 @@ project acceptance.
 
 ## Installed command result — November 9, 2026
 
+**Historical limitation discovered in review:** the three series below used
+hand-authored `has_audio` metadata, which the real loader does not produce.
+They measured the prepared-player path but missed a product-path rejection.
+They do not establish load-to-preview integration. The corrected loader-indexed
+runs below supersede them for that acceptance; the original data is retained
+and labeled in `command-results.json`.
+
 The runner now starts `moviestar preview --mode native` itself. Three 20-edit
 series per orientation passed all unchanged checks (120 edits total):
 
@@ -185,3 +192,28 @@ and window-end estimates are retained in
 [`command-results.json`](command-results.json). Browser process startup and user
 Play delay remain separate. Larger sources, general timelines and native/export
 pixel fidelity remain follow-up acceptance work.
+
+## Corrected load-to-preview validation
+
+The fixture now loads its generated MP4 through the real CLI with
+`load --as camera --force --no-transcribe --no-frames`, retains that indexed
+project metadata and saves the authored spatial scene. It supplies no invented
+`has_audio` field. Ingestion stays outside the repeated-edit timer. Native
+preview uses indexed `audio_codec` and validates the canonical resolved audio
+source, contiguous slice, speed and clock. The benchmark scene uses the
+inferred single-audio-slot route; CLI integration tests also exercise explicit
+and composition-wide routes, including failure/recovery after an unsupported
+edit. Unit checks reject absent/different audio, discontinuous or short slices,
+and mismatched source clocks.
+
+| Loader-indexed runtime | Landscape warm p95 | Portrait warm p95 |
+| --- | ---: | ---: |
+| Source checkout | 706 ms | 624 ms |
+| Isolated installed wheel | 916 ms | 739 ms |
+
+All unchanged benchmark checks pass: 80 real edits, each below 3,000 ms, with
+canonical caption/layout/source-frame parity, five flash/beep cues and no
+reported stalls or dropped frames. These corrected series and indexed codec/rate
+fields are retained in `command-results.json`. The shared-host and small-fixture
+limitations still apply. The dedicated viewer UI pass is tracked separately in
+[issue #149](https://github.com/jdilla1277/moviestar/issues/149).

@@ -7,7 +7,8 @@
     "Shared host, regression suite also running; not a controlled comparison between install forms",
     "Each series includes 20 real CLI edits per orientation",
     "All series retain the same 3000 ms edit budget",
-    "Physical playback was confirmed for the earlier standalone fixture; native CLI controls additionally smoke-tested"
+    "Physical playback was confirmed for the earlier standalone fixture; native CLI controls additionally smoke-tested",
+    "Review found the first three series used noncanonical has_audio metadata and did not verify loader integration. Use the loader_indexed series for product-path acceptance."
   ],
   "series": [
     {
@@ -220,7 +221,9 @@
           "checks_passed": true,
           "problems": []
         }
-      ]
+      ],
+      "metadata_origin": "hand-authored has_audio field; not produced by load",
+      "loader_integration_verified": false
     },
     {
       "name": "extracted_wheel",
@@ -432,7 +435,9 @@
           "checks_passed": true,
           "problems": []
         }
-      ]
+      ],
+      "metadata_origin": "hand-authored has_audio field; not produced by load",
+      "loader_integration_verified": false
     },
     {
       "name": "installed_wheel",
@@ -639,6 +644,466 @@
             24.26666667858717
           ],
           "end_error_ms": -29.54100000000004,
+          "stalls": 0,
+          "dropped_frames": 0,
+          "checks_passed": true,
+          "problems": []
+        }
+      ],
+      "metadata_origin": "hand-authored has_audio field; not produced by load",
+      "loader_integration_verified": false
+    },
+    {
+      "name": "loader_indexed_checkout",
+      "metadata_origin": "actual load --as camera --force --no-transcribe --no-frames",
+      "loader_integration_verified": true,
+      "audio_route": "only_audio_slot",
+      "versions": {
+        "python": "3.12.12",
+        "platform": "macOS-15.6-arm64-arm-64bit",
+        "chrome": "Google Chrome for Testing 156.0.8078.73",
+        "node": "v24.5.0"
+      },
+      "load_start": [
+        3.978515625,
+        4.755859375,
+        6.02197265625
+      ],
+      "cases": [
+        {
+          "canvas": "landscape",
+          "indexed_source": {
+            "audio_codec": "aac",
+            "video_codec": "h264",
+            "fps": 30.0,
+            "width": 640,
+            "height": 360
+          },
+          "cold_navigation_ms": 394,
+          "server_start_ms": 147,
+          "warm_samples": 20,
+          "warm_p95_ms": 706,
+          "warm_max_ms": 794,
+          "budget_ms": 3000,
+          "edit_visible_ms": [
+            515,
+            594,
+            612,
+            591,
+            609,
+            602,
+            598,
+            595,
+            412,
+            497,
+            600,
+            790,
+            611,
+            603,
+            698,
+            607,
+            606,
+            604,
+            605,
+            695
+          ],
+          "edit_command_and_visible_ms": [
+            538,
+            596,
+            620,
+            600,
+            623,
+            620,
+            619,
+            600,
+            431,
+            513,
+            625,
+            794,
+            624,
+            622,
+            706,
+            618,
+            618,
+            614,
+            627,
+            700
+          ],
+          "canonical_parity": [
+            {
+              "at": 0,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "play_to_first_video_ms": 440.699951171875,
+          "audio_display_phase_ms": [
+            19.97366663090395,
+            19.910999988079084,
+            19.973666630904063,
+            20.000999988079457,
+            20.073666630903972
+          ],
+          "end_error_ms": -25.85100000000029,
+          "stalls": 0,
+          "dropped_frames": 0,
+          "checks_passed": true,
+          "problems": []
+        },
+        {
+          "canvas": "portrait",
+          "indexed_source": {
+            "audio_codec": "aac",
+            "video_codec": "h264",
+            "fps": 30.0,
+            "width": 640,
+            "height": 360
+          },
+          "cold_navigation_ms": 391,
+          "server_start_ms": 186,
+          "warm_samples": 20,
+          "warm_p95_ms": 624,
+          "warm_max_ms": 731,
+          "budget_ms": 3000,
+          "edit_visible_ms": [
+            516,
+            613,
+            592,
+            611,
+            604,
+            603,
+            598,
+            713,
+            597,
+            611,
+            608,
+            598,
+            613,
+            605,
+            497,
+            584,
+            596,
+            615,
+            412,
+            504
+          ],
+          "edit_command_and_visible_ms": [
+            518,
+            621,
+            596,
+            622,
+            618,
+            621,
+            601,
+            731,
+            602,
+            619,
+            624,
+            601,
+            624,
+            623,
+            512,
+            605,
+            598,
+            618,
+            426,
+            514
+          ],
+          "canonical_parity": [
+            {
+              "at": 0,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "play_to_first_video_ms": 330.199951171875,
+          "audio_display_phase_ms": [
+            28.676666642824898,
+            28.80699996423732,
+            28.773666642824992,
+            28.903999964237755,
+            28.97766664282426
+          ],
+          "end_error_ms": -34.77700000000006,
+          "stalls": 0,
+          "dropped_frames": 0,
+          "checks_passed": true,
+          "problems": []
+        }
+      ]
+    },
+    {
+      "name": "loader_indexed_installed_wheel",
+      "metadata_origin": "actual load --as camera --force --no-transcribe --no-frames",
+      "loader_integration_verified": true,
+      "audio_route": "only_audio_slot",
+      "versions": {
+        "python": "3.12.12",
+        "platform": "macOS-15.6-arm64-arm-64bit",
+        "chrome": "Google Chrome for Testing 156.0.8078.73",
+        "node": "v24.5.0"
+      },
+      "load_start": [
+        5.013671875,
+        5.171875,
+        6.01904296875
+      ],
+      "cases": [
+        {
+          "canvas": "landscape",
+          "indexed_source": {
+            "audio_codec": "aac",
+            "video_codec": "h264",
+            "fps": 30.0,
+            "width": 640,
+            "height": 360
+          },
+          "cold_navigation_ms": 623,
+          "server_start_ms": 281,
+          "warm_samples": 20,
+          "warm_p95_ms": 916,
+          "warm_max_ms": 926,
+          "budget_ms": 3000,
+          "edit_visible_ms": [
+            632,
+            692,
+            593,
+            820,
+            603,
+            727,
+            600,
+            663,
+            679,
+            604,
+            650,
+            604,
+            913,
+            827,
+            912,
+            618,
+            725,
+            830,
+            718,
+            594
+          ],
+          "edit_command_and_visible_ms": [
+            654,
+            715,
+            605,
+            833,
+            609,
+            742,
+            603,
+            682,
+            691,
+            620,
+            662,
+            607,
+            916,
+            849,
+            926,
+            626,
+            743,
+            846,
+            738,
+            605
+          ],
+          "canonical_parity": [
+            {
+              "at": 0,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "play_to_first_video_ms": 451.099853515625,
+          "audio_display_phase_ms": [
+            28.17366666666669,
+            28.155999988079202,
+            28.17766670242918,
+            28.298000023841723,
+            28.379666666666708
+          ],
+          "end_error_ms": -34.66699999999978,
+          "stalls": 0,
+          "dropped_frames": 0,
+          "checks_passed": true,
+          "problems": []
+        },
+        {
+          "canvas": "portrait",
+          "indexed_source": {
+            "audio_codec": "aac",
+            "video_codec": "h264",
+            "fps": 30.0,
+            "width": 640,
+            "height": 360
+          },
+          "cold_navigation_ms": 540,
+          "server_start_ms": 248,
+          "warm_samples": 20,
+          "warm_p95_ms": 739,
+          "warm_max_ms": 790,
+          "budget_ms": 3000,
+          "edit_visible_ms": [
+            771,
+            564,
+            614,
+            610,
+            614,
+            709,
+            600,
+            614,
+            622,
+            607,
+            493,
+            607,
+            618,
+            596,
+            497,
+            610,
+            600,
+            731,
+            608,
+            598
+          ],
+          "edit_command_and_visible_ms": [
+            790,
+            567,
+            620,
+            613,
+            621,
+            725,
+            603,
+            624,
+            632,
+            629,
+            504,
+            621,
+            621,
+            616,
+            503,
+            627,
+            602,
+            739,
+            641,
+            652
+          ],
+          "canonical_parity": [
+            {
+              "at": 0,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "play_to_first_video_ms": 301.7001953125,
+          "audio_display_phase_ms": [
+            22.624666618983042,
+            22.55099997615821,
+            22.639666642824977,
+            22.610999976157927,
+            22.72366661898286
+          ],
+          "end_error_ms": -29.333000000000276,
           "stalls": 0,
           "dropped_frames": 0,
           "checks_passed": true,

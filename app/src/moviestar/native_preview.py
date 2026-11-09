@@ -84,13 +84,23 @@ def compile_snapshot(snapshot):
             native_fps = metadata[video_asset].get('fps')
             if not isinstance(native_fps, (int, float)) or abs(native_fps-fps) > 1e-6:
                 fail('the indexed source rate must match the preview rate')
-            if source_paths[video_asset].suffix.lower() != '.mp4' or not metadata[video_asset].get('has_audio'):
+            if source_paths[video_asset].suffix.lower() != '.mp4' or not metadata[video_asset].get('audio_codec'):
                 fail('use a native-compatible MP4 with embedded audio for this native profile')
-            audio = scene.get('audio_from', spec.get('composition_audio_from'))
-            if audio != video_asset or len(scene['slots']) != 1 or scene['slots'][0]['source'] != video_asset:
+            span = timeline.spans[0]
+            audio = span.audio
+            if (audio.source_id != video_asset or len(audio.slices) != 1
+                    or abs(audio.speed-1) > 1e-8 or len(scene['slots']) != 1
+                    or scene['slots'][0]['source'] != video_asset):
                 fail('audio must follow the single visible video and its carrier slot')
-            slot = timeline.spans[0].slot(scene['slots'][0]['slot'])
-            if slot.held or abs(slot.speed-1) > 1e-8 or abs(slot.source_from_s+start-source_start) > 1e-6:
+            slot = span.slot(scene['slots'][0]['slot'])
+            audio_start, audio_end = audio.slices[0]
+            # The canonical route may be explicit, inferred or composition-wide.
+            # Check its source-time slice against the span-relative review
+            # window, rather than requiring a particular authored route.
+            if (slot.held or abs(slot.speed-1) > 1e-8
+                    or abs(slot.source_from_s+start-span.start_s-source_start) > 1e-6
+                    or abs(audio_start+start-span.start_s-source_start) > 1e-6
+                    or audio_end+1e-6 < audio_start+end-span.start_s):
                 fail('audio and video must share an ordinary unit-speed source clock')
         if abs(video['media']['source_time_s']-(source_start+index/fps)) > 1e-5:
             fail('holds and source-speed changes are not implemented')
