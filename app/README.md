@@ -57,7 +57,14 @@ For a product demo, `scenes geometry` resizes, places, shapes, borders, or bounc
 - `moviestar spec` — show the current spec (or `--edit` to replace, `--reset` to clear).
 - `moviestar find` — fuzzy-search the transcript across every source; `--context` returns the surrounding timestamped segments.
 
-Every source-specific command takes `--source <id>`, required only when a project has more than one source.
+Source-specific commands such as `trim`, `cut`, and `history` take
+`--source <id>`, required when a project has more than one source. `find`
+searches all sources: its `--source` is a boolean flag that includes
+trimmed-away transcript regions, not a source selector. Use
+`moviestar find --source "QUERY"`, with one quoted query and no source ID.
+To select one source's returned matches, filter `matches` by the `source`
+field. `--limit` caps the combined results before filtering, so this does
+not provide an exhaustive per-source search.
 
 **Captions and text overlays:**
 - `moviestar captions generate` — compile the transcript into caption overlays, following each scene's audio routing. `--highlight spoken-word` colors the word being spoken, timed from the transcript's word timing.

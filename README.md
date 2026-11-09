@@ -77,6 +77,10 @@ The [getting-started guide](docs/getting-started.md) walks through installation
 and a first verified edit. For the complete command surface, see the
 [CLI reference](app/README.md).
 
+`find` searches all loaded sources. Its boolean `--source` flag includes
+trimmed-away transcript regions; it does not take a source ID. For example:
+`moviestar find --source "the phrase to find"`.
+
 ## Share the finished video
 
 With your permission, your agent can upload a finished MP4 privately or email
