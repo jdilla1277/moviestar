@@ -344,9 +344,14 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self._reply(404)
 
-    def _media(self, path):
+    def _media(self, path, *, content_type="video/mp4", expected_identity=None):
         with path.open("rb") as media:
-            size = os.fstat(media.fileno()).st_size
+            stat = os.fstat(media.fileno())
+            identity = (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns)
+            if expected_identity is not None and identity != tuple(expected_identity):
+                self._reply(409)
+                return
+            size = stat.st_size
             start, end, code = 0, size - 1, 200
             requested = self.headers.get("Range")
             if requested:
@@ -362,7 +367,7 @@ class _Handler(BaseHTTPRequestHandler):
                     return
                 code = 206
             self.send_response(code)
-            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(end - start + 1))
             self.send_header("Accept-Ranges", "bytes")
             self.send_header("Cache-Control", "no-store")
