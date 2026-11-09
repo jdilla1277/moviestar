@@ -1139,16 +1139,20 @@ cli.add_command(composition)
 @click.option("--port", type=click.IntRange(0, 65535), default=8765, show_default=True,
               help="Local viewer port; 0 chooses a temporary port.")
 @click.option("--open/--no-open", "open_browser", default=True, help="Open the viewer in your local browser.")
-def preview(from_tc, to_tc, port, open_browser):
+@click.option("--mode", type=click.Choice(["rendered", "native"]), default="rendered", show_default=True,
+              help="Rendered MP4 review or fast native playback for supported single-video scenes.")
+def preview(from_tc, to_tc, port, open_browser, mode):
     """Keep one local playback page open while an agent edits spatial scenes.
 
     Runs in the foreground until Ctrl-C. Watches saved edits, including undo,
-    and generates short, versioned MP4 previews with audio. This first viewer
-    uses the existing renderer; it does not yet meet the three-second target.
+    and prepares versioned previews with audio. Rendered mode generates an MP4;
+    native mode plays supported source media directly with the canonical layout.
+    Unsupported native projects fail explicitly; retry with --mode rendered.
     No account, upload, or cloud render is required. The URL works on this
     machine only. Edit with the existing CLI in another terminal.
     """
     from moviestar.local_preview import serve
+    from moviestar.native_preview import NativePreviewUnsupported
     try:
         start, end = parse_timecode(from_tc), parse_timecode(to_tc)
         if not 0 <= start < end or end - start > 10:
@@ -1156,8 +1160,12 @@ def preview(from_tc, to_tc, port, open_browser):
         if not is_loaded():
             _no_project_error_exit("preview")
         root = get_project_dir().parent.resolve()
-        serve(root, start, end, port=port, open_browser=open_browser,
+        serve(root, start, end, port=port, open_browser=open_browser, mode=mode,
               ready=lambda result: click.echo(json.dumps(result)))
+    except NativePreviewUnsupported as exc:
+        _echo_render_result({"command": "preview", "error": str(exc),
+                             "code": "unsupported_native_preview", "fallback_mode": "rendered"})
+        sys.exit(1)
     except (ValueError, OSError, RuntimeError, SpecValidationError) as exc:
         _error_exit("preview", str(exc))
 

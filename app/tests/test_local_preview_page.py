@@ -31,7 +31,7 @@ class Element {
   pause(){this.paused=true;}
   play(){throw Error('The page must not automatically start playback');}
 }
-const document = {hidden:false,getElementById:id => elements[id] ??= new Element(),
+const document = {body:{dataset:{previewMode:'rendered'}},hidden:false,getElementById:id => elements[id] ??= new Element(),
   createElement:name=>{assert.equal(name,'video');const el=new Element();videos.push(el);return el;}};
 const window = {};
 const context = {document,window,URLSearchParams,AbortSignal,Date,Map,Option:class{constructor(text,value){this.text=text;this.value=value;}},

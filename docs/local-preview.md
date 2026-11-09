@@ -1,11 +1,13 @@
 # Local preview viewer
 
 Keep one browser page open while a coding agent edits a spatial scene project.
-The viewer runs on the agent's machine, plays a short MP4 with sound, and follows
-saved edits, including `moviestar undo`. No account, upload, or cloud render is
-required. It uses the shared spatial renderer, including in-process video
-composition. Generation is still slow and does **not** yet meet the three-second
-preview target.
+Choose rendered MP4 review or the opt-in native player. Both follow saved edits,
+including `moviestar undo`, and need no account, upload or cloud render.
+
+| Mode | How review works | Use it for |
+| --- | --- | --- |
+| `--mode native` | The browser plays source media directly with the canonical scene layout, components, text, images, captions and motion. No preview MP4 is encoded. | Fast review of the supported single-video subset described below. |
+| `--mode rendered` (default) | The shared spatial renderer produces a completed short MP4 with audio. | Projects outside the native subset, or review through the export renderer. Generation remains slow. |
 
 The viewer uses moviestar's gold star, serif wordmark and blue palette in a
 dark interface by default, including when the operating system prefers light
@@ -18,7 +20,7 @@ account. Fonts are bundled, so branding does not require a network connection.
 From a project containing saved spatial scenes, in a persistent terminal:
 
 ```bash
-moviestar preview --from 0 --to 5
+moviestar preview --mode native --from 0 --to 5
 ```
 
 The command prints a JSON response with a `url`, opens that page in your local
@@ -28,9 +30,13 @@ Use `--no-open` to return the link without opening a browser. The default port i
 selects an existing workspace explicitly. Ranges use composition result time and
 are limited to ten seconds; restart the viewer to change the range.
 
-macOS and Linux are supported. Chrome/headless Chrome, Node.js 22+, FFmpeg and
-ffprobe are required, as for spatial rendering. Playback requires a browser with
-H.264/AAC support. Press Play to hear sound: updates remain paused rather than
+macOS and Linux are supported. Native descriptor preparation does not launch
+headless Chrome, Node or FFmpeg; the human's browser decodes the source. Loading
+and indexing new sources still uses the normal project-loading tools. Rendered
+mode requires Chrome/headless Chrome, Node.js 22+, FFmpeg and ffprobe, as for
+spatial rendering. Native playback needs a browser with H.264/AAC, video-frame
+callbacks, AudioWorklet and an audio output clock; Chrome is the tested browser.
+Press Play to hear sound: updates remain paused rather than
 unexpectedly restarting audio. The service runs in the foreground so agents
 should use their environment's persistent terminal/background-process facility.
 
@@ -41,11 +47,47 @@ workflow. The default project link survives session restarts while its token and
 port remain unchanged. Two sessions for the same project are rejected; an
 occupied port is an error, never a silent switch to another URL.
 
+## Native profile and explicit fallback
+
+Native mode supports a frame-aligned window of at most ten seconds in a project
+with one spatial scene, one timeline span and one visible MP4 carrying its own
+audio. The source clock must be unit speed, matching the indexed output rate
+(24–60 fps). Reusable components, text, shapes, images, manual/frozen captions and
+canonical sampled translation/scale/opacity are supported. Media wrappers must
+be relative/absolute, without padding, border widths or nested children.
+
+Cuts/source operations, transitions, multiple video clocks, audio mixing,
+gain/fades, held/speed-changed media and live caption derivation are rejected.
+Other codecs, VFR, HDR/color parity and general large-project behavior have not
+passed acceptance for this initial profile. The benchmark fixture uses H.264/AAC at 30 fps.
+
+An unsupported saved state fails before a session opens, with structured JSON
+`code: "unsupported_native_preview"` and `fallback_mode: "rendered"`. There is
+no silent change to a slow render. Stop the native session and explicitly use:
+
+```bash
+moviestar preview --mode rendered --from 0 --to 5
+```
+
+If an edit becomes unsupported while the viewer is open, its error names this
+alternative and the old displayed version stays labeled older. Fixing that edit
+requests a fresh native version. Browser decode/capability failures also remain
+visible with rendered-mode guidance. Native mode offers Play, Pause, Restart
+and a position slider. Audio starts only after Play; Pause/Restart/replacement
+cancel audio startup as well as active playback.
+
+The native range end is approximate, with a 50 ms reference budget, and is not
+sample-accurate export trimming. It pauses at the last expected source frame;
+export still owns final frame/audio encoding. The player uses the same canonical
+scene DOM as inspection/export. Its native video pixels and color handling are
+separately subject to fidelity testing, rather than assumed identical to an
+encoded export.
+
 ## What follows an edit
 
 Each requested preview pins a parsed spec and project metadata, receives a fresh
 request ID, and reports the spec's `state_id`, time range, authored canvas, and
-review profile. The renderer reads sources in place. Basic source/asset size,
+review profile. Both modes read sources in place. Basic source/asset size,
 modification time and inode changes cause a new request, but inputs are not copied
 or frozen: leave media unchanged while reviewing. This is not a content-addressed
 asset snapshot or a rendered-scene cache.
@@ -57,21 +99,29 @@ waits for cleanup. The same cancellation applies to preview work after undo;
 independent exports are not affected. A late completion cannot select an obsolete
 clip in the service or player.
 
-Until the new clip is ready, any previous clip stays explicitly labeled older.
+Until the new preview is ready, any previous preview stays explicitly labeled older.
 A failed latest request shows an error and never presents the previous clip as
 current. The player loads the candidate before replacing the displayed video,
 preserves a compatible playhead position, and leaves playback paused.
 
-Use the Review menu to play an older **completed preview** without changing the
+Use the Review menu to play an older **ready preview** without changing the
 project. This is separate from `moviestar undo`, which changes the saved project
 and requests a new preview. There is no redo command or Undo/Redo viewer button
 in this slice. At most eight requests are retained, including the active/current
-ones; historical media may expire. Completed media is session-local and removed
-on shutdown. The viewer is not a permanent archive of every project revision.
+ones; historical media may expire. Rendered media and native descriptors are
+session-local and removed on shutdown. Native history references the original assets and does not archive
+old asset bytes; leave source files unchanged during review. The viewer is not
+a permanent archive of every project revision.
 
 ## Review quality and measurements
 
-The authored logical canvas, layout rules, timing and frame rate are preserved.
+In native mode, CSS uses the authored logical canvas, and the browser decodes
+the source at its available resolution. Scaling the viewer does not rewrite the
+saved layout. The ready response reports `mode: "native"`, `transport:
+"native-browser"` and the native profile with its clip-end tolerance. This is a
+playback descriptor, not a downloadable rendered artifact.
+
+In rendered mode, the authored logical canvas, layout rules, timing and frame rate are preserved.
 The existing spatial renderer first generates at the authored raster, then the
 review encode fits within a 1280-pixel long edge and 720-pixel short edge without
 upscaling. Output is H.264, yuv420p, x264 `fast`/CRF 23, optional AAC audio at
@@ -91,7 +141,7 @@ window.movieStarPreview.state
 window.movieStarPreview.measurements
 ```
 
-Measurements include generation time, request-to-playable readiness, player
+Rendered-mode measurements include generation time, request-to-playable readiness, player
 loading, time waiting for Play, Play-to-first-presented-frame, and playback stall
 count. First-frame timestamps use `requestVideoFrameCallback` when available,
 with a `playing` event fallback. Absolute request-to-first-frame time includes
@@ -100,9 +150,21 @@ prove perceptual audio/video synchronization: use matched flash/beep cues and
 actual listening for that acceptance check. Diagnostics stay in the local page;
 there is no telemetry upload.
 
+Native mode also exposes `window.movieStarPreview.mode`, `.displayed`,
+`.events`, `.is_current` and `.stage`. Events identify the request/version and
+visible readiness time; the stage exposes relative time, paused state, errors
+and local playback metrics. Its optional `?audit=1` records source barcode/flash
+samples for the synthetic benchmark. Normal viewing avoids per-frame source
+canvas readback. The audio worklet passes through the sound sent to the output;
+clock estimates still require a physical flash/beep check for acceptance.
+
+The production command benchmark runs 20 real model edits per orientation,
+including CLI startup, worker startup, source readiness and a fresh visible
+revision. See the reproducible runner in
+[`experiments/live_browser_preview`](../experiments/live_browser_preview/README.md).
+Small synthetic results do not establish three-second performance for large
+projects, real camera footage or arbitrary supported browser/codec combinations.
 Final delivery-quality export remains a separate `moviestar export` operation.
-Use this viewer to establish delivery costs before optimizing generation; a
-three-second readiness target and sustained playback still need measurement.
 
 ## Bundled viewer typeface
 

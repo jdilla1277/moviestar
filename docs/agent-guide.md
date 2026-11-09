@@ -80,13 +80,15 @@ their dump/edit/set JSON workflows. Always validate replacement files with
 
 ## Verification
 
-For persistent local human review of spatial scenes, run `moviestar preview
---from 0 --to 5 --no-open` in a persistent terminal and return its browser URL.
-Keep it running while editing in another terminal. The page follows saved edits
-and CLI undo, identifies older previews, and plays sound after the human presses
-Play. Generation still uses the existing renderer and can take minutes; a
-returned URL alone does not mean playback is ready. The link works on the same
-machine only and requires no account or upload. See [local preview](local-preview.md).
+For persistent local human review of supported single-video spatial scenes, run
+`moviestar preview --mode native --from 0 --to 5 --no-open` in a persistent terminal
+and return its browser URL. Native mode plays source media with the canonical
+layout instead of encoding an MP4 first. It is opt-in and explicitly rejects
+unsupported projects; retry with `--mode rendered` for the existing completed-MP4
+route. Both modes follow saved edits and undo, identify current versus historical
+versions, and stay paused after updates until the human presses Play. The URL
+works on that machine only and requires no account or upload. See
+[local preview](local-preview.md).
 
 Use stills for framing and text, `watch` for motion and audio, and `probe` for
 file structure. A final export should have a non-zero duration, expected video

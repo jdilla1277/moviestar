@@ -1,0 +1,650 @@
+{
+  "date": "2026-11-09",
+  "hardware": "Apple M4, 24 GiB RAM",
+  "base_commit": "6ca5da4281bca61317b4d475351610d6af1d9981",
+  "profile": "Native preview command integration; single-scene 640x360/30 H.264/AAC source",
+  "notes": [
+    "Shared host, regression suite also running; not a controlled comparison between install forms",
+    "Each series includes 20 real CLI edits per orientation",
+    "All series retain the same 3000 ms edit budget",
+    "Physical playback was confirmed for the earlier standalone fixture; native CLI controls additionally smoke-tested"
+  ],
+  "series": [
+    {
+      "name": "source_checkout",
+      "versions": {
+        "python": "3.12.12",
+        "platform": "macOS-15.6-arm64-arm-64bit",
+        "chrome": "Google Chrome for Testing 156.0.8078.73",
+        "node": "v24.5.0"
+      },
+      "load_start": [
+        2.9443359375,
+        3.806640625,
+        4.30517578125
+      ],
+      "cases": [
+        {
+          "canvas": "landscape",
+          "cold_navigation_ms": 883,
+          "server_start_ms": 1274,
+          "warm_samples": 20,
+          "warm_p95_ms": 726,
+          "warm_max_ms": 730,
+          "budget_ms": 3000,
+          "edit_visible_ms": [
+            724,
+            610,
+            597,
+            611,
+            604,
+            598,
+            614,
+            592,
+            408,
+            596,
+            514,
+            613,
+            606,
+            601,
+            595,
+            610,
+            709,
+            599,
+            595,
+            611
+          ],
+          "edit_command_and_visible_ms": [
+            730,
+            628,
+            602,
+            623,
+            621,
+            600,
+            621,
+            600,
+            428,
+            598,
+            516,
+            624,
+            621,
+            622,
+            600,
+            618,
+            726,
+            602,
+            600,
+            619
+          ],
+          "canonical_parity": [
+            {
+              "at": 0,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "play_to_first_video_ms": 334.400146484375,
+          "audio_display_phase_ms": [
+            26.86666669050851,
+            26.810000047683616,
+            26.86766669050894,
+            27.010000011920965,
+            26.97066669050764
+          ],
+          "end_error_ms": -34.66699999999978,
+          "stalls": 0,
+          "dropped_frames": 0,
+          "checks_passed": true,
+          "problems": []
+        },
+        {
+          "canvas": "portrait",
+          "cold_navigation_ms": 359,
+          "server_start_ms": 135,
+          "warm_samples": 20,
+          "warm_p95_ms": 707,
+          "warm_max_ms": 822,
+          "budget_ms": 3000,
+          "edit_visible_ms": [
+            514,
+            813,
+            608,
+            606,
+            396,
+            407,
+            479,
+            605,
+            603,
+            597,
+            595,
+            611,
+            609,
+            702,
+            611,
+            610,
+            601,
+            613,
+            509,
+            595
+          ],
+          "edit_command_and_visible_ms": [
+            517,
+            822,
+            617,
+            609,
+            405,
+            427,
+            490,
+            617,
+            621,
+            619,
+            600,
+            618,
+            622,
+            707,
+            618,
+            626,
+            603,
+            620,
+            513,
+            597
+          ],
+          "canonical_parity": [
+            {
+              "at": 0,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "play_to_first_video_ms": 335.39990234375,
+          "audio_display_phase_ms": [
+            30.8666666547457,
+            30.905999976158,
+            30.970666654745855,
+            31.000999976158255,
+            31.073666654746376
+          ],
+          "end_error_ms": -40.000000000000036,
+          "stalls": 0,
+          "dropped_frames": 0,
+          "checks_passed": true,
+          "problems": []
+        }
+      ]
+    },
+    {
+      "name": "extracted_wheel",
+      "versions": {
+        "python": "3.12.12",
+        "platform": "macOS-15.6-arm64-arm-64bit",
+        "chrome": "Google Chrome for Testing 156.0.8078.73",
+        "node": "v24.5.0"
+      },
+      "load_start": [
+        4.76220703125,
+        5.13818359375,
+        4.86181640625
+      ],
+      "cases": [
+        {
+          "canvas": "landscape",
+          "cold_navigation_ms": 510,
+          "server_start_ms": 133,
+          "warm_samples": 20,
+          "warm_p95_ms": 624,
+          "warm_max_ms": 624,
+          "budget_ms": 3000,
+          "edit_visible_ms": [
+            532,
+            497,
+            598,
+            595,
+            612,
+            604,
+            601,
+            595,
+            611,
+            605,
+            581,
+            500,
+            603,
+            595,
+            615,
+            614,
+            594,
+            531,
+            593,
+            613
+          ],
+          "edit_command_and_visible_ms": [
+            534,
+            515,
+            619,
+            599,
+            624,
+            619,
+            621,
+            598,
+            622,
+            623,
+            598,
+            512,
+            624,
+            597,
+            617,
+            620,
+            597,
+            536,
+            597,
+            620
+          ],
+          "canonical_parity": [
+            {
+              "at": 0,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "play_to_first_video_ms": 356.60009765625,
+          "audio_display_phase_ms": [
+            26.36766670242946,
+            26.400000023841812,
+            26.576666666666824,
+            26.59700004768365,
+            26.560666666666293
+          ],
+          "end_error_ms": -34.66699999999978,
+          "stalls": 0,
+          "dropped_frames": 0,
+          "checks_passed": true,
+          "problems": []
+        },
+        {
+          "canvas": "portrait",
+          "cold_navigation_ms": 331,
+          "server_start_ms": 205,
+          "warm_samples": 20,
+          "warm_p95_ms": 764,
+          "warm_max_ms": 916,
+          "budget_ms": 3000,
+          "edit_visible_ms": [
+            732,
+            600,
+            598,
+            622,
+            602,
+            630,
+            608,
+            627,
+            581,
+            608,
+            688,
+            667,
+            563,
+            628,
+            607,
+            599,
+            912,
+            612,
+            609,
+            610
+          ],
+          "edit_command_and_visible_ms": [
+            764,
+            618,
+            608,
+            636,
+            621,
+            638,
+            613,
+            645,
+            590,
+            635,
+            704,
+            687,
+            567,
+            638,
+            639,
+            620,
+            916,
+            618,
+            615,
+            612
+          ],
+          "canonical_parity": [
+            {
+              "at": 0,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "play_to_first_video_ms": 438.10009765625,
+          "audio_display_phase_ms": [
+            21.07666666666671,
+            21.10499998807927,
+            21.177666666666482,
+            21.185999988078947,
+            21.176666666667188
+          ],
+          "end_error_ms": -29.333000000000276,
+          "stalls": 0,
+          "dropped_frames": 0,
+          "checks_passed": true,
+          "problems": []
+        }
+      ]
+    },
+    {
+      "name": "installed_wheel",
+      "versions": {
+        "python": "3.12.12",
+        "platform": "macOS-15.6-arm64-arm-64bit",
+        "chrome": "Google Chrome for Testing 156.0.8078.73",
+        "node": "v24.5.0"
+      },
+      "load_start": [
+        20.3193359375,
+        12.5546875,
+        8.23291015625
+      ],
+      "cases": [
+        {
+          "canvas": "landscape",
+          "cold_navigation_ms": 602,
+          "server_start_ms": 246,
+          "warm_samples": 20,
+          "warm_p95_ms": 1163,
+          "warm_max_ms": 1390,
+          "budget_ms": 3000,
+          "edit_visible_ms": [
+            629,
+            924,
+            607,
+            614,
+            606,
+            613,
+            603,
+            610,
+            714,
+            817,
+            596,
+            1153,
+            605,
+            578,
+            628,
+            928,
+            1111,
+            1371,
+            1047,
+            1085
+          ],
+          "edit_command_and_visible_ms": [
+            636,
+            933,
+            609,
+            623,
+            609,
+            624,
+            609,
+            629,
+            729,
+            837,
+            609,
+            1163,
+            626,
+            582,
+            633,
+            947,
+            1122,
+            1390,
+            1091,
+            1107
+          ],
+          "canonical_parity": [
+            {
+              "at": 0,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "play_to_first_video_ms": 304.599853515625,
+          "audio_display_phase_ms": [
+            29.04666664282479,
+            28.989000000000033,
+            29.05666664282444,
+            29.09899996423701,
+            29.160666642825163
+          ],
+          "end_error_ms": -34.66699999999978,
+          "stalls": 0,
+          "dropped_frames": 0,
+          "checks_passed": true,
+          "problems": []
+        },
+        {
+          "canvas": "portrait",
+          "cold_navigation_ms": 627,
+          "server_start_ms": 254,
+          "warm_samples": 20,
+          "warm_p95_ms": 918,
+          "warm_max_ms": 920,
+          "budget_ms": 3000,
+          "edit_visible_ms": [
+            631,
+            599,
+            616,
+            908,
+            630,
+            596,
+            605,
+            611,
+            704,
+            821,
+            824,
+            717,
+            796,
+            830,
+            704,
+            822,
+            912,
+            824,
+            911,
+            642
+          ],
+          "edit_command_and_visible_ms": [
+            648,
+            613,
+            623,
+            911,
+            633,
+            607,
+            609,
+            623,
+            715,
+            831,
+            839,
+            736,
+            815,
+            842,
+            715,
+            841,
+            920,
+            827,
+            918,
+            659
+          ],
+          "canonical_parity": [
+            {
+              "at": 0,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "play_to_first_video_ms": 462.800048828125,
+          "audio_display_phase_ms": [
+            24.15066667858764,
+            24.194000000000187,
+            24.258666678587815,
+            24.19400003576311,
+            24.26666667858717
+          ],
+          "end_error_ms": -29.54100000000004,
+          "stalls": 0,
+          "dropped_frames": 0,
+          "checks_passed": true,
+          "problems": []
+        }
+      ]
+    }
+  ]
+}

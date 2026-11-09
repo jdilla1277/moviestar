@@ -1,6 +1,6 @@
 """One local, read-only review page; one active render and one latest request.
 
-This is a completed-MP4 transport, not a faster renderer or a render cache.
+Rendered MP4 and opt-in native playback share request fencing and cleanup.
 Project edits and undo continue to use the existing CLI and revision journal.
 """
 
@@ -11,6 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 import json
 import hashlib
+import mimetypes
 import os
 from pathlib import Path
 import re
@@ -21,7 +22,7 @@ import sys
 import tempfile
 import threading
 import time
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 POLL_SECONDS = .2
 CANCEL_SECONDS = 6.0
@@ -165,6 +166,14 @@ def read_snapshot(root, start, end):
             "profile": profile, "logical_canvas": canvas}
 
 
+def _profile_snapshot(snapshot, mode):
+    if mode == "native":
+        from moviestar.native_preview import PROFILE as NATIVE_PROFILE
+        snapshot["profile"] = {**NATIVE_PROFILE, **snapshot["logical_canvas"],
+                               "fps": snapshot["profile"]["fps"]}
+    return snapshot
+
+
 class PreviewSession:
     """Foreground session that watches durable edits, including undo.
 
@@ -173,9 +182,11 @@ class PreviewSession:
     period. A new worker starts only after that group has been stopped.
     """
 
-    def __init__(self, root, start, end, directory):
+    def __init__(self, root, start, end, directory, *, mode="rendered"):
         self.root, self.start, self.end = Path(root), start, end
         self.directory = Path(directory)
+        self.mode = mode
+        self.assets = {}
         self.queue = PreviewQueue()
         self.process = None
         self.active = None
@@ -187,7 +198,7 @@ class PreviewSession:
     def refresh(self):
         from moviestar.resolved import ResolvedProjectError
         try:
-            snapshot = read_snapshot(self.root, self.start, self.end)
+            snapshot = _profile_snapshot(read_snapshot(self.root, self.start, self.end), self.mode)
             identity = json.dumps(snapshot, sort_keys=True)
             if identity != self.identity:
                 self.identity = identity
@@ -226,15 +237,24 @@ class PreviewSession:
             self.log.close()
             request_id = self.active["request_id"]
             folder = self.directory / request_id
-            media = folder / "preview.mp4"
+            media = folder / ("preview.json" if self.mode == "native" else "preview.mp4")
             error = None
             if code or not media.exists():
                 error = (folder / "worker.log").read_text(errors="replace")[-2000:] or "Preview generation stopped."
-            published = self.queue.finish(request_id, media=str(media) if media.exists() else None, error=error)
+            with self.queue.lock:
+                assets = {}
+                if not error and self.mode == "native":
+                    try:
+                        assets = json.loads((folder / "assets.json").read_text())
+                    except (ValueError, OSError) as exc:
+                        error = f"Native preview assets unavailable: {exc}"
+                published = self.queue.finish(request_id, media=str(media) if media.exists() else None, error=error)
+                if published:
+                    self.assets.update(assets)
             self.process = self.active = self.cancel_at = None
             # All intermediates are session-owned and disposable; retain only completed media.
             for path in folder.iterdir():
-                if path.name != "preview.mp4" or not published:
+                if path != media or not published:
                     if path.is_dir():
                         import shutil
                         shutil.rmtree(path)
@@ -243,6 +263,7 @@ class PreviewSession:
             if not published:
                 folder.rmdir()
             self.queue.prune()
+            self.prune_assets()
         request = self.queue.take()
         if request is not None:
             folder = self.directory / request["request_id"]
@@ -254,13 +275,28 @@ class PreviewSession:
             self.active = request
             try:
                 self.process = subprocess.Popen(
-                    [sys.executable, "-m", "moviestar.preview_worker", str(folder / "request.json")],
+                    [sys.executable, "-m", "moviestar.native_preview" if self.mode == "native" else "moviestar.preview_worker", str(folder / "request.json")],
                     cwd=self.root, stdout=self.log, stderr=subprocess.STDOUT, start_new_session=True,
                     env={**os.environ, "TMPDIR": str(temporary)})
             except OSError as exc:
                 self.log.close()
                 self.queue.finish(request["request_id"], error=str(exc))
                 self.active = None
+                import shutil
+                shutil.rmtree(folder)
+                self.queue.prune()
+                self.prune_assets()
+
+    def prune_assets(self):
+        if self.mode != "native":
+            return
+        with self.queue.lock:
+            referenced = set()
+            for item in self.queue.requests.values():
+                if item.get("media"):
+                    packet = json.loads(Path(item["media"]).read_text())
+                    referenced.update(media["asset"] for media in packet["media"])
+            self.assets = {key: value for key, value in self.assets.items() if key in referenced}
 
     def run(self):
         try:
@@ -284,8 +320,9 @@ class PreviewSession:
 class PreviewServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, queue, *, token, port):
+    def __init__(self, queue, *, token, port, mode="rendered", session=None):
         self.queue, self.token = queue, token
+        self.mode, self.session = mode, session
         super().__init__(("127.0.0.1", port), _Handler)
         self.url = f"http://127.0.0.1:{self.server_port}/projects/{token}/"
 
@@ -311,7 +348,10 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header(key.replace("_", "-"), str(value))
         self.end_headers()
         if self.command != "HEAD":
-            self.wfile.write(body)
+            try:
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
 
     def do_HEAD(self):
         self.do_GET()
@@ -320,19 +360,48 @@ class _Handler(BaseHTTPRequestHandler):
         if not self._allowed():
             self._reply(403)
             return
-        path = urlsplit(self.path).path
+        parsed = urlsplit(self.path)
+        path = parsed.path
         prefix = f"/projects/{self.server.token}/"
         if not path.startswith(prefix):
             self._reply(404)
             return
         route = path[len(prefix):]
         if route == "":
-            self._reply(200, files("moviestar").joinpath("preview_viewer.html").read_bytes(), "text/html; charset=utf-8")
+            page = files("moviestar").joinpath("preview_viewer.html").read_text()
+            page = page.replace('data-preview-mode="rendered"', f'data-preview-mode="{self.server.mode}"')
+            self._reply(200, page.encode(), "text/html; charset=utf-8")
+        elif self.server.mode == "native" and route in {
+                "preview_native.mjs", "preview_native_stage.mjs", "preview_native_meter.mjs", "spatial_dom.mjs"}:
+            self._reply(200, files("moviestar").joinpath(route).read_bytes(), "text/javascript")
+        elif self.server.mode == "native" and route == "stage":
+            self._reply(200, b'<!doctype html><html><head><meta charset="utf-8"></head><body><script type="module" src="preview_native_stage.mjs"></script></body></html>', "text/html; charset=utf-8")
+        elif self.server.mode == "native" and route == "packet":
+            key = parse_qs(parsed.query).get("request", [""])[0]
+            request = self.server.queue.get(key)
+            try:
+                if not request or not request.get("media"):
+                    raise FileNotFoundError()
+                self._reply(200, Path(request["media"]).read_bytes())
+            except FileNotFoundError:
+                self._reply(404)
+        elif self.server.mode == "native" and re.fullmatch(r"assets/[a-f0-9]{24}", route):
+            with self.server.queue.lock:
+                asset = self.server.session.assets.get(route.split("/")[1])
+            try:
+                if asset is None:
+                    raise FileNotFoundError()
+                mime = mimetypes.guess_type(asset["path"])[0] or "application/octet-stream"
+                self._media(Path(asset["path"]), content_type=mime, expected_identity=asset["identity"])
+            except FileNotFoundError:
+                self._reply(404)
         elif route in {"fonts/DMSerifDisplay-Regular.ttf", "fonts/Inter-Regular.ttf", "fonts/Inter-Bold.ttf"}:
             self._reply(200, files("moviestar").joinpath(route).read_bytes(), "font/ttf")
         elif route == "state":
-            self._reply(200, json.dumps(self.server.queue.state()).encode())
-        elif re.fullmatch(r"media/[a-f0-9]{24}", route):
+            state = self.server.queue.state()
+            state["mode"] = self.server.mode
+            self._reply(200, json.dumps(state).encode())
+        elif self.server.mode == "rendered" and re.fullmatch(r"media/[a-f0-9]{24}", route):
             request = self.server.queue.get(route.split("/")[1])
             if not request or not request.get("media") or not Path(request["media"]).is_file():
                 self._reply(404)
@@ -390,11 +459,16 @@ class _Handler(BaseHTTPRequestHandler):
                 pass
 
 
-def serve(root, start, end, *, port, open_browser, ready):
+def serve(root, start, end, *, port, open_browser, ready, mode="rendered"):
     """Keep the service alive in the foreground; closing it stops owned work."""
     if os.name != "posix":
         raise ValueError("The first local preview viewer supports macOS and Linux.")
-    read_snapshot(root, start, end)  # Fail before opening a port or writing state.
+    if mode not in {"native", "rendered"}:
+        raise ValueError("Preview mode must be native or rendered.")
+    snapshot = _profile_snapshot(read_snapshot(root, start, end), mode)
+    if mode == "native":
+        from moviestar.native_preview import compile_snapshot
+        compile_snapshot(snapshot)  # Reject unsupported states before opening a port or writing state.
     from moviestar.project import get_project_dir
     state_dir = get_project_dir(root) / "local-preview"
     state_dir.mkdir(mode=0o700, exist_ok=True)
@@ -404,10 +478,10 @@ def serve(root, start, end, *, port, open_browser, ready):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             raise ValueError("A local preview session is already running for this project; use its URL or stop it first.") from exc
-        _serve_session(root, start, end, state_dir, port=port, open_browser=open_browser, ready=ready)
+        _serve_session(root, start, end, state_dir, port=port, open_browser=open_browser, ready=ready, mode=mode)
 
 
-def _serve_session(root, start, end, state_dir, *, port, open_browser, ready):
+def _serve_session(root, start, end, state_dir, *, port, open_browser, ready, mode="rendered"):
     token_file = state_dir / "token"
     if not token_file.exists():
         token_file.write_text(secrets.token_hex(24))
@@ -415,13 +489,19 @@ def _serve_session(root, start, end, state_dir, *, port, open_browser, ready):
     if not re.fullmatch("[a-f0-9]{48}", token):
         raise ValueError("Invalid local viewer token; remove moviestar/local-preview/token and retry.")
     with tempfile.TemporaryDirectory(prefix="session-", dir=state_dir) as directory:
-        session = PreviewSession(root, start, end, directory)
-        server = PreviewServer(session.queue, token=token, port=port)
+        session = PreviewSession(root, start, end, directory, mode=mode)
+        server = PreviewServer(session.queue, token=token, port=port, mode=mode, session=session)
         worker = threading.Thread(target=session.run, daemon=True)
-        worker.start()
+        previous_terminate = None
+        def terminate(_signal, _frame):
+            raise KeyboardInterrupt
+        if threading.current_thread() is threading.main_thread():
+            previous_terminate = signal.signal(signal.SIGTERM, terminate)
         try:
+            worker.start()
             ready({"status": "serving", "url": server.url, "range": {"from": start, "to": end},
-                   "profile": PROFILE, "transport": "completed-mp4", "updates": "saved-project-edits",
+                   "profile": _profile_snapshot(read_snapshot(root, start, end), mode)["profile"],
+                   "mode": mode, "transport": "native-browser" if mode == "native" else "completed-mp4", "updates": "saved-project-edits",
                    "hint": "Keep this process running. Open the URL locally; Ctrl-C stops the viewer and its preview worker."})
             if open_browser:
                 import webbrowser
@@ -432,4 +512,7 @@ def _serve_session(root, start, end, state_dir, *, port, open_browser, ready):
         finally:
             server.server_close()
             session.stopped.set()
-            worker.join(timeout=CANCEL_SECONDS + 2)
+            if worker.ident is not None:
+                worker.join(timeout=CANCEL_SECONDS + 2)
+            if previous_terminate is not None:
+                signal.signal(signal.SIGTERM, previous_terminate)

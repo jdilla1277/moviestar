@@ -1,17 +1,12 @@
-"""The feasibility route consumes canonical samples without decoding/exporting."""
+"""Native descriptors consume canonical samples without decoding/exporting."""
 
 from copy import deepcopy
-from pathlib import Path
-import runpy
 
 import pytest
 
 from moviestar.local_preview import read_snapshot
 from moviestar.project import save_project
 from moviestar.spec import empty_spec, save_spec
-
-EXPERIMENT = Path(__file__).parents[2] / 'experiments' / 'live_browser_preview'
-
 
 @pytest.fixture
 def live_project(tmp_path):
@@ -50,7 +45,8 @@ def live_project(tmp_path):
 
 
 def _compiler():
-    return runpy.run_path(str(EXPERIMENT / 'packet.py'))['compile_snapshot']
+    from moviestar.native_preview import compile_snapshot
+    return compile_snapshot
 
 
 def test_live_packet_keeps_canonical_motion_captions_and_source_offset(live_project, monkeypatch):
@@ -74,7 +70,7 @@ def test_live_packet_keeps_canonical_motion_captions_and_source_offset(live_proj
     assert spec['spatial']['scenes']['scene']['layout']['children'][1]['content']['text'] == 'Original title'
 
 
-@pytest.mark.parametrize('mutation', ['extra_video', 'audio_mix', 'wrong_audio', 'speed', 'padding', 'media_children', 'inherited_fit', 'unknown_fps'])
+@pytest.mark.parametrize('mutation', ['extra_video', 'audio_mix', 'wrong_audio', 'speed', 'padding', 'media_children', 'inherited_fit', 'unknown_fps', 'low_rate'])
 def test_live_packet_rejects_unimplemented_behavior(live_project, mutation):
     spec, project, root = live_project
     if mutation == 'extra_video':
@@ -87,6 +83,9 @@ def test_live_packet_rejects_unimplemented_behavior(live_project, mutation):
         spec['composition'][0]['audio_from'] = None
     elif mutation == 'speed':
         spec['spatial']['scenes']['scene']['layout']['children'][0]['bindings']['clip']['source']['start'] = 0
+    elif mutation == 'low_rate':
+        project['sources'][0]['fps'] = 10
+        save_project(project, cwd=root)
     elif mutation == 'unknown_fps':
         project['sources'][0]['fps'] = None
         save_project(project, cwd=root)
@@ -98,76 +97,8 @@ def test_live_packet_rejects_unimplemented_behavior(live_project, mutation):
         spec['spatial']['definitions']['card']['children'][0]['children'] = [
             {'id': 'inside', 'type': 'text', 'content': {'text': 'unsupported child'}}]
     save_spec(spec, cwd=root)
-    with pytest.raises(ValueError, match='live feasibility'):
+    with pytest.raises(ValueError, match='Native preview unavailable'):
         _compiler()(read_snapshot(root, 0, 5))
-
-
-def _session_module(monkeypatch):
-    monkeypatch.syspath_prepend(str(EXPERIMENT))
-    return runpy.run_path(str(EXPERIMENT / 'serve.py'))
-
-
-def test_edit_during_live_compilation_cannot_publish_the_older_packet(live_project, tmp_path, monkeypatch):
-    module = _session_module(monkeypatch)
-    spec, _, root = live_project
-    folder = tmp_path / 'packets'
-    folder.mkdir()
-    session = module['LiveSession'](root, folder)
-    compile_packet = session.tick.__globals__['compile_snapshot']
-    once = []
-    def delayed(request):
-        result = compile_packet(request)
-        if not once:
-            once.append(request['request_id'])
-            spec['spatial']['scenes']['scene']['layout']['children'][1]['content']['text'] = 'New revision'
-            save_spec(spec, cwd=root)
-        return result
-    monkeypatch.setitem(session.tick.__globals__, 'compile_snapshot', delayed)
-    session.tick()
-    state = session.queue.state()
-    assert state['displayed'] is None and state['latest']['request_id'] != once[0]
-    assert not (folder / (once[0]+'.json')).exists()
-    session.tick()
-    assert session.queue.state()['is_current']
-
-
-def test_native_assets_are_scoped_range_served_and_invalidated_on_change(live_project, tmp_path, monkeypatch):
-    import json
-    import threading
-    from http.server import ThreadingHTTPServer
-    from urllib.error import HTTPError
-    from urllib.request import Request, urlopen
-
-    module = _session_module(monkeypatch)
-    _, _, root = live_project
-    folder = tmp_path / 'packets'; folder.mkdir()
-    session = module['LiveSession'](root, folder); session.tick()
-    server = ThreadingHTTPServer(('127.0.0.1', 0), module['Handler'])
-    server.daemon_threads = True
-    server.token, server.session = 'unit-token', session
-    thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
-    base = f'http://127.0.0.1:{server.server_port}/projects/unit-token/'
-    try:
-        state = session.queue.state(); request_id = state['latest']['request_id']
-        packet = json.loads(urlopen(base+'packet?request='+request_id).read())
-        assert str(root) not in json.dumps(packet)
-        asset = packet['media'][0]['asset']
-        response = urlopen(Request(base+'assets/'+asset, headers={'Range': 'bytes=2-5'}))
-        assert response.status == 206 and response.headers['Content-Type'] == 'video/mp4'
-        assert response.read() == (root/'camera.mp4').read_bytes()[2:6]
-        for route, headers, status in [('assets/unknown', {}, 404), ('../spec.json', {}, 404),
-                                       ('state', {'Origin': 'https://example.com'}, 403)]:
-            with pytest.raises(HTTPError) as error:
-                urlopen(Request(base+route, headers=headers))
-            assert error.value.code == status
-        (root/'camera.mp4').write_bytes(b'regenerated source')
-        with pytest.raises(HTTPError) as changed:
-            urlopen(base+'assets/'+asset)
-        assert changed.value.code == 409
-        fresh = json.loads(urlopen(base+'state').read())
-        assert fresh['latest']['request_id'] != request_id and not fresh['is_current']
-    finally:
-        server.shutdown();server.server_close();thread.join()
 
 
 def test_live_probe_rejects_live_caption_recipes(live_project):
