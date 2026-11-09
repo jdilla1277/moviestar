@@ -57,7 +57,7 @@ def test_review_builders_reencode_with_declared_quality_and_final_scale(encoder,
             output_fps=30,
         )
         graph = command[command.index("-filter_complex") + 1]
-        assert graph.index("concat=") < graph.index("scale=")
+        assert graph.index("interleave=") < graph.index("scale=")
         assert graph.index("fps=30") < graph.index("scale=")
     assert "1280" in graph and "720" in graph
     assert "force_divisible_by=2" in graph

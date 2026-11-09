@@ -1483,8 +1483,9 @@ class TestRenderSegmentsInputSideSeek:
         )
 
         graph = cmd[cmd.index("-filter_complex") + 1]
-        assert "concat=n=2:v=1:a=1[vraw][outa]" in graph
-        assert "[vraw]fps=60.0[vodd]" in graph
+        assert "interleave=nb_inputs=2:duration=longest[vraw]" in graph
+        assert "[a0][a1]concat=n=2:v=0:a=1[outa]" in graph
+        assert "[vraw]fps=60.0,tpad=stop_mode=clone:stop=2,trim=end_frame=120[vodd]" in graph
         assert graph.endswith("[vodd]pad=ceil(iw/2)*2:ceil(ih/2)*2[outv]")
 
     def test_segment_fps_length_must_match_segments(self):
@@ -1646,8 +1647,8 @@ class TestRenderSceneTransitions:
             "[v0][v1]xfade=transition=fade:duration=0.4:offset=0.4[vx1]"
             in graph
         )
-        assert "[0:a]atrim=start=0:end=0.6" in graph
-        assert "[1:a]atrim=start=0:end=0.6" in graph
+        assert "[0:a]aresample=48000:async=1:first_pts=0,apad,atrim=start=0:end=0.6" in graph
+        assert "[1:a]aresample=48000:async=1:first_pts=0,apad,atrim=start=0:end=0.6" in graph
         assert "[a0][a1]concat=n=2:v=0:a=1[outa]" in graph
         assert "acrossfade" not in graph
 
@@ -1679,7 +1680,8 @@ class TestRenderSceneTransitions:
         graph = cmd[cmd.index("-filter_complex") + 1]
         assert f"fade=t=out:st=0.4:d=0.2:color={color}" in graph
         assert f"fade=t=in:st=0:d=0.2:color={color}" in graph
-        assert "[v0][v1]concat=n=2:v=1:a=0[vx1]" in graph
+        assert "[v1]setpts=PTS-STARTPTS+0.6/TB[vtimed1]" in graph
+        assert "[vtimed0][vtimed1]interleave=nb_inputs=2:duration=longest[vraw]" in graph
         assert "xfade" not in graph
 
     def test_transition_indices_must_be_unique_internal_boundaries(self):
@@ -1784,7 +1786,7 @@ class TestRenderLayout:
         assert "pad=160:240:(ow-iw)/2:(oh-ih)/2" in graph
         assert "overlay=x=0:y=0:shortest=1[lay0]" in graph
         assert "overlay=x=160:y=0:shortest=1[outv]" in graph
-        assert "[2:a]atrim=start=0:end=1.0" in graph
+        assert "[2:a]aresample=48000:async=1:first_pts=0,apad,atrim=start=0:end=1.0" in graph
         assert "[outv]" in cmd
         assert "[af0]" in cmd
 
@@ -3082,8 +3084,8 @@ class TestShapedLayout:
         assert "format=rgba[slotc1]" in graph
         assert "[slotc1][maskv1]alphamerge[slotv1]" in graph
         # Audio numbering is untouched by the mask input.
-        assert "[2:a]atrim=start=0:end=0.5" in graph
-        assert "[3:a]atrim=start=0:end=0.5" in graph
+        assert "[2:a]aresample=48000:async=1:first_pts=0,apad,atrim=start=0:end=0.5" in graph
+        assert "[3:a]aresample=48000:async=1:first_pts=0,apad,atrim=start=0:end=0.5" in graph
         # The shaped slot still overlays by its region.
         assert "overlay=x=160:y=0:shortest=1[outv]" in graph
 
@@ -3368,7 +3370,7 @@ class TestBorderedLayout:
         # 2 slots + 1 audio slice -> content mask 3, disc mask 4.
         assert "[3:v]format=gray[maskv1]" in graph
         assert "[4:v]format=gray[dmaskv1]" in graph
-        assert "[2:a]atrim" in graph
+        assert "[2:a]aresample=48000:async=1:first_pts=0,apad,atrim" in graph
 
     def test_border_disc_composites_under_the_content(self):
         cmd = build_render_layout_video_command(

@@ -51,6 +51,11 @@ Do not assume every timecode uses the same clock:
 Read the command's help and use the named range from the response instead of
 copying a numerically similar value from another time space.
 
+Scene exports place each scene at its authored result-time boundary. The final
+video covers the complete result on one output frame grid, so its video-stream
+duration can extend by less than one frame beyond the authored duration. Audio
+follows the authored duration independently of video frame rounding.
+
 ## Composition choices
 
 Use `trim` and `cut` for one source. Use `concat` for ordered segments or one

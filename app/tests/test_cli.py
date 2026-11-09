@@ -17533,12 +17533,8 @@ class TestExport:
     def test_export_composition_single_source_reused(
         self, runner, test_video, tmp_path, monkeypatch
     ):
-        """A single-source project can have a composition (two segments
-        from the same source). M14 step 1.1 dropped input dedup in
-        favor of per-segment input-side `-ss` — each segment now gets
-        its own `-i` so ffmpeg fast-seeks each decoder to its slice.
-        Confirms the new shape: two `-i`, two `-ss`, both pointing at
-        the same source file, filter_complex concat=n=2."""
+        """Source reads retain fast seeks, while intermediate scene clips
+        start normally and are placed on the authored movie clock."""
         self._load(runner, test_video, tmp_path, monkeypatch)
         runner.invoke(
             cli,
@@ -17552,12 +17548,17 @@ class TestExport:
         assert result.exit_code == 0, result.stdout
         data = json.loads(result.stdout)
         argv = data["ffmpeg_command"]
-        # One -i per segment now (was 1 pre-M14, the source of the
-        # 38-minute perf bug on real-content sources).
+        # Original source reads still seek directly to each authored range.
+        second_scene = data["scene_render_commands"][1]["command"]
+        # The planner may seek one frame earlier to retain a VFR lead-in.
+        assert 0 < float(second_scene[second_scene.index("-ss") + 1]) <= 1.0
+        # Final inputs are already-rendered scene clips. Redundant zero-time
+        # seeks can discard AAC priming packets; no source re-decoding here.
         assert argv.count("-i") == 2
-        assert argv.count("-ss") == 2
+        assert argv.count("-ss") == 0
         joined = " ".join(argv)
-        assert "concat=n=2" in joined
+        assert "interleave=nb_inputs=2" in joined
+        assert "concat=n=2:v=0:a=1" in joined
 
     def test_export_composition_fast_overrides_to_reencode(
         self, runner, test_video, silent_video, tmp_path, monkeypatch
@@ -17751,7 +17752,7 @@ class TestExport:
             argv = entry["command"]
             assert argv.count("-i") == 2
             graph = argv[argv.index("-filter_complex") + 1]
-            assert "[1:a]atrim" in graph
+            assert "[1:a]aresample=48000:async=1:first_pts=0,apad,atrim" in graph
             assert "[0:a]atrim" not in graph
 
     def test_export_dry_run_audio_from_anchored_at_first_appearance(
