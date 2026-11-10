@@ -64,11 +64,79 @@ class ResourceSampler:
                 'scope': 'runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures'}
 
 
+def run_project_case(root, folder, start, end, chrome, case_fields):
+    # Establish the same CLI-normalized state before the timed edit series.
+    model = folder/'initial.json'; model.write_text(json.dumps(json.loads((root/'moviestar'/'spec.json').read_text())['spatial']))
+    subprocess.run([sys.executable, '-m', 'moviestar.cli', 'composition', 'model', 'apply', str(model)], cwd=root, check=True, capture_output=True)
+    before = time.perf_counter()
+    snapshot = read_snapshot(root, start, end)
+    snapshot_ms = (time.perf_counter() - before) * 1000
+    before = time.perf_counter()
+    timeline = resolve_project(snapshot['project'], snapshot['spec'])
+    resolve_ms = (time.perf_counter() - before) * 1000
+    before = time.perf_counter()
+    packet, _ = compile_snapshot(snapshot)
+    compile_ms = (time.perf_counter() - before) * 1000
+    case = {'range': {'from': start, 'to': end}, 'scene_id': 'review',
+            'source_start': packet['source_start'], 'source_end': packet['source_end'],
+            'barcode_period_frames': 240, 'fps': timeline.output_fps,
+            'source_position': case_fields.get('source_position', 'reference'), 'project_duration_s': timeline.duration_s,
+            'scene_count': len(snapshot['spec']['composition']),
+            'diagnostics': {'read_snapshot_ms': snapshot_ms, 'resolve_project_ms': resolve_ms,
+                'compile_snapshot_including_resolution_ms': compile_ms,
+                'packet_bytes': len(json.dumps(packet).encode())}}
+    case.update(case_fields)
+    (folder / 'case.json').write_text(json.dumps(case))
+    durations = {item['id']: item['duration']['seconds'] for item in snapshot['project']['sources']}
+    canonical = []
+    for at in [0, 2, 4]:
+        frame = compile_spatial_frame(snapshot['spec'], timeline, start + at, source_durations=durations)
+        layout = measure_spatial_layout(frame, timeline.canvas)
+        if layout['diagnostics']:
+            raise RuntimeError('Reference layout has diagnostics: '+json.dumps(layout['diagnostics']))
+        canonical.append({'at': at, 'boxes': layout['boxes']})
+    (folder / 'canonical.json').write_text(json.dumps(canonical))
+    started = time.monotonic()
+    resources = ResourceSampler(folder.parent); resources.thread.start()
+    with (folder / 'server.log').open('w') as stderr:
+        server = subprocess.Popen([sys.executable, '-m', 'moviestar.cli', 'preview', '--workspace', str(root), '--from', str(start), '--to', str(end), '--mode', 'native', '--no-open', '--port', '0'], stdout=subprocess.PIPE, stderr=stderr, text=True)
+        try:
+            with selectors.DefaultSelector() as selector:
+                selector.register(server.stdout, selectors.EVENT_READ)
+                if not selector.select(15):
+                    raise TimeoutError('Live server did not start in 15 seconds')
+                url = json.loads(server.stdout.readline())['url']
+            startup = (time.monotonic()-started)*1000
+            with (folder/'driver.log').open('w') as log:
+                driver = subprocess.Popen(['node', str(HERE/'benchmark.mjs'), url, str(root), str(folder), sys.executable, chrome], stdout=log, stderr=subprocess.STDOUT)
+                try:
+                    code = driver.wait(timeout=180)
+                finally:
+                    if driver.poll() is None:
+                        driver.terminate()  # Let the driver close its owned Chrome group.
+                        try:driver.wait(timeout=5)
+                        except subprocess.TimeoutExpired:driver.kill();driver.wait()
+            result = json.loads((folder/'browser-report.json').read_text())
+            if code and not result['problems']:
+                result['problems'].append(f'driver exited {code}')
+            result.update(server_start_ms=round(startup), driver_exit=code, fixture=case)
+        except Exception as exc:
+            result = {'cold': {}, 'problems': [str(exc)], 'fixture': case}
+        finally:
+            server.terminate()
+            try:server.wait(timeout=9)
+            except subprocess.TimeoutExpired:server.kill();server.wait()
+            server.stdout.close()
+            resource_result = resources.stop()
+    return result, resource_result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', type=Path, required=True, help='new output directory')
     parser.add_argument('--profile', choices=['reference', 'long-source'], default='reference',
                         help='small reference, or 121-scene hour-long projects / 90min synthetic source')
+    parser.add_argument('--baseline', action='store_true', help='measure an older installed player without requiring the new source buffer; keep all timing/fidelity gates')
     args = parser.parse_args()
     out = args.out.resolve(); out.mkdir(parents=True, exist_ok=False)
     if os.environ.get('PYTHONPATH'):
@@ -101,72 +169,14 @@ def main():
             prepare_window(root, portrait, source, offset)
         else:
             generate(root, portrait)
-        # Establish the same CLI-normalized state before the timed edit series.
-        model = folder/'initial.json'; model.write_text(json.dumps(json.loads((root/'moviestar'/'spec.json').read_text())['spatial']))
-        subprocess.run([sys.executable, '-m', 'moviestar.cli', 'composition', 'model', 'apply', str(model)], cwd=root, check=True, capture_output=True)
         start, end = (1801, 1806) if source else (0, 5)
-        before = time.perf_counter()
-        snapshot = read_snapshot(root, start, end)
-        snapshot_ms = (time.perf_counter() - before) * 1000
-        before = time.perf_counter()
-        timeline = resolve_project(snapshot['project'], snapshot['spec'])
-        resolve_ms = (time.perf_counter() - before) * 1000
-        before = time.perf_counter()
-        packet, _ = compile_snapshot(snapshot)
-        compile_ms = (time.perf_counter() - before) * 1000
-        case = {'range': {'from': start, 'to': end}, 'scene_id': 'review',
-                'source_start': packet['source_start'], 'source_end': packet['source_end'],
-                'barcode_period_frames': 240, 'fps': timeline.output_fps,
-                'source_position': position, 'project_duration_s': timeline.duration_s,
-                'scene_count': len(snapshot['spec']['composition']),
-                'diagnostics': {'read_snapshot_ms': snapshot_ms, 'resolve_project_ms': resolve_ms,
-                    'compile_snapshot_including_resolution_ms': compile_ms,
-                    'packet_bytes': len(json.dumps(packet).encode())}}
-        (folder / 'case.json').write_text(json.dumps(case))
-        durations = {item['id']: item['duration']['seconds'] for item in snapshot['project']['sources']}
-        canonical = []
-        for at in [0, 2, 4]:
-            frame = compile_spatial_frame(snapshot['spec'], timeline, start + at, source_durations=durations)
-            layout = measure_spatial_layout(frame, timeline.canvas)
-            if layout['diagnostics']:
-                raise RuntimeError('Reference layout has diagnostics: '+json.dumps(layout['diagnostics']))
-            canonical.append({'at': at, 'boxes': layout['boxes']})
-        (folder / 'canonical.json').write_text(json.dumps(canonical))
-        started = time.monotonic()
-        resources = ResourceSampler(out); resources.thread.start()
-        with (folder / 'server.log').open('w') as stderr:
-            server = subprocess.Popen([sys.executable, '-m', 'moviestar.cli', 'preview', '--workspace', str(root), '--from', str(start), '--to', str(end), '--mode', 'native', '--no-open', '--port', '0'], stdout=subprocess.PIPE, stderr=stderr, text=True)
-            try:
-                with selectors.DefaultSelector() as selector:
-                    selector.register(server.stdout, selectors.EVENT_READ)
-                    if not selector.select(15):
-                        raise TimeoutError('Live server did not start in 15 seconds')
-                    url = json.loads(server.stdout.readline())['url']
-                startup = (time.monotonic()-started)*1000
-                with (folder/'driver.log').open('w') as log:
-                    driver = subprocess.Popen(['node', str(HERE/'benchmark.mjs'), url, str(root), str(folder), sys.executable, chrome], stdout=log, stderr=subprocess.STDOUT)
-                    try:
-                        code = driver.wait(timeout=180)
-                    finally:
-                        if driver.poll() is None:
-                            driver.terminate()  # Let the driver close its owned Chrome group.
-                            try:driver.wait(timeout=5)
-                            except subprocess.TimeoutExpired:driver.kill();driver.wait()
-                result = json.loads((folder/'browser-report.json').read_text())
-                result.update(canvas=name, server_start_ms=round(startup), driver_exit=code, fixture=case)
-                report['cases'].append(result)
-                report['problems'].extend(f'{name}: {problem}' for problem in result['problems'])
-                if code and not result['problems']:
-                    report['problems'].append(f'{name}: driver exited {code}')
-            except Exception as exc:
-                report['problems'].append(f'{name}: {exc}')
-            finally:
-                server.terminate()
-                try:server.wait(timeout=5)
-                except subprocess.TimeoutExpired:server.kill();server.wait()
-                server.stdout.close()
-                report.setdefault('resources', []).append({'case': name, **resources.stop()})
-                (out/'report.json').write_text(json.dumps(report, indent=2))
+        result, resources = run_project_case(root, folder, start, end, chrome,
+            {'source_position': position, 'require_source_buffering': not args.baseline})
+        result['canvas'] = name
+        report['cases'].append(result)
+        report['resources'] = report.get('resources', []) + [{'case': name, **resources}]
+        report['problems'].extend(f'{name}: {problem}' for problem in result['problems'])
+        (out / 'report.json').write_text(json.dumps(report, indent=2))
     print(json.dumps({'report': str(out/'report.json'), 'cases': [
         {'canvas': case['canvas'], 'cold_ms': case['cold'].get('navigation_to_visible_ms'), **case.get('summary', {})}
         for case in report['cases']], 'problems': report['problems']}))

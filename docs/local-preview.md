@@ -99,6 +99,29 @@ scene DOM as inspection/export. Its native video pixels and color handling are
 separately subject to fidelity testing, rather than assumed identical to an
 encoded export.
 
+### Bounded source-byte reuse
+
+On supported loopback browsers, native mode uses a project-scoped service worker
+to keep recently read source ranges in **memory only** across saved edits and
+history selections. It stores at most 64 MiB / 256 blocks, with at most four
+256 KiB source reads in flight. Old blocks are evicted as new ones arrive. A
+fresh browser profile starts empty; the browser may discard the worker and its
+buffer at any time. This is source-byte reuse, not rendered-scene caching.
+
+Every media request first asks the live server to validate the registered asset
+and its file identity, including when the entire requested range is in memory.
+A changed or expired source cannot be replayed from the buffer. Source responses
+must explicitly permit private, revalidated reuse; the worker's network fetches
+bypass the HTTP cache, and it writes no media to Cache Storage or IndexedDB.
+Ordinary source responses remain `no-store`. Leave source files unchanged during
+review, as before: this is not an immutable archive of an asset being edited.
+
+If registration is unavailable or does not take control within 1.5 seconds, the
+native player uses direct source requests. Playback remains available; byte
+reuse and its performance benefit are then absent. Metadata preloading is a
+hint, not readiness: a fresh version still requires the actual first decoded
+frame, fonts, images and canonical layout before it becomes current.
+
 ## What follows an edit
 
 Each requested preview pins a parsed spec and project metadata, receives a fresh
@@ -107,6 +130,12 @@ review profile. Both modes read sources in place. Basic source/asset size,
 modification time and inode changes cause a new request, but inputs are not copied
 or frozen: leave media unchanged while reviewing. This is not a content-addressed
 asset snapshot or a rendered-scene cache.
+
+Idle polls check file metadata before reparsing a project. Saved edits, undo,
+project metadata changes and changes to current asset paths still invalidate
+the check. Preview-worker snapshots contain the current document without its
+undo payloads; the saved revision journal remains intact. Large journals still
+cost time to validate when an actual edit is loaded.
 
 Only one generation runs per project, with at most one pending request. Rapid
 edits replace the pending request with the newest one. Obsolete work receives an
@@ -173,6 +202,13 @@ and local playback metrics. Its optional `?audit=1` records source barcode/flash
 samples for the synthetic benchmark. Normal viewing avoids per-frame source
 canvas readback. The audio worklet passes through the sound sent to the output;
 clock estimates still require a physical flash/beep check for acceptance.
+
+In native mode, the local `state` endpoint also reports `native_video_delivery`:
+successful validated HEAD requests, video GET requests, active GETs and completed
+body bytes written to sockets. The byte count excludes headers and any partial
+write that raises on disconnect; it is not an exact wire/client-consumed count.
+It includes source transfers that browser DevTools can omit for canceled or
+service-worker responses. These counters contain no asset paths or content.
 
 The production command benchmark runs 20 real model edits per orientation,
 including CLI startup, worker startup, source readiness and a fresh visible

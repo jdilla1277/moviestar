@@ -107,7 +107,8 @@ def test_native_assets_and_scripts_are_packaged_and_scoped(live_project,tmp_path
         with urlopen(service.url) as response:
             page=response.read().decode();assert 'data-preview-mode="native"' in page
             assert 'LIVE PREVIEW EXPERIMENT' not in page and 'id="seek"' in page
-        for name in ['preview_native.mjs','preview_native_stage.mjs','preview_native_meter.mjs','spatial_dom.mjs']:
+        for name in ['preview_native.mjs','preview_native_stage.mjs','preview_native_meter.mjs','spatial_dom.mjs',
+                     'preview_native_worker.mjs','preview_native_buffer.mjs']:
             with urlopen(service.url+name) as response:
                 assert response.headers['Content-Type']=='text/javascript'
                 assert response.read()

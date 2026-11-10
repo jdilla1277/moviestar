@@ -82,6 +82,50 @@ player needs broader timing and seek tests before it can own general timelines.
 python experiments/live_browser_preview/benchmark.py --out /tmp/live-results
 ```
 
+The current native player uses a project-scoped, memory-only source-byte buffer
+(64 MiB / 256 blocks, four source reads at a time). Every media request still
+validates the live asset, including a complete memory hit. See
+[`docs/local-preview.md`](../../docs/local-preview.md#bounded-source-byte-reuse)
+for lifetime, invalidation and direct-playback fallback behavior. The benchmark
+requires that buffer to control the page and checks its byte/entry limits.
+`--baseline` permits an older player without it; all latency and fidelity gates
+remain unchanged.
+
+Source diagnostics include the server's completed body-write counts and
+successful validating HEADs at each edit. These complement DevTools counts,
+which can omit canceled/service-worker transfers. Completed writes are not an
+exact wire/client-consumed byte count. Compare before/after using the same
+counter and fixture, not a server total against a DevTools total. The sampled
+process-family RSS includes the CLI/server, workers, driver and owned Chrome;
+it is not the source-byte buffer's size.
+
+### Optional real-media evaluation
+
+Use native-compatible local MP4s of at least 30 seconds through the same real CLI loop without copying them into the
+repository. The output includes source paths, subtitle text and screenshots:
+**keep it private and do not commit it**. The runner does not upload anything.
+
+```sh
+python experiments/live_browser_preview/real_benchmark.py \
+  --source /private/path/recording.mp4 --srt /private/path/subtitles.srt \
+  --out /private/new-real-results
+```
+
+This creates 121-scene / hour-long projects, references each recording in place,
+and reviews five seconds near its beginning, middle and end in both orientations.
+Optional SRT cues use source time and become clipped, frozen/manual captions in
+the selected window. `--positions middle --orientation landscape` selects a
+smaller run. `--baseline-results /private/prior-results/report.json` additionally
+requires exact decoded source pixel hashes at 0, 2 and 4 seconds for every
+matching case; missing cases are an error. Without that option, hashes are
+recorded for comparison, not declared a pixel-parity pass.
+
+Real recordings retain the three-second per-edit limit, canonical
+geometry/caption/motion checks, actual source-clock seeks, expected frame count,
+no-stall/no-drop playback and 50 ms end tolerance. Running audio output is
+checked, but speech is not a flash/beep fixture: physical lip-sync still needs
+human review. Real-media results do not replace the synthetic cue/phase gates.
+
 The output directory must be new. The runner generates its own synthetic
 media (no third-party footage or artwork) and owns/cleans up its server, browser profile and subprocesses.
 It retains JSON reports, logs, model-edit inputs and screenshots. Runtime errors
@@ -118,6 +162,45 @@ existing raster/export fidelity matrix.
 The original experiment results are recorded below. A successful small
 fixture establishes a direction, not general product acceptance or a
 three-second guarantee for arbitrary projects.
+
+## Source-buffer comparison — November 10, 2026
+
+The long-source fixture still uses 121 scenes / one hour, a five-second selected
+window and a 90-minute 20,958,144-byte synthetic H.264/AAC recording. Six cases
+cover both orientations and beginning/middle/end source positions, twenty real
+CLI edits each. All source-frame/caption/geometry/motion, undo/restoration,
+flash/beep phase, playback-frame and end-tolerance checks passed. Seven of 120
+edit samples missed the unchanged 3,000 ms gate on the shared Mac host; this
+series is **not** an overall performance acceptance pass. Per-case p95 ranged
+from 1,799 to 3,279 ms; maximum was 3,642 ms. The retained
+[`source-buffer-results.json`](source-buffer-results.json) includes the failures.
+
+Source delivery improved independently of that remaining latency gap:
+
+| Middle-source case | Direct stage: completed body bytes | Buffered stage: completed body bytes |
+| --- | ---: | ---: |
+| Landscape | 412,371,904 | 11,010,048 |
+| Portrait | 408,158,208 | 11,010,048 |
+
+Those totals include parity seeks, twenty edits, undo/restoration and Play. Each
+buffered edit series reused the already-read source bodies. Buffer occupancy
+remained between 6.8 and 11.1 MB across the six cases, below the 64 MiB cap.
+These are socket-write diagnostics, not exact consumed/wire traffic.
+
+This is a **delivery-only ablation**: the baseline serves the native stage from
+pre-buffer #151 (`56d0092`) using the current server/counters and optimized
+watcher. It therefore isolates direct/preload-auto source delivery, not the
+entire earlier package. Both runs use the same generated source; synthetic
+cue/fidelity checks remain unchanged. The baseline's latency series happened to
+pass while some buffered cases missed under different shared-host load: these
+runs do not establish a causal latency improvement or regression. Do not compare
+their server totals with earlier DevTools-only totals.
+
+Late edit cost remains under investigation in
+[#154](https://github.com/jdilla1277/moviestar/issues/154), including repeated
+undo-history validation and document copies. Real-media evaluations stay private
+and are not substituted for the public synthetic evidence here. No persistent
+rendered-scene cache or export change is part of source-byte buffering.
 
 ## Reference result — November 8, 2026
 
