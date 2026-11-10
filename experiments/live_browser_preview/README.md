@@ -230,7 +230,8 @@ budgets to accept a sequence.
 A fresh installed wheel passed all 160 synthetic cut edits below, plus 40
 single-span regression edits. Each case has twenty real CLI edits and retains
 the 3,000 ms gate for **every** sample. The measured product module bytes match
-the source; hashes, individual latencies, cold readiness, diagnostics and checks
+[measurement commit `b7f956e`](https://github.com/jdilla1277/moviestar/commit/b7f956e76c92f7b5680162b7a75375627782ccae);
+hashes, individual latencies, cold readiness, diagnostics and checks
 are retained in [`cut-results.json`](cut-results.json).
 
 | Case | Landscape p95 / maximum | Portrait p95 / maximum |
@@ -275,6 +276,14 @@ Earlier runs before these corrections are not acceptance for the final build.
 Fixture integral offsets are normalized for JSON round trips; the general
 state-ID numeric normalization issue remains separate in
 [#157](https://github.com/jdilla1277/moviestar/issues/157).
+
+A subsequent review found that Play during a pending cross-cut seek could start
+the old scene. Play now waits for the seek destination; Pause/disposal cancel
+queued playback, and newer seeks fence older results. Six deterministic control
+cases and the real-browser cut/EOF/surround matrix cover this race, including
+actual playback at the requested destination after audio activation. The full
+timing matrix above was not rerun for this control fix: its module hashes and
+measurements identify `b7f956e`, rather than the later player revision.
 
 ## Source-buffer comparison — November 10, 2026
 

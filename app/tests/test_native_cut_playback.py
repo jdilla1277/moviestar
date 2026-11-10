@@ -66,6 +66,54 @@ api.dispose();api.dispose();assert.equal(cleaned,1);
     assert result.returncode==0,result.stdout+result.stderr
 
 
+@pytest.mark.skipif(not shutil.which('node'), reason='Node required')
+@pytest.mark.parametrize('action',['play','pause','dispose','new_seek','failure','repeat_play'])
+def test_play_waits_for_pending_cross_cut_seek(action):
+    module=(Path(__file__).parents[1]/'src/moviestar/preview_native_cuts.mjs').as_uri()
+    script=r"""
+import assert from 'node:assert/strict';
+const {createCutPlayback}=await import(MODULE);
+const metrics={},packet={range:{from:0,to:9},fps:30,segments:[0,3,6].map(offset=>({offset,packet:{range:{from:offset,to:offset+3}}}))};
+const stages=packet.segments.map((segment,i)=>({gain:{gain:{value:0,cancelScheduledValues(){},setValueAtTime(value){this.value=value;}}},api:{
+ time:0,plays:0,metrics:{stalls:0},packet:{source_start:10+i},pause(){},async play(){this.plays++;},async seek(at){this.time=at;},snapshot(){return{};}
+}}));
+const api=createCutPlayback({packet,stages,audio:{currentTime:1,state:'running'},metrics,show:()=>{}});
+const totalPlays=()=>stages.reduce((n,s)=>n+s.api.plays,0),flush=()=>new Promise(resolve=>setImmediate(resolve));
+const normal=stages[1].api.seek;let resolveSeek,rejectSeek;
+stages[1].api.seek=async function(at){await new Promise((resolve,reject)=>{resolveSeek=resolve;rejectSeek=reject;});this.time=at;};
+const seeking=api.seek(4);seeking.catch(()=>{});
+const play=api.play();play.catch(()=>{});await flush();
+assert.equal(totalPlays(),0,'Play must wait for the pending destination, not start the old scene');
+assert.deepEqual(stages.map(s=>s.gain.gain.value),[0,0,0]);
+let repeated;
+if(ACTION==='pause')api.pause();
+if(ACTION==='dispose')api.dispose();
+if(ACTION==='new_seek'){
+ stages[1].api.seek=normal;await api.seek(7);
+}
+if(ACTION==='repeat_play'){repeated=api.play();await flush();assert.equal(totalPlays(),0);}
+if(ACTION==='failure'){
+ rejectSeek(Error('seek failed'));await assert.rejects(seeking,/seek failed/);await assert.rejects(play,/seek failed/);
+ assert.equal(totalPlays(),0);assert.equal(api.paused,true);assert.match(metrics.error,/seek failed/);
+}else{
+ resolveSeek();await Promise.all([seeking,play,repeated]);
+ if(ACTION==='play'||ACTION==='repeat_play'){
+  assert.equal(totalPlays(),1);assert.equal(stages[1].api.plays,1);assert.equal(api.snapshot().segment,1);assert.equal(api.time,4);
+ }else{
+  assert.equal(totalPlays(),0);assert.equal(api.paused,true);assert.deepEqual(stages.map(s=>s.gain.gain.value),[0,0,0]);
+  if(ACTION==='pause'){
+   assert.equal(api.time,4,'Pause cancels queued playback while retaining the sought position');
+   await api.play();assert.equal(stages[1].api.plays,1);assert.equal(api.time,4);
+  }
+  if(ACTION==='new_seek')assert.equal(api.time,7,'An obsolete seek cannot replace the newer destination');
+ }
+}
+api.dispose();
+"""
+    result=subprocess.run(['node','--input-type=module','-e','const MODULE='+json.dumps(module)+';const ACTION='+json.dumps(action)+';\n'+script],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stdout+result.stderr
+
+
 def test_final_cut_meter_passes_through_stereo_and_mono_samples():
     if not shutil.which('node'):pytest.skip('Node required')
     module=(Path(__file__).parents[1]/'src/moviestar/preview_native_cut_meter.mjs').read_text()

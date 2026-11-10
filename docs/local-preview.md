@@ -97,6 +97,9 @@ requests a fresh native version. Browser decode/capability failures also remain
 visible with rendered-mode guidance. Native mode offers Play, Pause, Restart
 and a position slider. Audio starts only after Play; Pause/Restart/replacement
 cancel audio startup as well as active playback.
+Play waits for an in-progress seek before starting the selected scene. Pause
+cancels queued playback while retaining the seek destination; a newer seek or
+disposal prevents an older destination from becoming active.
 
 The native range end is approximate, with a 50 ms reference budget, and is not
 sample-accurate export trimming. It pauses at the last expected source frame;

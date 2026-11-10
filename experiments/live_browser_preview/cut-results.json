@@ -14,7 +14,7 @@
     "preview_native_buffer.mjs": "acd43432c3a40abe7ab638a599e70721ad57858b540da4dd7c569e9cd0737722",
     "preview_native_meter.mjs": "9d546fa96d6ce8a7b83589cfed7e3f8ab89284c75910a1ee81fe2ab927e71840"
   },
-  "scope": "Synthetic installed-wheel measurements only. Each case includes 20 actual CLI edits, undo/restoration and trusted Play. No camera reports or private source data. Browser-clock timing is not physical A/V certification.",
+  "scope": "Synthetic installed-wheel measurements only. Each case includes 20 actual CLI edits, undo/restoration and trusted Play. No camera reports or private source data. Browser-clock timing is not physical A/V certification. These measurements precede the pending-seek/Play control fix; product hashes identify the measured revision, not later revisions.",
   "runs": [
     {
       "run": "reference",
@@ -2353,5 +2353,6 @@
         }
       ]
     }
-  ]
+  ],
+  "measured_commit": "b7f956e76c92f7b5680162b7a75375627782ccae"
 }

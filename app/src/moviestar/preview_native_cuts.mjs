@@ -1,6 +1,6 @@
 // Native hard cuts: bounded prepared scenes, one shared running audio context.
 export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,cleanup=()=>{}}){
-  let index=0,playing=false,disposed=false,generation=0,timer,handoffTimer;
+  let index=0,playing=false,disposed=false,generation=0,seekGeneration=0,pendingSeek,timer,handoffTimer;
   const duration=packet.range.to-packet.range.from;
   const length=i=>packet.segments[i].packet.range.to-packet.segments[i].packet.range.from;
   Object.assign(metrics,{frames:[],flashes:[],beeps:[],cuts:[],segments_shown:[],audio_blocks:[],stalls:0,finished:false});
@@ -71,6 +71,13 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
     get paused(){return !playing;},get audioState(){return audio.state;},
     get sourceBuffering(){return stages.every(stage=>stage.api.metrics.source_buffering===true);},
     async play(){
+      // Do not invalidate the destination while its child seeks are pending.
+      // Pause, replacement seeks and disposal still cancel this queued Play.
+      if(pendingSeek){
+        const attempt=generation;
+        await pendingSeek;
+        if(disposed||attempt!==generation)return;
+      }
       api.pause();if(disposed)return;
       let attempt=generation;
       if(metrics.finished||api.time>=duration-1/packet.fps-1e-6){const pending=api.seek(0);attempt=generation;await pending;}
@@ -86,11 +93,18 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
     pause(){generation++;playing=false;clearTimeout(timer);clearTimeout(handoffTimer);stages.forEach(s=>s.api.pause());outputs(-1);},
     async seek(at){
       api.pause();if(disposed)return;
-      const attempt=generation,target=Math.max(0,Math.min(duration-1/packet.fps,Math.round(at*packet.fps)/packet.fps));
+      const attempt=++seekGeneration,target=Math.max(0,Math.min(duration-1/packet.fps,Math.round(at*packet.fps)/packet.fps));
       const selected=packet.segments.findLastIndex(segment=>segment.offset<=target+1e-8);
-      await Promise.all(stages.map((stage,i)=>stage.api.seek(i===selected?target-packet.segments[i].offset:0)));
-      if(disposed||attempt!==generation)return;
-      index=selected;metrics.finished=false;reveal(index);
+      // A Pause cancels playback, not the chosen seek position. Only a newer
+      // seek or disposal can prevent this destination from being committed.
+      const operation=Promise.all(stages.map((stage,i)=>stage.api.seek(i===selected?target-packet.segments[i].offset:0))).then(()=>{
+        if(disposed||attempt!==seekGeneration)return;
+        index=selected;metrics.finished=false;reveal(index);
+      });
+      pendingSeek=operation;
+      try{await operation;}
+      catch(error){if(!disposed&&attempt===seekGeneration)fail(error);throw error;}
+      finally{if(pendingSeek===operation)pendingSeek=null;}
     },
     snapshot(){return{...stages[index].api.snapshot(),time:api.time,segment:index};},
     dispose(){if(disposed)return;api.pause();disposed=true;cleanup();},

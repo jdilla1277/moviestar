@@ -76,6 +76,13 @@ try{
  // Restart after completion and pause immediately; no late handoff may restart audio.
  await b.click('#restart');await b.click('#play');await b.click('#pause');
  assert.equal(await b.evaluate('window.movieStarPreview.stage.paused'),true);
+ // Audio is activated. Seek across a cut and press Play before seeks settle.
+ const pendingPlay=await b.evaluate(`(async()=>{const api=window.movieStarPreview.stage;await api.seek(0);const seek=api.seek(4);await api.play();await seek;return{segment:api.snapshot().segment,time:api.time,paused:api.paused};})()`);
+ assert.equal(pendingPlay.segment,1,'Play preserves the pending cross-cut destination');
+ assert.ok(Math.abs(pendingPlay.time-4)<.1);assert.equal(pendingPlay.paused,false);
+ await b.wait('window.movieStarPreview.stage.metrics.frames.some(frame=>frame.segment===1&&frame.result_time>=4)',2000);
+ await b.click('#pause');
+
 }finally{await b.close();}
 '''
             values={'HELPER':(repo/'experiments/live_browser_preview/browser.mjs').as_uri(),'CHROME':chrome,'OFFSETS':list(offsets),'OUT':str(tmp_path/'browser'),'URL':url}
