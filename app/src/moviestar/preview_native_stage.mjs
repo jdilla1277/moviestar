@@ -1,6 +1,6 @@
 import {render} from './spatial_dom.mjs';
 
-let resolveReady,rejectReady,packet,video,audio,source,meter,frameCallback,stopTimer,disposed=false;
+let resolveReady,rejectReady,packet,video,audio,source,meter,frameCallback,stopTimer,cuts,shared,frozenFrame,disposed=false;
 const controller=new AbortController(),audit=new URLSearchParams(location.search).has('audit');
 const pendingSeeks=new Set();
 let lastIndex=-1, playing=false, readyDone=false, metadataReady=false, imageReady=false,playGeneration=0;
@@ -12,6 +12,8 @@ const sampleCanvas=document.createElement('canvas');sampleCanvas.width=640;sampl
 const pixels=sampleCanvas.getContext('2d',{willReadFrequently:true});
 const walk=function*(nodes){for(const node of nodes){yield node;yield*walk(node.children??[]);}};
 const key=path=>JSON.stringify(path);
+// Give the compositor time to swap prepared scenes before the cut's paint.
+const CUT_PAINT_LEAD_MS=8;
 async function enableSourceBuffering(signal){
   const service=globalThis.navigator?.serviceWorker;
   if(!service||signal.aborted)return false;
@@ -32,7 +34,7 @@ async function enableSourceBuffering(signal){
     clearTimeout(timer);service.removeEventListener('controllerchange',changed);signal.removeEventListener('abort',canceled);
   }
 }
-function fail(error){if(disposed)return;playing=false;metrics.error=String(error.message??error);if(!metrics.error.includes('--mode rendered'))metrics.error+=' Use --mode rendered if native playback is unsupported.';video?.pause();rejectReady(error);}
+function fail(error){if(disposed)return;window.moviestarLiveStage?.onFailure?.(error);playing=false;metrics.error=String(error.message??error);if(!metrics.error.includes('--mode rendered'))metrics.error+=' Use --mode rendered if native playback is unsupported.';video?.pause();rejectReady(error);}
 function apply(at){
   if(!packet)return;
   const index=Math.max(0,Math.min(packet.samples.length-1,Math.round(at*packet.fps)));
@@ -49,8 +51,16 @@ function apply(at){
   }
   window.moviestarScene.applyMotion();
 }
+function clearFrozenFrame(){if(frozenFrame){frozenFrame.remove();frozenFrame.width=frozenFrame.height=0;frozenFrame=null;}}
+function freezeLastFrame(){
+  if(frozenFrame)return;
+  frozenFrame=document.createElement('canvas');frozenFrame.width=video.videoWidth;frozenFrame.height=video.videoHeight;
+  frozenFrame.style.cssText=video.style.cssText;
+  frozenFrame.getContext('2d').drawImage(video,0,0);
+  video.parentElement.append(frozenFrame);
+}
 function sourceFrame(){
-  pixels.drawImage(video,0,0,640,360);
+  pixels.drawImage(frozenFrame??video,0,0,640,360);
   let number=0;
   for(let bit=0;bit<8;bit++)if(pixels.getImageData(bit*16+8,8,1,1).data[0]>128)number|=1<<bit;
   return {number,white:pixels.getImageData(320,180,1,1).data[0]>230};
@@ -65,6 +75,13 @@ async function checkReady(){
 function onFrame(now,metadata){
   if(disposed)return;
   const local=metadata.mediaTime-packet.source_start;
+  if(packet.cut_segment&&playing&&metadata.mediaTime>=packet.source_end-1e-6){
+    // The media keeps its audio clock until the cut; the overlaid last valid
+    // frame prevents a decoded frame beyond the edit from becoming visible.
+    if(!frozenFrame){fail(Error('Native cut missed its last expected frame'));return;}
+    frameCallback=video.requestVideoFrameCallback(onFrame);return;
+  }
+  if(packet.cut_segment&&playing&&metadata.mediaTime>=packet.source_end-1/packet.fps-1e-6)freezeLastFrame();
   apply(local);
   if(!playing&&metrics.initial_frame===undefined&&Math.abs(local)<1/packet.fps)metrics.initial_frame=metadata.mediaTime;
   if(playing){
@@ -73,7 +90,14 @@ function onFrame(now,metadata){
     metrics.frames.push({media_time:metadata.mediaTime,number:sampled.number,display_time:metadata.expectedDisplayTime});
     if(sampled.white&&!metrics.previous_white)metrics.flashes.push({media_time:metadata.mediaTime,display_time:metadata.expectedDisplayTime});
     metrics.previous_white=sampled.white;
+    window.moviestarLiveStage.onPresented?.({...metrics.frames.at(-1),white:sampled.white,display_epoch:performance.timeOrigin+metadata.expectedDisplayTime});
     if(metadata.mediaTime>=packet.source_end-1/packet.fps-1e-6&&!stopTimer){
+      if(packet.cut_segment){
+        const boundary=performance.timeOrigin+metadata.expectedDisplayTime+1000/packet.fps;
+        const attempt=playGeneration;
+        stopTimer=setTimeout(()=>{if(!disposed&&playing&&attempt===playGeneration)window.moviestarLiveStage.onSegmentEnd?.(boundary);},Math.max(0,boundary-performance.timeOrigin-performance.now()-CUT_PAINT_LEAD_MS));
+        frameCallback=video.requestVideoFrameCallback(onFrame);return;
+      }
       stopTimer=setTimeout(()=>{
         metrics.finished=true;metrics.end_time=video.currentTime;
         video.pause();playing=false;
@@ -93,10 +117,16 @@ function complete(){
   }
 }
 async function initialize(){
-  const request=new URLSearchParams(location.search).get('request');
-  const response=await fetch('packet?request='+encodeURIComponent(request),{cache:'no-store',signal:controller.signal});
+  const params=new URLSearchParams(location.search),request=params.get('request');
+  const response=await fetch('packet?request='+encodeURIComponent(request)+(params.has('segment')?'&segment='+encodeURIComponent(params.get('segment')):''),{cache:'no-store',signal:controller.signal});
   if(!response.ok)throw Error('The requested live packet is no longer retained.');
   packet=await response.json();if(disposed)return;
+  if(packet.segments){
+    Object.assign(window.frameElement.style,{width:packet.canvas.width+'px',height:packet.canvas.height+'px'});
+    const {mountCuts}=await import('./preview_native_cuts.mjs');
+    cuts=await mountCuts(packet,controller.signal,metrics);if(disposed){cuts.dispose();return;}
+    metrics.source_buffering=cuts.sourceBuffering;metrics.prepared_at=Date.now();resolveReady(true);return;
+  }
   metrics.source_buffering=await enableSourceBuffering(controller.signal);if(disposed)return;
   Object.assign(window.frameElement.style,{width:packet.canvas.width+'px',height:packet.canvas.height+'px'});
   const measured=await render({...packet.initial,paint_dir:'native',live_dom:true});
@@ -126,24 +156,27 @@ async function initialize(){
       video.addEventListener('waiting',()=>{if(playing)metrics.stalls++;});
       video.addEventListener('pause',complete);
       video.addEventListener('ended',complete);
-      video.src=`assets/${asset.asset}?native_video=1#t=${packet.source_start},${packet.source_end}`;
+      video.src=`assets/${asset.asset}?native_video=1#t=${packet.source_start}${packet.cut_segment?'':','+packet.source_end}`;
       if(typeof video.requestVideoFrameCallback!=='function')throw Error('Native preview needs video-frame callbacks; use --mode rendered.');
       frameCallback=video.requestVideoFrameCallback(onFrame);
     }
   }
-  audio=new AudioContext();
+  shared=packet.cut_segment?window.parent.moviestarCutShared:null;
+  if(packet.cut_segment&&!shared)throw Error('Native cut audio context is unavailable');
+  audio=shared?.audio??new AudioContext();
   if(!audio.audioWorklet||typeof audio.getOutputTimestamp!=='function')throw Error('Native preview needs the browser audio output clock; use --mode rendered.');
-  await audio.audioWorklet.addModule('preview_native_meter.mjs');
-  if(disposed){await audio.close();return;}
+  if(!shared)await audio.audioWorklet.addModule('preview_native_meter.mjs');
+  if(disposed){if(!shared)await audio.close();return;}
   source=audio.createMediaElementSource(video);meter=new AudioWorkletNode(audio,'cue-meter');
-  source.connect(meter);meter.connect(audio.destination);
+  source.connect(meter);meter.connect(shared?shared.destinations[Number(new URLSearchParams(location.search).get('segment'))]:audio.destination);
   meter.port.onmessage=event=>{
     if(!playing)return;
     const stamp=audio.getOutputTimestamp();
     metrics.beeps.push({context_time:event.data.context_time,
-      display_time:stamp.performanceTime+(event.data.context_time-stamp.contextTime)*1000,
+      display_time:stamp.performanceTime+(shared?window.parent.performance.timeOrigin-performance.timeOrigin:0)+(event.data.context_time-stamp.contextTime)*1000,
       timestamp_available:stamp.performanceTime>0&&stamp.contextTime>0,rms:event.data.rms});
   };
+  if(metadataReady&&Math.abs(video.currentTime-packet.source_start)>1e-6)video.currentTime=packet.source_start;
   await Promise.all(images);imageReady=true;checkReady();
 }
 async function seekTo(at){
@@ -152,7 +185,7 @@ async function seekTo(at){
   for(const cancel of pendingSeeks)cancel();
   const local=Math.max(0,Math.min((packet.samples.length-1)/packet.fps,Math.round(at*packet.fps)/packet.fps));
   const target=packet.source_start+local;
-  if(Math.abs(video.currentTime-target)<1e-6){apply(local);return true;}
+  if(Math.abs(video.currentTime-target)<1e-6){clearFrozenFrame();apply(local);return true;}
   return await new Promise((resolve,reject)=>{
     let settled=false,timer;
     const finish=(applied,error)=>{
@@ -164,26 +197,29 @@ async function seekTo(at){
     const done=()=>{
       clearTimeout(timer);video.removeEventListener('seeked',done);
       if(disposed){finish(false);return;}
-      apply(local);
+      clearFrozenFrame();apply(local);
       requestAnimationFrame(()=>requestAnimationFrame(()=>finish(true)));
     };
     pendingSeeks.add(cancel);
     timer=setTimeout(()=>finish(false,Error('Native seek timed out')),5000);
-    video.addEventListener('seeked',done,{once:true});video.currentTime=target;
+    // Land just after the output-grid instant: container PTS rounded to
+    // microseconds can otherwise select the previous frame at an exact cut.
+    video.addEventListener('seeked',done,{once:true});video.currentTime=target+1e-5;
   });
 }
 window.moviestarLiveStage={ready,metrics,
   get packet(){return packet;},
-  get time(){return video?Math.max(0,video.currentTime-packet.source_start):0;},
-  get paused(){return video?.paused??true;},
-  get audioState(){return audio?.state;},
+  get time(){if(cuts)return cuts.time;return video?Math.max(0,video.currentTime-packet.source_start):0;},
+  get paused(){return cuts?cuts.paused:video?.paused??true;},
+  get audioState(){return cuts?cuts.audioState:audio?.state;},
   get error(){return metrics.error;},
   async play(){
+    if(cuts)return cuts.play();
     this.pause();
     const attempt=playGeneration;
     const active=()=>!disposed&&attempt===playGeneration;
     try{
-      if(metrics.finished||this.time>=(packet.samples.length-1)/packet.fps-1e-6)await seekTo(0);
+      if(!packet.cut_segment&&(metrics.finished||this.time>=(packet.samples.length-1)/packet.fps-1e-6))await seekTo(0);
       if(!active())return;
       metrics.frames=[];metrics.flashes=[];metrics.beeps=[];metrics.stalls=0;metrics.finished=false;metrics.previous_white=false;delete metrics.first_presented_at;
       metrics.play_at=Date.now();
@@ -198,13 +234,14 @@ window.moviestarLiveStage={ready,metrics,
         await new Promise(resolve=>setTimeout(resolve,10));
       }
       if(!active())return;
-      metrics.device_ready_at=Date.now();playing=true;
+      metrics.device_ready_at=Date.now();if(packet.cut_segment&&packet.samples.length===1)freezeLastFrame();playing=true;
       await video.play();
     }catch(error){if(active()){fail(error);throw error;}}
   },
-  pause(){++playGeneration;playing=false;clearTimeout(stopTimer);stopTimer=null;video?.pause();},
-  async seek(at){this.pause();try{if(await seekTo(at))metrics.finished=false;}catch(error){fail(error);throw error;}},
+  pause(){if(cuts){cuts.pause();return;}++playGeneration;playing=false;clearTimeout(stopTimer);stopTimer=null;video?.pause();},
+  async seek(at){if(cuts)return cuts.seek(at);this.pause();try{if(await seekTo(at))metrics.finished=false;}catch(error){fail(error);throw error;}},
   snapshot(){
+    if(cuts)return cuts.snapshot();
     return {request_id:packet.request_id,state_id:packet.state_id,time:this.time,source:sourceFrame(),
       boxes:window.moviestarScene.entries.map(({node,element})=>{
         const r=element.getBoundingClientRect();let opacity=1;
@@ -213,10 +250,11 @@ window.moviestarLiveStage={ready,metrics,
       })};
   },
   dispose(){
-    if(disposed)return;this.pause();disposed=true;for(const cancel of pendingSeeks)cancel();controller.abort();
+    if(disposed)return;this.pause();disposed=true;cuts?.dispose();for(const cancel of pendingSeeks)cancel();controller.abort();
     if(frameCallback)video?.cancelVideoFrameCallback(frameCallback);
     if(video){video.removeAttribute('src');video.load();}clearTimeout(stopTimer);
-    if(audio&&audio.state!=='closed')audio.close().catch(()=>{});
+    clearFrozenFrame();source?.disconnect();meter?.disconnect();meter?.port.close();
+    if(audio&&!shared&&audio.state!=='closed')audio.close().catch(()=>{});
     rejectReady(Error('Superseded'));
   }
 };

@@ -49,13 +49,17 @@ occupied port is an error, never a silent switch to another URL.
 
 ## Native profile and explicit fallback
 
-Native mode supports a frame-aligned window of at most ten seconds wholly within
-one spatial timeline span. The project can contain other spatial or preset
+Native mode supports a frame-aligned window of at most ten seconds covering
+up to **three spatial scene spans joined by hard cuts**. Each cut must land on
+the output frame grid. The project can contain other spatial or preset
 scenes before and after it; `--from`/`--to` stay on the full composition's result
 clock. For example, `--from 1801 --to 1806` reviews that section without preparing
 the preceding thirty minutes. Restart the viewer to select another range.
 
-The selected span must have one visible MP4 carrying its own audio.
+Each selected span must have one visible MP4 carrying its own resolved audio.
+A cut switches picture and that clip’s audio together. A → B → A can return to
+the same recording at a different source position, with a different layout,
+caption state or component arrangement in each scene.
 The source clock must be unit speed, matching the indexed output rate
 (24–60 fps). Reusable components, text, shapes, images, manual/frozen captions and
 canonical sampled translation/scale/opacity are supported. Media wrappers must
@@ -66,12 +70,14 @@ audio-capable slot, or selected by `composition_audio_from`. These routes are
 accepted when the canonical resolved audio follows the visible video's source
 and clock. A scene's `audio_from: null` allows inference; it does not mute audio.
 
-Ranges crossing scene cuts or pacing boundaries, overlapping any transition,
-or requiring multiple video clocks are rejected. Transitions elsewhere in the
-project do not block an otherwise supported window. The chosen source must have
+Windows containing more than three spans, crossing pacing boundaries inside
+one scene, overlapping any transition, or needing multiple visible video clocks
+at once are rejected. Transitions elsewhere in the
+project do not block an otherwise supported window. The chosen sources must have
 no source edit operations, and placed caption tracks must use manual/frozen
 cues. Edits on unrelated sources and unplaced live caption tracks do not block
-this window. Project-wide audio mixing/gain/fades remain unsupported, as do
+this window. Independent continuous audio across camera cuts, project-wide audio
+mixing/gain/fades remain unsupported, as do
 held/speed-changed media in the selected span. Ordinary unit-speed spans after
 a hold elsewhere in the scene can be reviewed with their original scene clock.
 Other codecs, VFR, HDR/color parity and general large-project behavior have not
@@ -91,6 +97,9 @@ requests a fresh native version. Browser decode/capability failures also remain
 visible with rendered-mode guidance. Native mode offers Play, Pause, Restart
 and a position slider. Audio starts only after Play; Pause/Restart/replacement
 cancel audio startup as well as active playback.
+Play waits for an in-progress seek before starting the selected scene. Pause
+cancels queued playback while retaining the seek destination; a newer seek or
+disposal prevents an older destination from becoming active.
 
 The native range end is approximate, with a 50 ms reference budget, and is not
 sample-accurate export trimming. It pauses at the last expected source frame;
@@ -98,6 +107,26 @@ export still owns final frame/audio encoding. The player uses the same canonical
 scene DOM as inspection/export. Its native video pixels and color handling are
 separately subject to fidelity testing, rather than assumed identical to an
 encoded export.
+
+### Cuts and playback resources
+
+The viewer prepares every selected scene’s actual first video frame, images,
+fonts and canonical DOM before the version becomes current. At most three scene
+players/decoders are prepared per version, independent of the full project’s
+length. One shared audio context switches source gains at the cut; audio is
+measured after that switch. The output is stereo, using the browser's speaker
+downmix so center-channel dialogue in a surround source is preserved.
+A disposable snapshot of the outgoing last valid
+video frame covers the brief decoder/audio handoff, so a decoded frame beyond
+the edit is not displayed. This is an in-memory boundary frame, not an encoded
+or reusable rendered clip.
+
+Cut and audio/display timing use a 50 ms reference tolerance. The program clock
+is also checked across the complete sequence, not reset for each source. These
+are preview tolerances; export owns delivery-quality sample/frame encoding.
+The shared clock starts only on Play, and Pause, seek, revision replacement and
+disposal cancel pending handoffs and scheduled gain changes. A source failure
+stops the sequence and displays the existing rendered-mode guidance.
 
 ### Bounded source-byte reuse
 
@@ -198,7 +227,11 @@ there is no telemetry upload.
 Native mode also exposes `window.movieStarPreview.mode`, `.displayed`,
 `.events`, `.is_current` and `.stage`. Events identify the request/version and
 visible readiness time; the stage exposes relative time, paused state, errors
-and local playback metrics. Its optional `?audit=1` records source barcode/flash
+and local playback metrics. A multi-scene packet lists `segments` with their
+result ranges and individual source clocks; there is no single source clock for
+the sequence. `stage.snapshot()` identifies the active segment and its canonical
+node paths. Cut metrics include handoff times and `end_result_time`; per-source
+review retains its existing source-time end measurement. Its optional `?audit=1` records source barcode/flash
 samples for the synthetic benchmark. Normal viewing avoids per-frame source
 canvas readback. The audio worklet passes through the sound sent to the output;
 clock estimates still require a physical flash/beep check for acceptance.
@@ -220,6 +253,11 @@ The runner's `--profile long-source` additionally checks beginning/middle/end
 windows in 121-scene hour-long projects against a 90-minute synthetic recording;
 its source is intentionally low bitrate and does not represent gigabyte camera
 files. See its report for the exact source size, scene counts and measurement scope.
+The additional `cut_benchmark.py` runner checks A → B → A source switching,
+canonical layouts/captions around both boundaries, every expected source frame,
+audio cues after the final switch, and a continuous synthetic pilot for gaps.
+Its long-source profile uses 123-scene hour-long projects. Private recordings
+can be supplied explicitly; those reports/screenshots remain private.
 Final delivery-quality export remains a separate `moviestar export` operation.
 
 ## Bundled viewer typeface

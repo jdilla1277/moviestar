@@ -64,7 +64,7 @@ class ResourceSampler:
                 'scope': 'runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures'}
 
 
-def run_project_case(root, folder, start, end, chrome, case_fields):
+def run_project_case(root, folder, start, end, chrome, case_fields, *, sample_times=(0,2,4)):
     # Establish the same CLI-normalized state before the timed edit series.
     model = folder/'initial.json'; model.write_text(json.dumps(json.loads((root/'moviestar'/'spec.json').read_text())['spatial']))
     subprocess.run([sys.executable, '-m', 'moviestar.cli', 'composition', 'model', 'apply', str(model)], cwd=root, check=True, capture_output=True)
@@ -78,18 +78,22 @@ def run_project_case(root, folder, start, end, chrome, case_fields):
     packet, _ = compile_snapshot(snapshot)
     compile_ms = (time.perf_counter() - before) * 1000
     case = {'range': {'from': start, 'to': end}, 'scene_id': 'review',
-            'source_start': packet['source_start'], 'source_end': packet['source_end'],
+            'source_start': packet.get('source_start'), 'source_end': packet.get('source_end'),
             'barcode_period_frames': 240, 'fps': timeline.output_fps,
             'source_position': case_fields.get('source_position', 'reference'), 'project_duration_s': timeline.duration_s,
             'scene_count': len(snapshot['spec']['composition']),
             'diagnostics': {'read_snapshot_ms': snapshot_ms, 'resolve_project_ms': resolve_ms,
                 'compile_snapshot_including_resolution_ms': compile_ms,
                 'packet_bytes': len(json.dumps(packet).encode())}}
+    if packet.get('segments'):
+        case['segments']=[{'offset':segment['offset'],'source_start':segment['packet']['source_start'],
+            'source_end':segment['packet']['source_end'],'scene_id':segment['packet']['initial']['scene_id']}
+            for segment in packet['segments']]
     case.update(case_fields)
     (folder / 'case.json').write_text(json.dumps(case))
     durations = {item['id']: item['duration']['seconds'] for item in snapshot['project']['sources']}
     canonical = []
-    for at in [0, 2, 4]:
+    for at in sample_times:
         frame = compile_spatial_frame(snapshot['spec'], timeline, start + at, source_durations=durations)
         layout = measure_spatial_layout(frame, timeline.canvas)
         if layout['diagnostics']:

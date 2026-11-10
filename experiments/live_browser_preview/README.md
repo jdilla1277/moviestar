@@ -52,8 +52,8 @@ from the project directory), or use a coding agent. Undo uses the existing CLI.
 
 The probe fails explicitly outside this subset:
 
-- One selected spatial span, with exactly one visible video and its embedded
-  source audio on the same unit-speed clock. The project can have other spatial
+- Up to three spatial scene spans joined by frame-aligned hard cuts, each with
+  exactly one visible video and its embedded source audio on the same unit-speed clock. The project can have other spatial
   or preset scenes, and pacing/transition behavior outside the review window.
 - A frame-aligned window of at most ten seconds, at 24–60 fps, matching the indexed source rate (the installed profile excludes
   low rates whose early last-frame stop would exceed the reference timing budget).
@@ -62,11 +62,12 @@ The probe fails explicitly outside this subset:
   static canonical CSS layout, and canonical motion/opacity samples.
 - Relative/absolute media wrappers without padding, border widths or children.
 
-Source edit operations on the chosen video, ranges crossing cuts/pacing boundaries
+Source edit operations on the chosen video, ranges crossing in-scene pacing boundaries
 or overlapping transitions, multiple video clocks, live caption derivation on placed tracks, external
 soundtracks, gain/fades/mixing, holds and speed changes are not implemented here.
-Other codecs, VFR, HDR/color-management parity, representative gigabyte camera sources, network
-sources and cloud/phone delivery remain unverified. Unsupported browser codecs
+Other codecs, VFR, HDR/color-management parity, network
+sources and cloud/phone delivery remain unverified. Private camera evaluation
+does not establish acceptance for arbitrary recordings. Unsupported browser codecs
 fail visibly. Backend descriptors are bounded by the requested duration/frame
 rate, not a general-purpose incremental scene compiler.
 
@@ -162,6 +163,127 @@ existing raster/export fidelity matrix.
 The original experiment results are recorded below. A successful small
 fixture establishes a direction, not general product acceptance or a
 three-second guarantee for arbitrary projects.
+
+## Native hard-cut sequences
+
+```sh
+python experiments/live_browser_preview/cuts.py --out /tmp/native-cut-project
+moviestar preview --workspace /tmp/native-cut-project --mode native --from 0 --to 9
+python experiments/live_browser_preview/cut_benchmark.py --out /tmp/native-cut-results
+python experiments/live_browser_preview/cut_benchmark.py --profile long-source --out /tmp/native-long-cut-results
+```
+
+The first fixture is a nine-second A → B → A sequence, three seconds per scene,
+with frozen captions, reusable components and scene layouts. The second source
+starts at source time zero; A returns at a different offset. The generated left
+audio channel contains clocked flash/beep cues and the right channel a continuous
+pilot. Both are original generated test data. No stitched preview MP4 is made.
+
+The player prepares up to three scene players, shares one output audio context,
+and switches gains only once the incoming media pipeline is running. Each
+outgoing last valid frame covers the handoff; native video/audio continue to use
+the source, with a 50 ms timing budget rather than export-grade sample trimming.
+Single-span playback and explicit rendered-mode fallback remain available.
+
+The cut benchmark retains twenty actual CLI edits, undo/restoration, canonical
+geometry/glyph/opacity checks, source frame IDs and trusted Play. It additionally
+samples immediately before/at/after each cut, checks every expected frame, cues
+measured after the final audio gain switch, cut timing and total program-clock
+drift within 50 ms. The continuous-pilot fixture rejects a silent gap longer than
+one actual output audio quantum. The long-source profile uses 123-scene hour-long
+projects, beginning/middle/end positions in the 90-minute synthetic A source and
+a short B source; it retains the existing cue/phase checks but has no continuous
+pilot across its mono A segments. It does not claim a pilot-gap pass.
+
+Private-media example (keep the entire output directory private):
+
+```sh
+python experiments/live_browser_preview/cut_benchmark.py \
+  --source /private/camera-a.mp4 --source /private/camera-b.mp4 \
+  --offsets 120 300 600 --srt /private/captions.srt \
+  --out /private/new-cut-results
+```
+
+Supplied recordings are referenced in place and must fit the native profile.
+Each selected three-second excerpt must contain the intended picture/audio;
+a quiet listening track is unsuitable for a human speech/lip-sync check.
+Captions are clipped on each source clock and placed on the selected scene’s
+result clock. SRT input must already match each selected recording's clock and
+speaker. Clipping a cue's time range preserves its whole text; it does not align
+words, shorten a sentence to the excerpt, or separate speakers from a combined
+transcript. For physical caption review, prepare accurate short cues for the
+selected speech. Canonical caption parity checks verify the authored cues, not
+their transcription accuracy. Real speech is not a synthetic cue or pilot: these cases check
+running output, source seeks, canonical visuals, frame counts and timing while
+physical per-cut listening/viewing remains required. Hashes record selected
+native-source pixels; a before/after pixel-parity claim needs an explicit matching
+baseline. The private-media runner creates a 123-scene hour-long project and
+keeps the same three-second edit gate. All failures remain in its report.
+
+Crossfades, in-scene pacing changes, simultaneous visible videos, independent
+continuous soundtracks, mixing/gain/fades and holds/speed changes remain outside
+this initial hard-cut profile. Do not silently fall back to a render or relax
+budgets to accept a sequence.
+
+### Installed hard-cut results — November 10, 2026
+
+A fresh installed wheel passed all 160 synthetic cut edits below, plus 40
+single-span regression edits. Each case has twenty real CLI edits and retains
+the 3,000 ms gate for **every** sample. The measured product module bytes match
+[measurement commit `b7f956e`](https://github.com/jdilla1277/moviestar/commit/b7f956e76c92f7b5680162b7a75375627782ccae);
+hashes, individual latencies, cold readiness, diagnostics and checks
+are retained in [`cut-results.json`](cut-results.json).
+
+| Case | Landscape p95 / maximum | Portrait p95 / maximum |
+| --- | ---: | ---: |
+| Nine-second A → B → A reference | 692 / 721 ms | 710 / 722 ms |
+| Hour project, beginning of 90-minute A | 1,874 / 1,915 ms | 1,794 / 1,905 ms |
+| Hour project, middle of 90-minute A | 1,869 / 1,888 ms | 1,867 / 1,892 ms |
+| Hour project, end of 90-minute A | 1,885 / 2,104 ms | 1,871 / 1,904 ms |
+| Existing five-second single-span reference | 619 / 624 ms | 642 / 644 ms |
+
+Every cut case showed all 270 expected source frames, including the three
+prepared initial frames, without an out-of-range outgoing frame. Nine output
+audio cues matched nine flashes; maximum browser-estimated phase error was
+33.11 ms. Cut timing, complete program-clock drift and end time stayed within
+50 ms. No stalls, dropped frames or uncaught browser exceptions were recorded.
+The stereo reference had no silent pilot gap; the long-source fixture has no
+continuous pilot and makes no gap claim. Geometry/opacity matched canonical
+inspection; maximum glyph-bound error was 0.0005 px.
+
+Fresh-profile navigation to cut readiness was 427–948 ms after server startup;
+Play-to-first-motion was 303–442 ms. Peak sampled combined process-family RSS
+was 1,485.6 MiB for the long-source cases, including the runner, CLI/server,
+workers, driver and owned browser. This is separate from the 64 MiB source buffer.
+No additional source bodies were written between edits 1 and 20 in these cases.
+
+Host: Apple M4 / 24 GiB, macOS 15.6; Python 3.12.12, Node 22.17.1,
+Chrome for Testing 156.0.8078.73, FFmpeg 9.0.1. Runs were sequential, with no
+competing benchmark or regression suite launched by this agent; the host remains
+shared. This is one local series per case, not cross-platform acceptance or a
+full-project playback/export claim.
+
+Development failures are retained locally: fractional-frame seeks selected a
+previous frame, decoded outgoing tails leaked past cuts, source-EOF handoffs
+left audio gaps (including future gain padding caught by full preflight), and an
+uncaught initial-Play timer referenced an undefined index. Regression tests now cover those failures, and the benchmark rejects
+uncaught exceptions. A center-channel dialogue case also caught an incorrect
+surround-to-stereo mix; the shared output now uses the browser's speaker downmix.
+Incoming gain switches as soon as its media pipeline runs, without extra future
+padding that could outlive the outgoing file. Five additional EOF browser runs
+passed without relaxing the one-audio-quantum silence gate.
+Earlier runs before these corrections are not acceptance for the final build.
+Fixture integral offsets are normalized for JSON round trips; the general
+state-ID numeric normalization issue remains separate in
+[#157](https://github.com/jdilla1277/moviestar/issues/157).
+
+A subsequent review found that Play during a pending cross-cut seek could start
+the old scene. Play now waits for the seek destination; Pause/disposal cancel
+queued playback, and newer seeks fence older results. Six deterministic control
+cases and the real-browser cut/EOF/surround matrix cover this race, including
+actual playback at the requested destination after audio activation. The full
+timing matrix above was not rerun for this control fix: its module hashes and
+measurements identify `b7f956e`, rather than the later player revision.
 
 ## Source-buffer comparison — November 10, 2026
 

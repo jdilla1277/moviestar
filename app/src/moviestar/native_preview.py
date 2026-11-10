@@ -19,7 +19,7 @@ def walk(nodes):
 
 PROFILE = {"name": "native", "transport": "native-browser", "max_window_s": 10,
            "clip_end_tolerance_ms": 50, "clip_end": "approximate",
-           "min_fps": 24, "max_fps": 60, "fallback_mode": "rendered"}
+           "min_fps": 24, "max_fps": 60, "max_segments": 3, "fallback_mode": "rendered"}
 
 
 class NativePreviewUnsupported(ValueError):
@@ -49,9 +49,28 @@ def compile_snapshot(snapshot):
     if any(abs(value*fps-round(value*fps)) > 1e-6 for value in [start, end]):
         fail('native review requires frame-aligned review boundaries')
     spans = timeline.spans_overlapping(start, end)
-    if len(spans) != 1:
-        fail('the review window must stay within one spatial span without cuts or pacing boundaries')
-    span = spans[0]
+    if not 1 <= len(spans) <= PROFILE['max_segments']:
+        fail('native review supports at most three spatial spans')
+    if len({span.scene_index for span in spans}) != len(spans):
+        fail('pacing boundaries inside a scene are not implemented')
+    packets, assets = [], {}
+    for span in spans:
+        left, right = max(start, span.start_s), min(end, span.end_s)
+        if any(abs(value*fps-round(value*fps)) > 1e-6 for value in (left, right)):
+            fail('native cuts require frame-aligned scene boundaries')
+        child, registered = _compile_span(snapshot, timeline, left, right, span)
+        packets.append({'offset': left-start, 'packet': child})
+        assets.update(registered)
+    if len(packets) == 1:
+        return packets[0]['packet'], assets
+    return {'state_id': snapshot['state_id'], 'canvas': packets[0]['packet']['canvas'],
+            'fps': fps, 'range': snapshot['range'], 'segments': packets,
+            'media': [media for segment in packets for media in segment['packet']['media']]}, assets
+
+
+def _compile_span(snapshot, timeline, start, end, span):
+    spec, project, root = snapshot['spec'], snapshot['project'], Path(snapshot['root'])
+    fps = timeline.output_fps
     scene = spec['composition'][span.scene_index]
     if span.scene_id not in (spec.get('spatial') or {}).get('scenes', {}):
         fail('the selected span must have a spatial scene layout')
@@ -156,7 +175,7 @@ def compile_snapshot(snapshot):
                      'children': dynamic(node['children'])} for node in nodes]
         samples.append({'nodes': dynamic(prepared['nodes'])})
     return {'state_id': snapshot['state_id'], 'canvas': initial['canvas'], 'fps': fps,
-            'range': snapshot['range'], 'source_start': source_start, 'source_end': source_start+end-start,
+            'range': {'from': start, 'to': end}, 'source_start': source_start, 'source_end': source_start+end-start,
             'video_path': video_path, 'initial': initial, 'media': media, 'samples': samples}, assets
 
 

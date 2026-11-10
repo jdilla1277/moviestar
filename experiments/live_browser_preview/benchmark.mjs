@@ -7,7 +7,7 @@ import {Browser,sleep} from './browser.mjs';
 const [url,root,out,python,chrome]=process.argv.slice(2);
 if(!chrome)throw Error('usage: benchmark.mjs URL PROJECT OUT PYTHON CHROME');
 await mkdir(out,{recursive:true});
-const result={cold:{},edits:[],checks:[],problems:[]};
+const result={cold:{},edits:[],checks:[],problems:[],browser_exceptions:[]};
 const check=(condition,message)=>{result.checks.push({check:message,passed:Boolean(condition)});if(!condition)result.problems.push(message);};
 const persist=()=>writeFile(join(out,'browser-report.json'),JSON.stringify(result,null,2));
 async function cli(args){
@@ -22,12 +22,15 @@ await persist();
 const browser=await Browser.launch(chrome,out);
 try{
   const fixture=JSON.parse(await readFile(join(out,'case.json'),'utf8'));
-  const real=fixture.media_kind==='real';
+  const real=fixture.media_kind==='real',segmented=Boolean(fixture.segments);
+  const segmentAt=at=>segmented?fixture.segments.findLast(segment=>segment.offset<=at+1e-8):{offset:0,source_start:fixture.source_start};
+  const expectedSource=at=>{const segment=segmentAt(at);return segment.source_start+at-segment.offset;};
   const barcode=at=>Math.round(at*fixture.fps)%fixture.barcode_period_frames;
   const requests=new Map();
   await browser.send('Network.enable');
   browser.socket.addEventListener('message',event=>{
     const value=JSON.parse(event.data),p=value.params;
+    if(value.method==='Runtime.exceptionThrown')result.browser_exceptions.push(p.exceptionDetails);
     if(value.method==='Network.requestWillBeSent'&&p.request.url.includes('/assets/')){
       requests.set(p.requestId,{range:p.request.headers.Range??p.request.headers.range,encoded_bytes:0});
     }else if(value.method==='Network.responseReceived'&&requests.has(p.requestId)){
@@ -51,6 +54,7 @@ try{
     const actual=await browser.evaluate(`(async()=>{await window.moviestarLive.stage.seek(${expected.at});return window.moviestarLive.stage.snapshot();})()`);
     const seekMs=Date.now()-seekAt;
     const wanted=new Map(expected.boxes.map(box=>[JSON.stringify(box.path),box]));
+    if(segmented)check(actual.boxes.length===expected.boxes.length,`all canonical nodes at ${expected.at}s`);
     let geometry=0,glyph=0,opacity=0;
     for(const box of actual.boxes){
       const base=wanted.get(JSON.stringify(box.path));
@@ -64,11 +68,11 @@ try{
     }
     let sourcePixels;
     if(real){
-      sourcePixels=await browser.evaluate(`(async()=>{const v=document.querySelector('iframe').contentDocument.querySelector('video'),c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;const context=c.getContext('2d');context.drawImage(v,0,0);const hash=await crypto.subtle.digest('SHA-256',context.getImageData(0,0,c.width,c.height).data);return{time:v.currentTime,sha256:[...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,'0')).join('')};})()`);
-      check(Math.abs(sourcePixels.time-fixture.source_start-expected.at)<=1e-3,`real source clock at ${expected.at}s`);
+      sourcePixels=await browser.evaluate(`(async()=>{const root=document.querySelector('iframe').contentDocument,child=[...root.querySelectorAll('iframe')].find(f=>f.style.opacity==='1'),doc=child?child.contentDocument:root,v=doc.querySelector('video'),c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;const context=c.getContext('2d');context.drawImage(v,0,0);const hash=await crypto.subtle.digest('SHA-256',context.getImageData(0,0,c.width,c.height).data);return{time:v.currentTime,sha256:[...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,'0')).join('')};})()`);
+      check(Math.abs(sourcePixels.time-expectedSource(expected.at))<=1e-3,`real source clock at ${expected.at}s`);
       if(fixture.reference_hashes)check(sourcePixels.sha256===fixture.reference_hashes[String(expected.at)],`decoded source pixels match baseline at ${expected.at}s`);
     }else{
-      const source=barcode(fixture.source_start+expected.at);
+      const source=barcode(expectedSource(expected.at));
       check(actual.source.number===source,`source barcode ${source} at ${expected.at}s`);
     }
     check(geometry<=.2&&glyph<=1&&opacity<=.001,`canonical geometry/motion/opacity/glyph bounds at ${expected.at}s`);
@@ -80,10 +84,12 @@ try{
   const initial=await browser.evaluate('window.moviestarLive.current');
   for(let i=0;i<20;i++){
     const model=structuredClone(original),title='CLI edit '+(i+1);
-    const children=model.scenes.review.layout.children;
-    children.find(node=>node.id==='title').content.text=title;
-    children.find(node=>node.id==='title').style.color=i%2?'#ffb81c':'#ffffff';
-    children.find(node=>node.instance_id==='speaker').layout.left=50+(i%2?0:20);
+    for(const scene of segmented?fixture.segments.map(segment=>segment.scene_id):['review']){
+      const children=model.scenes[scene].layout.children;
+      children.find(node=>node.id==='title').content.text=title;
+      children.find(node=>node.id==='title').style.color=i%2?'#ffb81c':'#ffffff';
+      children.find(node=>node.instance_id==='speaker').layout.left=50+(i%2?0:20);
+    }
     const before=await browser.evaluate('window.moviestarLive.current.request_id');
     const started=Date.now(),file=join(out,'edit.json');await writeFile(file,JSON.stringify(model));
     const operation=cli(['composition','model','apply',file]);operation.catch(()=>{});
@@ -117,7 +123,8 @@ try{
   check(result.playback.click_to_first_video_ms>=0&&result.playback.click_to_first_video_ms<3000,'trusted Play starts visible motion within 3000ms');
   result.playback.phase_ms=metrics.flashes.map((flash,i)=>metrics.beeps[i]?metrics.beeps[i].display_time-flash.display_time:null);
   if(!real){
-    check(metrics.flashes.length===5&&metrics.beeps.length===5,'five native audio and visible flash cues');
+    const cues=segmented?Math.round(fixture.range.to-fixture.range.from):5;
+    check(metrics.flashes.length===cues&&metrics.beeps.length===cues,`${cues} native audio and visible flash cues`);
     check(metrics.beeps.every(beep=>beep.timestamp_available)&&result.playback.phase_ms.every(value=>value!==null&&Math.abs(value)<=50),'browser-estimated audio/display phase within 50ms');
   }else{
     result.playback.audio_state=await browser.evaluate('window.moviestarLive.stage.audioState');
@@ -127,12 +134,35 @@ try{
     delete result.playback.phase_ms;
   }
   check(metrics.stalls===0&&metrics.quality.droppedVideoFrames===0,'no playback stalls or dropped frames');
-  check(Math.abs(metrics.end_time-fixture.source_end)<=.05,'reference window stops within 50ms');
-  if(!real)check(metrics.initial_barcode===barcode(fixture.source_start)&&metrics.frames.every(frame=>frame.number===barcode(frame.media_time)&&frame.media_time>=fixture.source_start-1e-6&&frame.media_time<fixture.source_end),'source frames and source offset agree throughout playback');
-  else check(metrics.frames.every(frame=>frame.media_time>=fixture.source_start-1e-6&&frame.media_time<fixture.source_end),'real source frames stay within the requested window');
-  const shown=real?new Set([Math.round(fixture.source_start*fixture.fps),...metrics.frames.map(frame=>Math.round(frame.media_time*fixture.fps))]):new Set([metrics.initial_barcode,...metrics.frames.map(frame=>frame.number)]);
-  const expectedFrames=Math.round((fixture.source_end-fixture.source_start)*fixture.fps);
-  check(shown.size===expectedFrames,`all ${expectedFrames} expected reference source frames displayed`);
+  if(segmented){
+    check(metrics.cuts.length===fixture.segments.length-1,'every native scene cut is performed');
+    check(metrics.cuts.every(cut=>Math.abs(cut.switched_at-cut.expected_at)<=50),'cut handoffs stay within 50ms');
+    check(Math.abs(metrics.end_result_time-fixture.range.to)<=.05,'result window stops within 50ms');
+    const first=metrics.frames[0],epoch=first.display_epoch-(first.result_time-fixture.range.from)*1000;
+    result.playback.elapsed_from_first_source_ms=metrics.finished_at-epoch;
+    check(Math.abs(result.playback.elapsed_from_first_source_ms-(fixture.range.to-fixture.range.from)*1000)<=50,'program clock stays within 50ms across cuts');
+    for(const [i,segment] of fixture.segments.entries()){
+      const frames=metrics.frames.filter(frame=>frame.segment===i),initial=metrics.segments_shown.find(frame=>frame.segment===i);
+      check(frames.every(frame=>frame.media_time>=segment.source_start-1e-6&&frame.media_time<segment.source_end-1e-6),'segment '+i+' never shows frames beyond its cut');
+      if(!real)check(initial.source.number===barcode(segment.source_start)&&frames.every(frame=>frame.number===barcode(frame.media_time)),'segment '+i+' source frame IDs agree');
+      const shown=new Set([Math.round(initial.media_time*fixture.fps),...frames.map(frame=>Math.round(frame.media_time*fixture.fps))]);
+      check(shown.size===Math.round((segment.source_end-segment.source_start)*fixture.fps),'all expected frames in segment '+i);
+    }
+    if(fixture.continuous_pilot){
+      const blocks=metrics.audio_blocks,first=blocks.findIndex(block=>block.rms>.01),last=blocks.findLastIndex(block=>block.rms>.01);
+      let gap=0,maxGap=0;for(let i=Math.max(0,first);i<=last;i++){gap=blocks[i].rms<.001?gap+blocks[i].duration:0;maxGap=Math.max(maxGap,gap);}
+      result.playback.max_silent_gap_ms=maxGap*1000;
+      check(last>first&&maxGap<=Math.max(...blocks.map(block=>block.duration))+1e-6,'continuous output pilot has no gap longer than one audio quantum');
+    }
+  }else{
+    check(Math.abs(metrics.end_time-fixture.source_end)<=.05,'reference window stops within 50ms');
+    if(!real)check(metrics.initial_barcode===barcode(fixture.source_start)&&metrics.frames.every(frame=>frame.number===barcode(frame.media_time)&&frame.media_time>=fixture.source_start-1e-6&&frame.media_time<fixture.source_end),'source frames and source offset agree throughout playback');
+    else check(metrics.frames.every(frame=>frame.media_time>=fixture.source_start-1e-6&&frame.media_time<fixture.source_end),'real source frames stay within the requested window');
+    const shown=real?new Set([Math.round(fixture.source_start*fixture.fps),...metrics.frames.map(frame=>Math.round(frame.media_time*fixture.fps))]):new Set([metrics.initial_barcode,...metrics.frames.map(frame=>frame.number)]);
+    const expectedFrames=Math.round((fixture.source_end-fixture.source_start)*fixture.fps);
+    check(shown.size===expectedFrames,`all ${expectedFrames} expected reference source frames displayed`);
+  }
+  check(result.browser_exceptions.length===0,'no uncaught browser exceptions');
   // Server-side completed body writes include transfers that CDP omits when
   // streams are canceled or fulfilled by a service worker.
   result.delivery=await(await fetch(url+'state')).json().then(s=>s.native_video_delivery);

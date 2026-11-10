@@ -14,7 +14,7 @@ from moviestar.spec import save_spec
 from moviestar.timecodes import format_timecode
 
 
-def srt_cues(path, start, end):
+def srt_cues(path, start, end, result_start=1801):
     if path is None:
         return None
     def seconds(text):
@@ -30,8 +30,8 @@ def srt_cues(path, start, end):
         if left >= right:
             continue
         cues.append({'id': 'cue_' + str(len(cues)), 'kind': 'caption', 'track': 'captions',
-            'from': format_timecode(1801 + left - start)['text'],
-            'to': format_timecode(1801 + right - start)['text'], 'text': '\n'.join(lines[2:]),
+            'from': format_timecode(result_start + left - start)['text'],
+            'to': format_timecode(result_start + right - start)['text'], 'text': '\n'.join(lines[2:]),
             'position': {'preset': 'bottom'}, 'style': {'preset': 'plain'}})
     return cues
 
