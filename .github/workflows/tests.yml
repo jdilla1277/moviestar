@@ -52,6 +52,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [fast, full]
 
     steps:
       - uses: actions/checkout@v6
@@ -107,6 +111,7 @@ jobs:
       # Fast path: everything except slow (whisper) tests. Gives quick
       # signal on most failures even if the slow path breaks.
       - name: Run fast tests
+        if: matrix.suite == 'fast'
         run: |
           cd app
           source .venv/bin/activate
@@ -115,12 +120,14 @@ jobs:
       # Full path: includes slow whisper tests. --run-slow is the
       # conftest.py opt-in.
       - name: Run full suite (with --run-slow)
+        if: matrix.suite == 'full'
         run: |
           cd app
           source .venv/bin/activate
           pytest --run-slow
 
       - name: Build and check package artifacts
+        if: matrix.suite == 'full'
         run: |
           source app/.venv/bin/activate
           python -m pip install build twine

@@ -3081,7 +3081,11 @@ def _append_audio_from_inputs(
             raise ValueError(
                 f"render_layout: invalid audio_from_input slice ({af_from}, {af_to})"
             )
-        cmd += ["-ss", str(af_from), "-i", af_path]
+        # Seeking to zero can discard the AAC priming packet and its first
+        # playable samples. Only seek when there is actually time to skip.
+        if af_from:
+            cmd += ["-ss", str(af_from)]
+        cmd += ["-i", af_path]
         labels.append(f"af{j}")
     return labels
 
@@ -3114,7 +3118,8 @@ def _audio_from_filter_parts(
                 factors.append(remaining)
             retime = "," + ",".join(f"atempo={factor}" for factor in factors)
         parts.append(
-            f"[{start_index + j}:a]atrim=start=0:end={duration},"
+            f"[{start_index + j}:a]aresample={AUDIO_MIX_SAMPLE_RATE}:async=1:first_pts=0,"
+            f"apad,atrim=start=0:end={duration},"
             f"asetpts=PTS-STARTPTS{retime}[{label}]"
         )
         labels.append(f"[{label}]")
@@ -3296,6 +3301,54 @@ def build_render_layout_frames_command(
     return cmd
 
 
+def _timed_video_assembly_parts(
+    durations: list[float], transitions: dict[int, dict], output_label: str,
+) -> list[str]:
+    """Place rendered scene groups on authored time before the final CFR pass.
+
+    Encoded clips end on a frame grid; their rounded durations must never
+    become the next scene's start. Blend contiguous dissolve groups locally,
+    then temporally interleave those groups at their authored offsets. Dips
+    already have their half-fades on the input lanes and remain hard cuts.
+    """
+    starts = [math.fsum(durations[:i]) for i in range(len(durations))]
+    parts: list[str] = []
+    groups: list[tuple[str, float]] = []
+    current = "v0"
+    group_start = 0.0
+    for i in range(1, len(durations)):
+        transition = transitions.get(i)
+        if transition is not None and transition["type"] == "dissolve":
+            duration = float(transition["duration"])
+            offset = starts[i] - group_start - duration / 2
+            next_label = f"vx{i}"
+            parts.append(
+                f"[{current}][v{i}]xfade=transition=fade:"
+                f"duration={_audio_number(duration)}:"
+                f"offset={_audio_number(offset)}[{next_label}]"
+            )
+            current = next_label
+        else:
+            groups.append((current, group_start))
+            current, group_start = f"v{i}", starts[i]
+    groups.append((current, group_start))
+    if len(groups) == 1:
+        parts.append(f"[{current}]null[{output_label}]")
+        return parts
+    labels = []
+    for i, (label, start) in enumerate(groups):
+        out = f"vtimed{i}"
+        parts.append(
+            f"[{label}]setpts=PTS-STARTPTS+{_audio_number(start)}/TB[{out}]"
+        )
+        labels.append(f"[{out}]")
+    parts.append(
+        f"{''.join(labels)}interleave=nb_inputs={len(groups)}:"
+        f"duration=longest[{output_label}]"
+    )
+    return parts
+
+
 def build_render_segments_command(
     segments: list[tuple[str, float, float]],
     output_path: str,
@@ -3325,6 +3378,8 @@ def build_render_segments_command(
     each preceded by its own ``-ss <src_from>``** so ffmpeg fast-seeks
     each input to its segment start instead of demuxing from t=0. On
     large source files this avoids decoding each file from its beginning.
+    With an explicit output cadence, zero-time inputs omit the redundant
+    seek so AAC's priming packet remains available to the decoder.
 
     The trade-off versus the input-dedup shape (one ``-i`` per
     unique source, multiple ``trim`` filters from t=0) is that we open
@@ -3348,9 +3403,10 @@ def build_render_segments_command(
     each segment is filled onto that CFR grid before timestamps are rebased,
     preserving frameless VFR spans, then clone-padded to its authored duration.
 
-    ``output_fps`` enforces one cadence after concat. Supplying it also disables
-    the single-segment stream-copy shortcut because CFR normalization requires
-    a video filter.
+    ``output_fps`` places clips at their authored timeline offsets and enforces
+    one final cadence. Audio is assembled independently on the sample clock,
+    so individual clips' frame rounding cannot accumulate or move audio joins.
+    Supplying it disables the single-segment stream-copy shortcut.
 
     ``video_segment_durations`` and ``video_transitions`` render scene-owned
     visual transition handles without changing the authored result or audio
@@ -3591,7 +3647,9 @@ def build_render_segments_command(
         "-progress", "pipe:2", "-nostats",
     ]
     for path, src_from, _src_to in segments:
-        cmd += ["-ss", str(src_from), "-i", path]
+        if src_from or output_fps is None:
+            cmd += ["-ss", str(src_from)]
+        cmd += ["-i", path]
     # Extra -i per audio_from slice — same fast-seek shape, just feeds
     # the audio side of the filter graph instead of the video side.
     if audio_from_input is not None:
@@ -3635,7 +3693,7 @@ def build_render_segments_command(
                 f"[{i}:v]trim=start=0:end={video_duration},"
                 f"setpts=PTS-STARTPTS"
             )
-        if video_transitions is not None:
+        if video_transitions is not None or output_fps is not None:
             video_chain += ",settb=AVTB"
         if target_resolution is not None:
             w, h = target_resolution
@@ -3680,10 +3738,11 @@ def build_render_segments_command(
         if audio_from_input is None and use_audio:
             fade_duration = audio_join_fade if audio_join_fade is not None else None
             if segment_has_audio[i]:
-                audio_chain = (
-                    f"[{i}:a]atrim=start=0:end={duration},"
-                    f"asetpts=PTS-STARTPTS"
+                clock = (
+                    f"aresample={AUDIO_MIX_SAMPLE_RATE}:async=1:first_pts=0,apad,"
+                    if output_fps is not None else ""
                 )
+                audio_chain = f"[{i}:a]{clock}atrim=start=0:end={duration},asetpts=PTS-STARTPTS"
             else:
                 audio_chain = f"anullsrc=r=48000:cl=stereo:d={duration},asetpts=PTS-STARTPTS"
             if fade_duration is not None:
@@ -3731,7 +3790,17 @@ def build_render_segments_command(
     concat_outputs = (
         f"[{video_output_label}][outa]" if a_count else f"[{video_output_label}]"
     )
-    if video_transitions is not None:
+    if output_fps is not None:
+        filter_parts.extend(_timed_video_assembly_parts(
+            [end - start for _path, start, end in segments],
+            transitions_by_index, video_output_label,
+        ))
+        if a_count:
+            filter_parts.append(
+                f"{''.join(f'[a{i}]' for i in range(n))}"
+                f"concat=n={n}:v=0:a=1[outa]"
+            )
+    elif video_transitions is not None:
         current_video_label = "v0"
         authored_elapsed = segments[0][2] - segments[0][1]
         for i in range(1, n):
@@ -3795,8 +3864,20 @@ def build_render_segments_command(
         video_output_label = overlay_out
     if output_fps is not None:
         fps_out = "vfps" if (preview or review) else "outv"
+        # trim=end=seconds rounds in the CFR timebase and can discard the
+        # final partial frame. Interleave EOF can be the last frame's PTS,
+        # rather than its end; combined with clip rounding it needs up to two
+        # cloned tail frames. Bound that fill, then keep exactly the frames
+        # starting inside the movie. Tolerate only floating-point frame noise.
+        frame_count = math.ceil(
+            math.fsum(end - start for _path, start, end in segments)
+            * output_fps - 1e-6
+        )
         filter_parts.append(
-            f"[{video_output_label}]fps={output_fps}[{fps_out}]"
+            f"[{video_output_label}]fps={output_fps},"
+            f"tpad=stop_mode=clone:stop=2,"
+            f"trim=end_frame={frame_count}"
+            f"[{fps_out}]"
         )
         video_output_label = fps_out
     if review:
