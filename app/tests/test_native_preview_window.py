@@ -61,13 +61,13 @@ def test_native_window_preserves_selected_scene_source_caption_and_motion_clocks
 
 
 @pytest.mark.parametrize('window', [(.5, 1.5), (5.5, 6.5), (0, 8)])
-def test_native_window_rejects_crossing_a_scene_cut_even_with_identical_design(live_project, window):
+def test_native_window_rejects_crossing_scenes_whose_visible_source_disagrees_with_audio(live_project, window):
     spec, _, root = live_project
     surround_scene(spec)
     for name in ['before', 'after']:
         spec['spatial']['scenes'][name] = deepcopy(spec['spatial']['scenes']['scene'])
     save_spec(spec, cwd=root)
-    with pytest.raises(ValueError, match='one.*span'):
+    with pytest.raises(ValueError, match='audio'):
         compile_snapshot(read_snapshot(root, *window))
 
 

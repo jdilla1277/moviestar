@@ -410,17 +410,29 @@ class _Handler(BaseHTTPRequestHandler):
             self._reply(200, page.encode(), "text/html; charset=utf-8")
         elif self.server.mode == "native" and route in {
                 "preview_native.mjs", "preview_native_stage.mjs", "preview_native_meter.mjs", "spatial_dom.mjs",
-                "preview_native_worker.mjs", "preview_native_buffer.mjs"}:
+                "preview_native_worker.mjs", "preview_native_buffer.mjs", "preview_native_cuts.mjs",
+                "preview_native_cut_meter.mjs"}:
             self._reply(200, files("moviestar").joinpath(route).read_bytes(), "text/javascript")
         elif self.server.mode == "native" and route == "stage":
             self._reply(200, b'<!doctype html><html><head><meta charset="utf-8"></head><body><script type="module" src="preview_native_stage.mjs"></script></body></html>', "text/html; charset=utf-8")
         elif self.server.mode == "native" and route == "packet":
-            key = parse_qs(parsed.query).get("request", [""])[0]
+            query = parse_qs(parsed.query, keep_blank_values=True)
+            key = query.get("request", [""])[0]
             request = self.server.queue.get(key)
             try:
                 if not request or not request.get("media"):
                     raise FileNotFoundError()
-                self._reply(200, Path(request["media"]).read_bytes())
+                body = Path(request["media"]).read_bytes()
+                if "segment" in query:
+                    indices = query["segment"]
+                    packet = json.loads(body)
+                    if (len(indices) != 1 or not re.fullmatch("[0-2]", indices[0])
+                            or int(indices[0]) >= len(packet.get("segments", []))):
+                        raise FileNotFoundError()
+                    child = packet["segments"][int(indices[0])]["packet"]
+                    body = json.dumps({**child, "request_id": packet["request_id"],
+                        "requested_at": packet["requested_at"], "cut_segment": True}).encode()
+                self._reply(200, body)
             except FileNotFoundError:
                 self._reply(404)
         elif self.server.mode == "native" and re.fullmatch(r"assets/[a-f0-9]{24}", route):
