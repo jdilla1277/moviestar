@@ -1,0 +1,2272 @@
+{
+  "scope": "Source-delivery comparison, not a clean causal latency comparison. Baseline uses the current server/accounting/optimized watcher with the pre-buffer #151 stage (preload auto, direct media); other run uses the byte buffer. Synthetic media only. Shared Mac host; no budget changes. Camera findings stay private.",
+  "baseline_stage_commit": "56d00922c47448d650222a4a4ddcfa94f5d868f1",
+  "versions": {
+    "python": "3.12.12",
+    "platform": "macOS-15.6-arm64-arm-64bit",
+    "chrome": "Google Chrome for Testing 156.0.8078.73",
+    "node": "v24.5.0",
+    "ffmpeg": "ffmpeg version 9.0.1 Copyright (c) 2000-2026 the FFmpeg developers"
+  },
+  "source": {
+    "duration_s": 5400,
+    "bytes": 20958144,
+    "kind": "synthetic repeated 640x360/30 H264, continuous AAC cues"
+  },
+  "cases": [
+    {
+      "canvas": "landscape-beginning",
+      "fixture": {
+        "range": {
+          "from": 1801,
+          "to": 1806
+        },
+        "source_start": 1.0,
+        "source_end": 6.0,
+        "fps": 30.0,
+        "scene_count": 121,
+        "project_duration_s": 3600.0
+      },
+      "cold": 1121,
+      "summary": {
+        "warm_samples": 20,
+        "warm_p95_ms": 3115,
+        "warm_max_ms": 3642,
+        "budget_ms": 3000
+      },
+      "edits": [
+        {
+          "edit": 1,
+          "cli_and_visible_ms": 1363,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 2
+        },
+        {
+          "edit": 2,
+          "cli_and_visible_ms": 1445,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 3
+        },
+        {
+          "edit": 3,
+          "cli_and_visible_ms": 1574,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 4
+        },
+        {
+          "edit": 4,
+          "cli_and_visible_ms": 1783,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 5
+        },
+        {
+          "edit": 5,
+          "cli_and_visible_ms": 1801,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 6
+        },
+        {
+          "edit": 6,
+          "cli_and_visible_ms": 1803,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 7
+        },
+        {
+          "edit": 7,
+          "cli_and_visible_ms": 1978,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 8
+        },
+        {
+          "edit": 8,
+          "cli_and_visible_ms": 2044,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 9
+        },
+        {
+          "edit": 9,
+          "cli_and_visible_ms": 2124,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 10
+        },
+        {
+          "edit": 10,
+          "cli_and_visible_ms": 2330,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 11
+        },
+        {
+          "edit": 11,
+          "cli_and_visible_ms": 2231,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 12
+        },
+        {
+          "edit": 12,
+          "cli_and_visible_ms": 2375,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 13
+        },
+        {
+          "edit": 13,
+          "cli_and_visible_ms": 2571,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 14
+        },
+        {
+          "edit": 14,
+          "cli_and_visible_ms": 2572,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 15
+        },
+        {
+          "edit": 15,
+          "cli_and_visible_ms": 2779,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 16
+        },
+        {
+          "edit": 16,
+          "cli_and_visible_ms": 3086,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 17
+        },
+        {
+          "edit": 17,
+          "cli_and_visible_ms": 2730,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 18
+        },
+        {
+          "edit": 18,
+          "cli_and_visible_ms": 2786,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 19
+        },
+        {
+          "edit": 19,
+          "cli_and_visible_ms": 3115,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 20
+        },
+        {
+          "edit": 20,
+          "cli_and_visible_ms": 3642,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 21
+        }
+      ],
+      "delivery": {
+        "requests": 39,
+        "active_requests": 0,
+        "bytes_written": 10223616,
+        "validated_heads": 24
+      },
+      "buffer": {
+        "cached_bytes": 10223616,
+        "entries": 39,
+        "inflight": 0,
+        "queued": 0,
+        "max_bytes": 67108864
+      },
+      "checks": [
+        {
+          "check": "memory source buffering controls this preview",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 0s: review/title",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 0s: review/subtitles/words",
+          "passed": true
+        },
+        {
+          "check": "source barcode 30 at 0s",
+          "passed": true
+        },
+        {
+          "check": "canonical geometry/motion/opacity/glyph bounds at 0s",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 2s: review/title",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 2s: review/subtitles/words",
+          "passed": true
+        },
+        {
+          "check": "source barcode 90 at 2s",
+          "passed": true
+        },
+        {
+          "check": "canonical geometry/motion/opacity/glyph bounds at 2s",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 4s: review/title",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 4s: review/subtitles/words",
+          "passed": true
+        },
+        {
+          "check": "source barcode 150 at 4s",
+          "passed": true
+        },
+        {
+          "check": "canonical geometry/motion/opacity/glyph bounds at 4s",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 1 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 2 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 3 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 4 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 5 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 6 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 7 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 8 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 9 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 10 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 11 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 12 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 13 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 14 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 15 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 16 visible and command complete within 3000ms",
+          "passed": false
+        },
+        {
+          "check": "CLI edit 17 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 18 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 19 visible and command complete within 3000ms",
+          "passed": false
+        },
+        {
+          "check": "CLI edit 20 visible and command complete within 3000ms",
+          "passed": false
+        },
+        {
+          "check": "restored original state is a fresh request",
+          "passed": true
+        },
+        {
+          "check": "trusted Play starts visible motion within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "five native audio and visible flash cues",
+          "passed": true
+        },
+        {
+          "check": "browser-estimated audio/display phase within 50ms",
+          "passed": true
+        },
+        {
+          "check": "no playback stalls or dropped frames",
+          "passed": true
+        },
+        {
+          "check": "reference window stops within 50ms",
+          "passed": true
+        },
+        {
+          "check": "source frames and source offset agree throughout playback",
+          "passed": true
+        },
+        {
+          "check": "all 150 expected reference source frames displayed",
+          "passed": true
+        },
+        {
+          "check": "source byte buffer stays within its memory/entry budget",
+          "passed": true
+        },
+        {
+          "check": "source responses permit the memory-only buffer",
+          "passed": true
+        }
+      ],
+      "problems": [
+        "CLI edit 16 visible and command complete within 3000ms",
+        "CLI edit 19 visible and command complete within 3000ms",
+        "CLI edit 20 visible and command complete within 3000ms"
+      ]
+    },
+    {
+      "canvas": "landscape-middle",
+      "fixture": {
+        "range": {
+          "from": 1801,
+          "to": 1806
+        },
+        "source_start": 2705.0,
+        "source_end": 2710.0,
+        "fps": 30.0,
+        "scene_count": 121,
+        "project_duration_s": 3600.0
+      },
+      "cold": 1192,
+      "summary": {
+        "warm_samples": 20,
+        "warm_p95_ms": 3279,
+        "warm_max_ms": 3327,
+        "budget_ms": 3000
+      },
+      "edits": [
+        {
+          "edit": 1,
+          "cli_and_visible_ms": 1304,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 4
+        },
+        {
+          "edit": 2,
+          "cli_and_visible_ms": 1253,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 6
+        },
+        {
+          "edit": 3,
+          "cli_and_visible_ms": 1028,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 8
+        },
+        {
+          "edit": 4,
+          "cli_and_visible_ms": 1386,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 10
+        },
+        {
+          "edit": 5,
+          "cli_and_visible_ms": 1588,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 12
+        },
+        {
+          "edit": 6,
+          "cli_and_visible_ms": 1766,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 14
+        },
+        {
+          "edit": 7,
+          "cli_and_visible_ms": 2136,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 16
+        },
+        {
+          "edit": 8,
+          "cli_and_visible_ms": 1770,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 18
+        },
+        {
+          "edit": 9,
+          "cli_and_visible_ms": 1805,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 20
+        },
+        {
+          "edit": 10,
+          "cli_and_visible_ms": 2924,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 22
+        },
+        {
+          "edit": 11,
+          "cli_and_visible_ms": 2124,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 24
+        },
+        {
+          "edit": 12,
+          "cli_and_visible_ms": 2367,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 26
+        },
+        {
+          "edit": 13,
+          "cli_and_visible_ms": 2509,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 28
+        },
+        {
+          "edit": 14,
+          "cli_and_visible_ms": 2598,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 30
+        },
+        {
+          "edit": 15,
+          "cli_and_visible_ms": 2876,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 32
+        },
+        {
+          "edit": 16,
+          "cli_and_visible_ms": 3077,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 34
+        },
+        {
+          "edit": 17,
+          "cli_and_visible_ms": 2995,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 36
+        },
+        {
+          "edit": 18,
+          "cli_and_visible_ms": 3012,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 38
+        },
+        {
+          "edit": 19,
+          "cli_and_visible_ms": 3327,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 40
+        },
+        {
+          "edit": 20,
+          "cli_and_visible_ms": 3279,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 42
+        }
+      ],
+      "delivery": {
+        "requests": 42,
+        "active_requests": 0,
+        "bytes_written": 11010048,
+        "validated_heads": 47
+      },
+      "buffer": {
+        "cached_bytes": 11010048,
+        "entries": 42,
+        "inflight": 0,
+        "queued": 0,
+        "max_bytes": 67108864
+      },
+      "checks": [
+        {
+          "check": "memory source buffering controls this preview",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 0s: review/title",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 0s: review/subtitles/words",
+          "passed": true
+        },
+        {
+          "check": "source barcode 30 at 0s",
+          "passed": true
+        },
+        {
+          "check": "canonical geometry/motion/opacity/glyph bounds at 0s",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 2s: review/title",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 2s: review/subtitles/words",
+          "passed": true
+        },
+        {
+          "check": "source barcode 90 at 2s",
+          "passed": true
+        },
+        {
+          "check": "canonical geometry/motion/opacity/glyph bounds at 2s",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 4s: review/title",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 4s: review/subtitles/words",
+          "passed": true
+        },
+        {
+          "check": "source barcode 150 at 4s",
+          "passed": true
+        },
+        {
+          "check": "canonical geometry/motion/opacity/glyph bounds at 4s",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 1 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 2 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 3 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 4 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 5 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 6 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 7 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 8 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 9 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 10 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 11 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 12 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 13 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 14 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 15 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 16 visible and command complete within 3000ms",
+          "passed": false
+        },
+        {
+          "check": "CLI edit 17 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 18 visible and command complete within 3000ms",
+          "passed": false
+        },
+        {
+          "check": "CLI edit 19 visible and command complete within 3000ms",
+          "passed": false
+        },
+        {
+          "check": "CLI edit 20 visible and command complete within 3000ms",
+          "passed": false
+        },
+        {
+          "check": "restored original state is a fresh request",
+          "passed": true
+        },
+        {
+          "check": "trusted Play starts visible motion within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "five native audio and visible flash cues",
+          "passed": true
+        },
+        {
+          "check": "browser-estimated audio/display phase within 50ms",
+          "passed": true
+        },
+        {
+          "check": "no playback stalls or dropped frames",
+          "passed": true
+        },
+        {
+          "check": "reference window stops within 50ms",
+          "passed": true
+        },
+        {
+          "check": "source frames and source offset agree throughout playback",
+          "passed": true
+        },
+        {
+          "check": "all 150 expected reference source frames displayed",
+          "passed": true
+        },
+        {
+          "check": "source byte buffer stays within its memory/entry budget",
+          "passed": true
+        },
+        {
+          "check": "source responses permit the memory-only buffer",
+          "passed": true
+        }
+      ],
+      "problems": [
+        "CLI edit 16 visible and command complete within 3000ms",
+        "CLI edit 18 visible and command complete within 3000ms",
+        "CLI edit 19 visible and command complete within 3000ms",
+        "CLI edit 20 visible and command complete within 3000ms"
+      ],
+      "direct_stage_baseline": {
+        "delivery": {
+          "requests": 51,
+          "active_requests": 0,
+          "bytes_written": 412371904,
+          "validated_heads": 0
+        },
+        "summary": {
+          "warm_samples": 20,
+          "warm_p95_ms": 1900,
+          "warm_max_ms": 1905,
+          "budget_ms": 3000
+        },
+        "problems": [],
+        "edits": [
+          {
+            "edit": 1,
+            "source_bytes_written": 36700160
+          },
+          {
+            "edit": 2,
+            "source_bytes_written": 53215232
+          },
+          {
+            "edit": 3,
+            "source_bytes_written": 69337088
+          },
+          {
+            "edit": 4,
+            "source_bytes_written": 88997888
+          },
+          {
+            "edit": 5,
+            "source_bytes_written": 105906176
+          },
+          {
+            "edit": 6,
+            "source_bytes_written": 122814464
+          },
+          {
+            "edit": 7,
+            "source_bytes_written": 141164544
+          },
+          {
+            "edit": 8,
+            "source_bytes_written": 159776768
+          },
+          {
+            "edit": 9,
+            "source_bytes_written": 177405952
+          },
+          {
+            "edit": 10,
+            "source_bytes_written": 194904064
+          },
+          {
+            "edit": 11,
+            "source_bytes_written": 213254144
+          },
+          {
+            "edit": 12,
+            "source_bytes_written": 232803264
+          },
+          {
+            "edit": 13,
+            "source_bytes_written": 252136384
+          },
+          {
+            "edit": 14,
+            "source_bytes_written": 269110208
+          },
+          {
+            "edit": 15,
+            "source_bytes_written": 286542784
+          },
+          {
+            "edit": 16,
+            "source_bytes_written": 306269120
+          },
+          {
+            "edit": 17,
+            "source_bytes_written": 324488128
+          },
+          {
+            "edit": 18,
+            "source_bytes_written": 341593024
+          },
+          {
+            "edit": 19,
+            "source_bytes_written": 358632384
+          },
+          {
+            "edit": 20,
+            "source_bytes_written": 378358720
+          }
+        ]
+      }
+    },
+    {
+      "canvas": "landscape-end",
+      "fixture": {
+        "range": {
+          "from": 1801,
+          "to": 1806
+        },
+        "source_start": 5385.0,
+        "source_end": 5390.0,
+        "fps": 30.0,
+        "scene_count": 121,
+        "project_duration_s": 3600.0
+      },
+      "cold": 1137,
+      "summary": {
+        "warm_samples": 20,
+        "warm_p95_ms": 2793,
+        "warm_max_ms": 2939,
+        "budget_ms": 3000
+      },
+      "edits": [
+        {
+          "edit": 1,
+          "cli_and_visible_ms": 1458,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 4
+        },
+        {
+          "edit": 2,
+          "cli_and_visible_ms": 1582,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 6
+        },
+        {
+          "edit": 3,
+          "cli_and_visible_ms": 1613,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 8
+        },
+        {
+          "edit": 4,
+          "cli_and_visible_ms": 1743,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 10
+        },
+        {
+          "edit": 5,
+          "cli_and_visible_ms": 1794,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 12
+        },
+        {
+          "edit": 6,
+          "cli_and_visible_ms": 1994,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 14
+        },
+        {
+          "edit": 7,
+          "cli_and_visible_ms": 2024,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 16
+        },
+        {
+          "edit": 8,
+          "cli_and_visible_ms": 2099,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 18
+        },
+        {
+          "edit": 9,
+          "cli_and_visible_ms": 2223,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 20
+        },
+        {
+          "edit": 10,
+          "cli_and_visible_ms": 2331,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 22
+        },
+        {
+          "edit": 11,
+          "cli_and_visible_ms": 2245,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 24
+        },
+        {
+          "edit": 12,
+          "cli_and_visible_ms": 2596,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 26
+        },
+        {
+          "edit": 13,
+          "cli_and_visible_ms": 2581,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 28
+        },
+        {
+          "edit": 14,
+          "cli_and_visible_ms": 2939,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 30
+        },
+        {
+          "edit": 15,
+          "cli_and_visible_ms": 2793,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 32
+        },
+        {
+          "edit": 16,
+          "cli_and_visible_ms": 2567,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 34
+        },
+        {
+          "edit": 17,
+          "cli_and_visible_ms": 2330,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 36
+        },
+        {
+          "edit": 18,
+          "cli_and_visible_ms": 2399,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 38
+        },
+        {
+          "edit": 19,
+          "cli_and_visible_ms": 2558,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 40
+        },
+        {
+          "edit": 20,
+          "cli_and_visible_ms": 2645,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 42
+        }
+      ],
+      "delivery": {
+        "requests": 26,
+        "active_requests": 0,
+        "bytes_written": 6802368,
+        "validated_heads": 46
+      },
+      "buffer": {
+        "cached_bytes": 6802368,
+        "entries": 26,
+        "inflight": 0,
+        "queued": 0,
+        "max_bytes": 67108864
+      },
+      "checks": [
+        {
+          "check": "memory source buffering controls this preview",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 0s: review/title",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 0s: review/subtitles/words",
+          "passed": true
+        },
+        {
+          "check": "source barcode 30 at 0s",
+          "passed": true
+        },
+        {
+          "check": "canonical geometry/motion/opacity/glyph bounds at 0s",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 2s: review/title",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 2s: review/subtitles/words",
+          "passed": true
+        },
+        {
+          "check": "source barcode 90 at 2s",
+          "passed": true
+        },
+        {
+          "check": "canonical geometry/motion/opacity/glyph bounds at 2s",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 4s: review/title",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 4s: review/subtitles/words",
+          "passed": true
+        },
+        {
+          "check": "source barcode 150 at 4s",
+          "passed": true
+        },
+        {
+          "check": "canonical geometry/motion/opacity/glyph bounds at 4s",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 1 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 2 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 3 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 4 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 5 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 6 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 7 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 8 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 9 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 10 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 11 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 12 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 13 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 14 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 15 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 16 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 17 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 18 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 19 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 20 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "restored original state is a fresh request",
+          "passed": true
+        },
+        {
+          "check": "trusted Play starts visible motion within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "five native audio and visible flash cues",
+          "passed": true
+        },
+        {
+          "check": "browser-estimated audio/display phase within 50ms",
+          "passed": true
+        },
+        {
+          "check": "no playback stalls or dropped frames",
+          "passed": true
+        },
+        {
+          "check": "reference window stops within 50ms",
+          "passed": true
+        },
+        {
+          "check": "source frames and source offset agree throughout playback",
+          "passed": true
+        },
+        {
+          "check": "all 150 expected reference source frames displayed",
+          "passed": true
+        },
+        {
+          "check": "source byte buffer stays within its memory/entry budget",
+          "passed": true
+        },
+        {
+          "check": "source responses permit the memory-only buffer",
+          "passed": true
+        }
+      ],
+      "problems": []
+    },
+    {
+      "canvas": "portrait-beginning",
+      "fixture": {
+        "range": {
+          "from": 1801,
+          "to": 1806
+        },
+        "source_start": 1.0,
+        "source_end": 6.0,
+        "fps": 30.0,
+        "scene_count": 121,
+        "project_duration_s": 3600.0
+      },
+      "cold": 1042,
+      "summary": {
+        "warm_samples": 20,
+        "warm_p95_ms": 2543,
+        "warm_max_ms": 2664,
+        "budget_ms": 3000
+      },
+      "edits": [
+        {
+          "edit": 1,
+          "cli_and_visible_ms": 1131,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 2
+        },
+        {
+          "edit": 2,
+          "cli_and_visible_ms": 1153,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 3
+        },
+        {
+          "edit": 3,
+          "cli_and_visible_ms": 1317,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 4
+        },
+        {
+          "edit": 4,
+          "cli_and_visible_ms": 1351,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 5
+        },
+        {
+          "edit": 5,
+          "cli_and_visible_ms": 1260,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 6
+        },
+        {
+          "edit": 6,
+          "cli_and_visible_ms": 2003,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 7
+        },
+        {
+          "edit": 7,
+          "cli_and_visible_ms": 2068,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 8
+        },
+        {
+          "edit": 8,
+          "cli_and_visible_ms": 2012,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 9
+        },
+        {
+          "edit": 9,
+          "cli_and_visible_ms": 1883,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 10
+        },
+        {
+          "edit": 10,
+          "cli_and_visible_ms": 1788,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 11
+        },
+        {
+          "edit": 11,
+          "cli_and_visible_ms": 1904,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 12
+        },
+        {
+          "edit": 12,
+          "cli_and_visible_ms": 1805,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 13
+        },
+        {
+          "edit": 13,
+          "cli_and_visible_ms": 1906,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 14
+        },
+        {
+          "edit": 14,
+          "cli_and_visible_ms": 2090,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 15
+        },
+        {
+          "edit": 15,
+          "cli_and_visible_ms": 2124,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 16
+        },
+        {
+          "edit": 16,
+          "cli_and_visible_ms": 2351,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 17
+        },
+        {
+          "edit": 17,
+          "cli_and_visible_ms": 2276,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 18
+        },
+        {
+          "edit": 18,
+          "cli_and_visible_ms": 2390,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 19
+        },
+        {
+          "edit": 19,
+          "cli_and_visible_ms": 2543,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 20
+        },
+        {
+          "edit": 20,
+          "cli_and_visible_ms": 2664,
+          "source_bytes_written": 6553600,
+          "source_validated_heads": 21
+        }
+      ],
+      "delivery": {
+        "requests": 39,
+        "active_requests": 0,
+        "bytes_written": 10223616,
+        "validated_heads": 24
+      },
+      "buffer": {
+        "cached_bytes": 10223616,
+        "entries": 39,
+        "inflight": 0,
+        "queued": 0,
+        "max_bytes": 67108864
+      },
+      "checks": [
+        {
+          "check": "memory source buffering controls this preview",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 0s: review/title",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 0s: review/subtitles/words",
+          "passed": true
+        },
+        {
+          "check": "source barcode 30 at 0s",
+          "passed": true
+        },
+        {
+          "check": "canonical geometry/motion/opacity/glyph bounds at 0s",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 2s: review/title",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 2s: review/subtitles/words",
+          "passed": true
+        },
+        {
+          "check": "source barcode 90 at 2s",
+          "passed": true
+        },
+        {
+          "check": "canonical geometry/motion/opacity/glyph bounds at 2s",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 4s: review/title",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 4s: review/subtitles/words",
+          "passed": true
+        },
+        {
+          "check": "source barcode 150 at 4s",
+          "passed": true
+        },
+        {
+          "check": "canonical geometry/motion/opacity/glyph bounds at 4s",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 1 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 2 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 3 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 4 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 5 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 6 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 7 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 8 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 9 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 10 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 11 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 12 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 13 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 14 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 15 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 16 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 17 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 18 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 19 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 20 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "restored original state is a fresh request",
+          "passed": true
+        },
+        {
+          "check": "trusted Play starts visible motion within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "five native audio and visible flash cues",
+          "passed": true
+        },
+        {
+          "check": "browser-estimated audio/display phase within 50ms",
+          "passed": true
+        },
+        {
+          "check": "no playback stalls or dropped frames",
+          "passed": true
+        },
+        {
+          "check": "reference window stops within 50ms",
+          "passed": true
+        },
+        {
+          "check": "source frames and source offset agree throughout playback",
+          "passed": true
+        },
+        {
+          "check": "all 150 expected reference source frames displayed",
+          "passed": true
+        },
+        {
+          "check": "source byte buffer stays within its memory/entry budget",
+          "passed": true
+        },
+        {
+          "check": "source responses permit the memory-only buffer",
+          "passed": true
+        }
+      ],
+      "problems": []
+    },
+    {
+      "canvas": "portrait-middle",
+      "fixture": {
+        "range": {
+          "from": 1801,
+          "to": 1806
+        },
+        "source_start": 2705.0,
+        "source_end": 2710.0,
+        "fps": 30.0,
+        "scene_count": 121,
+        "project_duration_s": 3600.0
+      },
+      "cold": 1070,
+      "summary": {
+        "warm_samples": 20,
+        "warm_p95_ms": 1799,
+        "warm_max_ms": 1973,
+        "budget_ms": 3000
+      },
+      "edits": [
+        {
+          "edit": 1,
+          "cli_and_visible_ms": 1144,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 4
+        },
+        {
+          "edit": 2,
+          "cli_and_visible_ms": 1337,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 7
+        },
+        {
+          "edit": 3,
+          "cli_and_visible_ms": 1226,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 9
+        },
+        {
+          "edit": 4,
+          "cli_and_visible_ms": 959,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 11
+        },
+        {
+          "edit": 5,
+          "cli_and_visible_ms": 1019,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 13
+        },
+        {
+          "edit": 6,
+          "cli_and_visible_ms": 1168,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 15
+        },
+        {
+          "edit": 7,
+          "cli_and_visible_ms": 1170,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 17
+        },
+        {
+          "edit": 8,
+          "cli_and_visible_ms": 1365,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 20
+        },
+        {
+          "edit": 9,
+          "cli_and_visible_ms": 1345,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 22
+        },
+        {
+          "edit": 10,
+          "cli_and_visible_ms": 1367,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 24
+        },
+        {
+          "edit": 11,
+          "cli_and_visible_ms": 1379,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 26
+        },
+        {
+          "edit": 12,
+          "cli_and_visible_ms": 1345,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 28
+        },
+        {
+          "edit": 13,
+          "cli_and_visible_ms": 1390,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 31
+        },
+        {
+          "edit": 14,
+          "cli_and_visible_ms": 1603,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 33
+        },
+        {
+          "edit": 15,
+          "cli_and_visible_ms": 1678,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 35
+        },
+        {
+          "edit": 16,
+          "cli_and_visible_ms": 1696,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 37
+        },
+        {
+          "edit": 17,
+          "cli_and_visible_ms": 1786,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 40
+        },
+        {
+          "edit": 18,
+          "cli_and_visible_ms": 1709,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 42
+        },
+        {
+          "edit": 19,
+          "cli_and_visible_ms": 1799,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 44
+        },
+        {
+          "edit": 20,
+          "cli_and_visible_ms": 1973,
+          "source_bytes_written": 7077888,
+          "source_validated_heads": 46
+        }
+      ],
+      "delivery": {
+        "requests": 42,
+        "active_requests": 0,
+        "bytes_written": 11010048,
+        "validated_heads": 52
+      },
+      "buffer": {
+        "cached_bytes": 11010048,
+        "entries": 42,
+        "inflight": 0,
+        "queued": 0,
+        "max_bytes": 67108864
+      },
+      "checks": [
+        {
+          "check": "memory source buffering controls this preview",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 0s: review/title",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 0s: review/subtitles/words",
+          "passed": true
+        },
+        {
+          "check": "source barcode 30 at 0s",
+          "passed": true
+        },
+        {
+          "check": "canonical geometry/motion/opacity/glyph bounds at 0s",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 2s: review/title",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 2s: review/subtitles/words",
+          "passed": true
+        },
+        {
+          "check": "source barcode 90 at 2s",
+          "passed": true
+        },
+        {
+          "check": "canonical geometry/motion/opacity/glyph bounds at 2s",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 4s: review/title",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 4s: review/subtitles/words",
+          "passed": true
+        },
+        {
+          "check": "source barcode 150 at 4s",
+          "passed": true
+        },
+        {
+          "check": "canonical geometry/motion/opacity/glyph bounds at 4s",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 1 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 2 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 3 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 4 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 5 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 6 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 7 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 8 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 9 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 10 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 11 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 12 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 13 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 14 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 15 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 16 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 17 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 18 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 19 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 20 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "restored original state is a fresh request",
+          "passed": true
+        },
+        {
+          "check": "trusted Play starts visible motion within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "five native audio and visible flash cues",
+          "passed": true
+        },
+        {
+          "check": "browser-estimated audio/display phase within 50ms",
+          "passed": true
+        },
+        {
+          "check": "no playback stalls or dropped frames",
+          "passed": true
+        },
+        {
+          "check": "reference window stops within 50ms",
+          "passed": true
+        },
+        {
+          "check": "source frames and source offset agree throughout playback",
+          "passed": true
+        },
+        {
+          "check": "all 150 expected reference source frames displayed",
+          "passed": true
+        },
+        {
+          "check": "source byte buffer stays within its memory/entry budget",
+          "passed": true
+        },
+        {
+          "check": "source responses permit the memory-only buffer",
+          "passed": true
+        }
+      ],
+      "problems": [],
+      "direct_stage_baseline": {
+        "delivery": {
+          "requests": 54,
+          "active_requests": 0,
+          "bytes_written": 408158208,
+          "validated_heads": 0
+        },
+        "summary": {
+          "warm_samples": 20,
+          "warm_p95_ms": 1898,
+          "warm_max_ms": 1904,
+          "budget_ms": 3000
+        },
+        "problems": [],
+        "edits": [
+          {
+            "edit": 1,
+            "source_bytes_written": 33751040
+          },
+          {
+            "edit": 2,
+            "source_bytes_written": 51773440
+          },
+          {
+            "edit": 3,
+            "source_bytes_written": 69402624
+          },
+          {
+            "edit": 4,
+            "source_bytes_written": 88670208
+          },
+          {
+            "edit": 5,
+            "source_bytes_written": 107020288
+          },
+          {
+            "edit": 6,
+            "source_bytes_written": 124452864
+          },
+          {
+            "edit": 7,
+            "source_bytes_written": 141885440
+          },
+          {
+            "edit": 8,
+            "source_bytes_written": 158859264
+          },
+          {
+            "edit": 9,
+            "source_bytes_written": 176095232
+          },
+          {
+            "edit": 10,
+            "source_bytes_written": 194904064
+          },
+          {
+            "edit": 11,
+            "source_bytes_written": 211877888
+          },
+          {
+            "edit": 12,
+            "source_bytes_written": 229769216
+          },
+          {
+            "edit": 13,
+            "source_bytes_written": 248119296
+          },
+          {
+            "edit": 14,
+            "source_bytes_written": 265617408
+          },
+          {
+            "edit": 15,
+            "source_bytes_written": 283901952
+          },
+          {
+            "edit": 16,
+            "source_bytes_written": 301727744
+          },
+          {
+            "edit": 17,
+            "source_bytes_written": 318898176
+          },
+          {
+            "edit": 18,
+            "source_bytes_written": 336723968
+          },
+          {
+            "edit": 19,
+            "source_bytes_written": 353370112
+          },
+          {
+            "edit": 20,
+            "source_bytes_written": 371261440
+          }
+        ]
+      }
+    },
+    {
+      "canvas": "portrait-end",
+      "fixture": {
+        "range": {
+          "from": 1801,
+          "to": 1806
+        },
+        "source_start": 5385.0,
+        "source_end": 5390.0,
+        "fps": 30.0,
+        "scene_count": 121,
+        "project_duration_s": 3600.0
+      },
+      "cold": 654,
+      "summary": {
+        "warm_samples": 20,
+        "warm_p95_ms": 1873,
+        "warm_max_ms": 1922,
+        "budget_ms": 3000
+      },
+      "edits": [
+        {
+          "edit": 1,
+          "cli_and_visible_ms": 941,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 4
+        },
+        {
+          "edit": 2,
+          "cli_and_visible_ms": 944,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 6
+        },
+        {
+          "edit": 3,
+          "cli_and_visible_ms": 815,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 8
+        },
+        {
+          "edit": 4,
+          "cli_and_visible_ms": 955,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 10
+        },
+        {
+          "edit": 5,
+          "cli_and_visible_ms": 1019,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 13
+        },
+        {
+          "edit": 6,
+          "cli_and_visible_ms": 1175,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 15
+        },
+        {
+          "edit": 7,
+          "cli_and_visible_ms": 1121,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 17
+        },
+        {
+          "edit": 8,
+          "cli_and_visible_ms": 1358,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 19
+        },
+        {
+          "edit": 9,
+          "cli_and_visible_ms": 1764,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 21
+        },
+        {
+          "edit": 10,
+          "cli_and_visible_ms": 1391,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 23
+        },
+        {
+          "edit": 11,
+          "cli_and_visible_ms": 1362,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 25
+        },
+        {
+          "edit": 12,
+          "cli_and_visible_ms": 1368,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 27
+        },
+        {
+          "edit": 13,
+          "cli_and_visible_ms": 1382,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 29
+        },
+        {
+          "edit": 14,
+          "cli_and_visible_ms": 1588,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 31
+        },
+        {
+          "edit": 15,
+          "cli_and_visible_ms": 1700,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 34
+        },
+        {
+          "edit": 16,
+          "cli_and_visible_ms": 1580,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 36
+        },
+        {
+          "edit": 17,
+          "cli_and_visible_ms": 1680,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 38
+        },
+        {
+          "edit": 18,
+          "cli_and_visible_ms": 1922,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 40
+        },
+        {
+          "edit": 19,
+          "cli_and_visible_ms": 1808,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 43
+        },
+        {
+          "edit": 20,
+          "cli_and_visible_ms": 1873,
+          "source_bytes_written": 6802368,
+          "source_validated_heads": 46
+        }
+      ],
+      "delivery": {
+        "requests": 26,
+        "active_requests": 0,
+        "bytes_written": 6802368,
+        "validated_heads": 51
+      },
+      "buffer": {
+        "cached_bytes": 6802368,
+        "entries": 26,
+        "inflight": 0,
+        "queued": 0,
+        "max_bytes": 67108864
+      },
+      "checks": [
+        {
+          "check": "memory source buffering controls this preview",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 0s: review/title",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 0s: review/subtitles/words",
+          "passed": true
+        },
+        {
+          "check": "source barcode 30 at 0s",
+          "passed": true
+        },
+        {
+          "check": "canonical geometry/motion/opacity/glyph bounds at 0s",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 2s: review/title",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 2s: review/subtitles/words",
+          "passed": true
+        },
+        {
+          "check": "source barcode 90 at 2s",
+          "passed": true
+        },
+        {
+          "check": "canonical geometry/motion/opacity/glyph bounds at 2s",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 4s: review/title",
+          "passed": true
+        },
+        {
+          "check": "caption/text line count at 4s: review/subtitles/words",
+          "passed": true
+        },
+        {
+          "check": "source barcode 150 at 4s",
+          "passed": true
+        },
+        {
+          "check": "canonical geometry/motion/opacity/glyph bounds at 4s",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 1 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 2 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 3 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 4 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 5 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 6 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 7 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 8 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 9 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 10 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 11 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 12 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 13 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 14 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 15 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 16 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 17 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 18 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 19 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "CLI edit 20 visible and command complete within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "restored original state is a fresh request",
+          "passed": true
+        },
+        {
+          "check": "trusted Play starts visible motion within 3000ms",
+          "passed": true
+        },
+        {
+          "check": "five native audio and visible flash cues",
+          "passed": true
+        },
+        {
+          "check": "browser-estimated audio/display phase within 50ms",
+          "passed": true
+        },
+        {
+          "check": "no playback stalls or dropped frames",
+          "passed": true
+        },
+        {
+          "check": "reference window stops within 50ms",
+          "passed": true
+        },
+        {
+          "check": "source frames and source offset agree throughout playback",
+          "passed": true
+        },
+        {
+          "check": "all 150 expected reference source frames displayed",
+          "passed": true
+        },
+        {
+          "check": "source byte buffer stays within its memory/entry budget",
+          "passed": true
+        },
+        {
+          "check": "source responses permit the memory-only buffer",
+          "passed": true
+        }
+      ],
+      "problems": []
+    }
+  ],
+  "problems": [
+    "landscape-beginning: CLI edit 16 visible and command complete within 3000ms",
+    "landscape-beginning: CLI edit 19 visible and command complete within 3000ms",
+    "landscape-beginning: CLI edit 20 visible and command complete within 3000ms",
+    "landscape-middle: CLI edit 16 visible and command complete within 3000ms",
+    "landscape-middle: CLI edit 18 visible and command complete within 3000ms",
+    "landscape-middle: CLI edit 19 visible and command complete within 3000ms",
+    "landscape-middle: CLI edit 20 visible and command complete within 3000ms"
+  ],
+  "resources": [
+    {
+      "case": "landscape-beginning",
+      "peak_family_rss_mib": 1154.0,
+      "peak_output_mib": 31.4,
+      "sample_count": 113,
+      "target_interval_s": 0.5,
+      "errors": [],
+      "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+    },
+    {
+      "case": "landscape-middle",
+      "peak_family_rss_mib": 1170.5,
+      "peak_output_mib": 39.9,
+      "sample_count": 111,
+      "target_interval_s": 0.5,
+      "errors": [],
+      "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+    },
+    {
+      "case": "landscape-end",
+      "peak_family_rss_mib": 1195.4,
+      "peak_output_mib": 48.4,
+      "sample_count": 110,
+      "target_interval_s": 0.5,
+      "errors": [],
+      "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+    },
+    {
+      "case": "portrait-beginning",
+      "peak_family_rss_mib": 1155.5,
+      "peak_output_mib": 57.0,
+      "sample_count": 97,
+      "target_interval_s": 0.5,
+      "errors": [],
+      "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+    },
+    {
+      "case": "portrait-middle",
+      "peak_family_rss_mib": 1158.7,
+      "peak_output_mib": 65.5,
+      "sample_count": 77,
+      "target_interval_s": 0.5,
+      "errors": [],
+      "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+    },
+    {
+      "case": "portrait-end",
+      "peak_family_rss_mib": 1144.5,
+      "peak_output_mib": 74.1,
+      "sample_count": 75,
+      "target_interval_s": 0.5,
+      "errors": [],
+      "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+    }
+  ]
+}

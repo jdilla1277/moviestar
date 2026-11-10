@@ -120,6 +120,41 @@ class PreviewQueue:
                         pass
 
 
+def _input_paths(root, *documents):
+    paths = set()
+    def collect(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key == "path" and isinstance(item, str):
+                    path = root / item
+                    # Watch the declared alias too: a symlink can be retargeted
+                    # while its previous resolved target stays unchanged.
+                    paths.update((str(path.absolute()), str(path.resolve())))
+                else:
+                    collect(item)
+        elif isinstance(value, list):
+            for item in value:
+                collect(item)
+    for document in documents:
+        collect(document)
+    return sorted(paths)
+
+
+def _file_stamps(paths):
+    result = []
+    for path in paths:
+        try:
+            stat = Path(path).stat()
+            result.append((str(path), stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns))
+        except FileNotFoundError:
+            result.append((str(path), None))
+    return result
+
+
+def _input_identity(inputs):
+    return hashlib.sha256(json.dumps(inputs).encode()).hexdigest()
+
+
 def read_snapshot(root, start, end):
     """Pin parsed project state; source files stay in place and must stay unchanged."""
     from moviestar.project import load_project
@@ -131,6 +166,9 @@ def read_snapshot(root, start, end):
     project = load_project(root)
     if spec is None or not (spec.get("spatial") or {}).get("scenes"):
         raise ValueError("Local preview currently requires a saved spatial scene project.")
+    # Rendering consumes the current edit, never undo payloads. Keep history
+    # on disk; omit it from dependency scans, queue copies and worker packets.
+    spec = {**spec, "revisions": []}
     timeline = resolve_project(project, spec)
     if not 0 <= start < end <= timeline.duration_s:
         raise ValueError(f"Preview range must be within 0–{timeline.duration_s:g} seconds; restart with a new range.")
@@ -139,28 +177,8 @@ def read_snapshot(root, start, end):
     factor = min(1, 1280 / max(width, height), 720 / min(width, height))
     profile = {**PROFILE, "width": max(2, int(width * factor) // 2 * 2),
                "height": max(2, int(height * factor) // 2 * 2), "fps": timeline.output_fps}
-    paths = set()
-    def collect(value):
-        if isinstance(value, dict):
-            for key, item in value.items():
-                if key == "path" and isinstance(item, str):
-                    paths.add(str((root / item).resolve()))
-                else:
-                    collect(item)
-        elif isinstance(value, list):
-            for item in value:
-                collect(item)
-    collect(spec)
-    collect(project)
-    inputs = []
-    for path in sorted(paths):
-        try:
-            stat = Path(path).stat()
-            inputs.append((path, stat.st_size, stat.st_mtime_ns, stat.st_ino))
-        except FileNotFoundError:
-            inputs.append((path, None))
-    input_identity = hashlib.sha256(json.dumps(inputs).encode()).hexdigest()
-    return {"state_id": spatial_state_id(spec), "input_identity": input_identity,
+    inputs = _file_stamps(_input_paths(root, spec, project))
+    return {"state_id": spatial_state_id(spec), "input_identity": _input_identity(inputs),
             "root": str(root), "spec": spec,
             "project": project, "range": {"from": start, "to": end},
             "profile": profile, "logical_canvas": canvas}
@@ -192,18 +210,36 @@ class PreviewSession:
         self.active = None
         self.cancel_at = None
         self.identity = None
+        self.watched_paths = ()
+        self.watched_stamps = None
         self.log = None
         self.stopped = threading.Event()
 
     def refresh(self):
+        from moviestar.project import get_project_dir, PROJECT_FILE
         from moviestar.resolved import ResolvedProjectError
+        from moviestar.spec import SPEC_FILE
         try:
+            if self.watched_paths and _file_stamps(self.watched_paths) == self.watched_stamps:
+                return
+            self.watched_stamps = None
+            directory = get_project_dir(self.root)
+            documents = [directory / SPEC_FILE, directory / PROJECT_FILE]
+            before = _file_stamps(documents)
             snapshot = _profile_snapshot(read_snapshot(self.root, self.start, self.end), self.mode)
+            if "spec" in snapshot and "project" in snapshot:
+                paths = _input_paths(self.root, snapshot["spec"], snapshot["project"])
+                after = _file_stamps([*documents, *paths])
+                # Never let a concurrent save or asset replacement hide behind
+                # the idle guard. Retry next tick unless this read was stable.
+                if before == after[:2] and _input_identity(after[2:]) == snapshot["input_identity"]:
+                    self.watched_paths, self.watched_stamps = [*documents, *paths], after
             identity = json.dumps(snapshot, sort_keys=True)
             if identity != self.identity:
                 self.identity = identity
                 self.queue.submit(snapshot)
         except (ValueError, OSError, RuntimeError, ResolvedProjectError) as exc:
+            self.watched_stamps = None
             identity = "error:" + str(exc)
             if identity != self.identity:
                 self.identity = identity
@@ -323,6 +359,7 @@ class PreviewServer(ThreadingHTTPServer):
     def __init__(self, queue, *, token, port, mode="rendered", session=None):
         self.queue, self.token = queue, token
         self.mode, self.session = mode, session
+        self.native_video_delivery = {"requests": 0, "active_requests": 0, "bytes_written": 0, "validated_heads": 0}
         super().__init__(("127.0.0.1", port), _Handler)
         self.url = f"http://127.0.0.1:{self.server_port}/projects/{token}/"
 
@@ -372,7 +409,8 @@ class _Handler(BaseHTTPRequestHandler):
             page = page.replace('data-preview-mode="rendered"', f'data-preview-mode="{self.server.mode}"')
             self._reply(200, page.encode(), "text/html; charset=utf-8")
         elif self.server.mode == "native" and route in {
-                "preview_native.mjs", "preview_native_stage.mjs", "preview_native_meter.mjs", "spatial_dom.mjs"}:
+                "preview_native.mjs", "preview_native_stage.mjs", "preview_native_meter.mjs", "spatial_dom.mjs",
+                "preview_native_worker.mjs", "preview_native_buffer.mjs"}:
             self._reply(200, files("moviestar").joinpath(route).read_bytes(), "text/javascript")
         elif self.server.mode == "native" and route == "stage":
             self._reply(200, b'<!doctype html><html><head><meta charset="utf-8"></head><body><script type="module" src="preview_native_stage.mjs"></script></body></html>', "text/html; charset=utf-8")
@@ -400,6 +438,9 @@ class _Handler(BaseHTTPRequestHandler):
         elif route == "state":
             state = self.server.queue.state()
             state["mode"] = self.server.mode
+            if self.server.mode == "native":
+                with self.server.queue.lock:
+                    state["native_video_delivery"] = dict(self.server.native_video_delivery)
             self._reply(200, json.dumps(state).encode())
         elif self.server.mode == "rendered" and re.fullmatch(r"media/[a-f0-9]{24}", route):
             request = self.server.queue.get(route.split("/")[1])
@@ -439,24 +480,47 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(end - start + 1))
             self.send_header("Accept-Ranges", "bytes")
-            self.send_header("Cache-Control", "no-store")
+            native_video = expected_identity is not None and content_type.startswith("video/")
+            # Only the byte-buffer transport opts into private, revalidated
+            # memory reuse. Its fetches bypass the browser's HTTP/disk cache.
+            memory_buffer = native_video and self.headers.get("X-Moviestar-Source-Buffer") == "memory"
+            self.send_header("Cache-Control", "private, no-cache" if memory_buffer else "no-store")
+            if native_video:
+                self.send_header("Vary", "X-Moviestar-Source-Buffer")
             self.send_header("X-Content-Type-Options", "nosniff")
             if code == 206:
                 self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
             self.end_headers()
             if self.command == "HEAD":
+                if expected_identity is not None and content_type.startswith("video/"):
+                    with self.server.queue.lock:
+                        self.server.native_video_delivery["validated_heads"] += 1
                 return
             media.seek(start)
             remaining = end - start + 1
+            count_video = expected_identity is not None and content_type.startswith("video/")
+            if count_video:
+                with self.server.queue.lock:
+                    self.server.native_video_delivery["requests"] += 1
+                    self.server.native_video_delivery["active_requests"] += 1
             try:
                 while remaining:
                     data = media.read(min(65536, remaining))
                     if not data:
                         break
                     self.wfile.write(data)
+                    if count_video:
+                        # Completed body writes accepted by the socket, excluding
+                        # headers and any partial write that raises on disconnect.
+                        with self.server.queue.lock:
+                            self.server.native_video_delivery["bytes_written"] += len(data)
                     remaining -= len(data)
             except (BrokenPipeError, ConnectionResetError):
                 pass
+            finally:
+                if count_video:
+                    with self.server.queue.lock:
+                        self.server.native_video_delivery["active_requests"] -= 1
 
 
 def serve(root, start, end, *, port, open_browser, ready, mode="rendered"):

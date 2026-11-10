@@ -12,6 +12,26 @@ const sampleCanvas=document.createElement('canvas');sampleCanvas.width=640;sampl
 const pixels=sampleCanvas.getContext('2d',{willReadFrequently:true});
 const walk=function*(nodes){for(const node of nodes){yield node;yield*walk(node.children??[]);}};
 const key=path=>JSON.stringify(path);
+async function enableSourceBuffering(signal){
+  const service=globalThis.navigator?.serviceWorker;
+  if(!service||signal.aborted)return false;
+  const worker=new URL('preview_native_worker.mjs',location.href).href;
+  let timer,changed,canceled;
+  try{
+    const controlled=()=>service.controller?.scriptURL===worker;
+    const available=new Promise(resolve=>{
+      changed=()=>{if(controlled())resolve(true);};
+      canceled=()=>resolve(false);
+      service.addEventListener('controllerchange',changed);signal.addEventListener('abort',canceled,{once:true});
+      timer=setTimeout(canceled,1500);
+    });
+    const registered=service.register(worker,{scope:'./',type:'module',updateViaCache:'none'})
+      .then(()=>controlled()?true:available).catch(()=>false);
+    return await Promise.race([registered,available]);
+  }finally{
+    clearTimeout(timer);service.removeEventListener('controllerchange',changed);signal.removeEventListener('abort',canceled);
+  }
+}
 function fail(error){if(disposed)return;playing=false;metrics.error=String(error.message??error);if(!metrics.error.includes('--mode rendered'))metrics.error+=' Use --mode rendered if native playback is unsupported.';video?.pause();rejectReady(error);}
 function apply(at){
   if(!packet)return;
@@ -77,6 +97,7 @@ async function initialize(){
   const response=await fetch('packet?request='+encodeURIComponent(request),{cache:'no-store',signal:controller.signal});
   if(!response.ok)throw Error('The requested live packet is no longer retained.');
   packet=await response.json();if(disposed)return;
+  metrics.source_buffering=await enableSourceBuffering(controller.signal);if(disposed)return;
   Object.assign(window.frameElement.style,{width:packet.canvas.width+'px',height:packet.canvas.height+'px'});
   const measured=await render({...packet.initial,paint_dir:'native',live_dom:true});
   if(disposed)return;
@@ -94,7 +115,7 @@ async function initialize(){
     if(asset.kind==='image'){
       media.src='assets/'+asset.asset;images.push(media.decode());
     }else{
-      video=media;video.preload='auto';video.playsInline=true;
+      video=media;video.preload='metadata';video.playsInline=true;
       video.addEventListener('error',()=>fail(Error('Source video could not load.')));
       video.addEventListener('canplay',checkReady);video.addEventListener('seeked',checkReady);
       video.addEventListener('loadedmetadata',()=>{
@@ -105,7 +126,7 @@ async function initialize(){
       video.addEventListener('waiting',()=>{if(playing)metrics.stalls++;});
       video.addEventListener('pause',complete);
       video.addEventListener('ended',complete);
-      video.src=`assets/${asset.asset}#t=${packet.source_start},${packet.source_end}`;
+      video.src=`assets/${asset.asset}?native_video=1#t=${packet.source_start},${packet.source_end}`;
       if(typeof video.requestVideoFrameCallback!=='function')throw Error('Native preview needs video-frame callbacks; use --mode rendered.');
       frameCallback=video.requestVideoFrameCallback(onFrame);
     }
