@@ -109,8 +109,8 @@ def test_many_fractional_scenes_preserve_video_clock_and_audio_boundaries(
         center = global_center - start
         frame = colors[round(center * FPS)]
         assert int(np.argmax(frame)) == i % 3, (i, center, frame)
-        start, end = [round(t * SAMPLE_RATE) for t in (center - .02, center + .02)]
-        window = pcm[start:end]
+        sample_start, sample_end = [round(t * SAMPLE_RATE) for t in (center - .02, center + .02)]
+        window = pcm[sample_start:sample_end]
         assert np.sqrt(np.mean(window ** 2)) > .1, (i, "unexpected audio gap")
         spectrum = np.abs(np.fft.rfft(window * np.hanning(len(window))))
         frequencies = np.fft.rfftfreq(len(window), 1 / SAMPLE_RATE)
