@@ -3,13 +3,15 @@
 from fractions import Fraction
 import argparse
 import json
+import os
 from pathlib import Path
 import subprocess
+import sys
 
 import av
 import numpy as np
 
-from moviestar.project import save_project
+from moviestar.project import load_project
 from moviestar.spec import empty_spec, save_spec
 
 
@@ -46,7 +48,7 @@ def generate(root, portrait=False):
     spec['composition_canvas']={'preset':None,'width':width,'height':height,'aspect_ratio':'9:16' if portrait else '16:9'}
     spec['composition']=[{'id':'review','name':'Live review','layout':{'preset':'single'},
         'slots':[{'id':'slot_0001','slot':'main','source':'camera','source_from':'0:00:01.000','source_to':'0:00:06.000'}],
-        'audio_from':'camera'}]
+        'audio_from':None}]
     spec['spatial']={'assets':{'logo':{'type':'image','path':'logo.png'}},'definitions':{
         'speaker_card':{'name':'SpeakerCard','inputs':[{'name':'clip','type':'video','required':True}],
             'children':[{'id':'footage','type':'video','content':{'input':'clip'},
@@ -76,9 +78,19 @@ def generate(root, portrait=False):
         'position':{'preset':'bottom'},'style':{'preset':'plain'}} for identity,start,end,text in [
         ('first','0:00:00.000','0:00:02.000','One line, on the scene clock.'),
         ('second','0:00:02.000','0:00:05.000','Two lines change together\nwith picture and sound.')]]
-    project={'sources':[{'id':'camera','path':str(source),'duration':{'seconds':8},'width':640,'height':360,
-                         'fps':30,'has_audio':True}]}
-    save_spec(spec,cwd=root);save_project(project,cwd=root)
+    # Ingest with the real CLI so schema drift cannot be hidden by hand-built
+    # metadata. Generation/ingestion is setup, outside timed repeated edits.
+    env = os.environ.copy()
+    if env.get('PYTHONPATH'):
+        env['PYTHONPATH'] = os.pathsep.join(str(Path(entry).resolve())
+            for entry in env['PYTHONPATH'].split(os.pathsep) if entry)
+    loaded = subprocess.run([sys.executable, '-m', 'moviestar.cli', 'load', str(source),
+        '--as', 'camera', '--force', '--no-transcribe', '--no-frames'],
+        cwd=root, env=env, capture_output=True, text=True, timeout=30)
+    if loaded.returncode:
+        raise RuntimeError('Could not load native preview fixture: '+loaded.stdout+loaded.stderr)
+    project = load_project(root)
+    save_spec(spec,cwd=root)
     return spec,project
 
 

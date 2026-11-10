@@ -24,7 +24,9 @@ def main():
     parser.add_argument('--out', type=Path, required=True, help='new output directory')
     args = parser.parse_args()
     out = args.out.resolve(); out.mkdir(parents=True, exist_ok=False)
-    os.environ['PYTHONPATH'] = str(HERE.parents[1]/'app'/'src') + os.pathsep + os.environ.get('PYTHONPATH', '')
+    if os.environ.get('PYTHONPATH'):
+        os.environ['PYTHONPATH'] = os.pathsep.join(str(Path(entry).resolve())
+            for entry in os.environ['PYTHONPATH'].split(os.pathsep) if entry)
     chrome = os.environ.get('MOVIESTAR_CHROME_PATH') or shutil.which('chrome-headless-shell')
     if not chrome:
         parser.error('set MOVIESTAR_CHROME_PATH to Chrome/Chrome for Testing')
@@ -51,7 +53,7 @@ def main():
         (folder / 'canonical.json').write_text(json.dumps(canonical))
         started = time.monotonic()
         with (folder / 'server.log').open('w') as stderr:
-            server = subprocess.Popen([sys.executable, str(HERE/'serve.py'), '--project', str(root), '--port', '0'], stdout=subprocess.PIPE, stderr=stderr, text=True)
+            server = subprocess.Popen([sys.executable, '-m', 'moviestar.cli', 'preview', '--workspace', str(root), '--from', '0', '--to', '5', '--mode', 'native', '--no-open', '--port', '0'], stdout=subprocess.PIPE, stderr=stderr, text=True)
             try:
                 with selectors.DefaultSelector() as selector:
                     selector.register(server.stdout, selectors.EVENT_READ)

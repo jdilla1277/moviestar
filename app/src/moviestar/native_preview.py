@@ -1,4 +1,4 @@
-"""Compile a bounded native-playback feasibility packet without media decoding."""
+"""Compile bounded native review descriptors; no media decoding or output encode."""
 
 from hashlib import sha256
 import json
@@ -7,7 +7,6 @@ from pathlib import Path
 from moviestar.resolved import resolve_project
 from moviestar.spatial_layout import prepare_layout_frame
 from moviestar.spatial_model import compile_spatial_frame
-from moviestar.spec import parse_timecode_string
 
 
 def walk(nodes):
@@ -16,8 +15,18 @@ def walk(nodes):
         yield from walk(node.get('children', []))
 
 
+PROFILE = {"name": "native", "transport": "native-browser", "max_window_s": 10,
+           "clip_end_tolerance_ms": 50, "clip_end": "approximate",
+           "min_fps": 24, "max_fps": 60, "fallback_mode": "rendered"}
+
+
+class NativePreviewUnsupported(ValueError):
+    """The native profile cannot faithfully review this saved state."""
+
+
 def fail(reason):
-    raise ValueError('live feasibility: ' + reason)
+    raise NativePreviewUnsupported('Native preview unavailable: ' + reason
+        + '. Stop this session and retry preview --mode rendered with the same range.')
 
 
 def asset_identity(path):
@@ -30,19 +39,19 @@ def compile_snapshot(snapshot):
     if any(not recipe.get('frozen') for recipe in spec.get('captions', [])):
         fail('live caption recipes are not implemented; use manual/frozen cues')
     if any(source.get('operations') for source in spec['sources']):
-        fail('source operations are not implemented in this probe')
+        fail('source operations are not implemented in this native profile')
     root = Path(snapshot['root'])
     timeline = resolve_project(project, spec)
     start, end = snapshot['range']['from'], snapshot['range']['to']
     fps = timeline.output_fps
     if len(spec['composition']) != 1 or len(timeline.spans) != 1:
-        fail('this probe supports one spatial scene without cuts, pacing or transitions')
+        fail('this native profile supports one spatial scene without cuts, pacing or transitions')
     if any(spec.get(key) for key in ['opening_transition', 'closing_transition']):
         fail('project-edge transitions are not implemented')
-    if not 0 < end-start <= 10 or not 1 <= fps <= 60:
-        fail('use an at-most-ten-second window at 1–60 fps')
+    if not 0 < end-start <= 10 or not 24 <= fps <= 60:
+        fail('use an at-most-ten-second window at 24–60 fps')
     if any(abs(value*fps-round(value*fps)) > 1e-6 for value in [start, end]):
-        fail('the first probe requires frame-aligned review boundaries')
+        fail('native review requires frame-aligned review boundaries')
     expected_mix = {'source_audio': {'muted': False, 'gain_db': 0.0, 'fade_in': 0.0, 'fade_out': 0.0}, 'tracks': []}
     if spec['audio_mix'] != expected_mix:
         fail('audio mixing, gain and fades are not implemented')
@@ -59,7 +68,7 @@ def compile_snapshot(snapshot):
         at = start+index/fps
         frame = compile_spatial_frame(spec, timeline, at, source_durations=durations)
         if frame.get('kind') in {'transition', 'preset'}:
-            fail('this probe requires a spatial scene without transitions')
+            fail('this native profile requires a spatial scene without transitions')
         prepared = prepare_layout_frame(frame, timeline.canvas)
         if any(item.get('severity') != 'warning' for item in prepared['diagnostics']):
             fail('the canonical frame has unresolved diagnostics')
@@ -75,13 +84,23 @@ def compile_snapshot(snapshot):
             native_fps = metadata[video_asset].get('fps')
             if not isinstance(native_fps, (int, float)) or abs(native_fps-fps) > 1e-6:
                 fail('the indexed source rate must match the preview rate')
-            if source_paths[video_asset].suffix.lower() != '.mp4' or not metadata[video_asset].get('has_audio'):
-                fail('use a native-compatible MP4 with embedded audio for this probe')
-            audio = scene.get('audio_from', spec.get('composition_audio_from'))
-            if audio != video_asset or len(scene['slots']) != 1 or scene['slots'][0]['source'] != video_asset:
+            if source_paths[video_asset].suffix.lower() != '.mp4' or not metadata[video_asset].get('audio_codec'):
+                fail('use a native-compatible MP4 with embedded audio for this native profile')
+            span = timeline.spans[0]
+            audio = span.audio
+            if (audio.source_id != video_asset or len(audio.slices) != 1
+                    or abs(audio.speed-1) > 1e-8 or len(scene['slots']) != 1
+                    or scene['slots'][0]['source'] != video_asset):
                 fail('audio must follow the single visible video and its carrier slot')
-            slot = timeline.spans[0].slot(scene['slots'][0]['slot'])
-            if slot.held or abs(slot.speed-1) > 1e-8 or abs(slot.source_from_s+start-source_start) > 1e-6:
+            slot = span.slot(scene['slots'][0]['slot'])
+            audio_start, audio_end = audio.slices[0]
+            # The canonical route may be explicit, inferred or composition-wide.
+            # Check its source-time slice against the span-relative review
+            # window, rather than requiring a particular authored route.
+            if (slot.held or abs(slot.speed-1) > 1e-8
+                    or abs(slot.source_from_s+start-span.start_s-source_start) > 1e-6
+                    or abs(audio_start+start-span.start_s-source_start) > 1e-6
+                    or audio_end+1e-6 < audio_start+end-span.start_s):
                 fail('audio and video must share an ordinary unit-speed source clock')
         if abs(video['media']['source_time_s']-(source_start+index/fps)) > 1e-5:
             fail('holds and source-speed changes are not implemented')
@@ -95,7 +114,7 @@ def compile_snapshot(snapshot):
                 if kind not in {'component', 'shape', 'text', 'caption', 'video', 'image'}:
                     fail(f'unsupported element {kind}')
                 if kind in {'video', 'image', 'text', 'caption'} and node['children']:
-                    fail('media/text children are not implemented in this probe')
+                    fail('media/text children are not implemented in this native profile')
                 if kind not in {'video', 'image'}:
                     continue
                 style = node['style']
@@ -125,3 +144,26 @@ def compile_snapshot(snapshot):
     return {'state_id': snapshot['state_id'], 'canvas': initial['canvas'], 'fps': fps,
             'range': snapshot['range'], 'source_start': source_start, 'source_end': source_start+end-start,
             'video_path': video_path, 'initial': initial, 'media': media, 'samples': samples}, assets
+
+
+def build(request_file):
+    """Worker entry: descriptor and private asset registry stay in its owned folder."""
+    request_file = Path(request_file)
+    request = json.loads(request_file.read_text())
+    packet, assets = compile_snapshot(request)
+    packet.update(request_id=request['request_id'], requested_at=request['requested_at'])
+    folder = request_file.parent
+    (folder/'assets.json').write_text(json.dumps({key: {**value, 'path': str(value['path'])}
+        for key, value in assets.items()}))
+    staged = folder/'packet.tmp'
+    staged.write_text(json.dumps(packet, separators=(',', ':')))
+    staged.replace(folder/'preview.json')
+
+
+if __name__ == '__main__':
+    import sys
+    try:
+        build(sys.argv[1])
+    except (ValueError, OSError) as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(1)

@@ -11,10 +11,10 @@ pytestmark = pytest.mark.skipif(not shutil.which('node'), reason='Node is requir
 
 
 def run_page(scenario):
-    page = (Path(__file__).parents[2] / 'experiments/live_browser_preview/runtime.mjs').read_text()
+    page = (Path(__file__).parents[1] / 'src/moviestar/preview_native.mjs').read_text()
     harness = r'''
 const assert=require('node:assert/strict'),vm=require('node:vm');
-let nextPoll,responseState;const frames=[],elements={};
+let nextPoll,responseState,reloads=0;const frames=[],elements={};
 class Element{
  constructor(){this.listeners={};this.children=[];this.style={};this.clientWidth=640;}
  addEventListener(name,fn){(this.listeners[name]??=[]).push(fn);}
@@ -33,7 +33,7 @@ class Frame extends Element{
  set src(value){const id=new URL(value,'http://localhost').searchParams.get('request');Object.assign(this.contentWindow.moviestarLiveStage.packet,{request_id:id,state_id:'sha256:'+id});}
 }
 const context={window:{},document:{getElementById:id=>elements[id]??=new Element(),createElement:name=>{assert.equal(name,'iframe');const f=new Frame();frames.push(f);return f;}},
- location:{pathname:'/projects/unit/',search:''},URL,URLSearchParams,Date,Map,AbortSignal,performance:{timeOrigin:Date.now()-1000},
+ location:{pathname:'/projects/unit/',search:'',reload(){reloads++;}},URL,URLSearchParams,Date,Map,AbortSignal,performance:{timeOrigin:Date.now()-1000},
  ResizeObserver:class{observe(){}},Option:class{constructor(text,value){this.text=text;this.value=value;}},
  fetch:async()=>({ok:true,json:async()=>structuredClone(responseState)}),
  setTimeout:(fn,ms)=>{if(ms===100)nextPoll=fn;return 1;},clearTimeout(){},requestAnimationFrame:fn=>queueMicrotask(fn)};
@@ -74,4 +74,12 @@ def test_native_failure_clears_after_a_later_success():
  const count=frames.length;await poll(state(b,[a,b]));assert.equal(frames.length,count);
  await poll(state(c,[a,b,c]));const fresh=frames.at(-1);fresh.emit('load');fresh.resolve(true);await flush();
  assert.equal(context.window.moviestarLive.current.request_id,'C');assert.equal(elements.error.textContent,'');
+''')
+
+
+def test_native_page_reloads_if_restarted_in_rendered_mode():
+    run_page(r'''
+ await poll({...state(a,[a]),mode:'rendered'});
+ assert.equal(reloads,1);
+ assert.equal(context.window.moviestarLive.current.request_id,'A');
 ''')

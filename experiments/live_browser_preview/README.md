@@ -4,11 +4,14 @@ This experiment tests a different way to meet the preview latency target: the
 browser plays a source MP4 directly while the **same canonical scene DOM** used
 by inspection and export places components, text, images and captions around it.
 No output video is generated before the human presses Play. Export continues to
-use the existing renderer. The installed `moviestar preview` command is unchanged.
+use the existing renderer. The measured player now ships as opt-in `moviestar preview --mode native`.
+The existing rendered transport remains the default; the historical results below
+come from the earlier standalone experiment. Current benchmarks exercise the
+real CLI and its isolated descriptor workers.
 
 The loop is local and requires no account or upload. The page reuses the product
 viewer's dark branding, offline fonts, site links and current/history controls.
-It deliberately identifies itself as an experiment. Its account link does not
+The compatibility launcher now opens the product viewer. Its account link does not
 establish or recognize a website login session.
 
 ## Run
@@ -51,7 +54,8 @@ The probe fails explicitly outside this subset:
 
 - One spatial scene and one timeline span, with exactly one visible video and
   its embedded source audio on the same unit-speed clock.
-- A frame-aligned window of at most ten seconds, at 1–60 fps, matching the indexed source rate.
+- A frame-aligned window of at most ten seconds, at 24–60 fps, matching the indexed source rate (the installed profile excludes
+  low rates whose early last-frame stop would exceed the reference timing budget).
 - Native-compatible MP4; the portable benchmark uses H.264/AAC at 30 fps.
 - Reusable nested components, shapes, text, images, manual/frozen captions,
   static canonical CSS layout, and canonical motion/opacity samples.
@@ -109,9 +113,9 @@ clock estimates do not prove physical screen/speaker synchronization. A human
 flash/beep check remains required, and native video tests are separate from the
 existing raster/export fidelity matrix.
 
-Results will be recorded below after the fixed-budget run. A successful small
-fixture establishes a direction, not general product acceptance or a claim
-that the installed preview command now meets the target.
+The original experiment results are recorded below. A successful small
+fixture establishes a direction, not general product acceptance or a
+three-second guarantee for arbitrary projects.
 
 ## Reference result — November 8, 2026
 
@@ -144,8 +148,9 @@ output clock and creating the fixture's slot identity fixed those failures;
 the fixed-budget series above was rerun from a new fixture. A missing first cue
 must not be discarded to improve a sync statistic.
 
-Next: integrate a declared native review profile into the actual local viewer,
-then broaden supported timelines/media and verify real footage and larger
+The player/compiler now live in the package and are used by the actual native
+preview command. The old `serve.py` command is a compatibility launcher for it.
+Next: broaden supported timelines/media and verify real footage and larger
 projects. Full export remains separate. Repeated source probing/decoder setup
 in the existing render pipeline is tracked as a lower-priority follow-up in
 [issue #142](https://github.com/jdilla1277/moviestar/issues/142).
@@ -157,3 +162,58 @@ A second full series after cleanup changes also passed: p95 377 ms landscape and
 parity checks and clock estimates. Earlier failed development runs remain
 explicitly described above; neither successful series substitutes for general
 project acceptance.
+
+## Installed command result — November 9, 2026
+
+**Historical limitation discovered in review:** the three series below used
+hand-authored `has_audio` metadata, which the real loader does not produce.
+They measured the prepared-player path but missed a product-path rejection.
+They do not establish load-to-preview integration. The corrected loader-indexed
+runs below supersede them for that acceptance; the original data is retained
+and labeled in `command-results.json`.
+
+The runner now starts `moviestar preview --mode native` itself. Three 20-edit
+series per orientation passed all unchanged checks (120 edits total):
+
+| Runtime | Landscape warm p95 | Portrait warm p95 |
+| --- | ---: | ---: |
+| Source checkout | 726 ms | 707 ms |
+| Modules from an extracted wheel | 624 ms | 764 ms |
+| Wheel installed in an isolated environment | 1,163 ms | 918 ms |
+
+The installed-wheel run used its installed Python module; the console entry
+was also checked separately,
+with existing third-party dependencies shared read-only; it did not import the
+package from the source checkout. All 120 edits met the 3,000 ms budget. A full
+regression suite was running on the shared host, so these series are not a
+controlled comparison between installation methods. Cold navigation, server
+startup, Play-to-motion, all per-edit timings, geometry/caption parity, cue phase
+and window-end estimates are retained in
+[`command-results.json`](command-results.json). Browser process startup and user
+Play delay remain separate. Larger sources, general timelines and native/export
+pixel fidelity remain follow-up acceptance work.
+
+## Corrected load-to-preview validation
+
+The fixture now loads its generated MP4 through the real CLI with
+`load --as camera --force --no-transcribe --no-frames`, retains that indexed
+project metadata and saves the authored spatial scene. It supplies no invented
+`has_audio` field. Ingestion stays outside the repeated-edit timer. Native
+preview uses indexed `audio_codec` and validates the canonical resolved audio
+source, contiguous slice, speed and clock. The benchmark scene uses the
+inferred single-audio-slot route; CLI integration tests also exercise explicit
+and composition-wide routes, including failure/recovery after an unsupported
+edit. Unit checks reject absent/different audio, discontinuous or short slices,
+and mismatched source clocks.
+
+| Loader-indexed runtime | Landscape warm p95 | Portrait warm p95 |
+| --- | ---: | ---: |
+| Source checkout | 706 ms | 624 ms |
+| Isolated installed wheel | 916 ms | 739 ms |
+
+All unchanged benchmark checks pass: 80 real edits, each below 3,000 ms, with
+canonical caption/layout/source-frame parity, five flash/beep cues and no
+reported stalls or dropped frames. These corrected series and indexed codec/rate
+fields are retained in `command-results.json`. The shared-host and small-fixture
+limitations still apply. The dedicated viewer UI pass is tracked separately in
+[issue #149](https://github.com/jdilla1277/moviestar/issues/149).

@@ -43,6 +43,13 @@ time-mapping, rendering, and structured verification data.
 - Remember the clocks: `trim` is result-time, `find` reports both source and
   result ranges, and composition ranges are documented per command. Never
   substitute one time space for another.
+- For local human review of a supported single-video spatial scene, keep
+  `moviestar preview --mode native --from 0 --to 5 --no-open` running in a
+  persistent terminal and return its URL. It follows saved edits and undo;
+  the human presses Play for sound. Unsupported native projects fail explicitly:
+  use `--mode rendered` for the completed-MP4 alternative. The link is local to
+  the machine and needs explicit host port forwarding for remote access. See
+  [local preview](https://github.com/jdilla1277/moviestar/blob/main/docs/local-preview.md).
 - After each material edit, inspect `status` or the relevant read command.
   Verify visuals with returned image/video files rather than Base64 text.
 

@@ -2,7 +2,8 @@ import {render} from './spatial_dom.mjs';
 
 let resolveReady,rejectReady,packet,video,audio,source,meter,frameCallback,stopTimer,disposed=false;
 const controller=new AbortController(),audit=new URLSearchParams(location.search).has('audit');
-let lastIndex=-1, playing=false, readyDone=false, metadataReady=false, imageReady=false;
+const pendingSeeks=new Set();
+let lastIndex=-1, playing=false, readyDone=false, metadataReady=false, imageReady=false,playGeneration=0;
 const ready=new Promise((resolve,reject)=>{resolveReady=resolve;rejectReady=reject;});
 // Parent attaches after iframe load; keep early failures observable through ready.
 ready.catch(()=>{});
@@ -11,7 +12,7 @@ const sampleCanvas=document.createElement('canvas');sampleCanvas.width=640;sampl
 const pixels=sampleCanvas.getContext('2d',{willReadFrequently:true});
 const walk=function*(nodes){for(const node of nodes){yield node;yield*walk(node.children??[]);}};
 const key=path=>JSON.stringify(path);
-function fail(error){metrics.error=String(error.message??error);video?.pause();rejectReady(error);}
+function fail(error){if(disposed)return;playing=false;metrics.error=String(error.message??error);if(!metrics.error.includes('--mode rendered'))metrics.error+=' Use --mode rendered if native playback is unsupported.';video?.pause();rejectReady(error);}
 function apply(at){
   if(!packet)return;
   const index=Math.max(0,Math.min(packet.samples.length-1,Math.round(at*packet.fps)));
@@ -105,11 +106,13 @@ async function initialize(){
       video.addEventListener('pause',complete);
       video.addEventListener('ended',complete);
       video.src=`assets/${asset.asset}#t=${packet.source_start},${packet.source_end}`;
+      if(typeof video.requestVideoFrameCallback!=='function')throw Error('Native preview needs video-frame callbacks; use --mode rendered.');
       frameCallback=video.requestVideoFrameCallback(onFrame);
     }
   }
   audio=new AudioContext();
-  await audio.audioWorklet.addModule('meter.mjs');
+  if(!audio.audioWorklet||typeof audio.getOutputTimestamp!=='function')throw Error('Native preview needs the browser audio output clock; use --mode rendered.');
+  await audio.audioWorklet.addModule('preview_native_meter.mjs');
   if(disposed){await audio.close();return;}
   source=audio.createMediaElementSource(video);meter=new AudioWorkletNode(audio,'cue-meter');
   source.connect(meter);meter.connect(audio.destination);
@@ -122,6 +125,32 @@ async function initialize(){
   };
   await Promise.all(images);imageReady=true;checkReady();
 }
+async function seekTo(at){
+  await ready;
+  if(disposed)return false;
+  for(const cancel of pendingSeeks)cancel();
+  const local=Math.max(0,Math.min((packet.samples.length-1)/packet.fps,Math.round(at*packet.fps)/packet.fps));
+  const target=packet.source_start+local;
+  if(Math.abs(video.currentTime-target)<1e-6){apply(local);return true;}
+  return await new Promise((resolve,reject)=>{
+    let settled=false,timer;
+    const finish=(applied,error)=>{
+      if(settled)return;settled=true;clearTimeout(timer);
+      video.removeEventListener('seeked',done);pendingSeeks.delete(cancel);
+      error?reject(error):resolve(applied);
+    };
+    const cancel=()=>finish(false);
+    const done=()=>{
+      clearTimeout(timer);video.removeEventListener('seeked',done);
+      if(disposed){finish(false);return;}
+      apply(local);
+      requestAnimationFrame(()=>requestAnimationFrame(()=>finish(true)));
+    };
+    pendingSeeks.add(cancel);
+    timer=setTimeout(()=>finish(false,Error('Native seek timed out')),5000);
+    video.addEventListener('seeked',done,{once:true});video.currentTime=target;
+  });
+}
 window.moviestarLiveStage={ready,metrics,
   get packet(){return packet;},
   get time(){return video?Math.max(0,video.currentTime-packet.source_start):0;},
@@ -129,34 +158,31 @@ window.moviestarLiveStage={ready,metrics,
   get audioState(){return audio?.state;},
   get error(){return metrics.error;},
   async play(){
-    if(metrics.finished)await this.seek(0);
-    metrics.frames=[];metrics.flashes=[];metrics.beeps=[];metrics.stalls=0;metrics.finished=false;metrics.previous_white=false;delete metrics.first_presented_at;
-    clearTimeout(stopTimer);stopTimer=null;metrics.play_at=Date.now();
-    // Finish audio-device startup before starting the shared native media clock.
-    await audio.resume();
-    // resume() can resolve before the physical output clock has started. Wait
-    // for a usable timestamp while the worklet outputs silence, before video.
-    const deviceDeadline=performance.now()+2000;
-    while(audio.getOutputTimestamp().contextTime<=0||audio.getOutputTimestamp().performanceTime<=0){
-      if(performance.now()>deviceDeadline)throw Error('Audio output clock did not start');
-      await new Promise(resolve=>setTimeout(resolve,10));
-    }
-    metrics.device_ready_at=Date.now();playing=true;
-    await video.play();
-  },
-  pause(){video?.pause();playing=false;clearTimeout(stopTimer);stopTimer=null;},
-  async seek(at){
-    await ready;
     this.pause();
-    const local=Math.max(0,Math.min((packet.samples.length-1)/packet.fps,Math.round(at*packet.fps)/packet.fps));
-    const target=packet.source_start+local;
-    if(Math.abs(video.currentTime-target)<1e-6){apply(local);return;}
-    await new Promise((resolve,reject)=>{
-      const timer=setTimeout(()=>reject(Error('Native seek timed out')),5000);
-      video.addEventListener('seeked',()=>{clearTimeout(timer);apply(local);requestAnimationFrame(()=>requestAnimationFrame(resolve));},{once:true});
-      video.currentTime=target;
-    });
+    const attempt=playGeneration;
+    const active=()=>!disposed&&attempt===playGeneration;
+    try{
+      if(metrics.finished||this.time>=(packet.samples.length-1)/packet.fps-1e-6)await seekTo(0);
+      if(!active())return;
+      metrics.frames=[];metrics.flashes=[];metrics.beeps=[];metrics.stalls=0;metrics.finished=false;metrics.previous_white=false;delete metrics.first_presented_at;
+      metrics.play_at=Date.now();
+      await audio.resume();
+      if(!active())return;
+      // resume() may precede output-device startup. Pause/restart/revision
+      // replacement must cancel this wait as well as the resume() promise.
+      const deviceDeadline=performance.now()+2000;
+      while(audio.getOutputTimestamp().contextTime<=0||audio.getOutputTimestamp().performanceTime<=0){
+        if(!active())return;
+        if(performance.now()>deviceDeadline)throw Error('Audio output clock did not start');
+        await new Promise(resolve=>setTimeout(resolve,10));
+      }
+      if(!active())return;
+      metrics.device_ready_at=Date.now();playing=true;
+      await video.play();
+    }catch(error){if(active()){fail(error);throw error;}}
   },
+  pause(){++playGeneration;playing=false;clearTimeout(stopTimer);stopTimer=null;video?.pause();},
+  async seek(at){this.pause();try{if(await seekTo(at))metrics.finished=false;}catch(error){fail(error);throw error;}},
   snapshot(){
     return {request_id:packet.request_id,state_id:packet.state_id,time:this.time,source:sourceFrame(),
       boxes:window.moviestarScene.entries.map(({node,element})=>{
@@ -166,7 +192,7 @@ window.moviestarLiveStage={ready,metrics,
       })};
   },
   dispose(){
-    if(disposed)return;disposed=true;controller.abort();video?.pause();
+    if(disposed)return;this.pause();disposed=true;for(const cancel of pendingSeeks)cancel();controller.abort();
     if(frameCallback)video?.cancelVideoFrameCallback(frameCallback);
     if(video){video.removeAttribute('src');video.load();}clearTimeout(stopTimer);
     if(audio&&audio.state!=='closed')audio.close().catch(()=>{});

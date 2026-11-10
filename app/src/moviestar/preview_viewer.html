@@ -17,9 +17,11 @@ video{width:100%;height:100%;object-fit:contain}video.pending{position:absolute;
 #empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:14px}
 #empty[hidden]{display:none}
 #details{color:var(--muted);font-size:12px;margin:14px 0;overflow-wrap:anywhere}.diagnostics{color:var(--muted);border-top:1px solid #a9bcff26;margin-top:22px;padding-top:14px;font-size:12px}.diagnostics summary{cursor:pointer;display:list-item}.diagnostics p{overflow-wrap:anywhere}.guidance{font-size:13px;color:var(--muted)}.error{color:#ffb5a7;white-space:pre-wrap;font-size:13px}.error:empty{display:none}
+#stage iframe{border:0;position:absolute;inset:0;transform-origin:0 0}#stage iframe.pending{visibility:hidden}
+#native-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}#native-controls[hidden]{display:none}button{font:inherit;color:var(--text);background:var(--blue);border:1px solid #b5c1e166;border-radius:8px;padding:7px 18px;cursor:pointer}button:disabled{opacity:.5;cursor:default}button:focus-visible,input:focus-visible{outline:3px solid var(--gold);outline-offset:3px}#seek{flex:1;min-width:100px;accent-color:var(--gold)}#clock{min-width:65px;color:var(--muted)}
 footer{border-top:1px solid #a9bcff26;color:var(--muted);font-size:12px}footer .shell{display:flex;justify-content:space-between;gap:20px;padding-block:22px;flex-wrap:wrap}footer a{color:var(--gold)}
 @media(max-width:640px){.shell{padding-inline:18px}.topbar .shell{gap:18px}.topbar nav{gap:18px}main{padding-top:26px}h1{font-size:34px}.review-control{width:100%;min-width:0}#stage{border-radius:12px}}
-</style></head><body>
+</style></head><body data-preview-mode="rendered">
 <header class="topbar"><div class="shell">
 <a class="brand" href="https://trymoviestar.com/" target="_blank" rel="noopener noreferrer" aria-label="moviestar home">
 <span class="brand-mark"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.6 6.3L21 9l-4.8 4.3L17.6 20 12 16.5 6.4 20l1.4-6.7L3 9l6.4-.7z"/></svg></span><span class="brand-name">moviestar</span></a>
@@ -28,12 +30,18 @@ footer{border-top:1px solid #a9bcff26;color:var(--muted);font-size:12px}footer .
 <main class="shell"><div class="intro"><div><p class="eyebrow">LOCAL PREVIEW</p><h1>See your latest edit.</h1><p class="intro-copy">Review video and sound as your agent makes changes.</p></div>
 <label class="review-control">Review version<select id="version"><option value="">Follow latest edit</option></select></label></div>
 <p id="status" role="status">Connecting to your project…</p>
+<p id="native-controls" hidden><button id="play" type="button">Play</button><button id="pause" type="button">Pause</button><button id="restart" type="button">Restart</button><label for="seek">Position</label><input id="seek" type="range" min="0" max="5" step="0.033333" value="0"><span id="clock"></span></p>
 <div id="stage"><div id="empty">Preparing your first preview…</div></div>
 <p id="details"></p><p id="error" class="error"></p>
 <p class="guidance">Ask your agent to make changes or undo an edit. This page follows along.</p>
 <details class="diagnostics"><summary>Preview diagnostics</summary><p id="timing">Waiting for a preview.</p><p>Review quality. Export the final video with your agent when you’re ready.</p></details>
 </main><footer><div class="shell"><span>Rendered on your machine. Your video stays local.</span><a href="https://trymoviestar.com/getting-started" target="_blank" rel="noopener noreferrer">Make more with moviestar ↗</a></div></footer>
 <script type="module">
+if (document.body.dataset.previewMode === 'native') {
+  import('./preview_native.mjs').catch(() => {
+    document.getElementById('error').textContent = 'Native player could not load. Restart preview or use --mode rendered.';
+  });
+} else {
 const $ = id => document.getElementById(id);
 const base = location.pathname;
 const selected = $('version');
@@ -145,7 +153,9 @@ async function poll() {
   try {
     const response = await fetch(base + 'state', {cache:'no-store', signal:AbortSignal.timeout(4000)});
     if (!response.ok) throw Error('Disconnected');
-    state = await response.json(); connected = true;
+    state = await response.json();
+    if (state.mode && state.mode !== 'rendered') { location.reload(); return; }
+    connected = true;
     selected.replaceChildren(new Option('Follow latest edit', ''));
     for (const item of state.history) selected.add(new Option(`${item.state_id.slice(7,19)} · ${item.request_id.slice(0,6)}`, item.request_id));
     if (selection && !state.history.some(item => item.request_id === selection)) {
@@ -161,4 +171,5 @@ async function poll() {
 window.movieStarPreview = {get state(){return state;}, get displayed(){return current?.item;},
   get measurements(){return Object.fromEntries(results);}};
 poll();
+}
 </script></body></html>

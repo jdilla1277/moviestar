@@ -1,17 +1,12 @@
-"""The feasibility route consumes canonical samples without decoding/exporting."""
+"""Native descriptors consume canonical samples without decoding/exporting."""
 
 from copy import deepcopy
-from pathlib import Path
-import runpy
 
 import pytest
 
 from moviestar.local_preview import read_snapshot
 from moviestar.project import save_project
 from moviestar.spec import empty_spec, save_spec
-
-EXPERIMENT = Path(__file__).parents[2] / 'experiments' / 'live_browser_preview'
-
 
 @pytest.fixture
 def live_project(tmp_path):
@@ -43,14 +38,15 @@ def live_project(tmp_path):
         ('one', '0:00:00.000', '0:00:01.000', 'First'),
         ('two', '0:00:01.000', '0:00:05.000', 'Second\nline')]]
     project = {'sources': [{'id': 'camera', 'path': str(source), 'duration': {'seconds': 8},
-                            'width': 640, 'height': 360, 'fps': 30, 'has_audio': True}]}
+                            'width': 640, 'height': 360, 'fps': 30, 'audio_codec': 'aac', 'video_codec': 'h264'}]}
     save_spec(spec, cwd=tmp_path)
     save_project(project, cwd=tmp_path)
     return spec, project, tmp_path
 
 
 def _compiler():
-    return runpy.run_path(str(EXPERIMENT / 'packet.py'))['compile_snapshot']
+    from moviestar.native_preview import compile_snapshot
+    return compile_snapshot
 
 
 def test_live_packet_keeps_canonical_motion_captions_and_source_offset(live_project, monkeypatch):
@@ -74,7 +70,7 @@ def test_live_packet_keeps_canonical_motion_captions_and_source_offset(live_proj
     assert spec['spatial']['scenes']['scene']['layout']['children'][1]['content']['text'] == 'Original title'
 
 
-@pytest.mark.parametrize('mutation', ['extra_video', 'audio_mix', 'wrong_audio', 'speed', 'padding', 'media_children', 'inherited_fit', 'unknown_fps'])
+@pytest.mark.parametrize('mutation', ['extra_video', 'audio_mix', 'no_audio', 'speed', 'padding', 'media_children', 'inherited_fit', 'unknown_fps', 'low_rate'])
 def test_live_packet_rejects_unimplemented_behavior(live_project, mutation):
     spec, project, root = live_project
     if mutation == 'extra_video':
@@ -83,10 +79,15 @@ def test_live_packet_rejects_unimplemented_behavior(live_project, mutation):
         spec['spatial']['scenes']['scene']['layout']['children'].append(extra)
     elif mutation == 'audio_mix':
         spec['audio_mix']['source_audio']['gain_db'] = -3
-    elif mutation == 'wrong_audio':
-        spec['composition'][0]['audio_from'] = None
+    elif mutation == 'no_audio':
+        project['sources'][0]['audio_codec'] = None
+        project['sources'][0]['has_audio'] = True  # A noncanonical flag cannot invent audio.
+        save_project(project, cwd=root)
     elif mutation == 'speed':
         spec['spatial']['scenes']['scene']['layout']['children'][0]['bindings']['clip']['source']['start'] = 0
+    elif mutation == 'low_rate':
+        project['sources'][0]['fps'] = 10
+        save_project(project, cwd=root)
     elif mutation == 'unknown_fps':
         project['sources'][0]['fps'] = None
         save_project(project, cwd=root)
@@ -98,76 +99,8 @@ def test_live_packet_rejects_unimplemented_behavior(live_project, mutation):
         spec['spatial']['definitions']['card']['children'][0]['children'] = [
             {'id': 'inside', 'type': 'text', 'content': {'text': 'unsupported child'}}]
     save_spec(spec, cwd=root)
-    with pytest.raises(ValueError, match='live feasibility'):
+    with pytest.raises(ValueError, match='Native preview unavailable'):
         _compiler()(read_snapshot(root, 0, 5))
-
-
-def _session_module(monkeypatch):
-    monkeypatch.syspath_prepend(str(EXPERIMENT))
-    return runpy.run_path(str(EXPERIMENT / 'serve.py'))
-
-
-def test_edit_during_live_compilation_cannot_publish_the_older_packet(live_project, tmp_path, monkeypatch):
-    module = _session_module(monkeypatch)
-    spec, _, root = live_project
-    folder = tmp_path / 'packets'
-    folder.mkdir()
-    session = module['LiveSession'](root, folder)
-    compile_packet = session.tick.__globals__['compile_snapshot']
-    once = []
-    def delayed(request):
-        result = compile_packet(request)
-        if not once:
-            once.append(request['request_id'])
-            spec['spatial']['scenes']['scene']['layout']['children'][1]['content']['text'] = 'New revision'
-            save_spec(spec, cwd=root)
-        return result
-    monkeypatch.setitem(session.tick.__globals__, 'compile_snapshot', delayed)
-    session.tick()
-    state = session.queue.state()
-    assert state['displayed'] is None and state['latest']['request_id'] != once[0]
-    assert not (folder / (once[0]+'.json')).exists()
-    session.tick()
-    assert session.queue.state()['is_current']
-
-
-def test_native_assets_are_scoped_range_served_and_invalidated_on_change(live_project, tmp_path, monkeypatch):
-    import json
-    import threading
-    from http.server import ThreadingHTTPServer
-    from urllib.error import HTTPError
-    from urllib.request import Request, urlopen
-
-    module = _session_module(monkeypatch)
-    _, _, root = live_project
-    folder = tmp_path / 'packets'; folder.mkdir()
-    session = module['LiveSession'](root, folder); session.tick()
-    server = ThreadingHTTPServer(('127.0.0.1', 0), module['Handler'])
-    server.daemon_threads = True
-    server.token, server.session = 'unit-token', session
-    thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
-    base = f'http://127.0.0.1:{server.server_port}/projects/unit-token/'
-    try:
-        state = session.queue.state(); request_id = state['latest']['request_id']
-        packet = json.loads(urlopen(base+'packet?request='+request_id).read())
-        assert str(root) not in json.dumps(packet)
-        asset = packet['media'][0]['asset']
-        response = urlopen(Request(base+'assets/'+asset, headers={'Range': 'bytes=2-5'}))
-        assert response.status == 206 and response.headers['Content-Type'] == 'video/mp4'
-        assert response.read() == (root/'camera.mp4').read_bytes()[2:6]
-        for route, headers, status in [('assets/unknown', {}, 404), ('../spec.json', {}, 404),
-                                       ('state', {'Origin': 'https://example.com'}, 403)]:
-            with pytest.raises(HTTPError) as error:
-                urlopen(Request(base+route, headers=headers))
-            assert error.value.code == status
-        (root/'camera.mp4').write_bytes(b'regenerated source')
-        with pytest.raises(HTTPError) as changed:
-            urlopen(base+'assets/'+asset)
-        assert changed.value.code == 409
-        fresh = json.loads(urlopen(base+'state').read())
-        assert fresh['latest']['request_id'] != request_id and not fresh['is_current']
-    finally:
-        server.shutdown();server.server_close();thread.join()
 
 
 def test_live_probe_rejects_live_caption_recipes(live_project):
@@ -182,3 +115,38 @@ def test_live_probe_rejects_source_operations_it_cannot_play(live_project):
     snapshot['spec']['sources'][0]['operations'] = [{'type': 'cut', 'from': '0:00:07.000', 'to': '0:00:08.000'}]
     with pytest.raises(ValueError, match='source operations'):
         _compiler()(snapshot)
+
+
+@pytest.mark.parametrize('routing', ['explicit', 'inferred', 'global'])
+@pytest.mark.parametrize('window', [(0, 5), (1, 3)])
+def test_native_audio_uses_canonical_routes(live_project, routing, window):
+    from moviestar.resolved import resolve_project
+    snapshot = read_snapshot(live_project[2], *window)
+    assert 'has_audio' not in snapshot['project']['sources'][0]
+    if routing != 'explicit':
+        snapshot['spec']['composition'][0]['audio_from'] = None
+    if routing == 'global':
+        snapshot['spec']['composition_audio_from'] = 'camera'
+    audio = resolve_project(snapshot['project'], snapshot['spec']).spans[0].audio
+    assert audio.source_id == 'camera' and audio.slices == ((1.0, 6.0),)
+    assert audio.routing == ('only_audio_slot' if routing == 'inferred' else 'composition')
+    packet, _ = _compiler()(snapshot)
+    assert packet['source_start'] == 1 + window[0]
+    assert packet['source_end'] == 1 + window[1]
+
+
+@pytest.mark.parametrize('change', [
+    {'source_id': None}, {'source_id': 'other'}, {'slices': ()},
+    {'slices': ((2.0, 7.0),)}, {'slices': ((1.0, 3.0),)},
+    {'slices': ((1.0, 2.0), (3.0, 7.0))}, {'speed': 2.0},
+])
+def test_native_audio_rejects_a_different_resolved_clock(live_project, monkeypatch, change):
+    from dataclasses import replace
+    from moviestar import native_preview
+    snapshot = read_snapshot(live_project[2], 0, 5)
+    timeline = native_preview.resolve_project(snapshot['project'], snapshot['spec'])
+    span = timeline.spans[0]
+    altered = replace(timeline, spans=(replace(span, audio=replace(span.audio, **change)),))
+    monkeypatch.setattr(native_preview, 'resolve_project', lambda *_: altered)
+    with pytest.raises(ValueError, match='audio'):
+        native_preview.compile_snapshot(snapshot)
