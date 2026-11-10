@@ -49,9 +49,14 @@ occupied port is an error, never a silent switch to another URL.
 
 ## Native profile and explicit fallback
 
-Native mode supports a frame-aligned window of at most ten seconds in a project
-with one spatial scene, one timeline span and one visible MP4 carrying its own
-audio. The source clock must be unit speed, matching the indexed output rate
+Native mode supports a frame-aligned window of at most ten seconds wholly within
+one spatial timeline span. The project can contain other spatial or preset
+scenes before and after it; `--from`/`--to` stay on the full composition's result
+clock. For example, `--from 1801 --to 1806` reviews that section without preparing
+the preceding thirty minutes. Restart the viewer to select another range.
+
+The selected span must have one visible MP4 carrying its own audio.
+The source clock must be unit speed, matching the indexed output rate
 (24–60 fps). Reusable components, text, shapes, images, manual/frozen captions and
 canonical sampled translation/scale/opacity are supported. Media wrappers must
 be relative/absolute, without padding, border widths or nested children.
@@ -61,8 +66,14 @@ audio-capable slot, or selected by `composition_audio_from`. These routes are
 accepted when the canonical resolved audio follows the visible video's source
 and clock. A scene's `audio_from: null` allows inference; it does not mute audio.
 
-Cuts/source operations, transitions, multiple video clocks, audio mixing,
-gain/fades, held/speed-changed media and live caption derivation are rejected.
+Ranges crossing scene cuts or pacing boundaries, overlapping any transition,
+or requiring multiple video clocks are rejected. Transitions elsewhere in the
+project do not block an otherwise supported window. The chosen source must have
+no source edit operations, and placed caption tracks must use manual/frozen
+cues. Edits on unrelated sources and unplaced live caption tracks do not block
+this window. Project-wide audio mixing/gain/fades remain unsupported, as do
+held/speed-changed media in the selected span. Ordinary unit-speed spans after
+a hold elsewhere in the scene can be reviewed with their original scene clock.
 Other codecs, VFR, HDR/color parity and general large-project behavior have not
 passed acceptance for this initial profile. The benchmark fixture uses H.264/AAC at 30 fps.
 
@@ -169,6 +180,10 @@ revision. See the reproducible runner in
 [`experiments/live_browser_preview`](../experiments/live_browser_preview/README.md).
 Small synthetic results do not establish three-second performance for large
 projects, real camera footage or arbitrary supported browser/codec combinations.
+The runner's `--profile long-source` additionally checks beginning/middle/end
+windows in 121-scene hour-long projects against a 90-minute synthetic recording;
+its source is intentionally low bitrate and does not represent gigabyte camera
+files. See its report for the exact source size, scene counts and measurement scope.
 Final delivery-quality export remains a separate `moviestar export` operation.
 
 ## Bundled viewer typeface

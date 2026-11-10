@@ -52,8 +52,9 @@ from the project directory), or use a coding agent. Undo uses the existing CLI.
 
 The probe fails explicitly outside this subset:
 
-- One spatial scene and one timeline span, with exactly one visible video and
-  its embedded source audio on the same unit-speed clock.
+- One selected spatial span, with exactly one visible video and its embedded
+  source audio on the same unit-speed clock. The project can have other spatial
+  or preset scenes, and pacing/transition behavior outside the review window.
 - A frame-aligned window of at most ten seconds, at 24–60 fps, matching the indexed source rate (the installed profile excludes
   low rates whose early last-frame stop would exceed the reference timing budget).
 - Native-compatible MP4; the portable benchmark uses H.264/AAC at 30 fps.
@@ -61,9 +62,10 @@ The probe fails explicitly outside this subset:
   static canonical CSS layout, and canonical motion/opacity samples.
 - Relative/absolute media wrappers without padding, border widths or children.
 
-Source edit operations, cuts, transitions, multiple video clocks, live caption derivation, external
+Source edit operations on the chosen video, ranges crossing cuts/pacing boundaries
+or overlapping transitions, multiple video clocks, live caption derivation on placed tracks, external
 soundtracks, gain/fades/mixing, holds and speed changes are not implemented here.
-Other codecs, VFR, HDR/color-management parity, long/gigabyte sources, network
+Other codecs, VFR, HDR/color-management parity, representative gigabyte camera sources, network
 sources and cloud/phone delivery remain unverified. Unsupported browser codecs
 fail visibly. Backend descriptors are bounded by the requested duration/frame
 rate, not a general-purpose incremental scene compiler.
@@ -217,3 +219,86 @@ reported stalls or dropped frames. These corrected series and indexed codec/rate
 fields are retained in `command-results.json`. The shared-host and small-fixture
 limitations still apply. The dedicated viewer UI pass is tracked separately in
 [issue #149](https://github.com/jdilla1277/moviestar/issues/149).
+
+## Selected windows in larger projects
+
+The native command can review an interior section without requiring the whole
+project to fit its single-video profile. Range eligibility uses the canonical
+overlapping span and half-open transition windows, including a transition in
+the unsampled tail after the last output frame. Result, scene, span and source
+origins remain distinct. An ordinary span after a hold can be selected without
+resetting scene-relative motion. Unplaced live caption tracks and edits on
+unrelated sources do not block review; applicable global audio settings still do.
+
+Run the extended benchmark with the same fixed gates:
+
+```sh
+python experiments/live_browser_preview/benchmark.py --profile long-source --out /tmp/native-long-new
+```
+
+It creates a 90-minute 640×360/30 H.264/AAC source and six hour-long, 121-scene
+projects, each with reusable component definitions and scene-owned spatial
+layouts. The selected scene begins at result 1800; review is **1801–1806**, with
+source ranges **1–6**, **2705–2710**, and **5385–5390** in both orientations.
+The source video repeats the eight-second barcode sequence by stream copy;
+audio is generated continuously to avoid accumulating AAC priming at joins.
+The barcode is modulo 240 frames, so absolute media times are checked as well.
+Ingestion uses the real CLI. Setup/source generation is outside edit timing.
+
+This is a deliberately low-bitrate synthetic duration/scene-count test, not a
+gigabyte camera-file, VFR, HDR or remote-delivery acceptance test. The encoded
+source is about 21 MB. Each case uses a fresh Chrome profile/server, but source
+generation, indexing and canonical inspection warm the OS file cache; “cold
+navigation” does not mean cold disk. Relative seeks within the five-second
+window are reported separately from navigation to an initial deep-source seek.
+
+The editable-install series passed all 120 edits: warm p95 **2408–2481 ms**,
+maximum **2596 ms**, against the unchanged 3000 ms gate. All frame/caption/layout,
+five flash/beep, undo/restoration, zero-stall/drop and timing checks passed.
+Fresh-profile navigation took 600–827 ms; nontrivial in-window seeks took
+24–35 ms. These remain one series per case on a shared M4 host, not a universal
+three-second guarantee. Per-edit results and further installed-wheel runs are
+retained in [`window-results.json`](window-results.json).
+
+An independent environment installed the built wheel (no source-package imports)
+and repeated the full matrix without the competing regression suite:
+
+| Source position | Landscape warm p95 | Portrait warm p95 |
+| --- | ---: | ---: |
+| Beginning | 2497 ms | 2509 ms |
+| Middle | 2525 ms | 2521 ms |
+| End | 2518 ms | 2583 ms |
+
+All 120 edits and unchanged correctness/playback gates passed; maximum edit
+latency was **2647 ms**. The compiler file in the installed wheel matched the
+checkout. This remains a shared host, not isolated hardware.
+
+The earlier wheel series ran alongside the full regression suite and **failed**:
+six edits exceeded 3000 ms (one at 3005 ms in landscape/beginning and five at the
+end of portrait/end). That last case reached p95 3709 ms / maximum 3919 ms;
+all its fidelity/playback checks passed. Keep this failed series rather than
+presenting the later successful run as a guarantee under arbitrary load. No
+budgets, sample counts, source sizes, scene counts or quality were reduced for
+the rerun. All three series are retained in the results file.
+
+The report also separates initial snapshot/timeline resolution from full
+descriptor compilation (the latter includes its own resolution), and records
+edit detection, worker generation and generation-to-stage readiness. These
+nested timings must not be added twice. A 0.5-second sampler measures combined
+RSS for the runner, service/worker, Node driver and owned Chrome processes, plus
+the output tree's disk high-water mark. It is a sampled aggregate RSS sum, not
+unique physical memory or an exact high-water measurement. Source HTTP byte
+counts come from CDP `Network.dataReceived`, excluding headers and unreported
+cache traffic, across the entire case including edits, seeks and playback.
+
+The editable series peaked at roughly **1.2 GiB** combined RSS. Chrome read
+roughly **160–249 MB** of source response bodies per case despite only reviewing
+five seconds: native `preload=auto` can read ahead and revisions create new
+players. This is a scaling limitation to investigate with real large files,
+not evidence that delivery costs stay bounded independently of source size.
+This source-delivery follow-up is tracked in
+[issue #150](https://github.com/jdilla1277/moviestar/issues/150).
+The selected-window change adds no proxy, persistent scene cache, new rendering
+backend or viewer redesign. General native/export pixel/color parity remains
+separate; the regression suite also checks a nonzero-result window against
+actual watch/export output and routed audio.

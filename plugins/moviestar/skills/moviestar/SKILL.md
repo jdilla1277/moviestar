@@ -46,7 +46,10 @@ time-mapping, rendering, and structured verification data.
 - For local human review of a supported single-video spatial scene, keep
   `moviestar preview --mode native --from 0 --to 5 --no-open` running in a
   persistent terminal and return its URL. It follows saved edits and undo;
-  the human presses Play for sound. Unsupported native projects fail explicitly:
+  the human presses Play for sound. Ranges use full composition result time and
+  can select a section inside a multi-scene project, up to ten seconds wholly
+  within one eligible spatial span. Crossing cuts/pacing boundaries or overlapping
+  transitions is unsupported. Unsupported native projects fail explicitly:
   use `--mode rendered` for the completed-MP4 alternative. The link is local to
   the machine and needs explicit host port forwarding for remote access. See
   [local preview](https://github.com/jdilla1277/moviestar/blob/main/docs/local-preview.md).
