@@ -2202,6 +2202,8 @@ class TestLoad:
         import os as _os
         import subprocess
         env = _os.environ.copy()
+        env.pop("ORT_DISABLE_TELEMETRY", None)
+        env.pop("HF_HUB_CACHE", None)
         env["HF_HOME"] = str(tmp_path / "hf-fresh")
         result = subprocess.run(
             [
@@ -2213,6 +2215,7 @@ class TestLoad:
             text=True,
             env=env,
             check=False,
+            timeout=180,
         )
         assert result.returncode == 0, (
             f"load failed (rc={result.returncode}):\n"
@@ -2234,6 +2237,34 @@ class TestLoad:
                 f"Full stderr: {result.stderr!r}"
             )
 
+        # Issue #147: both first-use and cached inference must exit normally.
+        # A new workspace forces inference again, rather than reusing the
+        # project's transcript. Offline mode proves the model cache suffices.
+        first = json.loads(result.stdout)
+        assert first["status"] == "loaded"
+        first_transcript = json.loads(Path(first["sources"][0]["transcript"]["path"]).read_text())
+        assert first_transcript["words"]
+        cached_dir = tmp_path / "cached-run"
+        cached_dir.mkdir()
+        env["HF_HUB_OFFLINE"] = "1"
+        cached = subprocess.run(
+            [
+                "moviestar", "load", speech_video, "--as", "src_0",
+                "--interval", "1.0", "--model", "tiny", "--no-download",
+            ],
+            cwd=cached_dir, capture_output=True, text=True, env=env,
+            check=False, timeout=90,
+        )
+        assert cached.returncode == 0, f"stdout={cached.stdout!r}\nstderr={cached.stderr!r}"
+        second = json.loads(cached.stdout)
+        assert second["status"] == "loaded"
+        cached_transcript = json.loads(Path(second["sources"][0]["transcript"]["path"]).read_text())
+        assert [word["text"] for word in cached_transcript["words"]] == [
+            word["text"] for word in first_transcript["words"]
+        ]
+        assert "Downloading faster-whisper" not in cached.stderr
+        assert "Transcription done" in cached.stderr
+
     def test_load_stdout_is_pure_json_under_real_subprocess(
         self, speech_video, tmp_path
     ):
@@ -2248,7 +2279,10 @@ class TestLoad:
         that class of leak by running moviestar as a real subprocess
         and asserting `json.loads(stdout)` succeeds end-to-end.
         """
+        import os as _os
         import subprocess
+        env = _os.environ.copy()
+        env.pop("ORT_DISABLE_TELEMETRY", None)
         result = subprocess.run(
             [
                 "moviestar", "load", speech_video, "--as", "src_0",
@@ -2258,6 +2292,8 @@ class TestLoad:
             capture_output=True,
             text=True,
             check=False,
+            env=env,
+            timeout=90,
         )
         assert result.returncode == 0, (
             f"load failed (rc={result.returncode}):\n"

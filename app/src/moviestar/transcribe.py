@@ -18,6 +18,13 @@ import time
 from collections.abc import Iterable
 from pathlib import Path
 
+# ORT's 1DS uploader can hang at native shutdown after inference completes.
+# Configure its supported opt-out before any faster-whisper import initializes
+# ORT (including cache lookup and Silero VAD). Preserve an explicit operator
+# setting. The later disable_telemetry_events() API leaves initialization
+# events and the uploader alive. See the upstream link in docs/installation.md.
+os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")
+
 from moviestar.ffmpeg import (
     extract_audio_window,
     run_audio_energy_probe,
