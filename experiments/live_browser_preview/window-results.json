@@ -1,0 +1,2230 @@
+{
+  "base_commit": "7733360882ea18dd73b79e224dfe4570d9328b5f",
+  "native_compiler_sha256": "8702f93b455ddd2206682be2a174f2ea9128e2cc33ab04be3ee0abbc0babc38f",
+  "scope": "Synthetic duration and scene-count acceptance; real camera/gigabyte sources and remote delivery remain unverified.",
+  "runs": [
+    {
+      "profile": "long-source",
+      "versions": {
+        "python": "3.12.12",
+        "platform": "macOS-15.6-arm64-arm-64bit",
+        "chrome": "Google Chrome for Testing 156.0.8078.73",
+        "node": "v24.5.0",
+        "ffmpeg": "ffmpeg version 9.0.1 Copyright (c) 2000-2026 the FFmpeg developers"
+      },
+      "load_start": [
+        2.72705078125,
+        3.017578125,
+        3.53466796875
+      ],
+      "source": {
+        "duration_s": 5400,
+        "bytes": 20958144,
+        "kind": "synthetic repeated 640x360/30 H264, continuous AAC cues"
+      },
+      "resources": [
+        {
+          "case": "landscape-beginning",
+          "peak_family_rss_mib": 1169.4,
+          "peak_output_mib": 33.8,
+          "sample_count": 89,
+          "target_interval_s": 0.5,
+          "errors": [],
+          "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+        },
+        {
+          "case": "landscape-middle",
+          "peak_family_rss_mib": 1192.3,
+          "peak_output_mib": 42.3,
+          "sample_count": 89,
+          "target_interval_s": 0.5,
+          "errors": [],
+          "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+        },
+        {
+          "case": "landscape-end",
+          "peak_family_rss_mib": 1120.1,
+          "peak_output_mib": 50.9,
+          "sample_count": 88,
+          "target_interval_s": 0.5,
+          "errors": [],
+          "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+        },
+        {
+          "case": "portrait-beginning",
+          "peak_family_rss_mib": 1159.0,
+          "peak_output_mib": 59.4,
+          "sample_count": 90,
+          "target_interval_s": 0.5,
+          "errors": [],
+          "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+        },
+        {
+          "case": "portrait-middle",
+          "peak_family_rss_mib": 1154.8,
+          "peak_output_mib": 68.0,
+          "sample_count": 88,
+          "target_interval_s": 0.5,
+          "errors": [],
+          "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+        },
+        {
+          "case": "portrait-end",
+          "peak_family_rss_mib": 1084.6,
+          "peak_output_mib": 76.5,
+          "sample_count": 88,
+          "target_interval_s": 0.5,
+          "errors": [],
+          "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+        }
+      ],
+      "problems": [],
+      "runtime": "editable installed package",
+      "concurrent_regression_suite": false,
+      "acceptance_passed": true,
+      "cases": [
+        {
+          "canvas": "landscape-beginning",
+          "fixture": {
+            "range": {
+              "from": 1801,
+              "to": 1806
+            },
+            "scene_id": "review",
+            "source_start": 1.0,
+            "source_end": 6.0,
+            "barcode_period_frames": 240,
+            "fps": 30.0,
+            "source_position": "beginning",
+            "project_duration_s": 3600.0,
+            "scene_count": 121,
+            "diagnostics": {
+              "read_snapshot_ms": 8.274041989352554,
+              "resolve_project_ms": 2.309583011083305,
+              "compile_snapshot_including_resolution_ms": 286.1362079856917,
+              "packet_bytes": 148158
+            }
+          },
+          "server_start_ms": 394,
+          "cold_navigation_ms": 616,
+          "summary": {
+            "warm_samples": 20,
+            "warm_p95_ms": 2419,
+            "warm_max_ms": 2567,
+            "budget_ms": 3000
+          },
+          "edits": [
+            {"edit": 1, "visible_ms": 930, "cli_and_visible_ms": 950, "detected_after_ms": 278, "generation_ms": 475, "generation_to_stage_prepared_ms": 136},
+            {"edit": 2, "visible_ms": 926, "cli_and_visible_ms": 950, "detected_after_ms": 287, "generation_ms": 500, "generation_to_stage_prepared_ms": 94},
+            {"edit": 3, "visible_ms": 1008, "cli_and_visible_ms": 1018, "detected_after_ms": 361, "generation_ms": 525, "generation_to_stage_prepared_ms": 78},
+            {"edit": 4, "visible_ms": 1172, "cli_and_visible_ms": 1188, "detected_after_ms": 418, "generation_ms": 552, "generation_to_stage_prepared_ms": 154},
+            {"edit": 5, "visible_ms": 1432, "cli_and_visible_ms": 1453, "detected_after_ms": 659, "generation_ms": 590, "generation_to_stage_prepared_ms": 126},
+            {"edit": 6, "visible_ms": 1511, "cli_and_visible_ms": 1520, "detected_after_ms": 690, "generation_ms": 605, "generation_to_stage_prepared_ms": 162},
+            {"edit": 7, "visible_ms": 1522, "cli_and_visible_ms": 1535, "detected_after_ms": 718, "generation_ms": 634, "generation_to_stage_prepared_ms": 106},
+            {"edit": 8, "visible_ms": 1618, "cli_and_visible_ms": 1627, "detected_after_ms": 794, "generation_ms": 672, "generation_to_stage_prepared_ms": 91},
+            {"edit": 9, "visible_ms": 1772, "cli_and_visible_ms": 1774, "detected_after_ms": 849, "generation_ms": 696, "generation_to_stage_prepared_ms": 163},
+            {"edit": 10, "visible_ms": 1763, "cli_and_visible_ms": 1782, "detected_after_ms": 844, "generation_ms": 726, "generation_to_stage_prepared_ms": 116},
+            {"edit": 11, "visible_ms": 1844, "cli_and_visible_ms": 1854, "detected_after_ms": 884, "generation_ms": 753, "generation_to_stage_prepared_ms": 126},
+            {"edit": 12, "visible_ms": 1873, "cli_and_visible_ms": 1880, "detected_after_ms": 923, "generation_ms": 807, "generation_to_stage_prepared_ms": 68},
+            {"edit": 13, "visible_ms": 1641, "cli_and_visible_ms": 1648, "detected_after_ms": 1036, "generation_ms": 437, "generation_to_stage_prepared_ms": 79},
+            {"edit": 14, "visible_ms": 1725, "cli_and_visible_ms": 1734, "detected_after_ms": 1112, "generation_ms": 464, "generation_to_stage_prepared_ms": 68},
+            {"edit": 15, "visible_ms": 1819, "cli_and_visible_ms": 1824, "detected_after_ms": 1094, "generation_ms": 477, "generation_to_stage_prepared_ms": 154},
+            {"edit": 16, "visible_ms": 1778, "cli_and_visible_ms": 1797, "detected_after_ms": 1049, "generation_ms": 497, "generation_to_stage_prepared_ms": 132},
+            {"edit": 17, "visible_ms": 2277, "cli_and_visible_ms": 2280, "detected_after_ms": 1525, "generation_ms": 512, "generation_to_stage_prepared_ms": 150},
+            {"edit": 18, "visible_ms": 2295, "cli_and_visible_ms": 2308, "detected_after_ms": 1559, "generation_ms": 529, "generation_to_stage_prepared_ms": 115},
+            {"edit": 19, "visible_ms": 2402, "cli_and_visible_ms": 2419, "detected_after_ms": 1648, "generation_ms": 546, "generation_to_stage_prepared_ms": 97},
+            {"edit": 20, "visible_ms": 2548, "cli_and_visible_ms": 2567, "detected_after_ms": 1739, "generation_ms": 575, "generation_to_stage_prepared_ms": 120}
+          ],
+          "parity": [
+            {
+              "at": 0,
+              "seek_ms": 1,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "seek_ms": 25,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "seek_ms": 34,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "undo_passed": true,
+          "playback": {
+            "frames": 149,
+            "initial_barcode": 30,
+            "flash_count": 5,
+            "beep_count": 5,
+            "max_estimated_phase_ms": 19.075666654745874,
+            "end_error_ms": 24.663000000000324,
+            "stalls": 0,
+            "dropped_frames": 0,
+            "click_to_first_video_ms": 369.5,
+            "absolute_window_bounds_passed": true
+          },
+          "source_http": {
+            "video_requests": 23,
+            "encoded_body_bytes": 216759384,
+            "range_statuses": [
+              206
+            ]
+          },
+          "problems": []
+        },
+        {
+          "canvas": "landscape-middle",
+          "fixture": {
+            "range": {
+              "from": 1801,
+              "to": 1806
+            },
+            "scene_id": "review",
+            "source_start": 2705.0,
+            "source_end": 2710.0,
+            "barcode_period_frames": 240,
+            "fps": 30.0,
+            "source_position": "middle",
+            "project_duration_s": 3600.0,
+            "scene_count": 121,
+            "diagnostics": {
+              "read_snapshot_ms": 8.566665987018496,
+              "resolve_project_ms": 2.3364999797195196,
+              "compile_snapshot_including_resolution_ms": 284.4265830353834,
+              "packet_bytes": 148164
+            }
+          },
+          "server_start_ms": 429,
+          "cold_navigation_ms": 827,
+          "summary": {
+            "warm_samples": 20,
+            "warm_p95_ms": 2481,
+            "warm_max_ms": 2596,
+            "budget_ms": 3000
+          },
+          "edits": [
+            {"edit": 1, "visible_ms": 930, "cli_and_visible_ms": 943, "detected_after_ms": 247, "generation_ms": 479, "generation_to_stage_prepared_ms": 163},
+            {"edit": 2, "visible_ms": 935, "cli_and_visible_ms": 944, "detected_after_ms": 270, "generation_ms": 493, "generation_to_stage_prepared_ms": 124},
+            {"edit": 3, "visible_ms": 1072, "cli_and_visible_ms": 1089, "detected_after_ms": 344, "generation_ms": 527, "generation_to_stage_prepared_ms": 156},
+            {"edit": 4, "visible_ms": 1031, "cli_and_visible_ms": 1053, "detected_after_ms": 337, "generation_ms": 569, "generation_to_stage_prepared_ms": 77},
+            {"edit": 5, "visible_ms": 1109, "cli_and_visible_ms": 1129, "detected_after_ms": 421, "generation_ms": 575, "generation_to_stage_prepared_ms": 61},
+            {"edit": 6, "visible_ms": 1295, "cli_and_visible_ms": 1308, "detected_after_ms": 478, "generation_ms": 605, "generation_to_stage_prepared_ms": 152},
+            {"edit": 7, "visible_ms": 1535, "cli_and_visible_ms": 1541, "detected_after_ms": 727, "generation_ms": 641, "generation_to_stage_prepared_ms": 110},
+            {"edit": 8, "visible_ms": 1675, "cli_and_visible_ms": 1698, "detected_after_ms": 779, "generation_ms": 671, "generation_to_stage_prepared_ms": 156},
+            {"edit": 9, "visible_ms": 1675, "cli_and_visible_ms": 1680, "detected_after_ms": 767, "generation_ms": 686, "generation_to_stage_prepared_ms": 151},
+            {"edit": 10, "visible_ms": 1710, "cli_and_visible_ms": 1720, "detected_after_ms": 839, "generation_ms": 726, "generation_to_stage_prepared_ms": 79},
+            {"edit": 11, "visible_ms": 1905, "cli_and_visible_ms": 1912, "detected_after_ms": 939, "generation_ms": 765, "generation_to_stage_prepared_ms": 130},
+            {"edit": 12, "visible_ms": 1541, "cli_and_visible_ms": 1543, "detected_after_ms": 953, "generation_ms": 426, "generation_to_stage_prepared_ms": 89},
+            {"edit": 13, "visible_ms": 1680, "cli_and_visible_ms": 1687, "detected_after_ms": 1019, "generation_ms": 440, "generation_to_stage_prepared_ms": 142},
+            {"edit": 14, "visible_ms": 1641, "cli_and_visible_ms": 1652, "detected_after_ms": 986, "generation_ms": 446, "generation_to_stage_prepared_ms": 115},
+            {"edit": 15, "visible_ms": 1770, "cli_and_visible_ms": 1787, "detected_after_ms": 1071, "generation_ms": 469, "generation_to_stage_prepared_ms": 147},
+            {"edit": 16, "visible_ms": 1798, "cli_and_visible_ms": 1800, "detected_after_ms": 1068, "generation_ms": 513, "generation_to_stage_prepared_ms": 131},
+            {"edit": 17, "visible_ms": 2296, "cli_and_visible_ms": 2303, "detected_after_ms": 1543, "generation_ms": 510, "generation_to_stage_prepared_ms": 139},
+            {"edit": 18, "visible_ms": 2324, "cli_and_visible_ms": 2331, "detected_after_ms": 1565, "generation_ms": 530, "generation_to_stage_prepared_ms": 122},
+            {"edit": 19, "visible_ms": 2475, "cli_and_visible_ms": 2481, "detected_after_ms": 1695, "generation_ms": 549, "generation_to_stage_prepared_ms": 134},
+            {"edit": 20, "visible_ms": 2592, "cli_and_visible_ms": 2596, "detected_after_ms": 1692, "generation_ms": 611, "generation_to_stage_prepared_ms": 175}
+          ],
+          "parity": [
+            {
+              "at": 0,
+              "seek_ms": 1,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "seek_ms": 34,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "seek_ms": 31,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "undo_passed": true,
+          "playback": {
+            "frames": 149,
+            "initial_barcode": 30,
+            "flash_count": 5,
+            "beep_count": 5,
+            "max_estimated_phase_ms": 19.10799999999972,
+            "end_error_ms": 23.999999999887223,
+            "stalls": 0,
+            "dropped_frames": 0,
+            "click_to_first_video_ms": 341.89990234375,
+            "absolute_window_bounds_passed": true
+          },
+          "source_http": {
+            "video_requests": 54,
+            "encoded_body_bytes": 249266072,
+            "range_statuses": [
+              206
+            ]
+          },
+          "problems": []
+        },
+        {
+          "canvas": "landscape-end",
+          "fixture": {
+            "range": {
+              "from": 1801,
+              "to": 1806
+            },
+            "scene_id": "review",
+            "source_start": 5385.0,
+            "source_end": 5390.0,
+            "barcode_period_frames": 240,
+            "fps": 30.0,
+            "source_position": "end",
+            "project_duration_s": 3600.0,
+            "scene_count": 121,
+            "diagnostics": {
+              "read_snapshot_ms": 8.52729199687019,
+              "resolve_project_ms": 2.4909169878810644,
+              "compile_snapshot_including_resolution_ms": 290.2023749775253,
+              "packet_bytes": 148164
+            }
+          },
+          "server_start_ms": 407,
+          "cold_navigation_ms": 615,
+          "summary": {
+            "warm_samples": 20,
+            "warm_p95_ms": 2408,
+            "warm_max_ms": 2491,
+            "budget_ms": 3000
+          },
+          "edits": [
+            {"edit": 1, "visible_ms": 862, "cli_and_visible_ms": 873, "detected_after_ms": 259, "generation_ms": 468, "generation_to_stage_prepared_ms": 96},
+            {"edit": 2, "visible_ms": 1022, "cli_and_visible_ms": 1026, "detected_after_ms": 356, "generation_ms": 502, "generation_to_stage_prepared_ms": 115},
+            {"edit": 3, "visible_ms": 1060, "cli_and_visible_ms": 1065, "detected_after_ms": 357, "generation_ms": 520, "generation_to_stage_prepared_ms": 137},
+            {"edit": 4, "visible_ms": 1059, "cli_and_visible_ms": 1067, "detected_after_ms": 365, "generation_ms": 551, "generation_to_stage_prepared_ms": 96},
+            {"edit": 5, "visible_ms": 1173, "cli_and_visible_ms": 1181, "detected_after_ms": 431, "generation_ms": 596, "generation_to_stage_prepared_ms": 92},
+            {"edit": 6, "visible_ms": 1207, "cli_and_visible_ms": 1219, "detected_after_ms": 458, "generation_ms": 609, "generation_to_stage_prepared_ms": 80},
+            {"edit": 7, "visible_ms": 1636, "cli_and_visible_ms": 1654, "detected_after_ms": 790, "generation_ms": 634, "generation_to_stage_prepared_ms": 155},
+            {"edit": 8, "visible_ms": 1613, "cli_and_visible_ms": 1625, "detected_after_ms": 744, "generation_ms": 652, "generation_to_stage_prepared_ms": 156},
+            {"edit": 9, "visible_ms": 1687, "cli_and_visible_ms": 1702, "detected_after_ms": 769, "generation_ms": 701, "generation_to_stage_prepared_ms": 143},
+            {"edit": 10, "visible_ms": 1766, "cli_and_visible_ms": 1787, "detected_after_ms": 844, "generation_ms": 731, "generation_to_stage_prepared_ms": 124},
+            {"edit": 11, "visible_ms": 1909, "cli_and_visible_ms": 1929, "detected_after_ms": 884, "generation_ms": 805, "generation_to_stage_prepared_ms": 150},
+            {"edit": 12, "visible_ms": 1828, "cli_and_visible_ms": 1845, "detected_after_ms": 901, "generation_ms": 777, "generation_to_stage_prepared_ms": 76},
+            {"edit": 13, "visible_ms": 1698, "cli_and_visible_ms": 1707, "detected_after_ms": 1009, "generation_ms": 442, "generation_to_stage_prepared_ms": 171},
+            {"edit": 14, "visible_ms": 1555, "cli_and_visible_ms": 1568, "detected_after_ms": 943, "generation_ms": 450, "generation_to_stage_prepared_ms": 83},
+            {"edit": 15, "visible_ms": 1752, "cli_and_visible_ms": 1754, "detected_after_ms": 1119, "generation_ms": 471, "generation_to_stage_prepared_ms": 79},
+            {"edit": 16, "visible_ms": 1830, "cli_and_visible_ms": 1845, "detected_after_ms": 1125, "generation_ms": 491, "generation_to_stage_prepared_ms": 128},
+            {"edit": 17, "visible_ms": 2266, "cli_and_visible_ms": 2273, "detected_after_ms": 1529, "generation_ms": 518, "generation_to_stage_prepared_ms": 117},
+            {"edit": 18, "visible_ms": 2374, "cli_and_visible_ms": 2390, "detected_after_ms": 1585, "generation_ms": 559, "generation_to_stage_prepared_ms": 124},
+            {"edit": 19, "visible_ms": 2399, "cli_and_visible_ms": 2408, "detected_after_ms": 1637, "generation_ms": 540, "generation_to_stage_prepared_ms": 112},
+            {"edit": 20, "visible_ms": 2489, "cli_and_visible_ms": 2491, "detected_after_ms": 1720, "generation_ms": 564, "generation_to_stage_prepared_ms": 93}
+          ],
+          "parity": [
+            {
+              "at": 0,
+              "seek_ms": 1,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "seek_ms": 27,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "seek_ms": 33,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "undo_passed": true,
+          "playback": {
+            "frames": 149,
+            "initial_barcode": 30,
+            "flash_count": 5,
+            "beep_count": 5,
+            "max_estimated_phase_ms": 24.469666666666853,
+            "end_error_ms": 29.99199999976554,
+            "stalls": 0,
+            "dropped_frames": 0,
+            "click_to_first_video_ms": 335.400146484375,
+            "absolute_window_bounds_passed": true
+          },
+          "source_http": {
+            "video_requests": 46,
+            "encoded_body_bytes": 164695460,
+            "range_statuses": [
+              206
+            ]
+          },
+          "problems": []
+        },
+        {
+          "canvas": "portrait-beginning",
+          "fixture": {
+            "range": {
+              "from": 1801,
+              "to": 1806
+            },
+            "scene_id": "review",
+            "source_start": 1.0,
+            "source_end": 6.0,
+            "barcode_period_frames": 240,
+            "fps": 30.0,
+            "source_position": "beginning",
+            "project_duration_s": 3600.0,
+            "scene_count": 121,
+            "diagnostics": {
+              "read_snapshot_ms": 8.404250023886561,
+              "resolve_project_ms": 2.4816669756546617,
+              "compile_snapshot_including_resolution_ms": 324.8819160507992,
+              "packet_bytes": 148153
+            }
+          },
+          "server_start_ms": 430,
+          "cold_navigation_ms": 612,
+          "summary": {
+            "warm_samples": 20,
+            "warm_p95_ms": 2458,
+            "warm_max_ms": 2468,
+            "budget_ms": 3000
+          },
+          "edits": [
+            {"edit": 1, "visible_ms": 929, "cli_and_visible_ms": 939, "detected_after_ms": 252, "generation_ms": 479, "generation_to_stage_prepared_ms": 160},
+            {"edit": 2, "visible_ms": 938, "cli_and_visible_ms": 955, "detected_after_ms": 273, "generation_ms": 503, "generation_to_stage_prepared_ms": 116},
+            {"edit": 3, "visible_ms": 1031, "cli_and_visible_ms": 1051, "detected_after_ms": 346, "generation_ms": 527, "generation_to_stage_prepared_ms": 111},
+            {"edit": 4, "visible_ms": 1144, "cli_and_visible_ms": 1154, "detected_after_ms": 366, "generation_ms": 571, "generation_to_stage_prepared_ms": 160},
+            {"edit": 5, "visible_ms": 1422, "cli_and_visible_ms": 1436, "detected_after_ms": 628, "generation_ms": 587, "generation_to_stage_prepared_ms": 149},
+            {"edit": 6, "visible_ms": 1499, "cli_and_visible_ms": 1520, "detected_after_ms": 671, "generation_ms": 624, "generation_to_stage_prepared_ms": 149},
+            {"edit": 7, "visible_ms": 1512, "cli_and_visible_ms": 1519, "detected_after_ms": 700, "generation_ms": 637, "generation_to_stage_prepared_ms": 111},
+            {"edit": 8, "visible_ms": 1591, "cli_and_visible_ms": 1598, "detected_after_ms": 788, "generation_ms": 655, "generation_to_stage_prepared_ms": 86},
+            {"edit": 9, "visible_ms": 1757, "cli_and_visible_ms": 1767, "detected_after_ms": 855, "generation_ms": 698, "generation_to_stage_prepared_ms": 140},
+            {"edit": 10, "visible_ms": 1772, "cli_and_visible_ms": 1778, "detected_after_ms": 834, "generation_ms": 719, "generation_to_stage_prepared_ms": 145},
+            {"edit": 11, "visible_ms": 1842, "cli_and_visible_ms": 1858, "detected_after_ms": 866, "generation_ms": 761, "generation_to_stage_prepared_ms": 133},
+            {"edit": 12, "visible_ms": 1848, "cli_and_visible_ms": 1864, "detected_after_ms": 914, "generation_ms": 772, "generation_to_stage_prepared_ms": 89},
+            {"edit": 13, "visible_ms": 2050, "cli_and_visible_ms": 2065, "detected_after_ms": 986, "generation_ms": 858, "generation_to_stage_prepared_ms": 119},
+            {"edit": 14, "visible_ms": 2065, "cli_and_visible_ms": 2070, "detected_after_ms": 1032, "generation_ms": 864, "generation_to_stage_prepared_ms": 89},
+            {"edit": 15, "visible_ms": 1758, "cli_and_visible_ms": 1778, "detected_after_ms": 1104, "generation_ms": 479, "generation_to_stage_prepared_ms": 81},
+            {"edit": 16, "visible_ms": 1897, "cli_and_visible_ms": 1909, "detected_after_ms": 1159, "generation_ms": 523, "generation_to_stage_prepared_ms": 111},
+            {"edit": 17, "visible_ms": 1919, "cli_and_visible_ms": 1935, "detected_after_ms": 1190, "generation_ms": 510, "generation_to_stage_prepared_ms": 131},
+            {"edit": 18, "visible_ms": 2314, "cli_and_visible_ms": 2331, "detected_after_ms": 1559, "generation_ms": 549, "generation_to_stage_prepared_ms": 117},
+            {"edit": 19, "visible_ms": 2449, "cli_and_visible_ms": 2458, "detected_after_ms": 1658, "generation_ms": 556, "generation_to_stage_prepared_ms": 122},
+            {"edit": 20, "visible_ms": 2455, "cli_and_visible_ms": 2468, "detected_after_ms": 1687, "generation_ms": 562, "generation_to_stage_prepared_ms": 108}
+          ],
+          "parity": [
+            {
+              "at": 0,
+              "seek_ms": 1,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "seek_ms": 30,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "seek_ms": 34,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "undo_passed": true,
+          "playback": {
+            "frames": 149,
+            "initial_barcode": 30,
+            "flash_count": 5,
+            "beep_count": 5,
+            "max_estimated_phase_ms": 19.18700003576305,
+            "end_error_ms": 25.04599999999968,
+            "stalls": 0,
+            "dropped_frames": 0,
+            "click_to_first_video_ms": 332.199951171875,
+            "absolute_window_bounds_passed": true
+          },
+          "source_http": {
+            "video_requests": 23,
+            "encoded_body_bytes": 214237184,
+            "range_statuses": [
+              206
+            ]
+          },
+          "problems": []
+        },
+        {
+          "canvas": "portrait-middle",
+          "fixture": {
+            "range": {
+              "from": 1801,
+              "to": 1806
+            },
+            "scene_id": "review",
+            "source_start": 2705.0,
+            "source_end": 2710.0,
+            "barcode_period_frames": 240,
+            "fps": 30.0,
+            "source_position": "middle",
+            "project_duration_s": 3600.0,
+            "scene_count": 121,
+            "diagnostics": {
+              "read_snapshot_ms": 8.531166997272521,
+              "resolve_project_ms": 2.3957089870236814,
+              "compile_snapshot_including_resolution_ms": 287.7501249895431,
+              "packet_bytes": 148159
+            }
+          },
+          "server_start_ms": 399,
+          "cold_navigation_ms": 628,
+          "summary": {
+            "warm_samples": 20,
+            "warm_p95_ms": 2465,
+            "warm_max_ms": 2485,
+            "budget_ms": 3000
+          },
+          "edits": [
+            {"edit": 1, "visible_ms": 845, "cli_and_visible_ms": 854, "detected_after_ms": 237, "generation_ms": 471, "generation_to_stage_prepared_ms": 98},
+            {"edit": 2, "visible_ms": 1038, "cli_and_visible_ms": 1049, "detected_after_ms": 339, "generation_ms": 499, "generation_to_stage_prepared_ms": 155},
+            {"edit": 3, "visible_ms": 1053, "cli_and_visible_ms": 1067, "detected_after_ms": 312, "generation_ms": 531, "generation_to_stage_prepared_ms": 165},
+            {"edit": 4, "visible_ms": 1284, "cli_and_visible_ms": 1299, "detected_after_ms": 579, "generation_ms": 550, "generation_to_stage_prepared_ms": 101},
+            {"edit": 5, "visible_ms": 1200, "cli_and_visible_ms": 1215, "detected_after_ms": 413, "generation_ms": 576, "generation_to_stage_prepared_ms": 154},
+            {"edit": 6, "visible_ms": 1501, "cli_and_visible_ms": 1523, "detected_after_ms": 668, "generation_ms": 629, "generation_to_stage_prepared_ms": 147},
+            {"edit": 7, "visible_ms": 1524, "cli_and_visible_ms": 1531, "detected_after_ms": 715, "generation_ms": 630, "generation_to_stage_prepared_ms": 123},
+            {"edit": 8, "visible_ms": 1710, "cli_and_visible_ms": 1712, "detected_after_ms": 818, "generation_ms": 677, "generation_to_stage_prepared_ms": 154},
+            {"edit": 9, "visible_ms": 1694, "cli_and_visible_ms": 1714, "detected_after_ms": 781, "generation_ms": 697, "generation_to_stage_prepared_ms": 152},
+            {"edit": 10, "visible_ms": 1744, "cli_and_visible_ms": 1760, "detected_after_ms": 813, "generation_ms": 713, "generation_to_stage_prepared_ms": 142},
+            {"edit": 11, "visible_ms": 1831, "cli_and_visible_ms": 1839, "detected_after_ms": 862, "generation_ms": 746, "generation_to_stage_prepared_ms": 143},
+            {"edit": 12, "visible_ms": 1924, "cli_and_visible_ms": 1931, "detected_after_ms": 888, "generation_ms": 781, "generation_to_stage_prepared_ms": 172},
+            {"edit": 13, "visible_ms": 1542, "cli_and_visible_ms": 1544, "detected_after_ms": 918, "generation_ms": 438, "generation_to_stage_prepared_ms": 96},
+            {"edit": 14, "visible_ms": 1679, "cli_and_visible_ms": 1692, "detected_after_ms": 1054, "generation_ms": 461, "generation_to_stage_prepared_ms": 81},
+            {"edit": 15, "visible_ms": 1735, "cli_and_visible_ms": 1751, "detected_after_ms": 1074, "generation_ms": 460, "generation_to_stage_prepared_ms": 104},
+            {"edit": 16, "visible_ms": 1830, "cli_and_visible_ms": 1838, "detected_after_ms": 1091, "generation_ms": 501, "generation_to_stage_prepared_ms": 140},
+            {"edit": 17, "visible_ms": 2240, "cli_and_visible_ms": 2255, "detected_after_ms": 1512, "generation_ms": 511, "generation_to_stage_prepared_ms": 130},
+            {"edit": 18, "visible_ms": 2351, "cli_and_visible_ms": 2353, "detected_after_ms": 1596, "generation_ms": 539, "generation_to_stage_prepared_ms": 123},
+            {"edit": 19, "visible_ms": 2446, "cli_and_visible_ms": 2465, "detected_after_ms": 1666, "generation_ms": 552, "generation_to_stage_prepared_ms": 118},
+            {"edit": 20, "visible_ms": 2479, "cli_and_visible_ms": 2485, "detected_after_ms": 1666, "generation_ms": 571, "generation_to_stage_prepared_ms": 127}
+          ],
+          "parity": [
+            {
+              "at": 0,
+              "seek_ms": 1,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "seek_ms": 29,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "seek_ms": 35,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "undo_passed": true,
+          "playback": {
+            "frames": 149,
+            "initial_barcode": 30,
+            "flash_count": 5,
+            "beep_count": 5,
+            "max_estimated_phase_ms": 26.77066666666633,
+            "end_error_ms": 32.000000000152795,
+            "stalls": 0,
+            "dropped_frames": 0,
+            "click_to_first_video_ms": 324.5,
+            "absolute_window_bounds_passed": true
+          },
+          "source_http": {
+            "video_requests": 52,
+            "encoded_body_bytes": 245235712,
+            "range_statuses": [
+              206
+            ]
+          },
+          "problems": []
+        },
+        {
+          "canvas": "portrait-end",
+          "fixture": {
+            "range": {
+              "from": 1801,
+              "to": 1806
+            },
+            "scene_id": "review",
+            "source_start": 5385.0,
+            "source_end": 5390.0,
+            "barcode_period_frames": 240,
+            "fps": 30.0,
+            "source_position": "end",
+            "project_duration_s": 3600.0,
+            "scene_count": 121,
+            "diagnostics": {
+              "read_snapshot_ms": 9.784000052604824,
+              "resolve_project_ms": 2.5246249861083925,
+              "compile_snapshot_including_resolution_ms": 292.89583396166563,
+              "packet_bytes": 148159
+            }
+          },
+          "server_start_ms": 416,
+          "cold_navigation_ms": 600,
+          "summary": {
+            "warm_samples": 20,
+            "warm_p95_ms": 2413,
+            "warm_max_ms": 2547,
+            "budget_ms": 3000
+          },
+          "edits": [
+            {"edit": 1, "visible_ms": 930, "cli_and_visible_ms": 937, "detected_after_ms": 269, "generation_ms": 466, "generation_to_stage_prepared_ms": 155},
+            {"edit": 2, "visible_ms": 924, "cli_and_visible_ms": 937, "detected_after_ms": 282, "generation_ms": 504, "generation_to_stage_prepared_ms": 91},
+            {"edit": 3, "visible_ms": 1019, "cli_and_visible_ms": 1030, "detected_after_ms": 378, "generation_ms": 519, "generation_to_stage_prepared_ms": 76},
+            {"edit": 4, "visible_ms": 1171, "cli_and_visible_ms": 1189, "detected_after_ms": 415, "generation_ms": 546, "generation_to_stage_prepared_ms": 160},
+            {"edit": 5, "visible_ms": 1414, "cli_and_visible_ms": 1417, "detected_after_ms": 636, "generation_ms": 584, "generation_to_stage_prepared_ms": 137},
+            {"edit": 6, "visible_ms": 1512, "cli_and_visible_ms": 1515, "detected_after_ms": 687, "generation_ms": 612, "generation_to_stage_prepared_ms": 159},
+            {"edit": 7, "visible_ms": 1562, "cli_and_visible_ms": 1582, "detected_after_ms": 738, "generation_ms": 629, "generation_to_stage_prepared_ms": 129},
+            {"edit": 8, "visible_ms": 1578, "cli_and_visible_ms": 1582, "detected_after_ms": 769, "generation_ms": 661, "generation_to_stage_prepared_ms": 82},
+            {"edit": 9, "visible_ms": 1710, "cli_and_visible_ms": 1718, "detected_after_ms": 854, "generation_ms": 692, "generation_to_stage_prepared_ms": 101},
+            {"edit": 10, "visible_ms": 1857, "cli_and_visible_ms": 1861, "detected_after_ms": 912, "generation_ms": 729, "generation_to_stage_prepared_ms": 141},
+            {"edit": 11, "visible_ms": 1844, "cli_and_visible_ms": 1867, "detected_after_ms": 873, "generation_ms": 778, "generation_to_stage_prepared_ms": 114},
+            {"edit": 12, "visible_ms": 1859, "cli_and_visible_ms": 1878, "detected_after_ms": 929, "generation_ms": 762, "generation_to_stage_prepared_ms": 96},
+            {"edit": 13, "visible_ms": 1712, "cli_and_visible_ms": 1724, "detected_after_ms": 1009, "generation_ms": 442, "generation_to_stage_prepared_ms": 174},
+            {"edit": 14, "visible_ms": 1569, "cli_and_visible_ms": 1575, "detected_after_ms": 949, "generation_ms": 465, "generation_to_stage_prepared_ms": 75},
+            {"edit": 15, "visible_ms": 1825, "cli_and_visible_ms": 1841, "detected_after_ms": 1097, "generation_ms": 507, "generation_to_stage_prepared_ms": 127},
+            {"edit": 16, "visible_ms": 1799, "cli_and_visible_ms": 1809, "detected_after_ms": 1077, "generation_ms": 496, "generation_to_stage_prepared_ms": 128},
+            {"edit": 17, "visible_ms": 1838, "cli_and_visible_ms": 1847, "detected_after_ms": 1117, "generation_ms": 504, "generation_to_stage_prepared_ms": 128},
+            {"edit": 18, "visible_ms": 2356, "cli_and_visible_ms": 2376, "detected_after_ms": 1612, "generation_ms": 522, "generation_to_stage_prepared_ms": 130},
+            {"edit": 19, "visible_ms": 2411, "cli_and_visible_ms": 2413, "detected_after_ms": 1619, "generation_ms": 563, "generation_to_stage_prepared_ms": 117},
+            {"edit": 20, "visible_ms": 2545, "cli_and_visible_ms": 2547, "detected_after_ms": 1730, "generation_ms": 575, "generation_to_stage_prepared_ms": 122}
+          ],
+          "parity": [
+            {
+              "at": 0,
+              "seek_ms": 1,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "seek_ms": 24,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "seek_ms": 32,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "undo_passed": true,
+          "playback": {
+            "frames": 149,
+            "initial_barcode": 30,
+            "flash_count": 5,
+            "beep_count": 5,
+            "max_estimated_phase_ms": 22.905999976158,
+            "end_error_ms": 29.333000000406173,
+            "stalls": 0,
+            "dropped_frames": 0,
+            "click_to_first_video_ms": 334.89990234375,
+            "absolute_window_bounds_passed": true
+          },
+          "source_http": {
+            "video_requests": 46,
+            "encoded_body_bytes": 159993200,
+            "range_statuses": [
+              206
+            ]
+          },
+          "problems": []
+        }
+      ]
+    },
+    {
+      "profile": "long-source",
+      "versions": {
+        "python": "3.12.12",
+        "platform": "macOS-15.6-arm64-arm-64bit",
+        "chrome": "Google Chrome for Testing 156.0.8078.73",
+        "node": "v24.5.0",
+        "ffmpeg": "ffmpeg version 9.0.1 Copyright (c) 2000-2026 the FFmpeg developers"
+      },
+      "load_start": [
+        2.9482421875,
+        3.39892578125,
+        3.57275390625
+      ],
+      "source": {
+        "duration_s": 5400,
+        "bytes": 20958144,
+        "kind": "synthetic repeated 640x360/30 H264, continuous AAC cues"
+      },
+      "resources": [
+        {
+          "case": "landscape-beginning",
+          "peak_family_rss_mib": 1193.8,
+          "peak_output_mib": 33.7,
+          "sample_count": 92,
+          "target_interval_s": 0.5,
+          "errors": [],
+          "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+        },
+        {
+          "case": "landscape-middle",
+          "peak_family_rss_mib": 1137.2,
+          "peak_output_mib": 42.4,
+          "sample_count": 95,
+          "target_interval_s": 0.5,
+          "errors": [],
+          "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+        },
+        {
+          "case": "landscape-end",
+          "peak_family_rss_mib": 1205.4,
+          "peak_output_mib": 50.9,
+          "sample_count": 99,
+          "target_interval_s": 0.5,
+          "errors": [],
+          "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+        },
+        {
+          "case": "portrait-beginning",
+          "peak_family_rss_mib": 1228.5,
+          "peak_output_mib": 59.4,
+          "sample_count": 97,
+          "target_interval_s": 0.5,
+          "errors": [],
+          "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+        },
+        {
+          "case": "portrait-middle",
+          "peak_family_rss_mib": 1241.8,
+          "peak_output_mib": 68.0,
+          "sample_count": 102,
+          "target_interval_s": 0.5,
+          "errors": [],
+          "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+        },
+        {
+          "case": "portrait-end",
+          "peak_family_rss_mib": 1280.3,
+          "peak_output_mib": 76.5,
+          "sample_count": 112,
+          "target_interval_s": 0.5,
+          "errors": [],
+          "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+        }
+      ],
+      "problems": [
+        "landscape-beginning: CLI edit 18 visible and command complete within 3000ms",
+        "portrait-end: CLI edit 16 visible and command complete within 3000ms",
+        "portrait-end: CLI edit 17 visible and command complete within 3000ms",
+        "portrait-end: CLI edit 18 visible and command complete within 3000ms",
+        "portrait-end: CLI edit 19 visible and command complete within 3000ms",
+        "portrait-end: CLI edit 20 visible and command complete within 3000ms"
+      ],
+      "runtime": "isolated installed wheel; competing full regression suite",
+      "concurrent_regression_suite": true,
+      "acceptance_passed": false,
+      "cases": [
+        {
+          "canvas": "landscape-beginning",
+          "fixture": {
+            "range": {
+              "from": 1801,
+              "to": 1806
+            },
+            "scene_id": "review",
+            "source_start": 1.0,
+            "source_end": 6.0,
+            "barcode_period_frames": 240,
+            "fps": 30.0,
+            "source_position": "beginning",
+            "project_duration_s": 3600.0,
+            "scene_count": 121,
+            "diagnostics": {
+              "read_snapshot_ms": 8.638542029075325,
+              "resolve_project_ms": 2.287041977979243,
+              "compile_snapshot_including_resolution_ms": 301.5557919861749,
+              "packet_bytes": 148158
+            }
+          },
+          "server_start_ms": 417,
+          "cold_navigation_ms": 598,
+          "summary": {
+            "warm_samples": 20,
+            "warm_p95_ms": 2567,
+            "warm_max_ms": 3005,
+            "budget_ms": 3000
+          },
+          "edits": [
+            {"edit": 1, "visible_ms": 946, "cli_and_visible_ms": 950, "detected_after_ms": 285, "generation_ms": 468, "generation_to_stage_prepared_ms": 154},
+            {"edit": 2, "visible_ms": 944, "cli_and_visible_ms": 947, "detected_after_ms": 288, "generation_ms": 499, "generation_to_stage_prepared_ms": 111},
+            {"edit": 3, "visible_ms": 1078, "cli_and_visible_ms": 1097, "detected_after_ms": 363, "generation_ms": 518, "generation_to_stage_prepared_ms": 152},
+            {"edit": 4, "visible_ms": 1346, "cli_and_visible_ms": 1354, "detected_after_ms": 577, "generation_ms": 552, "generation_to_stage_prepared_ms": 164},
+            {"edit": 5, "visible_ms": 1389, "cli_and_visible_ms": 1405, "detected_after_ms": 614, "generation_ms": 574, "generation_to_stage_prepared_ms": 150},
+            {"edit": 6, "visible_ms": 1465, "cli_and_visible_ms": 1486, "detected_after_ms": 669, "generation_ms": 608, "generation_to_stage_prepared_ms": 127},
+            {"edit": 7, "visible_ms": 1577, "cli_and_visible_ms": 1587, "detected_after_ms": 718, "generation_ms": 640, "generation_to_stage_prepared_ms": 161},
+            {"edit": 8, "visible_ms": 1607, "cli_and_visible_ms": 1619, "detected_after_ms": 737, "generation_ms": 669, "generation_to_stage_prepared_ms": 140},
+            {"edit": 9, "visible_ms": 1636, "cli_and_visible_ms": 1649, "detected_after_ms": 794, "generation_ms": 697, "generation_to_stage_prepared_ms": 81},
+            {"edit": 10, "visible_ms": 1832, "cli_and_visible_ms": 1846, "detected_after_ms": 898, "generation_ms": 722, "generation_to_stage_prepared_ms": 146},
+            {"edit": 11, "visible_ms": 1934, "cli_and_visible_ms": 1940, "detected_after_ms": 984, "generation_ms": 767, "generation_to_stage_prepared_ms": 105},
+            {"edit": 12, "visible_ms": 1926, "cli_and_visible_ms": 1932, "detected_after_ms": 958, "generation_ms": 777, "generation_to_stage_prepared_ms": 117},
+            {"edit": 13, "visible_ms": 2042, "cli_and_visible_ms": 2065, "detected_after_ms": 982, "generation_ms": 841, "generation_to_stage_prepared_ms": 142},
+            {"edit": 14, "visible_ms": 1575, "cli_and_visible_ms": 1587, "detected_after_ms": 968, "generation_ms": 450, "generation_to_stage_prepared_ms": 76},
+            {"edit": 15, "visible_ms": 1803, "cli_and_visible_ms": 1805, "detected_after_ms": 1085, "generation_ms": 490, "generation_to_stage_prepared_ms": 134},
+            {"edit": 16, "visible_ms": 1796, "cli_and_visible_ms": 1818, "detected_after_ms": 1072, "generation_ms": 491, "generation_to_stage_prepared_ms": 135},
+            {"edit": 17, "visible_ms": 2258, "cli_and_visible_ms": 2260, "detected_after_ms": 1507, "generation_ms": 501, "generation_to_stage_prepared_ms": 147},
+            {"edit": 18, "visible_ms": 2996, "cli_and_visible_ms": 3005, "detected_after_ms": 1609, "generation_ms": 1131, "generation_to_stage_prepared_ms": 116},
+            {"edit": 19, "visible_ms": 2439, "cli_and_visible_ms": 2460, "detected_after_ms": 1688, "generation_ms": 560, "generation_to_stage_prepared_ms": 77},
+            {"edit": 20, "visible_ms": 2561, "cli_and_visible_ms": 2567, "detected_after_ms": 1762, "generation_ms": 600, "generation_to_stage_prepared_ms": 78}
+          ],
+          "parity": [
+            {
+              "at": 0,
+              "seek_ms": 1,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "seek_ms": 27,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "seek_ms": 34,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "undo_passed": true,
+          "playback": {
+            "frames": 149,
+            "initial_barcode": 30,
+            "flash_count": 5,
+            "beep_count": 5,
+            "max_estimated_phase_ms": 24.3746666666666,
+            "end_error_ms": 29.333000000000276,
+            "stalls": 0,
+            "dropped_frames": 0,
+            "click_to_first_video_ms": 336.599853515625,
+            "absolute_window_bounds_passed": true
+          },
+          "source_http": {
+            "video_requests": 23,
+            "encoded_body_bytes": 216235928,
+            "range_statuses": [
+              206
+            ]
+          },
+          "problems": [
+            "CLI edit 18 visible and command complete within 3000ms"
+          ]
+        },
+        {
+          "canvas": "landscape-middle",
+          "fixture": {
+            "range": {
+              "from": 1801,
+              "to": 1806
+            },
+            "scene_id": "review",
+            "source_start": 2705.0,
+            "source_end": 2710.0,
+            "barcode_period_frames": 240,
+            "fps": 30.0,
+            "source_position": "middle",
+            "project_duration_s": 3600.0,
+            "scene_count": 121,
+            "diagnostics": {
+              "read_snapshot_ms": 8.44333303393796,
+              "resolve_project_ms": 2.387499960605055,
+              "compile_snapshot_including_resolution_ms": 338.08279101504013,
+              "packet_bytes": 148164
+            }
+          },
+          "server_start_ms": 518,
+          "cold_navigation_ms": 776,
+          "summary": {
+            "warm_samples": 20,
+            "warm_p95_ms": 2648,
+            "warm_max_ms": 2833,
+            "budget_ms": 3000
+          },
+          "edits": [
+            {"edit": 1, "visible_ms": 914, "cli_and_visible_ms": 926, "detected_after_ms": 286, "generation_ms": 484, "generation_to_stage_prepared_ms": 102},
+            {"edit": 2, "visible_ms": 1069, "cli_and_visible_ms": 1078, "detected_after_ms": 356, "generation_ms": 503, "generation_to_stage_prepared_ms": 161},
+            {"edit": 3, "visible_ms": 1054, "cli_and_visible_ms": 1078, "detected_after_ms": 310, "generation_ms": 537, "generation_to_stage_prepared_ms": 162},
+            {"edit": 4, "visible_ms": 1392, "cli_and_visible_ms": 1408, "detected_after_ms": 606, "generation_ms": 586, "generation_to_stage_prepared_ms": 143},
+            {"edit": 5, "visible_ms": 1449, "cli_and_visible_ms": 1456, "detected_after_ms": 656, "generation_ms": 588, "generation_to_stage_prepared_ms": 152},
+            {"edit": 6, "visible_ms": 1507, "cli_and_visible_ms": 1521, "detected_after_ms": 694, "generation_ms": 616, "generation_to_stage_prepared_ms": 134},
+            {"edit": 7, "visible_ms": 1652, "cli_and_visible_ms": 1654, "detected_after_ms": 749, "generation_ms": 700, "generation_to_stage_prepared_ms": 142},
+            {"edit": 8, "visible_ms": 1763, "cli_and_visible_ms": 1786, "detected_after_ms": 831, "generation_ms": 718, "generation_to_stage_prepared_ms": 150},
+            {"edit": 9, "visible_ms": 1776, "cli_and_visible_ms": 1783, "detected_after_ms": 822, "generation_ms": 755, "generation_to_stage_prepared_ms": 126},
+            {"edit": 10, "visible_ms": 1892, "cli_and_visible_ms": 1906, "detected_after_ms": 947, "generation_ms": 753, "generation_to_stage_prepared_ms": 120},
+            {"edit": 11, "visible_ms": 1932, "cli_and_visible_ms": 1935, "detected_after_ms": 940, "generation_ms": 788, "generation_to_stage_prepared_ms": 124},
+            {"edit": 12, "visible_ms": 1996, "cli_and_visible_ms": 2009, "detected_after_ms": 984, "generation_ms": 804, "generation_to_stage_prepared_ms": 132},
+            {"edit": 13, "visible_ms": 2003, "cli_and_visible_ms": 2017, "detected_after_ms": 1015, "generation_ms": 824, "generation_to_stage_prepared_ms": 82},
+            {"edit": 14, "visible_ms": 1835, "cli_and_visible_ms": 1844, "detected_after_ms": 1124, "generation_ms": 488, "generation_to_stage_prepared_ms": 140},
+            {"edit": 15, "visible_ms": 1837, "cli_and_visible_ms": 1852, "detected_after_ms": 1102, "generation_ms": 512, "generation_to_stage_prepared_ms": 128},
+            {"edit": 16, "visible_ms": 2268, "cli_and_visible_ms": 2280, "detected_after_ms": 1527, "generation_ms": 537, "generation_to_stage_prepared_ms": 98},
+            {"edit": 17, "visible_ms": 2401, "cli_and_visible_ms": 2414, "detected_after_ms": 1627, "generation_ms": 534, "generation_to_stage_prepared_ms": 134},
+            {"edit": 18, "visible_ms": 2503, "cli_and_visible_ms": 2522, "detected_after_ms": 1664, "generation_ms": 575, "generation_to_stage_prepared_ms": 151},
+            {"edit": 19, "visible_ms": 2830, "cli_and_visible_ms": 2833, "detected_after_ms": 1887, "generation_ms": 637, "generation_to_stage_prepared_ms": 160},
+            {"edit": 20, "visible_ms": 2645, "cli_and_visible_ms": 2648, "detected_after_ms": 1822, "generation_ms": 624, "generation_to_stage_prepared_ms": 73}
+          ],
+          "parity": [
+            {
+              "at": 0,
+              "seek_ms": 2,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "seek_ms": 34,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "seek_ms": 34,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "undo_passed": true,
+          "playback": {
+            "frames": 149,
+            "initial_barcode": 30,
+            "flash_count": 5,
+            "beep_count": 5,
+            "max_estimated_phase_ms": 31.675666666666984,
+            "end_error_ms": 36.603999999897496,
+            "stalls": 0,
+            "dropped_frames": 0,
+            "click_to_first_video_ms": 328.699951171875,
+            "absolute_window_bounds_passed": true
+          },
+          "source_http": {
+            "video_requests": 46,
+            "encoded_body_bytes": 277413888,
+            "range_statuses": [
+              206
+            ]
+          },
+          "problems": []
+        },
+        {
+          "canvas": "landscape-end",
+          "fixture": {
+            "range": {
+              "from": 1801,
+              "to": 1806
+            },
+            "scene_id": "review",
+            "source_start": 5385.0,
+            "source_end": 5390.0,
+            "barcode_period_frames": 240,
+            "fps": 30.0,
+            "source_position": "end",
+            "project_duration_s": 3600.0,
+            "scene_count": 121,
+            "diagnostics": {
+              "read_snapshot_ms": 9.124249976594001,
+              "resolve_project_ms": 7.1906669763848186,
+              "compile_snapshot_including_resolution_ms": 315.30700001167133,
+              "packet_bytes": 148164
+            }
+          },
+          "server_start_ms": 495,
+          "cold_navigation_ms": 843,
+          "summary": {
+            "warm_samples": 20,
+            "warm_p95_ms": 2752,
+            "warm_max_ms": 2783,
+            "budget_ms": 3000
+          },
+          "edits": [
+            {"edit": 1, "visible_ms": 1026, "cli_and_visible_ms": 1049, "detected_after_ms": 410, "generation_ms": 469, "generation_to_stage_prepared_ms": 108},
+            {"edit": 2, "visible_ms": 1041, "cli_and_visible_ms": 1045, "detected_after_ms": 338, "generation_ms": 518, "generation_to_stage_prepared_ms": 136},
+            {"edit": 3, "visible_ms": 1060, "cli_and_visible_ms": 1079, "detected_after_ms": 362, "generation_ms": 540, "generation_to_stage_prepared_ms": 97},
+            {"edit": 4, "visible_ms": 1362, "cli_and_visible_ms": 1370, "detected_after_ms": 655, "generation_ms": 560, "generation_to_stage_prepared_ms": 92},
+            {"edit": 5, "visible_ms": 1274, "cli_and_visible_ms": 1291, "detected_after_ms": 475, "generation_ms": 606, "generation_to_stage_prepared_ms": 130},
+            {"edit": 6, "visible_ms": 1531, "cli_and_visible_ms": 1544, "detected_after_ms": 717, "generation_ms": 654, "generation_to_stage_prepared_ms": 102},
+            {"edit": 7, "visible_ms": 1734, "cli_and_visible_ms": 1739, "detected_after_ms": 815, "generation_ms": 711, "generation_to_stage_prepared_ms": 138},
+            {"edit": 8, "visible_ms": 1810, "cli_and_visible_ms": 1828, "detected_after_ms": 842, "generation_ms": 722, "generation_to_stage_prepared_ms": 181},
+            {"edit": 9, "visible_ms": 1796, "cli_and_visible_ms": 1810, "detected_after_ms": 834, "generation_ms": 765, "generation_to_stage_prepared_ms": 129},
+            {"edit": 10, "visible_ms": 1899, "cli_and_visible_ms": 1916, "detected_after_ms": 952, "generation_ms": 759, "generation_to_stage_prepared_ms": 104},
+            {"edit": 11, "visible_ms": 1999, "cli_and_visible_ms": 2014, "detected_after_ms": 1004, "generation_ms": 817, "generation_to_stage_prepared_ms": 93},
+            {"edit": 12, "visible_ms": 2215, "cli_and_visible_ms": 2234, "detected_after_ms": 1127, "generation_ms": 928, "generation_to_stage_prepared_ms": 83},
+            {"edit": 13, "visible_ms": 2214, "cli_and_visible_ms": 2218, "detected_after_ms": 1092, "generation_ms": 867, "generation_to_stage_prepared_ms": 158},
+            {"edit": 14, "visible_ms": 2194, "cli_and_visible_ms": 2197, "detected_after_ms": 1100, "generation_ms": 921, "generation_to_stage_prepared_ms": 75},
+            {"edit": 15, "visible_ms": 1976, "cli_and_visible_ms": 1984, "detected_after_ms": 1207, "generation_ms": 532, "generation_to_stage_prepared_ms": 132},
+            {"edit": 16, "visible_ms": 2424, "cli_and_visible_ms": 2440, "detected_after_ms": 1648, "generation_ms": 517, "generation_to_stage_prepared_ms": 128},
+            {"edit": 17, "visible_ms": 2483, "cli_and_visible_ms": 2509, "detected_after_ms": 1744, "generation_ms": 563, "generation_to_stage_prepared_ms": 81},
+            {"edit": 18, "visible_ms": 2571, "cli_and_visible_ms": 2586, "detected_after_ms": 1812, "generation_ms": 588, "generation_to_stage_prepared_ms": 75},
+            {"edit": 19, "visible_ms": 2750, "cli_and_visible_ms": 2752, "detected_after_ms": 1839, "generation_ms": 662, "generation_to_stage_prepared_ms": 118},
+            {"edit": 20, "visible_ms": 2763, "cli_and_visible_ms": 2783, "detected_after_ms": 1888, "generation_ms": 633, "generation_to_stage_prepared_ms": 130}
+          ],
+          "parity": [
+            {
+              "at": 0,
+              "seek_ms": 1,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "seek_ms": 31,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "seek_ms": 34,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "undo_passed": true,
+          "playback": {
+            "frames": 149,
+            "initial_barcode": 30,
+            "flash_count": 5,
+            "beep_count": 5,
+            "max_estimated_phase_ms": 29.17466663090454,
+            "end_error_ms": 34.66699999989942,
+            "stalls": 0,
+            "dropped_frames": 0,
+            "click_to_first_video_ms": 321.099853515625,
+            "absolute_window_bounds_passed": true
+          },
+          "source_http": {
+            "video_requests": 46,
+            "encoded_body_bytes": 184700480,
+            "range_statuses": [
+              206
+            ]
+          },
+          "problems": []
+        },
+        {
+          "canvas": "portrait-beginning",
+          "fixture": {
+            "range": {
+              "from": 1801,
+              "to": 1806
+            },
+            "scene_id": "review",
+            "source_start": 1.0,
+            "source_end": 6.0,
+            "barcode_period_frames": 240,
+            "fps": 30.0,
+            "source_position": "beginning",
+            "project_duration_s": 3600.0,
+            "scene_count": 121,
+            "diagnostics": {
+              "read_snapshot_ms": 9.34058299753815,
+              "resolve_project_ms": 2.6407919940538704,
+              "compile_snapshot_including_resolution_ms": 388.1397500517778,
+              "packet_bytes": 148153
+            }
+          },
+          "server_start_ms": 509,
+          "cold_navigation_ms": 841,
+          "summary": {
+            "warm_samples": 20,
+            "warm_p95_ms": 2701,
+            "warm_max_ms": 2928,
+            "budget_ms": 3000
+          },
+          "edits": [
+            {"edit": 1, "visible_ms": 1080, "cli_and_visible_ms": 1092, "detected_after_ms": 208, "generation_ms": 705, "generation_to_stage_prepared_ms": 128},
+            {"edit": 2, "visible_ms": 1021, "cli_and_visible_ms": 1037, "detected_after_ms": 326, "generation_ms": 500, "generation_to_stage_prepared_ms": 150},
+            {"edit": 3, "visible_ms": 1248, "cli_and_visible_ms": 1255, "detected_after_ms": 558, "generation_ms": 558, "generation_to_stage_prepared_ms": 84},
+            {"edit": 4, "visible_ms": 1206, "cli_and_visible_ms": 1220, "detected_after_ms": 424, "generation_ms": 570, "generation_to_stage_prepared_ms": 147},
+            {"edit": 5, "visible_ms": 1450, "cli_and_visible_ms": 1452, "detected_after_ms": 684, "generation_ms": 594, "generation_to_stage_prepared_ms": 114},
+            {"edit": 6, "visible_ms": 1596, "cli_and_visible_ms": 1607, "detected_after_ms": 760, "generation_ms": 632, "generation_to_stage_prepared_ms": 139},
+            {"edit": 7, "visible_ms": 1637, "cli_and_visible_ms": 1651, "detected_after_ms": 759, "generation_ms": 664, "generation_to_stage_prepared_ms": 151},
+            {"edit": 8, "visible_ms": 1634, "cli_and_visible_ms": 1642, "detected_after_ms": 789, "generation_ms": 674, "generation_to_stage_prepared_ms": 107},
+            {"edit": 9, "visible_ms": 1824, "cli_and_visible_ms": 1829, "detected_after_ms": 882, "generation_ms": 715, "generation_to_stage_prepared_ms": 147},
+            {"edit": 10, "visible_ms": 1809, "cli_and_visible_ms": 1827, "detected_after_ms": 857, "generation_ms": 767, "generation_to_stage_prepared_ms": 116},
+            {"edit": 11, "visible_ms": 1897, "cli_and_visible_ms": 1914, "detected_after_ms": 947, "generation_ms": 789, "generation_to_stage_prepared_ms": 87},
+            {"edit": 12, "visible_ms": 2064, "cli_and_visible_ms": 2074, "detected_after_ms": 1014, "generation_ms": 825, "generation_to_stage_prepared_ms": 148},
+            {"edit": 13, "visible_ms": 2038, "cli_and_visible_ms": 2044, "detected_after_ms": 1008, "generation_ms": 845, "generation_to_stage_prepared_ms": 104},
+            {"edit": 14, "visible_ms": 1909, "cli_and_visible_ms": 1917, "detected_after_ms": 1181, "generation_ms": 493, "generation_to_stage_prepared_ms": 151},
+            {"edit": 15, "visible_ms": 1858, "cli_and_visible_ms": 1860, "detected_after_ms": 1106, "generation_ms": 528, "generation_to_stage_prepared_ms": 122},
+            {"edit": 16, "visible_ms": 1912, "cli_and_visible_ms": 1929, "detected_after_ms": 1156, "generation_ms": 529, "generation_to_stage_prepared_ms": 123},
+            {"edit": 17, "visible_ms": 2399, "cli_and_visible_ms": 2416, "detected_after_ms": 1637, "generation_ms": 535, "generation_to_stage_prepared_ms": 118},
+            {"edit": 18, "visible_ms": 2564, "cli_and_visible_ms": 2583, "detected_after_ms": 1708, "generation_ms": 612, "generation_to_stage_prepared_ms": 128},
+            {"edit": 19, "visible_ms": 2679, "cli_and_visible_ms": 2701, "detected_after_ms": 1782, "generation_ms": 662, "generation_to_stage_prepared_ms": 117},
+            {"edit": 20, "visible_ms": 2909, "cli_and_visible_ms": 2928, "detected_after_ms": 2004, "generation_ms": 656, "generation_to_stage_prepared_ms": 107}
+          ],
+          "parity": [
+            {
+              "at": 0,
+              "seek_ms": 1,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "seek_ms": 29,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "seek_ms": 35,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "undo_passed": true,
+          "playback": {
+            "frames": 149,
+            "initial_barcode": 30,
+            "flash_count": 5,
+            "beep_count": 5,
+            "max_estimated_phase_ms": 25.567666618982912,
+            "end_error_ms": 31.202999999999648,
+            "stalls": 0,
+            "dropped_frames": 0,
+            "click_to_first_video_ms": 341.2998046875,
+            "absolute_window_bounds_passed": true
+          },
+          "source_http": {
+            "video_requests": 23,
+            "encoded_body_bytes": 214958080,
+            "range_statuses": [
+              206
+            ]
+          },
+          "problems": []
+        },
+        {
+          "canvas": "portrait-middle",
+          "fixture": {
+            "range": {
+              "from": 1801,
+              "to": 1806
+            },
+            "scene_id": "review",
+            "source_start": 2705.0,
+            "source_end": 2710.0,
+            "barcode_period_frames": 240,
+            "fps": 30.0,
+            "source_position": "middle",
+            "project_duration_s": 3600.0,
+            "scene_count": 121,
+            "diagnostics": {
+              "read_snapshot_ms": 9.11045796237886,
+              "resolve_project_ms": 2.7156660216860473,
+              "compile_snapshot_including_resolution_ms": 331.19925000937656,
+              "packet_bytes": 148159
+            }
+          },
+          "server_start_ms": 476,
+          "cold_navigation_ms": 827,
+          "summary": {
+            "warm_samples": 20,
+            "warm_p95_ms": 2857,
+            "warm_max_ms": 2950,
+            "budget_ms": 3000
+          },
+          "edits": [
+            {"edit": 1, "visible_ms": 830, "cli_and_visible_ms": 840, "detected_after_ms": 230, "generation_ms": 485, "generation_to_stage_prepared_ms": 74},
+            {"edit": 2, "visible_ms": 1038, "cli_and_visible_ms": 1050, "detected_after_ms": 388, "generation_ms": 519, "generation_to_stage_prepared_ms": 78},
+            {"edit": 3, "visible_ms": 1103, "cli_and_visible_ms": 1117, "detected_after_ms": 418, "generation_ms": 552, "generation_to_stage_prepared_ms": 84},
+            {"edit": 4, "visible_ms": 1184, "cli_and_visible_ms": 1186, "detected_after_ms": 434, "generation_ms": 603, "generation_to_stage_prepared_ms": 93},
+            {"edit": 5, "visible_ms": 1529, "cli_and_visible_ms": 1546, "detected_after_ms": 729, "generation_ms": 618, "generation_to_stage_prepared_ms": 120},
+            {"edit": 6, "visible_ms": 1632, "cli_and_visible_ms": 1647, "detected_after_ms": 747, "generation_ms": 676, "generation_to_stage_prepared_ms": 147},
+            {"edit": 7, "visible_ms": 1683, "cli_and_visible_ms": 1686, "detected_after_ms": 784, "generation_ms": 675, "generation_to_stage_prepared_ms": 149},
+            {"edit": 8, "visible_ms": 1795, "cli_and_visible_ms": 1803, "detected_after_ms": 835, "generation_ms": 773, "generation_to_stage_prepared_ms": 116},
+            {"edit": 9, "visible_ms": 1873, "cli_and_visible_ms": 1876, "detected_after_ms": 933, "generation_ms": 746, "generation_to_stage_prepared_ms": 118},
+            {"edit": 10, "visible_ms": 1944, "cli_and_visible_ms": 1964, "detected_after_ms": 971, "generation_ms": 805, "generation_to_stage_prepared_ms": 84},
+            {"edit": 11, "visible_ms": 2093, "cli_and_visible_ms": 2108, "detected_after_ms": 1020, "generation_ms": 855, "generation_to_stage_prepared_ms": 131},
+            {"edit": 12, "visible_ms": 2101, "cli_and_visible_ms": 2117, "detected_after_ms": 1034, "generation_ms": 882, "generation_to_stage_prepared_ms": 103},
+            {"edit": 13, "visible_ms": 2199, "cli_and_visible_ms": 2208, "detected_after_ms": 1114, "generation_ms": 905, "generation_to_stage_prepared_ms": 81},
+            {"edit": 14, "visible_ms": 2439, "cli_and_visible_ms": 2452, "detected_after_ms": 1226, "generation_ms": 948, "generation_to_stage_prepared_ms": 167},
+            {"edit": 15, "visible_ms": 2316, "cli_and_visible_ms": 2325, "detected_after_ms": 1594, "generation_ms": 538, "generation_to_stage_prepared_ms": 74},
+            {"edit": 16, "visible_ms": 2588, "cli_and_visible_ms": 2597, "detected_after_ms": 1786, "generation_ms": 592, "generation_to_stage_prepared_ms": 100},
+            {"edit": 17, "visible_ms": 2656, "cli_and_visible_ms": 2671, "detected_after_ms": 1798, "generation_ms": 633, "generation_to_stage_prepared_ms": 127},
+            {"edit": 18, "visible_ms": 2766, "cli_and_visible_ms": 2772, "detected_after_ms": 1906, "generation_ms": 617, "generation_to_stage_prepared_ms": 137},
+            {"edit": 19, "visible_ms": 2842, "cli_and_visible_ms": 2857, "detected_after_ms": 1921, "generation_ms": 682, "generation_to_stage_prepared_ms": 105},
+            {"edit": 20, "visible_ms": 2947, "cli_and_visible_ms": 2950, "detected_after_ms": 2002, "generation_ms": 706, "generation_to_stage_prepared_ms": 106}
+          ],
+          "parity": [
+            {
+              "at": 0,
+              "seek_ms": 1,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "seek_ms": 34,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "seek_ms": 33,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "undo_passed": true,
+          "playback": {
+            "frames": 149,
+            "initial_barcode": 30,
+            "flash_count": 5,
+            "beep_count": 5,
+            "max_estimated_phase_ms": 28.885000011920965,
+            "end_error_ms": 34.861000000091735,
+            "stalls": 0,
+            "dropped_frames": 0,
+            "click_to_first_video_ms": 346.7998046875,
+            "absolute_window_bounds_passed": true
+          },
+          "source_http": {
+            "video_requests": 48,
+            "encoded_body_bytes": 271449904,
+            "range_statuses": [
+              206
+            ]
+          },
+          "problems": []
+        },
+        {
+          "canvas": "portrait-end",
+          "fixture": {
+            "range": {
+              "from": 1801,
+              "to": 1806
+            },
+            "scene_id": "review",
+            "source_start": 5385.0,
+            "source_end": 5390.0,
+            "barcode_period_frames": 240,
+            "fps": 30.0,
+            "source_position": "end",
+            "project_duration_s": 3600.0,
+            "scene_count": 121,
+            "diagnostics": {
+              "read_snapshot_ms": 11.04937499621883,
+              "resolve_project_ms": 3.363833006005734,
+              "compile_snapshot_including_resolution_ms": 370.2662080177106,
+              "packet_bytes": 148159
+            }
+          },
+          "server_start_ms": 554,
+          "cold_navigation_ms": 852,
+          "summary": {
+            "warm_samples": 20,
+            "warm_p95_ms": 3709,
+            "warm_max_ms": 3919,
+            "budget_ms": 3000
+          },
+          "edits": [
+            {"edit": 1, "visible_ms": 881, "cli_and_visible_ms": 900, "detected_after_ms": 230, "generation_ms": 488, "generation_to_stage_prepared_ms": 120},
+            {"edit": 2, "visible_ms": 1044, "cli_and_visible_ms": 1054, "detected_after_ms": 320, "generation_ms": 521, "generation_to_stage_prepared_ms": 152},
+            {"edit": 3, "visible_ms": 1370, "cli_and_visible_ms": 1384, "detected_after_ms": 597, "generation_ms": 561, "generation_to_stage_prepared_ms": 164},
+            {"edit": 4, "visible_ms": 1417, "cli_and_visible_ms": 1426, "detected_after_ms": 612, "generation_ms": 597, "generation_to_stage_prepared_ms": 157},
+            {"edit": 5, "visible_ms": 1555, "cli_and_visible_ms": 1559, "detected_after_ms": 698, "generation_ms": 648, "generation_to_stage_prepared_ms": 151},
+            {"edit": 6, "visible_ms": 1528, "cli_and_visible_ms": 1547, "detected_after_ms": 741, "generation_ms": 652, "generation_to_stage_prepared_ms": 75},
+            {"edit": 7, "visible_ms": 1812, "cli_and_visible_ms": 1822, "detected_after_ms": 865, "generation_ms": 719, "generation_to_stage_prepared_ms": 165},
+            {"edit": 8, "visible_ms": 1887, "cli_and_visible_ms": 1889, "detected_after_ms": 906, "generation_ms": 781, "generation_to_stage_prepared_ms": 107},
+            {"edit": 9, "visible_ms": 1896, "cli_and_visible_ms": 1903, "detected_after_ms": 952, "generation_ms": 763, "generation_to_stage_prepared_ms": 97},
+            {"edit": 10, "visible_ms": 1972, "cli_and_visible_ms": 1975, "detected_after_ms": 1018, "generation_ms": 806, "generation_to_stage_prepared_ms": 71},
+            {"edit": 11, "visible_ms": 2129, "cli_and_visible_ms": 2149, "detected_after_ms": 1079, "generation_ms": 865, "generation_to_stage_prepared_ms": 105},
+            {"edit": 12, "visible_ms": 2178, "cli_and_visible_ms": 2180, "detected_after_ms": 1108, "generation_ms": 907, "generation_to_stage_prepared_ms": 79},
+            {"edit": 13, "visible_ms": 2230, "cli_and_visible_ms": 2243, "detected_after_ms": 1195, "generation_ms": 862, "generation_to_stage_prepared_ms": 85},
+            {"edit": 14, "visible_ms": 2267, "cli_and_visible_ms": 2275, "detected_after_ms": 1107, "generation_ms": 943, "generation_to_stage_prepared_ms": 131},
+            {"edit": 15, "visible_ms": 2908, "cli_and_visible_ms": 2924, "detected_after_ms": 1655, "generation_ms": 1065, "generation_to_stage_prepared_ms": 93},
+            {"edit": 16, "visible_ms": 3081, "cli_and_visible_ms": 3096, "detected_after_ms": 1818, "generation_ms": 1074, "generation_to_stage_prepared_ms": 78},
+            {"edit": 17, "visible_ms": 3683, "cli_and_visible_ms": 3709, "detected_after_ms": 1961, "generation_ms": 1413, "generation_to_stage_prepared_ms": 150},
+            {"edit": 18, "visible_ms": 3887, "cli_and_visible_ms": 3919, "detected_after_ms": 2298, "generation_ms": 1285, "generation_to_stage_prepared_ms": 114},
+            {"edit": 19, "visible_ms": 3298, "cli_and_visible_ms": 3309, "detected_after_ms": 2229, "generation_ms": 814, "generation_to_stage_prepared_ms": 122},
+            {"edit": 20, "visible_ms": 3253, "cli_and_visible_ms": 3279, "detected_after_ms": 2229, "generation_ms": 781, "generation_to_stage_prepared_ms": 124}
+          ],
+          "parity": [
+            {
+              "at": 0,
+              "seek_ms": 1,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "seek_ms": 28,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "seek_ms": 32,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "undo_passed": true,
+          "playback": {
+            "frames": 149,
+            "initial_barcode": 30,
+            "flash_count": 5,
+            "beep_count": 5,
+            "max_estimated_phase_ms": 32.17066664282538,
+            "end_error_ms": 37.21200000018143,
+            "stalls": 0,
+            "dropped_frames": 0,
+            "click_to_first_video_ms": 331.2998046875,
+            "absolute_window_bounds_passed": true
+          },
+          "source_http": {
+            "video_requests": 46,
+            "encoded_body_bytes": 184307264,
+            "range_statuses": [
+              206
+            ]
+          },
+          "problems": [
+            "CLI edit 16 visible and command complete within 3000ms",
+            "CLI edit 17 visible and command complete within 3000ms",
+            "CLI edit 18 visible and command complete within 3000ms",
+            "CLI edit 19 visible and command complete within 3000ms",
+            "CLI edit 20 visible and command complete within 3000ms"
+          ]
+        }
+      ]
+    },
+    {
+      "profile": "long-source",
+      "versions": {
+        "python": "3.12.12",
+        "platform": "macOS-15.6-arm64-arm-64bit",
+        "chrome": "Google Chrome for Testing 156.0.8078.73",
+        "node": "v24.5.0",
+        "ffmpeg": "ffmpeg version 9.0.1 Copyright (c) 2000-2026 the FFmpeg developers"
+      },
+      "load_start": [
+        3.990234375,
+        4.818359375,
+        4.54296875
+      ],
+      "source": {
+        "duration_s": 5400,
+        "bytes": 20958144,
+        "kind": "synthetic repeated 640x360/30 H264, continuous AAC cues"
+      },
+      "resources": [
+        {
+          "case": "landscape-beginning",
+          "peak_family_rss_mib": 1141.9,
+          "peak_output_mib": 33.7,
+          "sample_count": 89,
+          "target_interval_s": 0.5,
+          "errors": [],
+          "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+        },
+        {
+          "case": "landscape-middle",
+          "peak_family_rss_mib": 1184.9,
+          "peak_output_mib": 42.3,
+          "sample_count": 90,
+          "target_interval_s": 0.5,
+          "errors": [],
+          "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+        },
+        {
+          "case": "landscape-end",
+          "peak_family_rss_mib": 1149.5,
+          "peak_output_mib": 50.9,
+          "sample_count": 91,
+          "target_interval_s": 0.5,
+          "errors": [],
+          "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+        },
+        {
+          "case": "portrait-beginning",
+          "peak_family_rss_mib": 1224.9,
+          "peak_output_mib": 59.4,
+          "sample_count": 90,
+          "target_interval_s": 0.5,
+          "errors": [],
+          "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+        },
+        {
+          "case": "portrait-middle",
+          "peak_family_rss_mib": 1213.5,
+          "peak_output_mib": 68.0,
+          "sample_count": 93,
+          "target_interval_s": 0.5,
+          "errors": [],
+          "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+        },
+        {
+          "case": "portrait-end",
+          "peak_family_rss_mib": 1126.3,
+          "peak_output_mib": 76.4,
+          "sample_count": 93,
+          "target_interval_s": 0.5,
+          "errors": [],
+          "scope": "runner, preview worker/server, Node driver and owned Chrome; output includes source/fixtures"
+        }
+      ],
+      "problems": [],
+      "runtime": "isolated installed wheel; no concurrent regression suite",
+      "concurrent_regression_suite": false,
+      "acceptance_passed": true,
+      "cases": [
+        {
+          "canvas": "landscape-beginning",
+          "fixture": {
+            "range": {
+              "from": 1801,
+              "to": 1806
+            },
+            "scene_id": "review",
+            "source_start": 1.0,
+            "source_end": 6.0,
+            "barcode_period_frames": 240,
+            "fps": 30.0,
+            "source_position": "beginning",
+            "project_duration_s": 3600.0,
+            "scene_count": 121,
+            "diagnostics": {
+              "read_snapshot_ms": 8.474542002659291,
+              "resolve_project_ms": 2.2985839750617743,
+              "compile_snapshot_including_resolution_ms": 290.147416992113,
+              "packet_bytes": 148158
+            }
+          },
+          "server_start_ms": 405,
+          "cold_navigation_ms": 609,
+          "summary": {
+            "warm_samples": 20,
+            "warm_p95_ms": 2497,
+            "warm_max_ms": 2509,
+            "budget_ms": 3000
+          },
+          "edits": [
+            {"edit": 1, "visible_ms": 928, "cli_and_visible_ms": 952, "detected_after_ms": 257, "generation_ms": 477, "generation_to_stage_prepared_ms": 155},
+            {"edit": 2, "visible_ms": 924, "cli_and_visible_ms": 933, "detected_after_ms": 274, "generation_ms": 507, "generation_to_stage_prepared_ms": 93},
+            {"edit": 3, "visible_ms": 1056, "cli_and_visible_ms": 1060, "detected_after_ms": 370, "generation_ms": 524, "generation_to_stage_prepared_ms": 117},
+            {"edit": 4, "visible_ms": 1161, "cli_and_visible_ms": 1169, "detected_after_ms": 390, "generation_ms": 563, "generation_to_stage_prepared_ms": 159},
+            {"edit": 5, "visible_ms": 1423, "cli_and_visible_ms": 1442, "detected_after_ms": 631, "generation_ms": 583, "generation_to_stage_prepared_ms": 151},
+            {"edit": 6, "visible_ms": 1430, "cli_and_visible_ms": 1434, "detected_after_ms": 666, "generation_ms": 612, "generation_to_stage_prepared_ms": 97},
+            {"edit": 7, "visible_ms": 1627, "cli_and_visible_ms": 1637, "detected_after_ms": 788, "generation_ms": 629, "generation_to_stage_prepared_ms": 146},
+            {"edit": 8, "visible_ms": 1655, "cli_and_visible_ms": 1663, "detected_after_ms": 757, "generation_ms": 685, "generation_to_stage_prepared_ms": 153},
+            {"edit": 9, "visible_ms": 1689, "cli_and_visible_ms": 1705, "detected_after_ms": 789, "generation_ms": 685, "generation_to_stage_prepared_ms": 152},
+            {"edit": 10, "visible_ms": 1749, "cli_and_visible_ms": 1769, "detected_after_ms": 800, "generation_ms": 730, "generation_to_stage_prepared_ms": 143},
+            {"edit": 11, "visible_ms": 1860, "cli_and_visible_ms": 1864, "detected_after_ms": 874, "generation_ms": 768, "generation_to_stage_prepared_ms": 138},
+            {"edit": 12, "visible_ms": 1877, "cli_and_visible_ms": 1884, "detected_after_ms": 924, "generation_ms": 808, "generation_to_stage_prepared_ms": 73},
+            {"edit": 13, "visible_ms": 1658, "cli_and_visible_ms": 1664, "detected_after_ms": 1046, "generation_ms": 448, "generation_to_stage_prepared_ms": 73},
+            {"edit": 14, "visible_ms": 1825, "cli_and_visible_ms": 1839, "detected_after_ms": 1125, "generation_ms": 464, "generation_to_stage_prepared_ms": 156},
+            {"edit": 15, "visible_ms": 1767, "cli_and_visible_ms": 1775, "detected_after_ms": 1034, "generation_ms": 489, "generation_to_stage_prepared_ms": 144},
+            {"edit": 16, "visible_ms": 1840, "cli_and_visible_ms": 1844, "detected_after_ms": 1085, "generation_ms": 518, "generation_to_stage_prepared_ms": 137},
+            {"edit": 17, "visible_ms": 2244, "cli_and_visible_ms": 2252, "detected_after_ms": 1566, "generation_ms": 521, "generation_to_stage_prepared_ms": 68},
+            {"edit": 18, "visible_ms": 1990, "cli_and_visible_ms": 2012, "detected_after_ms": 1261, "generation_ms": 547, "generation_to_stage_prepared_ms": 89},
+            {"edit": 19, "visible_ms": 2476, "cli_and_visible_ms": 2497, "detected_after_ms": 1675, "generation_ms": 575, "generation_to_stage_prepared_ms": 112},
+            {"edit": 20, "visible_ms": 2494, "cli_and_visible_ms": 2509, "detected_after_ms": 1727, "generation_ms": 589, "generation_to_stage_prepared_ms": 79}
+          ],
+          "parity": [
+            {
+              "at": 0,
+              "seek_ms": 1,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "seek_ms": 33,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "seek_ms": 33,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "undo_passed": true,
+          "playback": {
+            "frames": 149,
+            "initial_barcode": 30,
+            "flash_count": 5,
+            "beep_count": 5,
+            "max_estimated_phase_ms": 26.97466667858771,
+            "end_error_ms": 34.66699999999978,
+            "stalls": 0,
+            "dropped_frames": 0,
+            "click_to_first_video_ms": 334.10009765625,
+            "absolute_window_bounds_passed": true
+          },
+          "source_http": {
+            "video_requests": 23,
+            "encoded_body_bytes": 209616792,
+            "range_statuses": [
+              206
+            ]
+          },
+          "problems": []
+        },
+        {
+          "canvas": "landscape-middle",
+          "fixture": {
+            "range": {
+              "from": 1801,
+              "to": 1806
+            },
+            "scene_id": "review",
+            "source_start": 2705.0,
+            "source_end": 2710.0,
+            "barcode_period_frames": 240,
+            "fps": 30.0,
+            "source_position": "middle",
+            "project_duration_s": 3600.0,
+            "scene_count": 121,
+            "diagnostics": {
+              "read_snapshot_ms": 8.253500040154904,
+              "resolve_project_ms": 2.3490830208174884,
+              "compile_snapshot_including_resolution_ms": 303.7356249988079,
+              "packet_bytes": 148164
+            }
+          },
+          "server_start_ms": 421,
+          "cold_navigation_ms": 630,
+          "summary": {
+            "warm_samples": 20,
+            "warm_p95_ms": 2525,
+            "warm_max_ms": 2579,
+            "budget_ms": 3000
+          },
+          "edits": [
+            {"edit": 1, "visible_ms": 829, "cli_and_visible_ms": 838, "detected_after_ms": 225, "generation_ms": 470, "generation_to_stage_prepared_ms": 94},
+            {"edit": 2, "visible_ms": 1040, "cli_and_visible_ms": 1042, "detected_after_ms": 346, "generation_ms": 491, "generation_to_stage_prepared_ms": 155},
+            {"edit": 3, "visible_ms": 945, "cli_and_visible_ms": 966, "detected_after_ms": 319, "generation_ms": 518, "generation_to_stage_prepared_ms": 61},
+            {"edit": 4, "visible_ms": 1162, "cli_and_visible_ms": 1175, "detected_after_ms": 416, "generation_ms": 550, "generation_to_stage_prepared_ms": 148},
+            {"edit": 5, "visible_ms": 1436, "cli_and_visible_ms": 1444, "detected_after_ms": 635, "generation_ms": 591, "generation_to_stage_prepared_ms": 152},
+            {"edit": 6, "visible_ms": 1505, "cli_and_visible_ms": 1508, "detected_after_ms": 665, "generation_ms": 626, "generation_to_stage_prepared_ms": 158},
+            {"edit": 7, "visible_ms": 1547, "cli_and_visible_ms": 1549, "detected_after_ms": 722, "generation_ms": 641, "generation_to_stage_prepared_ms": 115},
+            {"edit": 8, "visible_ms": 1678, "cli_and_visible_ms": 1686, "detected_after_ms": 790, "generation_ms": 680, "generation_to_stage_prepared_ms": 145},
+            {"edit": 9, "visible_ms": 1707, "cli_and_visible_ms": 1726, "detected_after_ms": 790, "generation_ms": 704, "generation_to_stage_prepared_ms": 148},
+            {"edit": 10, "visible_ms": 1795, "cli_and_visible_ms": 1813, "detected_after_ms": 839, "generation_ms": 746, "generation_to_stage_prepared_ms": 132},
+            {"edit": 11, "visible_ms": 1830, "cli_and_visible_ms": 1843, "detected_after_ms": 865, "generation_ms": 803, "generation_to_stage_prepared_ms": 82},
+            {"edit": 12, "visible_ms": 1651, "cli_and_visible_ms": 1653, "detected_after_ms": 974, "generation_ms": 439, "generation_to_stage_prepared_ms": 164},
+            {"edit": 13, "visible_ms": 1561, "cli_and_visible_ms": 1584, "detected_after_ms": 960, "generation_ms": 444, "generation_to_stage_prepared_ms": 70},
+            {"edit": 14, "visible_ms": 1825, "cli_and_visible_ms": 1836, "detected_after_ms": 1115, "generation_ms": 489, "generation_to_stage_prepared_ms": 143},
+            {"edit": 15, "visible_ms": 1806, "cli_and_visible_ms": 1817, "detected_after_ms": 1065, "generation_ms": 502, "generation_to_stage_prepared_ms": 140},
+            {"edit": 16, "visible_ms": 2218, "cli_and_visible_ms": 2236, "detected_after_ms": 1488, "generation_ms": 504, "generation_to_stage_prepared_ms": 129},
+            {"edit": 17, "visible_ms": 2380, "cli_and_visible_ms": 2394, "detected_after_ms": 1613, "generation_ms": 536, "generation_to_stage_prepared_ms": 128},
+            {"edit": 18, "visible_ms": 2451, "cli_and_visible_ms": 2453, "detected_after_ms": 1673, "generation_ms": 546, "generation_to_stage_prepared_ms": 127},
+            {"edit": 19, "visible_ms": 2513, "cli_and_visible_ms": 2525, "detected_after_ms": 1740, "generation_ms": 555, "generation_to_stage_prepared_ms": 106},
+            {"edit": 20, "visible_ms": 2571, "cli_and_visible_ms": 2579, "detected_after_ms": 1761, "generation_ms": 599, "generation_to_stage_prepared_ms": 86}
+          ],
+          "parity": [
+            {
+              "at": 0,
+              "seek_ms": 1,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "seek_ms": 29,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "seek_ms": 32,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "undo_passed": true,
+          "playback": {
+            "frames": 149,
+            "initial_barcode": 30,
+            "flash_count": 5,
+            "beep_count": 5,
+            "max_estimated_phase_ms": 30.65666670243081,
+            "end_error_ms": 37.07600000007005,
+            "stalls": 0,
+            "dropped_frames": 0,
+            "click_to_first_video_ms": 322.199951171875,
+            "absolute_window_bounds_passed": true
+          },
+          "source_http": {
+            "video_requests": 50,
+            "encoded_body_bytes": 256835376,
+            "range_statuses": [
+              206
+            ]
+          },
+          "problems": []
+        },
+        {
+          "canvas": "landscape-end",
+          "fixture": {
+            "range": {
+              "from": 1801,
+              "to": 1806
+            },
+            "scene_id": "review",
+            "source_start": 5385.0,
+            "source_end": 5390.0,
+            "barcode_period_frames": 240,
+            "fps": 30.0,
+            "source_position": "end",
+            "project_duration_s": 3600.0,
+            "scene_count": 121,
+            "diagnostics": {
+              "read_snapshot_ms": 9.375834022648633,
+              "resolve_project_ms": 2.7305420371703804,
+              "compile_snapshot_including_resolution_ms": 305.22187502356246,
+              "packet_bytes": 148164
+            }
+          },
+          "server_start_ms": 438,
+          "cold_navigation_ms": 611,
+          "summary": {
+            "warm_samples": 20,
+            "warm_p95_ms": 2518,
+            "warm_max_ms": 2596,
+            "budget_ms": 3000
+          },
+          "edits": [
+            {"edit": 1, "visible_ms": 864, "cli_and_visible_ms": 887, "detected_after_ms": 231, "generation_ms": 479, "generation_to_stage_prepared_ms": 115},
+            {"edit": 2, "visible_ms": 1025, "cli_and_visible_ms": 1030, "detected_after_ms": 319, "generation_ms": 496, "generation_to_stage_prepared_ms": 163},
+            {"edit": 3, "visible_ms": 943, "cli_and_visible_ms": 960, "detected_after_ms": 302, "generation_ms": 528, "generation_to_stage_prepared_ms": 66},
+            {"edit": 4, "visible_ms": 1181, "cli_and_visible_ms": 1204, "detected_after_ms": 422, "generation_ms": 558, "generation_to_stage_prepared_ms": 151},
+            {"edit": 5, "visible_ms": 1424, "cli_and_visible_ms": 1431, "detected_after_ms": 618, "generation_ms": 585, "generation_to_stage_prepared_ms": 163},
+            {"edit": 6, "visible_ms": 1558, "cli_and_visible_ms": 1561, "detected_after_ms": 680, "generation_ms": 646, "generation_to_stage_prepared_ms": 177},
+            {"edit": 7, "visible_ms": 1546, "cli_and_visible_ms": 1552, "detected_after_ms": 730, "generation_ms": 649, "generation_to_stage_prepared_ms": 103},
+            {"edit": 8, "visible_ms": 1708, "cli_and_visible_ms": 1720, "detected_after_ms": 813, "generation_ms": 670, "generation_to_stage_prepared_ms": 164},
+            {"edit": 9, "visible_ms": 1671, "cli_and_visible_ms": 1684, "detected_after_ms": 764, "generation_ms": 736, "generation_to_stage_prepared_ms": 106},
+            {"edit": 10, "visible_ms": 1851, "cli_and_visible_ms": 1853, "detected_after_ms": 911, "generation_ms": 743, "generation_to_stage_prepared_ms": 116},
+            {"edit": 11, "visible_ms": 1897, "cli_and_visible_ms": 1899, "detected_after_ms": 937, "generation_ms": 756, "generation_to_stage_prepared_ms": 123},
+            {"edit": 12, "visible_ms": 1562, "cli_and_visible_ms": 1571, "detected_after_ms": 964, "generation_ms": 437, "generation_to_stage_prepared_ms": 87},
+            {"edit": 13, "visible_ms": 1673, "cli_and_visible_ms": 1678, "detected_after_ms": 1033, "generation_ms": 454, "generation_to_stage_prepared_ms": 80},
+            {"edit": 14, "visible_ms": 1826, "cli_and_visible_ms": 1848, "detected_after_ms": 1112, "generation_ms": 481, "generation_to_stage_prepared_ms": 150},
+            {"edit": 15, "visible_ms": 2144, "cli_and_visible_ms": 2146, "detected_after_ms": 1423, "generation_ms": 483, "generation_to_stage_prepared_ms": 143},
+            {"edit": 16, "visible_ms": 1863, "cli_and_visible_ms": 1878, "detected_after_ms": 1118, "generation_ms": 515, "generation_to_stage_prepared_ms": 129},
+            {"edit": 17, "visible_ms": 2383, "cli_and_visible_ms": 2389, "detected_after_ms": 1618, "generation_ms": 527, "generation_to_stage_prepared_ms": 130},
+            {"edit": 18, "visible_ms": 2474, "cli_and_visible_ms": 2477, "detected_after_ms": 1699, "generation_ms": 541, "generation_to_stage_prepared_ms": 126},
+            {"edit": 19, "visible_ms": 2496, "cli_and_visible_ms": 2518, "detected_after_ms": 1754, "generation_ms": 563, "generation_to_stage_prepared_ms": 71},
+            {"edit": 20, "visible_ms": 2594, "cli_and_visible_ms": 2596, "detected_after_ms": 1791, "generation_ms": 586, "generation_to_stage_prepared_ms": 94}
+          ],
+          "parity": [
+            {
+              "at": 0,
+              "seek_ms": 1,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "seek_ms": 30,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "seek_ms": 34,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.00037500000001955414,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "undo_passed": true,
+          "playback": {
+            "frames": 149,
+            "initial_barcode": 30,
+            "flash_count": 5,
+            "beep_count": 5,
+            "max_estimated_phase_ms": 24.97766669050816,
+            "end_error_ms": 31.406000000060885,
+            "stalls": 0,
+            "dropped_frames": 0,
+            "click_to_first_video_ms": 336.900146484375,
+            "absolute_window_bounds_passed": true
+          },
+          "source_http": {
+            "video_requests": 46,
+            "encoded_body_bytes": 181358144,
+            "range_statuses": [
+              206
+            ]
+          },
+          "problems": []
+        },
+        {
+          "canvas": "portrait-beginning",
+          "fixture": {
+            "range": {
+              "from": 1801,
+              "to": 1806
+            },
+            "scene_id": "review",
+            "source_start": 1.0,
+            "source_end": 6.0,
+            "barcode_period_frames": 240,
+            "fps": 30.0,
+            "source_position": "beginning",
+            "project_duration_s": 3600.0,
+            "scene_count": 121,
+            "diagnostics": {
+              "read_snapshot_ms": 8.306208997964859,
+              "resolve_project_ms": 2.4289159919135273,
+              "compile_snapshot_including_resolution_ms": 309.55133301904425,
+              "packet_bytes": 148153
+            }
+          },
+          "server_start_ms": 437,
+          "cold_navigation_ms": 795,
+          "summary": {
+            "warm_samples": 20,
+            "warm_p95_ms": 2509,
+            "warm_max_ms": 2636,
+            "budget_ms": 3000
+          },
+          "edits": [
+            {"edit": 1, "visible_ms": 847, "cli_and_visible_ms": 854, "detected_after_ms": 274, "generation_ms": 466, "generation_to_stage_prepared_ms": 66},
+            {"edit": 2, "visible_ms": 1024, "cli_and_visible_ms": 1030, "detected_after_ms": 378, "generation_ms": 495, "generation_to_stage_prepared_ms": 103},
+            {"edit": 3, "visible_ms": 1058, "cli_and_visible_ms": 1062, "detected_after_ms": 371, "generation_ms": 525, "generation_to_stage_prepared_ms": 117},
+            {"edit": 4, "visible_ms": 1077, "cli_and_visible_ms": 1082, "detected_after_ms": 388, "generation_ms": 557, "generation_to_stage_prepared_ms": 84},
+            {"edit": 5, "visible_ms": 1210, "cli_and_visible_ms": 1217, "detected_after_ms": 446, "generation_ms": 579, "generation_to_stage_prepared_ms": 133},
+            {"edit": 6, "visible_ms": 1540, "cli_and_visible_ms": 1557, "detected_after_ms": 713, "generation_ms": 613, "generation_to_stage_prepared_ms": 160},
+            {"edit": 7, "visible_ms": 1581, "cli_and_visible_ms": 1593, "detected_after_ms": 718, "generation_ms": 648, "generation_to_stage_prepared_ms": 155},
+            {"edit": 8, "visible_ms": 1621, "cli_and_visible_ms": 1641, "detected_after_ms": 746, "generation_ms": 665, "generation_to_stage_prepared_ms": 149},
+            {"edit": 9, "visible_ms": 1744, "cli_and_visible_ms": 1757, "detected_after_ms": 802, "generation_ms": 735, "generation_to_stage_prepared_ms": 142},
+            {"edit": 10, "visible_ms": 1785, "cli_and_visible_ms": 1793, "detected_after_ms": 851, "generation_ms": 716, "generation_to_stage_prepared_ms": 150},
+            {"edit": 11, "visible_ms": 1840, "cli_and_visible_ms": 1854, "detected_after_ms": 874, "generation_ms": 760, "generation_to_stage_prepared_ms": 135},
+            {"edit": 12, "visible_ms": 1984, "cli_and_visible_ms": 1992, "detected_after_ms": 935, "generation_ms": 829, "generation_to_stage_prepared_ms": 135},
+            {"edit": 13, "visible_ms": 1674, "cli_and_visible_ms": 1676, "detected_after_ms": 987, "generation_ms": 478, "generation_to_stage_prepared_ms": 128},
+            {"edit": 14, "visible_ms": 1762, "cli_and_visible_ms": 1779, "detected_after_ms": 1032, "generation_ms": 468, "generation_to_stage_prepared_ms": 170},
+            {"edit": 15, "visible_ms": 2164, "cli_and_visible_ms": 2171, "detected_after_ms": 1428, "generation_ms": 513, "generation_to_stage_prepared_ms": 136},
+            {"edit": 16, "visible_ms": 1807, "cli_and_visible_ms": 1825, "detected_after_ms": 1128, "generation_ms": 499, "generation_to_stage_prepared_ms": 74},
+            {"edit": 17, "visible_ms": 1914, "cli_and_visible_ms": 1916, "detected_after_ms": 1204, "generation_ms": 523, "generation_to_stage_prepared_ms": 81},
+            {"edit": 18, "visible_ms": 2062, "cli_and_visible_ms": 2075, "detected_after_ms": 1271, "generation_ms": 575, "generation_to_stage_prepared_ms": 108},
+            {"edit": 19, "visible_ms": 2502, "cli_and_visible_ms": 2509, "detected_after_ms": 1726, "generation_ms": 588, "generation_to_stage_prepared_ms": 72},
+            {"edit": 20, "visible_ms": 2624, "cli_and_visible_ms": 2636, "detected_after_ms": 1853, "generation_ms": 579, "generation_to_stage_prepared_ms": 75}
+          ],
+          "parity": [
+            {
+              "at": 0,
+              "seek_ms": 1,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "seek_ms": 31,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "seek_ms": 34,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "undo_passed": true,
+          "playback": {
+            "frames": 149,
+            "initial_barcode": 30,
+            "flash_count": 5,
+            "beep_count": 5,
+            "max_estimated_phase_ms": 25.97566669050866,
+            "end_error_ms": 30.50100000000011,
+            "stalls": 0,
+            "dropped_frames": 0,
+            "click_to_first_video_ms": 334.89990234375,
+            "absolute_window_bounds_passed": true
+          },
+          "source_http": {
+            "video_requests": 23,
+            "encoded_body_bytes": 212581828,
+            "range_statuses": [
+              206
+            ]
+          },
+          "problems": []
+        },
+        {
+          "canvas": "portrait-middle",
+          "fixture": {
+            "range": {
+              "from": 1801,
+              "to": 1806
+            },
+            "scene_id": "review",
+            "source_start": 2705.0,
+            "source_end": 2710.0,
+            "barcode_period_frames": 240,
+            "fps": 30.0,
+            "source_position": "middle",
+            "project_duration_s": 3600.0,
+            "scene_count": 121,
+            "diagnostics": {
+              "read_snapshot_ms": 8.209999999962747,
+              "resolve_project_ms": 2.3780830088071525,
+              "compile_snapshot_including_resolution_ms": 305.1893340307288,
+              "packet_bytes": 148159
+            }
+          },
+          "server_start_ms": 447,
+          "cold_navigation_ms": 841,
+          "summary": {
+            "warm_samples": 20,
+            "warm_p95_ms": 2521,
+            "warm_max_ms": 2647,
+            "budget_ms": 3000
+          },
+          "edits": [
+            {"edit": 1, "visible_ms": 913, "cli_and_visible_ms": 919, "detected_after_ms": 254, "generation_ms": 484, "generation_to_stage_prepared_ms": 134},
+            {"edit": 2, "visible_ms": 1059, "cli_and_visible_ms": 1081, "detected_after_ms": 322, "generation_ms": 520, "generation_to_stage_prepared_ms": 164},
+            {"edit": 3, "visible_ms": 1241, "cli_and_visible_ms": 1251, "detected_after_ms": 553, "generation_ms": 541, "generation_to_stage_prepared_ms": 101},
+            {"edit": 4, "visible_ms": 1189, "cli_and_visible_ms": 1202, "detected_after_ms": 410, "generation_ms": 564, "generation_to_stage_prepared_ms": 161},
+            {"edit": 5, "visible_ms": 1420, "cli_and_visible_ms": 1432, "detected_after_ms": 641, "generation_ms": 589, "generation_to_stage_prepared_ms": 134},
+            {"edit": 6, "visible_ms": 1487, "cli_and_visible_ms": 1502, "detected_after_ms": 704, "generation_ms": 631, "generation_to_stage_prepared_ms": 87},
+            {"edit": 7, "visible_ms": 1683, "cli_and_visible_ms": 1698, "detected_after_ms": 800, "generation_ms": 664, "generation_to_stage_prepared_ms": 150},
+            {"edit": 8, "visible_ms": 1598, "cli_and_visible_ms": 1617, "detected_after_ms": 776, "generation_ms": 679, "generation_to_stage_prepared_ms": 83},
+            {"edit": 9, "visible_ms": 1813, "cli_and_visible_ms": 1819, "detected_after_ms": 876, "generation_ms": 724, "generation_to_stage_prepared_ms": 144},
+            {"edit": 10, "visible_ms": 1808, "cli_and_visible_ms": 1818, "detected_after_ms": 860, "generation_ms": 734, "generation_to_stage_prepared_ms": 146},
+            {"edit": 11, "visible_ms": 1838, "cli_and_visible_ms": 1855, "detected_after_ms": 900, "generation_ms": 769, "generation_to_stage_prepared_ms": 86},
+            {"edit": 12, "visible_ms": 1965, "cli_and_visible_ms": 1982, "detected_after_ms": 1013, "generation_ms": 800, "generation_to_stage_prepared_ms": 75},
+            {"edit": 13, "visible_ms": 1715, "cli_and_visible_ms": 1736, "detected_after_ms": 1083, "generation_ms": 463, "generation_to_stage_prepared_ms": 75},
+            {"edit": 14, "visible_ms": 1792, "cli_and_visible_ms": 1801, "detected_after_ms": 1090, "generation_ms": 471, "generation_to_stage_prepared_ms": 151},
+            {"edit": 15, "visible_ms": 1824, "cli_and_visible_ms": 1835, "detected_after_ms": 1080, "generation_ms": 507, "generation_to_stage_prepared_ms": 137},
+            {"edit": 16, "visible_ms": 1903, "cli_and_visible_ms": 1916, "detected_after_ms": 1141, "generation_ms": 526, "generation_to_stage_prepared_ms": 132},
+            {"edit": 17, "visible_ms": 2370, "cli_and_visible_ms": 2377, "detected_after_ms": 1603, "generation_ms": 543, "generation_to_stage_prepared_ms": 114},
+            {"edit": 18, "visible_ms": 2507, "cli_and_visible_ms": 2521, "detected_after_ms": 1703, "generation_ms": 565, "generation_to_stage_prepared_ms": 129},
+            {"edit": 19, "visible_ms": 2501, "cli_and_visible_ms": 2512, "detected_after_ms": 1718, "generation_ms": 585, "generation_to_stage_prepared_ms": 78},
+            {"edit": 20, "visible_ms": 2637, "cli_and_visible_ms": 2647, "detected_after_ms": 1858, "generation_ms": 590, "generation_to_stage_prepared_ms": 73}
+          ],
+          "parity": [
+            {
+              "at": 0,
+              "seek_ms": 2,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "seek_ms": 33,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "seek_ms": 33,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "undo_passed": true,
+          "playback": {
+            "frames": 149,
+            "initial_barcode": 30,
+            "flash_count": 5,
+            "beep_count": 5,
+            "max_estimated_phase_ms": 34.99100001192073,
+            "end_error_ms": 40.71299999986877,
+            "stalls": 0,
+            "dropped_frames": 0,
+            "click_to_first_video_ms": 315.199951171875,
+            "absolute_window_bounds_passed": true
+          },
+          "source_http": {
+            "video_requests": 50,
+            "encoded_body_bytes": 255180644,
+            "range_statuses": [
+              206
+            ]
+          },
+          "problems": []
+        },
+        {
+          "canvas": "portrait-end",
+          "fixture": {
+            "range": {
+              "from": 1801,
+              "to": 1806
+            },
+            "scene_id": "review",
+            "source_start": 5385.0,
+            "source_end": 5390.0,
+            "barcode_period_frames": 240,
+            "fps": 30.0,
+            "source_position": "end",
+            "project_duration_s": 3600.0,
+            "scene_count": 121,
+            "diagnostics": {
+              "read_snapshot_ms": 8.476457966025919,
+              "resolve_project_ms": 2.591207972727716,
+              "compile_snapshot_including_resolution_ms": 318.33591603208333,
+              "packet_bytes": 148159
+            }
+          },
+          "server_start_ms": 462,
+          "cold_navigation_ms": 828,
+          "summary": {
+            "warm_samples": 20,
+            "warm_p95_ms": 2583,
+            "warm_max_ms": 2589,
+            "budget_ms": 3000
+          },
+          "edits": [
+            {"edit": 1, "visible_ms": 862, "cli_and_visible_ms": 874, "detected_after_ms": 228, "generation_ms": 479, "generation_to_stage_prepared_ms": 114},
+            {"edit": 2, "visible_ms": 1036, "cli_and_visible_ms": 1055, "detected_after_ms": 323, "generation_ms": 511, "generation_to_stage_prepared_ms": 156},
+            {"edit": 3, "visible_ms": 1363, "cli_and_visible_ms": 1379, "detected_after_ms": 595, "generation_ms": 554, "generation_to_stage_prepared_ms": 162},
+            {"edit": 4, "visible_ms": 1366, "cli_and_visible_ms": 1368, "detected_after_ms": 599, "generation_ms": 560, "generation_to_stage_prepared_ms": 156},
+            {"edit": 5, "visible_ms": 1395, "cli_and_visible_ms": 1416, "detected_after_ms": 657, "generation_ms": 598, "generation_to_stage_prepared_ms": 86},
+            {"edit": 6, "visible_ms": 1510, "cli_and_visible_ms": 1519, "detected_after_ms": 746, "generation_ms": 618, "generation_to_stage_prepared_ms": 91},
+            {"edit": 7, "visible_ms": 1658, "cli_and_visible_ms": 1660, "detected_after_ms": 800, "generation_ms": 660, "generation_to_stage_prepared_ms": 139},
+            {"edit": 8, "visible_ms": 1712, "cli_and_visible_ms": 1723, "detected_after_ms": 808, "generation_ms": 667, "generation_to_stage_prepared_ms": 163},
+            {"edit": 9, "visible_ms": 1720, "cli_and_visible_ms": 1728, "detected_after_ms": 791, "generation_ms": 709, "generation_to_stage_prepared_ms": 147},
+            {"edit": 10, "visible_ms": 1807, "cli_and_visible_ms": 1809, "detected_after_ms": 854, "generation_ms": 763, "generation_to_stage_prepared_ms": 122},
+            {"edit": 11, "visible_ms": 1881, "cli_and_visible_ms": 1893, "detected_after_ms": 941, "generation_ms": 777, "generation_to_stage_prepared_ms": 91},
+            {"edit": 12, "visible_ms": 1984, "cli_and_visible_ms": 1990, "detected_after_ms": 1025, "generation_ms": 816, "generation_to_stage_prepared_ms": 68},
+            {"edit": 13, "visible_ms": 1758, "cli_and_visible_ms": 1775, "detected_after_ms": 1073, "generation_ms": 470, "generation_to_stage_prepared_ms": 135},
+            {"edit": 14, "visible_ms": 1682, "cli_and_visible_ms": 1696, "detected_after_ms": 1044, "generation_ms": 468, "generation_to_stage_prepared_ms": 73},
+            {"edit": 15, "visible_ms": 1901, "cli_and_visible_ms": 1908, "detected_after_ms": 1177, "generation_ms": 498, "generation_to_stage_prepared_ms": 136},
+            {"edit": 16, "visible_ms": 1891, "cli_and_visible_ms": 1897, "detected_after_ms": 1163, "generation_ms": 509, "generation_to_stage_prepared_ms": 127},
+            {"edit": 17, "visible_ms": 2425, "cli_and_visible_ms": 2447, "detected_after_ms": 1643, "generation_ms": 548, "generation_to_stage_prepared_ms": 123},
+            {"edit": 18, "visible_ms": 2476, "cli_and_visible_ms": 2483, "detected_after_ms": 1673, "generation_ms": 580, "generation_to_stage_prepared_ms": 112},
+            {"edit": 19, "visible_ms": 2577, "cli_and_visible_ms": 2583, "detected_after_ms": 1798, "generation_ms": 566, "generation_to_stage_prepared_ms": 100},
+            {"edit": 20, "visible_ms": 2575, "cli_and_visible_ms": 2589, "detected_after_ms": 1784, "generation_ms": 592, "generation_to_stage_prepared_ms": 75}
+          ],
+          "parity": [
+            {
+              "at": 0,
+              "seek_ms": 1,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 30,
+              "caption_lines": [
+                1
+              ]
+            },
+            {
+              "at": 2,
+              "seek_ms": 31,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 90,
+              "caption_lines": [
+                2
+              ]
+            },
+            {
+              "at": 4,
+              "seek_ms": 33,
+              "max_geometry_px": 0,
+              "max_glyph_px": 0.0003749999999911324,
+              "max_opacity_error": 0,
+              "source_frame": 150,
+              "caption_lines": [
+                2
+              ]
+            }
+          ],
+          "undo_passed": true,
+          "playback": {
+            "frames": 149,
+            "initial_barcode": 30,
+            "flash_count": 5,
+            "beep_count": 5,
+            "max_estimated_phase_ms": 25.877666690508704,
+            "end_error_ms": 30.52800000023126,
+            "stalls": 0,
+            "dropped_frames": 0,
+            "click_to_first_video_ms": 335.099853515625,
+            "absolute_window_bounds_passed": true
+          },
+          "source_http": {
+            "video_requests": 46,
+            "encoded_body_bytes": 167874060,
+            "range_statuses": [
+              206
+            ]
+          },
+          "problems": []
+        }
+      ]
+    }
+  ]
+}

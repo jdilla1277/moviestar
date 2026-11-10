@@ -2,11 +2,13 @@
 
 from hashlib import sha256
 import json
+from math import nextafter
 from pathlib import Path
 
 from moviestar.resolved import resolve_project
 from moviestar.spatial_layout import prepare_layout_frame
 from moviestar.spatial_model import compile_spatial_frame
+from moviestar.spatial_transition import active_transitions
 
 
 def walk(nodes):
@@ -36,26 +38,31 @@ def asset_identity(path):
 
 def compile_snapshot(snapshot):
     spec, project = snapshot['spec'], snapshot['project']
-    if any(not recipe.get('frozen') for recipe in spec.get('captions', [])):
-        fail('live caption recipes are not implemented; use manual/frozen cues')
-    if any(source.get('operations') for source in spec['sources']):
-        fail('source operations are not implemented in this native profile')
     root = Path(snapshot['root'])
     timeline = resolve_project(project, spec)
     start, end = snapshot['range']['from'], snapshot['range']['to']
     fps = timeline.output_fps
-    if len(spec['composition']) != 1 or len(timeline.spans) != 1:
-        fail('this native profile supports one spatial scene without cuts, pacing or transitions')
-    if any(spec.get(key) for key in ['opening_transition', 'closing_transition']):
-        fail('project-edge transitions are not implemented')
     if not 0 < end-start <= 10 or not 24 <= fps <= 60:
         fail('use an at-most-ten-second window at 24–60 fps')
+    if not 0 <= start < end <= timeline.duration_s:
+        fail('the review window must stay inside the result timeline')
     if any(abs(value*fps-round(value*fps)) > 1e-6 for value in [start, end]):
         fail('native review requires frame-aligned review boundaries')
+    spans = timeline.spans_overlapping(start, end)
+    if len(spans) != 1:
+        fail('the review window must stay within one spatial span without cuts or pacing boundaries')
+    span = spans[0]
+    scene = spec['composition'][span.scene_index]
+    if span.scene_id not in (spec.get('spatial') or {}).get('scenes', {}):
+        fail('the selected span must have a spatial scene layout')
+    # Inside a single span, scene/edge transition windows can intersect the
+    # review only at its ends. Check the half-open interval, including the
+    # unsampled tail after the last frame; unrelated transitions are harmless.
+    if active_transitions(spec, timeline, start) or active_transitions(spec, timeline, nextafter(end, start)):
+        fail('the review window must not overlap transitions')
     expected_mix = {'source_audio': {'muted': False, 'gain_db': 0.0, 'fade_in': 0.0, 'fade_out': 0.0}, 'tracks': []}
     if spec['audio_mix'] != expected_mix:
         fail('audio mixing, gain and fades are not implemented')
-    scene = spec['composition'][0]
     metadata = {source['id']: source for source in project['sources']}
     durations = {key: source['duration']['seconds'] for key, source in metadata.items()}
     source_paths = {source['id']: (root / source['path']).resolve() for source in spec['sources']}
@@ -73,6 +80,12 @@ def compile_snapshot(snapshot):
         if any(item.get('severity') != 'warning' for item in prepared['diagnostics']):
             fail('the canonical frame has unresolved diagnostics')
         expanded = {tuple(node['occurrence_path']): node for node in walk(frame['children'])}
+        if index == 0:
+            placed_tracks = {node['caption']['track'] for node in expanded.values()
+                             if node.get('type') == 'caption'}
+            if any(recipe['track'] in placed_tracks and not recipe.get('frozen')
+                   for recipe in spec.get('captions', [])):
+                fail('live caption recipes are not implemented; use manual/frozen cues')
         videos = [node for node in expanded.values() if node.get('type') == 'video']
         if len(videos) != 1 or not (videos[0].get('media') or {}).get('visible'):
             fail('exactly one video must be visible throughout this review window')
@@ -80,13 +93,14 @@ def compile_snapshot(snapshot):
         if index == 0:
             video_path = video['occurrence_path']
             video_asset = video['media']['asset_id']
+            if any(source.get('operations') for source in spec['sources'] if source['id'] == video_asset):
+                fail('source operations are not implemented in this native profile')
             source_start = video['media']['source_time_s']
             native_fps = metadata[video_asset].get('fps')
             if not isinstance(native_fps, (int, float)) or abs(native_fps-fps) > 1e-6:
                 fail('the indexed source rate must match the preview rate')
             if source_paths[video_asset].suffix.lower() != '.mp4' or not metadata[video_asset].get('audio_codec'):
                 fail('use a native-compatible MP4 with embedded audio for this native profile')
-            span = timeline.spans[0]
             audio = span.audio
             if (audio.source_id != video_asset or len(audio.slices) != 1
                     or abs(audio.speed-1) > 1e-8 or len(scene['slots']) != 1
@@ -97,7 +111,7 @@ def compile_snapshot(snapshot):
             # The canonical route may be explicit, inferred or composition-wide.
             # Check its source-time slice against the span-relative review
             # window, rather than requiring a particular authored route.
-            if (slot.held or abs(slot.speed-1) > 1e-8
+            if (slot is None or slot.held or abs(slot.speed-1) > 1e-8
                     or abs(slot.source_from_s+start-span.start_s-source_start) > 1e-6
                     or abs(audio_start+start-span.start_s-source_start) > 1e-6
                     or audio_end+1e-6 < audio_start+end-span.start_s):
