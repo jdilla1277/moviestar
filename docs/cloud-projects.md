@@ -39,19 +39,19 @@ service that approved it (for example,
 
 ## Create once, then reopen
 
-Choose a new key for a deliberate new project. Keep the key and exact title so
-you can recover the result if the connection drops:
+Give your project a title. The CLI generates and saves its retry key for you:
 
 ```sh
-moviestar cloud projects create "Highlights" --idempotency-key highlights-1
+moviestar cloud projects create "Highlights"
 moviestar cloud projects list
 moviestar cloud projects show PROJECT_ID
 ```
 
 Replace `PROJECT_ID` with `project.id` returned by create. Reads return the
 project metadata or `{items, next_cursor}` directly. Create returns a
-confirmation containing `status`, `project`, `idempotency_key`, and a next-step
-hint. The project ID persists across CLI processes and the account website.
+confirmation containing `status`, `project`, the generated `idempotency_key`,
+and a next-step hint. The project ID persists across CLI processes and the
+account website.
 You can open **My projects** on the same service's account page and select it,
 or bookmark `/account/projects?project=PROJECT_ID` on that service.
 
@@ -73,10 +73,43 @@ moviestar cloud projects list --limit 20 --cursor NEXT_CURSOR
 Pass the previous response's opaque `next_cursor` unchanged; stop when it is
 null. Project IDs are explicit, so you can reopen an ID outside the first page.
 
-After a lost create response, repeat the **exact original title and key**.
-The service returns the same project. A different title with that key produces
-`idempotency_conflict`. A later project rename does not change the original
-creation key or payload: replay may return the project's current title.
+After a lost create response, rerun the same command with the **exact original
+title**. The CLI saves the key before sending the request and reuses it across
+process restarts until success is confirmed. After a confirmed success, running
+the command again creates a new project, even with the same title.
+
+Retry records live under `cloud-project-requests` beside your account profile,
+outside local editing projects. They are isolated by service, installation
+credential, and exact title and contain no credentials. A different connection
+cannot recover the old connection's request automatically; check the project's
+account before starting a replacement request.
+
+You can still supply your own key, recover a request using its returned key,
+or deliberately create a separate same-title project while another request is
+unresolved:
+
+```sh
+moviestar cloud projects create "Highlights" --idempotency-key highlights-1
+```
+
+If that key already exists, the CLI returns the existing project for the
+original title, or `idempotency_conflict` for a different title. In both cases,
+it returns a `suggested_idempotency_key` and a hint for creating an additional
+project. It never automatically creates another project on key reuse. A later
+rename does not change the original creation key or payload: replay may return
+the project's current title.
+
+An explicit new key does not overwrite an earlier unresolved retry record;
+the no-key command still recovers that earlier request. If the explicit request
+also loses its response, retry its exact title and explicit key.
+
+If retry state cannot be read or saved, creation stops before sending a new
+request. Check `moviestar cloud projects list` and preserve the original
+title/key before repairing the recovery file. Restore a damaged file from a
+backup, or move it aside after identifying the original project; do not discard
+an unresolved request just to retry with another generated key. If a confirmed
+creation cannot update local state, the response includes `recovery_warning`;
+another no-key invocation may recover that project again.
 
 Errors are structured JSON with a stable `status` and recovery `hint`.
 An unknown creation outcome includes the original key; a new key could create
