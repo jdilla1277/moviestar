@@ -132,10 +132,23 @@ jobs:
       # Fail quickly on real-time PiP playback; run each test once across these
       # two steps. The remaining suite retains every fast and slow test.
       - name: Check native PiP playback
+        id: native-pip
         run: |
           cd app
           source .venv/bin/activate
           pytest tests/test_native_pip_browser.py -q --basetemp="$RUNNER_TEMP/native-pip"
+
+      # Diagnostic only: never replace the first acceptance result with a rerun.
+      # The generated fixture's compressed trace is retained in job logs.
+      - name: Trace a native cut failure
+        if: failure() && steps.native-pip.outcome == 'failure'
+        continue-on-error: true
+        env:
+          MOVIESTAR_NATIVE_TRACE: '1'
+        run: |
+          cd app
+          source .venv/bin/activate
+          pytest tests/test_native_pip_browser.py -k 'False-True-False-False-True' -s -q --basetemp="$RUNNER_TEMP/native-pip-trace"
 
       - name: Run full suite (with --run-slow)
         run: |

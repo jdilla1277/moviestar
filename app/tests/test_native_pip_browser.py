@@ -1,4 +1,6 @@
 """Native PiP must show both source frames, route one voice and seek together."""
+import base64
+import gzip
 import json
 import os
 from pathlib import Path
@@ -74,8 +76,20 @@ try{
   assert.deepEqual(s.videos.map(v=>v.source.number),CUTS&&at>=1&&at<3?[(2+at)*30,(1+at)*30]:[(1+at)*30,(2+at)*30]);
   assert.ok(s.videos.every(v=>v.ready_state>=2&&!v.seeking&&v.paused));
  }
- await b.evaluate('window.movieStarPreview.stage.seek(0)');await b.click('#play');
+ await b.evaluate('window.movieStarPreview.stage.seek(0)');
+ let traceComplete;
+ const traceDone=new Promise(resolve=>traceComplete=resolve);
+ if(TRACE){
+  b.socket.addEventListener('message',event=>{const data=JSON.parse(event.data);if(data.method==='Tracing.tracingComplete')traceComplete(data.params.stream);});
+  await b.send('Tracing.start',{categories:'media,webaudio,toplevel',transferMode:'ReturnAsStream'});
+ }
+ await b.click('#play');
  await b.wait('window.movieStarPreview.stage.metrics.finished||window.movieStarPreview.stage.error',12000);
+ if(TRACE){
+  await b.send('Tracing.end');const stream=await traceDone,chunks=[];
+  while(true){const part=await b.send('IO.read',{handle:stream});chunks.push(Buffer.from(part.data,part.base64Encoded?'base64':'utf8'));if(part.eof)break;}
+  await b.send('IO.close',{handle:stream});await writeFile(OUT+'/trace.json',Buffer.concat(chunks));
+ }
  await checkRaster();
  const m=await b.evaluate('window.movieStarPreview.stage.metrics');
  await writeFile(OUT+'/playback.json',JSON.stringify(m,null,2));
@@ -133,9 +147,18 @@ try{
             values = {'HELPER': (repo/'experiments/live_browser_preview/browser.mjs').as_uri(), 'CHROME': chrome,
                       'OUT': str(tmp_path/'browser'), 'URL': ready['url'], 'CUTS': cuts,
                       'CUE_HELPER': (repo/'experiments/live_browser_preview/cue_clock.mjs').as_uri(),
-                      'OMIT_END_CALLBACKS': omit_end_callbacks, 'PIXEL_AUDIT': pixel_audit, 'SILENT_LISTENER': silent_listener}
+                      'OMIT_END_CALLBACKS': omit_end_callbacks, 'PIXEL_AUDIT': pixel_audit, 'SILENT_LISTENER': silent_listener, 'TRACE': os.environ.get('MOVIESTAR_NATIVE_TRACE') == '1'}
             prefix = ''.join('const '+key+'='+json.dumps(value)+';\n' for key, value in values.items())
             result = subprocess.run(['node', '--input-type=module', '-e', prefix+script], capture_output=True, text=True, timeout=40)
+            # Diagnostic-only CI reruns preserve a compressed trace in job logs;
+            # the original acceptance run remains failed. Fixtures are generated.
+            trace = tmp_path/'browser/trace.json'
+            if os.environ.get('MOVIESTAR_NATIVE_TRACE') == '1' and trace.exists():
+                encoded = base64.b64encode(gzip.compress(trace.read_bytes())).decode('ascii')
+                print('NATIVE_TRACE_BEGIN', flush=True)
+                for offset in range(0, len(encoded), 5000):
+                    print('NATIVE_TRACE_DATA '+encoded[offset:offset+5000], flush=True)
+                print('NATIVE_TRACE_END', flush=True)
             diagnostics = {}
             for name in ('playback.json', 'video-frames.json', 'cue-clock.json'):
                 path = tmp_path/'browser'/name
