@@ -2,7 +2,7 @@
 export function createVideoGroup(entries){
   let generation=0,seekGeneration=0,disposed=false,pendingSeek;
   const cancels=new Set(),priming=new Set();
-  const stop=()=>entries.forEach(({video})=>{video.pause();video.playbackRate=1;});
+  const stop=()=>entries.forEach(({video})=>{video.pause();if(video.playbackRate!==1)video.playbackRate=1;});
   const api={
     async play(){
       const attempt=++generation;
@@ -39,6 +39,7 @@ export function createVideoGroup(entries){
     },
     pause(){++generation;for(const cancel of priming)cancel();stop();},
     synchronize(clock){
+      if(clock.video.paused)return;
       const at=clock.video.currentTime-clock.start;
       for(const item of entries){
         if(item===clock||item.video.paused||item.video.seeking)continue;

@@ -70,3 +70,18 @@ assert.equal(callback,null);group.dispose();
     prefix = f'const MODULE={json.dumps(module)},ACTION={json.dumps(action)};\n'
     result = subprocess.run(['node', '--input-type=module', '-e', prefix+script], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stdout+result.stderr
+
+
+@pytest.mark.skipif(not shutil.which('node'), reason='Node required')
+def test_priming_does_not_report_drift_against_a_paused_voice_clock():
+    module = (Path(__file__).parents[1]/'src/moviestar/preview_native_videos.mjs').as_uri()
+    script = r'''
+import assert from 'node:assert/strict';
+const {createVideoGroup}=await import(MODULE);
+const clock={start:1,video:{currentTime:1,paused:true}},follower={start:2,video:{currentTime:2.2,paused:false,seeking:false}};
+const group=createVideoGroup([clock,follower]);
+assert.doesNotThrow(()=>group.synchronize(clock),'The voice intentionally stays paused while the inset is primed');
+clock.video.paused=false;assert.throws(()=>group.synchronize(clock),/lost synchronization/,'Real running drift still fails');
+'''
+    result = subprocess.run(['node', '--input-type=module', '-e', f'const MODULE={json.dumps(module)};\n'+script], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stdout+result.stderr

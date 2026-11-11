@@ -38,6 +38,8 @@ try{
  await b.send('Emulation.setDeviceMetricsOverride',{width:1280,height:1800,deviceScaleFactor:1,mobile:false});
  await b.send('Page.navigate',{url:URL+'?audit=1'});
  await b.wait('window.movieStarPreview?.is_current',20000);
+ // Use the authored 360x640 raster at 1x for software-headless playback.
+ await b.evaluate(`(async()=>{const s=document.getElementById('stage');s.style.maxWidth='none';s.style.width=(360+s.offsetWidth-s.clientWidth)+'px';await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));})()`);
  for(const at of [0,1,2,3,4]){
   const s=await b.evaluate(`(async()=>{const api=window.movieStarPreview.stage;await api.seek(${at});return api.snapshot();})()`);
   assert.equal(s.videos.length,2);
