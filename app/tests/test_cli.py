@@ -12458,7 +12458,7 @@ class TestOverlays:
         assert stored["timing"]["from"] == "0:00:00.000"
         assert stored["timing"]["to"] == "0:00:00.500"
         assert stored["style"]["preset"] == "title"
-        assert stored["style"]["resolved"]["font_size"] == 96
+        assert stored["style"]["resolved"]["font_size"] == "8.8889vmin"
         assert stored["position"]["preset"] == "top"
 
     def test_add_assigns_incrementing_ids_and_render_order(
@@ -12651,7 +12651,7 @@ class TestOverlays:
         assert dry_data["writes_spec"] is False
         assert dry_data["dry_run"] is True
         assert dry_data["overlays_count"] == 1
-        assert dry_data["overlays"][0]["style"]["resolved"]["font_size"] == 96
+        assert dry_data["overlays"][0]["style"]["resolved"]["font_size"] == "8.8889vmin"
         # Dry-run must not touch the spec.
         assert self._spec(tmp_path)["overlays"][0]["text"] == (
             "PM in the age of AI"
@@ -12844,7 +12844,7 @@ class TestOverlays:
         assert data["overlays"][0]["style"]["resolved"]["font_size"] == 48
         assert "derived_fields_note" in data
         [stored] = self._spec(tmp_path)["overlays"]
-        assert stored["style"]["resolved"]["font_size"] == 96
+        assert stored["style"]["resolved"]["font_size"] == "8.8889vmin"
 
     def test_set_rejects_unavailable_font_family(
         self, runner, test_video, tmp_path, loaded_project

@@ -16214,7 +16214,7 @@ def _selection_coverage_warnings(
         )
         position = _caption_placement_label(geometry)
         try:
-            block = _caption_resolved_geometry(
+            block = _overlay_resolved_geometry(
                 _caption_sample_record(recipe, geometry, 0.0, 1.0),
                 canvas_tuple,
                 sample=True,
@@ -18715,6 +18715,11 @@ def audio_set(audio_file: str, dry_run: bool) -> None:
     )
 
 
+# Reference pixels for new preset defaults. Persist canvas-relative lengths
+# in records; existing records and explicit CSS pixels retain their values.
+_REFERENCE_SHORT_SIDE = 1080
+_REFERENCE_WIDTH = 1920
+
 OVERLAY_STYLE_PRESETS = {
     "caption-default": {
         "font_family": "Inter",
@@ -18874,6 +18879,18 @@ def _overlay_style_envelope(
             f"{', '.join(sorted(OVERLAY_STYLE_PRESETS))}."
         )
     resolved = dict(OVERLAY_STYLE_PRESETS[preset])
+    for key in ("font_size", "stroke_width"):
+        if key in resolved:
+            resolved[key] = _viewport_length(
+                resolved[key] / _REFERENCE_SHORT_SIDE * 100, "vmin"
+            )
+    if "padding" in resolved:
+        resolved["padding"] = " ".join(
+            _viewport_length(
+                float(part.removesuffix("px")) / _REFERENCE_SHORT_SIDE * 100, "vmin"
+            )
+            for part in resolved["padding"].split()
+        )
     css_resolved = _parse_overlay_css(css)
     stroke = css_resolved.pop("stroke", None)
     if stroke is not None:
@@ -19033,8 +19050,8 @@ def _overlay_position_envelope(
     preset: str | None = None,
     x: float | None = None,
     y: float | None = None,
-    margin_x: int | None = None,
-    margin_y: int | None = None,
+    margin_x: int | str | None = None,
+    margin_y: int | str | None = None,
     anchor: str | None = None,
     default_preset: str = "top",
 ) -> dict:
@@ -19070,6 +19087,12 @@ def _overlay_position_envelope(
         "safe_area": True,
     }
     position.update(_POSITION_PRESET_LAYOUT[preset])
+    for axis, extent, unit in (
+        ("x", _REFERENCE_WIDTH, "vw"), ("y", _REFERENCE_SHORT_SIDE, "vh")
+    ):
+        key = f"margin_{axis}"
+        if key in position:
+            position[key] = _viewport_length(position[key] / extent * 100, unit)
     if margin_x is not None:
         position["margin_x"] = margin_x
     if margin_y is not None:
@@ -20073,10 +20096,6 @@ _CAPTION_MARGIN_MAX = 0.45
 _CAPTION_WIDTH_RANGE = (0.1, 1.0)
 _CAPTION_GEOMETRY_FIELDS = ("at", "x", "y", "margin", "size", "width")
 _CAPTION_SAMPLE_TEXT = "Sample caption text"
-# Style and position presets are authored in pixels on a 1920x1080
-# reference canvas; captions restate them relative to the real canvas.
-_REFERENCE_SHORT_SIDE = 1080
-_REFERENCE_WIDTH = 1920
 
 
 def _parse_caption_at(raw: str) -> str:
@@ -20362,10 +20381,10 @@ def _caption_render_canvas(project: dict, spec: dict) -> tuple[int, int] | None:
     return None
 
 
-def _caption_resolved_geometry(
+def _overlay_resolved_geometry(
     record: dict, canvas: tuple[int, int], *, sample: bool
 ) -> dict:
-    """Pixels for one cue from the render planner itself, so the preview
+    """Pixels for one overlay from the render planner itself, so the preview
     can never disagree with export, screenshot, or watch."""
     from_s = parse_timecode(record["from"])
     to_s = parse_timecode(record["to"])
@@ -20376,6 +20395,8 @@ def _caption_resolved_geometry(
         "canvas": {"width": canvas[0], "height": canvas[1]},
         "anchor": plan["anchor"],
         "font_size_px": plan["font_size"],
+        "stroke_width_px": (plan["stroke"] or {}).get("width", 0),
+        "padding_px": plan["padding"],
     }
     if position.get("x") is not None:
         resolved["center_px"] = {
@@ -20397,6 +20418,36 @@ def _caption_resolved_geometry(
     resolved["sample_text"] = record["text"]
     resolved["sample"] = sample
     return resolved
+
+
+def _overlay_geometry_preview(project: dict, spec: dict, records: list[dict]) -> dict:
+    """Report pixels separately from editable viewport lengths, without
+    writing render assets. Scene-local clocks use the canonical resolver."""
+    try:
+        timeline = resolve_project(project, spec)
+        canvas = timeline.canvas
+        dimensions = (
+            (int(canvas["width"]), int(canvas["height"]))
+            if canvas else _caption_render_canvas(project, spec)
+        )
+        if dimensions is None:
+            return {"available": False, "reason": "no_single_render_canvas"}
+        state = resolve_overlays(timeline, records)
+        items = []
+        for record in state.records:
+            geometry = _overlay_resolved_geometry(record, dimensions, sample=False)
+            # Sample caption fields are useful to placement but redundant here.
+            geometry.pop("sample")
+            geometry.pop("sample_text")
+            geometry.pop("canvas")
+            items.append({"id": record["id"], **geometry})
+    except (ResolvedProjectError, SpecValidationError, FontResolutionError, ValueError) as exc:
+        return {"available": False, "reason": "unresolved_geometry", "detail": str(exc)}
+    return {
+        "available": True,
+        "canvas": {"width": dimensions[0], "height": dimensions[1]},
+        "items": items,
+    }
 
 
 _CAPTION_PLACEMENT_CONTROLS = {
@@ -20531,7 +20582,7 @@ def _caption_placement_preview(
                 except ValueError:
                     sample = None
             if sample is not None:
-                resolved = _caption_resolved_geometry(sample, canvas, sample=synthetic)
+                resolved = _overlay_resolved_geometry(sample, canvas, sample=synthetic)
                 entry["resolved"] = resolved
                 block = resolved["block"]
                 entry["estimated_baseline"] = {
@@ -23516,6 +23567,10 @@ def overlays(ctx: click.Context) -> None:
       font-size: 6vmin      6% of the canvas's shorter side
       max-width: 80%        80% of the canvas width
 
+    Preset sizes, strokes and padding scale with the shorter canvas side;
+    preset margins scale with width/height. Explicit CSS pixels stay fixed.
+    Dump and set --dry-run report resolved_geometry in canvas pixels.
+
     \b
     Timing spaces:
       result (default)  --from/--to stay on the finished-video clock.
@@ -23701,7 +23756,7 @@ def overlays_dump(output: str) -> None:
     ``scene: NAME_OR_ID`` for scene-local time. Validate that shape with
     ``overlays set <file> --dry-run`` before applying the file.
     """
-    _, spec = _overlay_project_spec("overlays dump")
+    project, spec = _overlay_project_spec("overlays dump")
     records = spec.get("overlays", [])
     path = os.path.realpath(output)
     try:
@@ -23733,6 +23788,7 @@ def overlays_dump(output: str) -> None:
                 "overlay_model": "timed_text_overlays",
                 "tracks": sorted({o["track"] for o in records}),
                 "overlays_count": len(records),
+                "resolved_geometry": _overlay_geometry_preview(project, spec, records),
                 "derived_fields_note": (
                     "style.resolved is derived from preset + css and is "
                     "recomputed on 'overlays set'."
@@ -23981,6 +24037,10 @@ def overlays_set(overlay_file: str, dry_run: bool) -> None:
                 warnings.append(drawtext_warning)
         _add_warnings(result, warnings)
         candidate_spec = set_overlays(spec, canonical)
+        if dry_run:
+            result["resolved_geometry"] = _overlay_geometry_preview(
+                project, candidate_spec, canonical
+            )
         try:
             overlay_state = resolve_overlays(
                 resolve_project(project, candidate_spec), canonical
@@ -24083,6 +24143,9 @@ def overlays_set(overlay_file: str, dry_run: bool) -> None:
             _add_warnings(result, [drawtext_warning])
     if dry_run:
         result["overlays"] = [_overlay_view(record) for record in normalized]
+        result["resolved_geometry"] = _overlay_geometry_preview(
+            project, set_overlays(spec, normalized), normalized
+        )
         result["derived_fields_note"] = (
             "style.resolved is derived from preset + css and is recomputed "
             "on 'overlays set'."
