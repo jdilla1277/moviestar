@@ -133,12 +133,14 @@ players with two decoders each are prepared per version, independent of the full
 length. One shared audio context switches source gains at the cut; audio is
 measured after that switch. The output is stereo, using the browser's speaker
 downmix so center-channel dialogue in a surround source is preserved.
-A disposable snapshot of the outgoing last valid
-video frame covers the brief decoder/audio handoff, so a decoded frame beyond
-the edit is not displayed. This is an in-memory boundary frame, not an encoded
-or reusable rendered clip.
+A disposable snapshot of each outgoing last valid video frame covers the brief
+decoder/audio handoff. Cut players seek to prepare those pixels, then return to
+their initial frames before the version becomes current. Cut scheduling uses
+the presentation clock even when the browser omits a final-frame callback. The
+boundary frames live only in memory for those prepared players and are released
+on disposal; they are not encoded or reusable rendered clips.
 
-Cut and audio/display timing use a 50 ms reference tolerance. Muted pictures
+Cut and audio/display timing use a 50 ms reference tolerance. Inaudible pictures
 follow the audible video's clock with bounded rate correction; a drift beyond
 100 ms stops playback with rendered-mode guidance. The program clock
 is also checked across the complete sequence, not reset for each source. These

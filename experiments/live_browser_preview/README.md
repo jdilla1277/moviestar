@@ -682,6 +682,11 @@ separate owner check, not established by command success or decoder counters.
 Reference run at `5c1ba92` (one host, Chrome for Testing 156.0.8078.73,
 generated media, authored 360×640 at 1×):
 
+This single-span timing reference predates explicit outgoing-frame preparation
+for cuts. It does not measure two-video cut-edit preparation latency. Browser
+regressions separately suppress final-frame callbacks and require smooth cut
+completion, both held final frames and unchanged timing/quality limits.
+
 | Initial undo entries | Completed operations | Maximum command-to-visible-ready | ≥3,000 ms misses |
 | --- | --- | --- | --- |
 | 0 | 8/8 | 813 ms | 0 |
