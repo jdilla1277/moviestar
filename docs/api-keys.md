@@ -28,10 +28,10 @@ curl --fail-with-body https://trymoviestar.com/api/v1/account/me \
 
 Set `MOVIESTAR_API_KEY` securely in your shell or secret manager. The response
 identifies your account handle and advertises `account:read`. A revoked key
-returns HTTP 401 immediately. Personal keys do not yet authorize project,
-media, editing or render APIs, and are separate from partner integration keys
-and CLI installation credentials. Additional API journeys will add their own
-supported permissions.
+returns HTTP 401 immediately. [Cloud project creation and metadata](cloud-projects.md#create-through-the-http-api)
+additionally require personal Cloud access on the service. Personal keys do not
+grant media, editing or render API access and are separate from partner
+integration keys and CLI installation credentials.
 
 The website/API deployment and the CLI release are separate. An older installed
 CLI may lack `account keys`; use the website URL directly in that case.
@@ -87,9 +87,11 @@ Revoke the key on the website, then repeat the call using the same client.
 The next protected request must receive HTTP 401. The same revocation ends API
 and MCP access; deleting the revoked key record does not restore either.
 
-Currently the key authorizes only `account:read`, including the MCP account
-check. It does not unlock project/media/render tools. OAuth discovery and
-ChatGPT linking remain available alongside this developer-controlled mode.
+The account check advertises `account:read`. On services with personal Cloud
+projects enabled, the same key also authorizes
+[the project creation tool](cloud-projects.md#create-through-hosted-mcp).
+It does not unlock media/editing/render tools. OAuth discovery and ChatGPT
+linking remain available alongside this developer-controlled mode.
 
 For staging tests, create the key on that staging website and use its exact
 `/mcp` endpoint. An invalid or revoked key returns a website key-settings hint;
