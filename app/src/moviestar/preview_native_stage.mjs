@@ -104,7 +104,7 @@ function onFrame(now,metadata){
   if(disposed)return;
   const running=playing&&!video.paused;
   const primary=videos.find(item=>item.primary);
-  if(primary){primary.firstFrame=true;primary.frame={media_time:metadata.mediaTime,display_time:metadata.expectedDisplayTime};}
+  if(primary){primary.firstFrame=true;primary.frame={media_time:metadata.mediaTime,display_time:metadata.expectedDisplayTime,presented_frames:metadata.presentedFrames};}
   if(running&&primary)recordVideoQuality(primary,'frame');
   if(playing&&videoGroup){try{videoGroup.synchronize(videos.find(item=>item.primary));}catch(error){fail(error);return;}}
   const local=metadata.mediaTime-packet.source_start;
@@ -129,8 +129,8 @@ function onFrame(now,metadata){
     if(metrics.first_presented_at===undefined)metrics.first_presented_at=performance.timeOrigin+metadata.expectedDisplayTime;
     const sampled=audit?sourceFrame():{};
     if(audit&&primary){metrics.video_frames??=[];metrics.video_frames.push({path:primary.path,...primary.frame,number:sampled.number});}
-    metrics.frames.push({media_time:metadata.mediaTime,number:sampled.number,display_time:metadata.expectedDisplayTime});
-    if(sampled.white&&!metrics.previous_white)metrics.flashes.push({media_time:metadata.mediaTime,display_time:metadata.expectedDisplayTime});
+    metrics.frames.push({media_time:metadata.mediaTime,number:sampled.number,display_time:metadata.expectedDisplayTime,presented_frames:metadata.presentedFrames});
+    if(sampled.white&&!metrics.previous_white)metrics.flashes.push({media_time:metadata.mediaTime,display_time:metadata.expectedDisplayTime,presented_frames:metadata.presentedFrames});
     metrics.previous_white=sampled.white;
     window.moviestarLiveStage.onPresented?.({...metrics.frames.at(-1),white:sampled.white,display_epoch:performance.timeOrigin+metadata.expectedDisplayTime});
     if(!packet.cut_segment&&metadata.mediaTime>=packet.source_end-1/packet.fps-1e-6&&!stopTimer){
@@ -224,7 +224,7 @@ async function initialize(){
       if(typeof media.requestVideoFrameCallback!=='function')throw Error('Native preview needs video-frame callbacks; use --mode rendered.');
       const observe=(now,frame)=>{
         if(disposed)return;
-        item.firstFrame=true;item.frame={media_time:frame.mediaTime,display_time:frame.expectedDisplayTime};
+        item.firstFrame=true;item.frame={media_time:frame.mediaTime,display_time:frame.expectedDisplayTime,presented_frames:frame.presentedFrames};
         const running=playing&&!video.paused;
         if(packet.cut_segment&&running&&frame.mediaTime>=item.end-1e-6){
           freezeFollower(item);
@@ -337,7 +337,8 @@ window.moviestarLiveStage={ready,metrics,
       }
       if(!active())return;
       metrics.device_ready_at=Date.now();if(packet.cut_segment&&packet.samples.length===1){freezeLastFrame();videos.filter(item=>!item.primary).forEach(freezeFollower);}
-      for(const item of videos){item.beforePlay=item.video.getVideoPlaybackQuality();delete item.reportedDrops;}playing=true;
+      for(const item of videos){item.beforePlay=item.video.getVideoPlaybackQuality();delete item.reportedDrops;}
+      metrics.initial_presented=videos.map(item=>({path:item.path,media_time:item.video.currentTime,...item.frame,quality:item.beforePlay}));playing=true;
       if(videoGroup)await videoGroup.play();else await video.play();
     }catch(error){if(active()){fail(error);throw error;}}
   },

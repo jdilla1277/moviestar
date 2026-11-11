@@ -14,11 +14,12 @@ from moviestar.spatial_layout import browser_available, _chrome_path
 
 
 @pytest.mark.skipif(not browser_available(), reason='Chrome and Node required')
-@pytest.mark.parametrize('spatial,cuts,silent_listener,omit_end_callbacks', [
-    (False, False, False, False), (True, False, False, False),
-    (False, True, False, False), (True, True, False, False),
-    (False, False, True, False), (False, True, False, True)])
-def test_actual_pip_prepares_both_videos_and_keeps_clocks_and_routing(tmp_path, spatial, cuts, silent_listener, omit_end_callbacks):
+@pytest.mark.parametrize('spatial,cuts,silent_listener,omit_end_callbacks,pixel_audit', [
+    (False, False, False, False, True), (True, False, False, False, True),
+    (False, True, False, False, True), (True, True, False, False, True),
+    (False, False, True, False, True), (False, True, False, True, True),
+    (True, False, False, False, False)])
+def test_actual_pip_prepares_both_videos_and_keeps_clocks_and_routing(tmp_path, spatial, cuts, silent_listener, omit_end_callbacks, pixel_audit):
     repo = Path(__file__).parents[2]; root = tmp_path/'project'
     subprocess.run([sys.executable, str(repo/'experiments/live_browser_preview/pip.py'), '--out', str(root),
         *(['--spatial'] if spatial else []), *(['--cuts'] if cuts else []),
@@ -53,7 +54,7 @@ try{
    });
   };
  `});
- await b.send('Page.navigate',{url:URL+'?audit=1'});
+ await b.send('Page.navigate',{url:URL+(PIXEL_AUDIT?'?audit=1':'')});
  await b.wait('window.movieStarPreview?.is_current',20000);
  // Use the authored 360x640 raster at 1x for software-headless playback.
  await b.evaluate(`(async()=>{const s=document.getElementById('stage');s.style.maxWidth='none';s.style.width=(360+s.offsetWidth-s.clientWidth)+'px';await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));})()`);
@@ -80,16 +81,18 @@ try{
   const start=first.display_epoch-first.result_time*1000,end=last.display_epoch-last.result_time*1000;
   assert.ok(Math.abs(end-start)<=50,`Cuts preserve the program clock within 50ms: ${end-start}ms`);
  }
- const videoFrames=CUTS?(await b.evaluate(`[...document.querySelector('iframe:not(.pending)').contentDocument.querySelectorAll('iframe')].flatMap(frame=>frame.contentWindow.moviestarLiveStage.metrics.video_frames??[])`)):m.video_frames;
+ const videoFrames=CUTS?(await b.evaluate(`[...document.querySelector('iframe:not(.pending)').contentDocument.querySelectorAll('iframe')].flatMap(frame=>frame.contentWindow.moviestarLiveStage.metrics.video_frames??[])`)):(m.video_frames??[]);
  const qualities=CUTS?(await b.evaluate(`[...document.querySelector('iframe:not(.pending)').contentDocument.querySelectorAll('iframe')].flatMap(frame=>frame.contentWindow.moviestarLiveStage.metrics.video_quality??[])`)):m.video_quality;
  const qualityEvents=CUTS?(await b.evaluate(`[...document.querySelector('iframe:not(.pending)').contentDocument.querySelectorAll('iframe')].flatMap(frame=>frame.contentWindow.moviestarLiveStage.metrics.quality_events??[])`)):m.quality_events;
- await writeFile(OUT+'/video-frames.json',JSON.stringify({videoFrames,qualities,qualityEvents},null,2));
+ const firstSamples=Object.fromEntries([...new Set(videoFrames.map(f=>JSON.stringify(f.path)))].map(path=>[path,videoFrames.filter(f=>JSON.stringify(f.path)===path).slice(0,25)]));
+ await writeFile(OUT+'/video-frames.json',JSON.stringify({videoFrames,qualities,qualityEvents,firstSamples},null,2));
  assert.equal(qualities.length,CUTS?6:2);
  assert.ok(qualities.every(q=>q.dropped_frames===0),'Neither decoder drops frames');
+ if(!CUTS)assert.ok(qualities.every(q=>q.total_frames>=140),'Both decoders continue through the complete clip');
+ if(PIXEL_AUDIT){
  const cueClock=measureCueClock(m,{fps:30,sourceStart:1,count:5,quality:qualities});
  await writeFile(OUT+'/cue-clock.json',JSON.stringify(cueClock,null,2));
  assert.deepEqual(cueClock.problems,[],'Selected voice follows the presented-frame clock within 50ms');
- if(!CUTS)assert.ok(qualities.every(q=>q.total_frames>=140),'Both decoders continue through the complete clip');
  const paths=[...new Set(videoFrames.map(f=>JSON.stringify(f.path)))];assert.equal(paths.length,CUTS?6:2);
  const frames=paths.map(path=>videoFrames.filter(f=>JSON.stringify(f.path)===path));
  frames.forEach((list,i)=>{
@@ -100,6 +103,10 @@ try{
  });
  const zero=frames.map(list=>list[0].display_time-(list[0].media_time-(list[0].path.includes('inset')?2:1))*1000);
  if(!CUTS)assert.ok(Math.abs(zero[0]-zero[1])<=50+1e-6,'Both displayed video clocks start within 50ms');
+ }else{
+  assert.equal(m.beeps.length,5,'Normal playback still produces all audio cues');
+  assert.ok(m.frames.length>=20,'Normal playback keeps presenting source frames');
+ }
  const final=await b.evaluate('window.movieStarPreview.stage.snapshot()');
  assert.deepEqual(final.videos.map(v=>v.source.number),[179,209],'Both final frames are held');
  await b.click('#restart');await b.click('#play');await b.click('#pause');
@@ -114,7 +121,7 @@ try{
             values = {'HELPER': (repo/'experiments/live_browser_preview/browser.mjs').as_uri(), 'CHROME': chrome,
                       'OUT': str(tmp_path/'browser'), 'URL': ready['url'], 'CUTS': cuts,
                       'CUE_HELPER': (repo/'experiments/live_browser_preview/cue_clock.mjs').as_uri(),
-                      'OMIT_END_CALLBACKS': omit_end_callbacks}
+                      'OMIT_END_CALLBACKS': omit_end_callbacks, 'PIXEL_AUDIT': pixel_audit}
             prefix = ''.join('const '+key+'='+json.dumps(value)+';\n' for key, value in values.items())
             result = subprocess.run(['node', '--input-type=module', '-e', prefix+script], capture_output=True, text=True, timeout=40)
             diagnostics = {}
@@ -123,8 +130,9 @@ try{
                 if path.exists():
                     data = json.loads(path.read_text())
                     if name == 'playback.json':
-                        data = {key: data.get(key) for key in ('error', 'stalls', 'waiting_events', 'cuts', 'quality_events', 'flashes', 'beeps', 'video_quality', 'paused_quality', 'settled_quality')}
-                    if name == 'video-frames.json': data = {key: data.get(key) for key in ('qualities', 'qualityEvents')}
+                        data['first_frames'] = data.get('frames', [])[:25]
+                        data = {key: data.get(key) for key in ('first_frames', 'error', 'stalls', 'waiting_events', 'cuts', 'quality_events', 'flashes', 'beeps', 'video_quality', 'paused_quality', 'settled_quality', 'initial_presented')}
+                    if name == 'video-frames.json': data = {key: data.get(key) for key in ('qualities', 'qualityEvents', 'firstSamples')}
                     diagnostics[name] = data
             assert result.returncode == 0, result.stdout+result.stderr+'\n'+json.dumps(diagnostics, indent=2)
             if not spatial and not cuts:
