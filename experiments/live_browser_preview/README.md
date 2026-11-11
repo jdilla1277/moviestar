@@ -673,3 +673,25 @@ composition referencing large files; it does not replace the existing
 121-scene/full-history stress case or certify general native coverage. Raw
 real-input artifacts must remain private. Physical speech/lip-sync review is a
 separate owner check, not established by command success or decoder counters.
+
+Reference run at `42fb920` (one host, generated media, authored 360×640 at 1×):
+
+| Initial undo entries | Completed operations | Maximum command-to-visible-ready | ≥3,000 ms misses |
+| --- | --- | --- | --- |
+| 0 | 8/8 | 811 ms | 0 |
+| 20 | 8/8 | 849 ms | 0 |
+| 50 | 8/8 | 725 ms | 0 |
+
+All three cases restored current content through four individual undos,
+including the expected FIFO cap behavior. Swapped-speaker playback had no stalls
+or dropped decoder frames; maximum flash/beep phase error was 20.18 ms against
+the existing 50 ms reference. This small single-scene sample does not establish
+general long-project, cloud or full native-feature acceptance.
+
+Retain the separate earlier default/upscaled-view run: it completed all 24
+latency checks, but each playback reported one dropped muted-video frame.
+The authored-size reference passes; default viewport/upscaling behavior remains
+part of [viewer follow-up #149](https://github.com/jdilla1277/moviestar/issues/149).
+These are distinct observation conditions, not a product-speed comparison or
+proof of the sole cause of a dropped frame. No deadline or fidelity budget was
+changed to make the reference run pass.
