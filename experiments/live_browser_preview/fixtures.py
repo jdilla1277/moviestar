@@ -29,7 +29,7 @@ def generate(root, portrait=False, *, pattern=False):
             frame[:] = (255,255,255) if number % 30 in {6,7} else (16,32,64)
             if pattern and number % 30 not in {6,7}:
                 # A crop change must alter visible pixels, not just metadata.
-                frame[:, :, 0] = np.arange(640, dtype=np.uint16)*200//640
+                frame[:, :, 0] = np.arange(640, dtype=np.uint32)*200//640
             for bit in range(8):
                 frame[:16,bit*16:(bit+1)*16] = 255 if number & (1<<bit) else 0
             process.stdin.write(frame.tobytes())
