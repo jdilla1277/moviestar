@@ -288,6 +288,7 @@ from moviestar.feedback import feedback
 from moviestar.subscribe import subscribe as subscribe_command
 from moviestar.account import account as account_command
 from moviestar.cloud import cloud as cloud_command
+from moviestar.cloud_asset_upload import register_asset_upload
 from moviestar.incoming import shared as shared_command
 from moviestar.upload import upload as upload_command
 from moviestar.sharing import (
@@ -1055,7 +1056,7 @@ ACCOUNT COMMANDS
 
 \b
   account connect EMAIL  Ask Moviestar to email the human an account claim.
-  cloud                 Create, list, and reopen owned Cloud project metadata.
+  cloud                 Work with Cloud projects and private account assets.
   account status         Show approval or connection state for this install.
   account disconnect     Revoke this install; local editing keeps working.
   account keys           Open the website to create or manage API keys.
@@ -1219,6 +1220,7 @@ def cli() -> None:
 cli.add_command(subscribe_command)
 cli.add_command(feedback)
 cli.add_command(account_command)
+register_asset_upload(cloud_command)
 cli.add_command(cloud_command)
 cli.add_command(shared_command)
 cli.add_command(upload_command)

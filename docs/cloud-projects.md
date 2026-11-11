@@ -1,5 +1,9 @@
 # Personal Cloud projects
 
+To upload a private original without a project, use
+[`moviestar cloud assets create FILE`](account-assets.md). The asset upload
+workflow is separate from project metadata and uses the same approved account.
+
 Use the explicit `cloud` command group to create and reopen projects owned by
 your connected account, or discover projects shared with it when supported. Your service must have personal Cloud project access
 enabled. This initial client supports project metadata; inspect capabilities
