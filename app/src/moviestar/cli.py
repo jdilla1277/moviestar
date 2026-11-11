@@ -1057,6 +1057,7 @@ ACCOUNT COMMANDS
   cloud                 Create, list, and reopen owned Cloud project metadata.
   account status         Show approval or connection state for this install.
   account disconnect     Revoke this install; local editing keeps working.
+  account keys           Open the website to create or manage API keys.
   account open           Open the human's account page; --email-link EMAIL requests sign-in mail.
   upload FILE            Store a finished MP4 privately when hosting is enabled.
   share FILE_OR_VIDEO_ID Create an unlisted watch/download link when enabled.
