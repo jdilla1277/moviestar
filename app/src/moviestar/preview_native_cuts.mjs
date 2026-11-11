@@ -126,7 +126,7 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
 
 export async function mountCuts(packet,signal,metrics){
   const multipleVideos=packet.segments.some(segment=>segment.packet.media.filter(item=>item.kind==='video').length>1);
-  const stages=[],audio=new AudioContext(multipleVideos?{sampleRate:48000}:{}),frames=[];
+  const stages=[],audio=new AudioContext(multipleVideos?{sampleRate:48000,latencyHint:'balanced'}:{}),frames=[];
   let delegate,closed=false;
   const cleanup=()=>{
     if(closed)return;closed=true;
@@ -159,7 +159,7 @@ export async function mountCuts(packet,signal,metrics){
         timestamp_available:stamp.performanceTime>0&&stamp.contextTime>0});
     };
     const destinations=packet.segments.map(()=>{const gain=audio.createGain();gain.gain.value=0;gain.connect(output);return gain;});
-    window.moviestarCutShared={audio,destinations};
+    window.moviestarCutShared={audio,destinations,latencyHint:multipleVideos?'balanced':'interactive'};
     document.documentElement.style.cssText='margin:0;width:100%;height:100%';
     document.body.style.cssText='margin:0;position:relative;width:100%;height:100%;overflow:hidden';
     document.body.replaceChildren();

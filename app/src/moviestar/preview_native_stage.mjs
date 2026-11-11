@@ -247,9 +247,11 @@ async function initialize(){
   shared=packet.cut_segment?window.parent.moviestarCutShared:null;
   if(packet.cut_segment&&!shared)throw Error('Native cut audio context is unavailable');
   // Use the export audio rate for multiple media clocks, rather than a
-  // device-preferred rate that can vary across playback hosts.
-  audio=shared?.audio??new AudioContext(videos.length>1?{sampleRate:48000}:{});
-  metrics.audio_device={latency_hint:'interactive',sample_rate:audio.sampleRate,base_latency:audio.baseLatency,output_latency:audio.outputLatency};
+  // device-preferred rate that can vary across playback hosts. A balanced
+  // buffer gives concurrent media clocks more scheduling headroom; the real
+  // output-clock AV gate still bounds the resulting latency.
+  audio=shared?.audio??new AudioContext(videos.length>1?{sampleRate:48000,latencyHint:'balanced'}:{});
+  metrics.audio_device={latency_hint:shared?.latencyHint??(videos.length>1?'balanced':'interactive'),sample_rate:audio.sampleRate,base_latency:audio.baseLatency,output_latency:audio.outputLatency};
   if(!audio.audioWorklet||typeof audio.getOutputTimestamp!=='function')throw Error('Native preview needs the browser audio output clock; use --mode rendered.');
   if(!shared)await audio.audioWorklet.addModule('preview_native_meter.mjs');
   if(disposed){if(!shared)await audio.close();return;}
