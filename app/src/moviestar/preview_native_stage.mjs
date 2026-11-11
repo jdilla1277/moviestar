@@ -174,6 +174,36 @@ function recordVideoQuality(item,phase){
     callback_media_time:item.frame?.media_time,source_end:item.end,paused:item.video.paused,seeking:item.video.seeking,
     rate:item.video.playbackRate,dropped_frames:drops,total_frames:q.totalVideoFrames-item.beforePlay.totalVideoFrames});
 }
+function connectAudioGraph(){
+  // A cut's parent already meters the final selected output. Keep child
+  // routing in ordinary gains instead of redundant always-running worklets.
+  let destination=shared?.destinations[Number(new URLSearchParams(location.search).get('segment'))];
+  if(!shared){
+    meter=new AudioWorkletNode(audio,'cue-meter',{channelCount:2,channelCountMode:'explicit',
+      channelInterpretation:'speakers',outputChannelCount:[2]});
+    meter.connect(audio.destination);destination=meter;
+    meter.port.onmessage=event=>{
+      if(!playing)return;
+      const stamp=audio.getOutputTimestamp();
+      metrics.beeps.push({context_time:event.data.context_time,
+        display_time:stamp.performanceTime+(event.data.context_time-stamp.contextTime)*1000,
+        timestamp_available:stamp.performanceTime>0&&stamp.contextTime>0,rms:event.data.rms});
+    };
+  }
+  for(const item of videos){
+    // Both media pipelines use the same audio output clock. Silence the
+    // listener in the graph: element.muted would select a different video
+    // scheduling path and require startup priming at every scene handoff.
+    const gain=audio.createGain();
+    gain.channelCount=2;gain.channelCountMode='explicit';gain.channelInterpretation='speakers';
+    gain.gain.value=item.primary?1:0;
+    // A silent video has no audio pipeline to join to this output clock.
+    // Keep its picture on group transport without creating an empty source.
+    if(item.hasAudio){const node=audio.createMediaElementSource(item.video);node.connect(gain);item.audioSource=node;}
+    gain.connect(destination);item.audioGain=gain;
+  }
+
+}
 async function initialize(){
   const params=new URLSearchParams(location.search),request=params.get('request');
   const response=await fetch('packet?request='+encodeURIComponent(request)+(params.has('segment')?'&segment='+encodeURIComponent(params.get('segment')):''),{cache:'no-store',signal:controller.signal});
@@ -253,28 +283,7 @@ async function initialize(){
   if(!audio.audioWorklet||typeof audio.getOutputTimestamp!=='function')throw Error('Native preview needs the browser audio output clock; use --mode rendered.');
   if(!shared)await audio.audioWorklet.addModule('preview_native_meter.mjs');
   if(disposed){if(!shared)await audio.close();return;}
-  meter=new AudioWorkletNode(audio,'cue-meter',{channelCount:2,channelCountMode:'explicit',
-    channelInterpretation:'speakers',outputChannelCount:[2]});
-  for(const item of videos){
-    // Both media pipelines use the same audio output clock. Silence the
-    // listener in the graph: element.muted would select a different video
-    // scheduling path and require startup priming at every scene handoff.
-    const gain=audio.createGain();
-    gain.channelCount=2;gain.channelCountMode='explicit';gain.channelInterpretation='speakers';
-    gain.gain.value=item.primary?1:0;
-    // A silent video has no audio pipeline to join to this output clock.
-    // Keep its picture on group transport without creating an empty source.
-    if(item.hasAudio){const node=audio.createMediaElementSource(item.video);node.connect(gain);item.audioSource=node;}
-    gain.connect(meter);item.audioGain=gain;
-  }
-  meter.connect(shared?shared.destinations[Number(new URLSearchParams(location.search).get('segment'))]:audio.destination);
-  meter.port.onmessage=event=>{
-    if(!playing)return;
-    const stamp=audio.getOutputTimestamp();
-    metrics.beeps.push({context_time:event.data.context_time,
-      display_time:stamp.performanceTime+(shared?window.parent.performance.timeOrigin-performance.timeOrigin:0)+(event.data.context_time-stamp.contextTime)*1000,
-      timestamp_available:stamp.performanceTime>0&&stamp.contextTime>0,rms:event.data.rms});
-  };
+  connectAudioGraph();
   if(metadataReady&&Math.abs(video.currentTime-packet.source_start)>1e-6)video.currentTime=packet.source_start;
   await Promise.all(images);imageReady=true;checkReady();
 }

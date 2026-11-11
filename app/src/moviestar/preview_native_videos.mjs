@@ -9,8 +9,8 @@ export function createVideoGroup(entries){
       if(pendingSeek)await pendingSeek;
       if(disposed||attempt!==generation)return;
       try{
-        // Every element feeds the shared audio clock (inaudible gains are
-        // applied in Web Audio), avoiding a separate muted-video startup path.
+        // Start both transports together. Audio-bearing elements feed the shared
+        // output clock; genuinely silent pictures retain group synchronization.
         await Promise.all(entries.map(({video})=>video.play()));
         if(disposed||attempt!==generation)return;
         return true;

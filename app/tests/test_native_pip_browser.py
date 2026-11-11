@@ -44,6 +44,13 @@ const {Browser}=await import(HELPER),b=await Browser.launch(CHROME,OUT);
 try{
  const mediaEvents=[];b.socket.addEventListener('message',event=>{const data=JSON.parse(event.data);if(data.method?.startsWith('Media.'))mediaEvents.push(data);});
  await b.send('Media.enable');
+ let traceComplete;
+ const traceDone=new Promise(resolve=>traceComplete=resolve);
+ if(TRACE){
+  b.socket.addEventListener('message',event=>{const data=JSON.parse(event.data);if(data.method==='Tracing.tracingComplete')traceComplete(data.params.stream);});
+  await b.send('Tracing.start',{categories:'media,webaudio,toplevel',transferMode:'ReturnAsStream'});
+ }
+
  await b.send('Emulation.setDeviceMetricsOverride',{width:1280,height:1800,deviceScaleFactor:1,mobile:false});
  if(OMIT_END_CALLBACKS)await b.send('Page.addScriptToEvaluateOnNewDocument',{source:`
   const request=HTMLVideoElement.prototype.requestVideoFrameCallback;
@@ -77,12 +84,6 @@ try{
   assert.ok(s.videos.every(v=>v.ready_state>=2&&!v.seeking&&v.paused));
  }
  await b.evaluate('window.movieStarPreview.stage.seek(0)');
- let traceComplete;
- const traceDone=new Promise(resolve=>traceComplete=resolve);
- if(TRACE){
-  b.socket.addEventListener('message',event=>{const data=JSON.parse(event.data);if(data.method==='Tracing.tracingComplete')traceComplete(data.params.stream);});
-  await b.send('Tracing.start',{categories:'media,webaudio,toplevel',transferMode:'ReturnAsStream'});
- }
  await b.click('#play');
  await b.wait('window.movieStarPreview.stage.metrics.finished||window.movieStarPreview.stage.error',12000);
  if(TRACE){
@@ -155,7 +156,7 @@ try{
             trace = tmp_path/'browser/trace.json'
             if os.environ.get('MOVIESTAR_NATIVE_TRACE') == '1' and trace.exists():
                 encoded = base64.b64encode(gzip.compress(trace.read_bytes())).decode('ascii')
-                print('NATIVE_TRACE_BEGIN', flush=True)
+                print('NATIVE_TRACE_BEGIN '+tmp_path.name, flush=True)
                 for offset in range(0, len(encoded), 5000):
                     print('NATIVE_TRACE_DATA '+encoded[offset:offset+5000], flush=True)
                 print('NATIVE_TRACE_END', flush=True)

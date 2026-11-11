@@ -146,7 +146,6 @@ export async function mountCuts(packet,signal,metrics){
   signal.addEventListener('abort',abort,{once:true});
   try{
     signal.throwIfAborted();
-    await Promise.race([audio.audioWorklet.addModule('preview_native_meter.mjs'),aborted]);
     await Promise.race([audio.audioWorklet.addModule('preview_native_cut_meter.mjs'),aborted]);
     signal.throwIfAborted();
     const audit=new URLSearchParams(location.search).has('audit');
