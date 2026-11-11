@@ -68,6 +68,7 @@ try{
  for(const at of [0,1,2,3,4]){
   const s=await b.evaluate(`(async()=>{const api=window.movieStarPreview.stage;await api.seek(${at});return api.snapshot();})()`);
   assert.equal(s.videos.length,2);
+  assert.deepEqual(s.videos.map(v=>v.audio_connected),SILENT_LISTENER?[true,false]:[true,true],'Only actual audio streams join the shared output graph');
   assert.equal(s.videos.filter(v=>v.audio_gain===1).length,1);
   assert.equal(s.videos.filter(v=>v.audio_gain===0).length,1);
   assert.deepEqual(s.videos.map(v=>v.source.number),CUTS&&at>=1&&at<3?[(2+at)*30,(1+at)*30]:[(1+at)*30,(2+at)*30]);
@@ -132,7 +133,7 @@ try{
             values = {'HELPER': (repo/'experiments/live_browser_preview/browser.mjs').as_uri(), 'CHROME': chrome,
                       'OUT': str(tmp_path/'browser'), 'URL': ready['url'], 'CUTS': cuts,
                       'CUE_HELPER': (repo/'experiments/live_browser_preview/cue_clock.mjs').as_uri(),
-                      'OMIT_END_CALLBACKS': omit_end_callbacks, 'PIXEL_AUDIT': pixel_audit}
+                      'OMIT_END_CALLBACKS': omit_end_callbacks, 'PIXEL_AUDIT': pixel_audit, 'SILENT_LISTENER': silent_listener}
             prefix = ''.join('const '+key+'='+json.dumps(value)+';\n' for key, value in values.items())
             result = subprocess.run(['node', '--input-type=module', '-e', prefix+script], capture_output=True, text=True, timeout=40)
             diagnostics = {}

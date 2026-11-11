@@ -180,7 +180,8 @@ def _compile_span(snapshot, timeline, start, end, span):
                 media.append({'path': node['path'], 'kind': kind, 'asset': key,
                               'object_fit': style.get('object-fit', 'fill'),
                               'object_position': original.get('native_object_position', '50% 50%'),
-                              **({'source_start': clocks[tuple(node['path'])],
+                              **({'has_audio': bool(metadata[asset].get('audio_codec')),
+                                  'source_start': clocks[tuple(node['path'])],
                                   'source_end': clocks[tuple(node['path'])]+end-start} if kind == 'video' else {})})
         def dynamic(nodes):
             return [{'path': node['path'], 'content': node['content'],

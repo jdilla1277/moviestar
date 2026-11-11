@@ -46,7 +46,8 @@ def test_two_video_packet_chooses_resolved_speaker_and_preserves_both_clocks(pip
 def test_silent_listener_is_allowed_but_selected_speaker_needs_audio(pip_project):
     _, project, root = pip_project
     project['sources'][1]['audio_codec'] = None; save_project(project, cwd=root)
-    assert len(compile_snapshot(read_snapshot(root, 0, 5))[0]['media']) == 2
+    packet, _ = compile_snapshot(read_snapshot(root, 0, 5))
+    assert [item['has_audio'] for item in packet['media'] if item['kind'] == 'video'] == [True, False]
     spec = pip_project[0]; spec['composition'][0]['audio_from'] = 'listener'; save_spec(spec, cwd=root)
     with pytest.raises(NativePreviewUnsupported, match='audio'):
         compile_snapshot(read_snapshot(root, 0, 5))

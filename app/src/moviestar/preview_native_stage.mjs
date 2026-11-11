@@ -203,7 +203,7 @@ async function initialize(){
     if(asset.kind==='image'){
       media.src='assets/'+asset.asset;images.push(media.decode());
     }else{
-      const primary=key(asset.path)===key(packet.video_path),item={video:media,path:asset.path,start:asset.source_start??packet.source_start,end:asset.source_end??packet.source_end,fps:packet.fps,primary};
+      const primary=key(asset.path)===key(packet.video_path),item={video:media,path:asset.path,start:asset.source_start??packet.source_start,end:asset.source_end??packet.source_end,fps:packet.fps,primary,hasAudio:asset.has_audio!==false};
       videos.push(item);if(primary)video=media;
       media.preload=packet.media.filter(item=>item.kind==='video').length>1?'auto':'metadata';media.playsInline=true;
       media.addEventListener('error',()=>fail(Error('Source video could not load.')));
@@ -259,10 +259,13 @@ async function initialize(){
     // Both media pipelines use the same audio output clock. Silence the
     // listener in the graph: element.muted would select a different video
     // scheduling path and require startup priming at every scene handoff.
-    const node=audio.createMediaElementSource(item.video),gain=audio.createGain();
+    const gain=audio.createGain();
     gain.channelCount=2;gain.channelCountMode='explicit';gain.channelInterpretation='speakers';
-    gain.gain.value=item.primary?1:0;node.connect(gain);gain.connect(meter);
-    item.audioSource=node;item.audioGain=gain;
+    gain.gain.value=item.primary?1:0;
+    // A silent video has no audio pipeline to join to this output clock.
+    // Keep its picture on group transport without creating an empty source.
+    if(item.hasAudio){const node=audio.createMediaElementSource(item.video);node.connect(gain);item.audioSource=node;}
+    gain.connect(meter);item.audioGain=gain;
   }
   meter.connect(shared?shared.destinations[Number(new URLSearchParams(location.search).get('segment'))]:audio.destination);
   meter.port.onmessage=event=>{
@@ -350,7 +353,7 @@ window.moviestarLiveStage={ready,metrics,
   snapshot(){
     if(cuts)return cuts.snapshot();
     return {request_id:packet.request_id,state_id:packet.state_id,time:this.time,source:sourceFrame(),
-      videos:videos.map(item=>({path:item.path,asset:item.video.currentSrc.match(/\/assets\/([a-f0-9]{24})(?:[?#]|$)/)?.[1]??null,audio_gain:item.audioGain?.gain.value,source:sourceFrame(item),media_time:item.video.currentTime,paused:item.video.paused,seeking:item.video.seeking,ready_state:item.video.readyState})),
+      videos:videos.map(item=>({path:item.path,asset:item.video.currentSrc.match(/\/assets\/([a-f0-9]{24})(?:[?#]|$)/)?.[1]??null,audio_gain:item.audioGain?.gain.value,audio_connected:Boolean(item.audioSource),source:sourceFrame(item),media_time:item.video.currentTime,paused:item.video.paused,seeking:item.video.seeking,ready_state:item.video.readyState})),
       boxes:window.moviestarScene.entries.map(({node,element})=>{
         const r=element.getBoundingClientRect();let opacity=1;
         for(let ancestor=element;ancestor;ancestor=ancestor.parentElement)opacity*=Number(getComputedStyle(ancestor).opacity);
