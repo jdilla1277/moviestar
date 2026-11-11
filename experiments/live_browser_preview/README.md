@@ -717,3 +717,27 @@ ordinary viewport/upscaling behavior remains under
 [viewer follow-up #149](https://github.com/jdilla1277/moviestar/issues/149);
 the current 1× result does not certify every display condition. No deadline or
 fidelity budget was widened to make this run pass.
+
+
+### Headless playback cadence
+
+The browser driver disables `OnBeginFrameThrottleVideo` in Chrome for Testing.
+The pinned 156.0.8078.73 Linux build can leave a gap in video-compositor frame
+requests while the audio output and decoding buffers continue normally. A
+captured generated-fixture trace showed a roughly 67 ms gap, followed by two
+reported video drops; the renderer's main thread was not blocked for that
+interval. This is a browser scheduling investigation, not evidence that every
+historical timeout or drop has the same cause.
+
+The headless reference uses display-vsync frame requests instead of per-video
+throttling. Source dimensions, encoded FPS, playback speed, wall-clock audio,
+raw dropped-frame counters and all existing fidelity/per-edit budgets stay the
+same. Reproduction with a separately launched headless browser needs the same
+`--disable-features=OnBeginFrameThrottleVideo` flag; record browser version and
+flags with benchmark results. Ordinary human browsers are separate physical
+playback checks, and these reference results do not certify every browser/host.
+
+The feature is present and enabled in the [pinned Chromium source](https://chromium.googlesource.com/chromium/src/+/refs/tags/156.0.8078.73/components/viz/common/features.cc).
+Failed acceptance runs remain failed. On failure, CI can collect generated-only
+browser traces in a separate diagnostic run; a diagnostic rerun never replaces
+the original acceptance result.

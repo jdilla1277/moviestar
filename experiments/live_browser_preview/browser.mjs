@@ -1,12 +1,15 @@
 import {spawn} from 'node:child_process';
-import {mkdtemp,readFile,rm,mkdir} from 'node:fs/promises';
+import {mkdtemp,readFile,writeFile,rm,mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
 export const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 export class Browser {
   static async launch(chrome,out){
     await mkdir(out,{recursive:true});
     const browser=new Browser();browser.profile=await mkdtemp(join(out,'browser-'));
-    const flags=['--headless=new','--disable-gpu','--hide-scrollbars','--disable-background-networking','--disable-extensions','--no-first-run','--force-device-scale-factor=1','--remote-debugging-port=0',`--user-data-dir=${browser.profile}`,'about:blank'];
+    // Keep the pinned headless compositor on display-vsync BeginFrames. Its
+    // per-video throttle can skip requests while audio keeps advancing; this
+    // changes scheduling, not source FPS or the zero-drop/AV fidelity gates.
+    const flags=['--headless=new','--disable-features=OnBeginFrameThrottleVideo','--disable-gpu','--hide-scrollbars','--disable-background-networking','--disable-extensions','--no-first-run','--force-device-scale-factor=1','--remote-debugging-port=0',`--user-data-dir=${browser.profile}`,'about:blank'];
     if(process.getuid?.()===0||process.env.MOVIESTAR_CHROME_NO_SANDBOX==='1')flags.unshift('--no-sandbox');
     browser.child=spawn(chrome,flags,{stdio:['ignore','ignore','pipe'],detached:true});
     browser.error='';browser.child.stderr.on('data',chunk=>{browser.error=(browser.error+chunk).slice(-4000);});
@@ -14,6 +17,7 @@ export class Browser {
     browser.interrupt=async()=>{await browser.close();process.exitCode=130;};
     process.once('SIGINT',browser.interrupt);process.once('SIGTERM',browser.interrupt);
     try{
+      await writeFile(join(out,'browser-launch.json'),JSON.stringify({chrome,flags},null,2));
       for(let index=0;index<600&&!browser.port;index++){
         try{browser.port=Number((await readFile(join(browser.profile,'DevToolsActivePort'),'utf8')).split('\n')[0]);}catch{}
         if(browser.launchError)throw browser.launchError;
