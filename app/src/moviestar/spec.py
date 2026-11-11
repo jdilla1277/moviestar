@@ -791,7 +791,23 @@ def _validate_audio_mix(audio_mix, where: str = "audio_mix") -> None:
 
 
 def validate_spec(spec: dict) -> None:
-    """Validate against the v0.2 schema. Raises :class:`SpecValidationError`."""
+    """Validate a complete document and every undo-restorable state.
+
+    Pending composition edits use ``_validate_spec_state`` until save_spec
+    records their coupled fields in one revision. Replaying the old journal
+    against an unrecorded draft can mix different canvas/layout states.
+    """
+    _validate_spec_state(spec)
+    _validate_revision_chain(spec)
+
+
+def _validate_spec_state(spec: dict) -> None:
+    """Validate current state and journal shape, without replaying history.
+
+    A draft retains the original journal unchanged. load_spec validates that
+    journal against its stored head; save_spec validates it again after
+    recording the completed edit, before replacing the file.
+    """
     if not isinstance(spec, dict):
         raise SpecValidationError("spec must be a JSON object")
 
@@ -894,7 +910,6 @@ def validate_spec(spec: dict) -> None:
     _validate_caption_recipes(captions, "captions")
     _require_field(spec, "revisions", "spec")
     _validate_revisions(spec["revisions"], "revisions")
-    _validate_revision_chain(spec)
 
 
 def _validate_caption_recipes(recipes, where: str) -> None:
@@ -1240,7 +1255,7 @@ def set_motion(spec: dict, motion: dict) -> dict:
     """Replace the complete motion document."""
     new_spec = copy.deepcopy(spec)
     new_spec["motion"] = copy.deepcopy(motion)
-    validate_spec(new_spec)
+    _validate_spec_state(new_spec)
     return new_spec
 
 
@@ -2532,6 +2547,9 @@ def normalize_composition_storage(spec: dict, source_dims) -> dict:
 
 
 # ---------- Pure mutations ----------
+# Composition setters return drafts with the incoming journal unchanged.
+# Validate current state here; replay history only at its stored head (load)
+# or once the completed command has been recorded (save / CLI dry-run).
 
 
 def empty_spec(sources: list[dict]) -> dict:
@@ -2857,7 +2875,7 @@ def set_composition(
     new_spec["composition_audio_from"] = audio_from
     new_spec["composition_canvas"] = canvas
     new_spec["composition_authored_as"] = "concat"
-    validate_spec(new_spec)
+    _validate_spec_state(new_spec)
     return new_spec
 
 
@@ -2993,7 +3011,7 @@ def set_layout_composition(
     new_spec["composition_audio_from"] = audio_from
     new_spec["composition_canvas"] = canvas
     new_spec["composition_authored_as"] = "layout"
-    validate_spec(new_spec)
+    _validate_spec_state(new_spec)
     return new_spec
 
 
@@ -3350,7 +3368,7 @@ def set_scene_composition(
     new_spec["composition_audio_from"] = None
     new_spec["composition_canvas"] = canvas
     new_spec["composition_authored_as"] = None
-    validate_spec(new_spec)
+    _validate_spec_state(new_spec)
     return new_spec
 
 
