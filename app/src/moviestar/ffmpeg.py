@@ -3125,7 +3125,7 @@ def _audio_from_filter_parts(
         labels.append(f"[{label}]")
     if len(labels) == 1:
         return parts, labels[0]
-    parts.append(f"{''.join(labels)}aconcat=n={len(labels)}:v=0:a=1[afout]")
+    parts.append(f"{''.join(labels)}concat=n={len(labels)}:v=0:a=1[afout]")
     return parts, "[afout]"
 
 
@@ -3420,7 +3420,7 @@ def build_render_segments_command(
     source-time slices of that source's edited result, summing to the
     composition duration. Extra ``-i`` inputs are appended after the
     video segments (input indices ``[n, n+k)``), atrim'd to their
-    slices, aconcat'd to one ``[outa]`` stream, and mapped as the
+    slices, joined with audio-only concat, and mapped as the
     output's only audio. ``segment_has_audio`` is ignored under this
     path — the named source's audio is authoritative. Single-segment
     video shortcut is also skipped (filter_complex required to mix a
@@ -3652,10 +3652,7 @@ def build_render_segments_command(
         cmd += ["-i", path]
     # Extra -i per audio_from slice — same fast-seek shape, just feeds
     # the audio side of the filter graph instead of the video side.
-    if audio_from_input is not None:
-        af_path, af_slices = audio_from_input
-        for af_from, _af_to in af_slices:
-            cmd += ["-ss", str(af_from), "-i", af_path]
+    _append_audio_from_inputs(cmd, len(segments), audio_from_input)
 
     filter_parts: list[str] = []
     concat_inputs: list[str] = []
@@ -3760,28 +3757,13 @@ def build_render_segments_command(
 
     n = len(segments)
     # Build the audio-side filter chain when audio_from_input drives it.
-    # Each slice becomes one atrim'd stream; multiple slices aconcat
-    # together; the result is the only [outa] of the final concat.
-    if audio_from_input is not None:
-        af_path, af_slices = audio_from_input
-        af_streams: list[str] = []
-        for j, (af_from, af_to) in enumerate(af_slices):
-            af_duration = af_to - af_from
-            label = f"af{j}"
-            filter_parts.append(
-                f"[{n + j}:a]atrim=start=0:end={af_duration},"
-                f"asetpts=PTS-STARTPTS[{label}]"
-            )
-            af_streams.append(f"[{label}]")
-        if len(af_streams) == 1:
-            audio_out_label = af_streams[0].strip("[]")
-        else:
-            filter_parts.append(
-                f"{''.join(af_streams)}aconcat=n={len(af_streams)}:v=0:a=1[afout]"
-            )
-            audio_out_label = "afout"
-    else:
-        audio_out_label = None
+    # Share the layout renderer's sample-clock normalization and zero-seek
+    # handling so AAC priming cannot shorten a routed window or move its join.
+    audio_parts, audio_label = _audio_from_filter_parts(
+        start_index=n, audio_from_input=audio_from_input,
+    )
+    filter_parts.extend(audio_parts)
+    audio_out_label = audio_label.strip("[]") if audio_label else None
 
     a_count = 1 if (use_audio and audio_from_input is None) else 0
     video_output_label = (

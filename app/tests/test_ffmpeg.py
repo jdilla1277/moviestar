@@ -2150,7 +2150,7 @@ class TestRenderSegmentsAudioFromInput:
     """M14 step 1.4: --audio-from routes one source's audio across the
     whole composition. The ffmpeg layer adds extra `-i` inputs (one
     per audio_from slice, since audio_from's edited result might have
-    internal cuts), atrim'd + aconcat'd to a single `[outa]`, mapped
+    internal cuts), atrim'd + concatenated to a single audio stream, mapped
     as the only audio in the output."""
 
     def test_audio_from_adds_extra_input_after_video_segments(self):
@@ -2169,14 +2169,12 @@ class TestRenderSegmentsAudioFromInput:
         )
         # 3 video segments + 1 audio_from slice = 4 inputs.
         assert cmd.count("-i") == 4
-        assert cmd.count("-ss") == 4
+        assert cmd.count("-ss") == 3
         # The last -i is the audio_from path.
         i_positions = [i for i, arg in enumerate(cmd) if arg == "-i"]
         assert cmd[i_positions[-1] + 1] == "/tmp/holden.mp4"
-        # Its -ss precedes the -i: argv is "... -ss <val> -i <path>".
-        ss_for_last_i = i_positions[-1] - 2
-        assert cmd[ss_for_last_i] == "-ss"
-        assert float(cmd[ss_for_last_i + 1]) == 0.0
+        # Zero-time routed audio must retain AAC's priming packet.
+        assert cmd[i_positions[-1] - 2] != "-ss"
 
     def test_audio_from_filter_uses_named_source_not_segment_audio(self):
         """Per-segment audio chains (`[0:a]atrim...`) disappear; the
@@ -2196,7 +2194,7 @@ class TestRenderSegmentsAudioFromInput:
         assert "[0:a]atrim" not in graph
         assert "[1:a]atrim" not in graph
         # The audio_from input (index 2, since segments are 0+1) IS atrim'd.
-        assert "[2:a]atrim=start=0:end=15" in graph
+        assert "[2:a]aresample=48000:async=1:first_pts=0,apad,atrim=start=0:end=15" in graph
         # Video concat carries a=0 (audio comes from outside the concat).
         assert "concat=n=2:v=1:a=0" in graph
         # Output maps include [outv] and the audio_from chain's output.
@@ -2208,13 +2206,13 @@ class TestRenderSegmentsAudioFromInput:
         ]
         assert mapped_audio == ["[af0]"]
 
-    def test_audio_from_with_multiple_slices_aconcats(self):
+    def test_audio_from_with_multiple_slices_concatenates(self):
         """audio_from's edited result might have cuts. Each slice
-        gets its own -i + atrim chain; multiple slices aconcat to a
+        gets its own -i + atrim chain; multiple slices concatenate to a
         single output stream."""
         segments = [
             ("/tmp/holden.mp4", 0.0, 10.0),
-            ("/tmp/jdilla.mp4", 0.0, 10.0),
+            ("/tmp/jdilla.mp4", 0.0, 5.0),
         ]
         # holden's edited result spans two source slices: [0,5] + [20,30]
         # = 15s, matching the composition duration.
@@ -2229,10 +2227,12 @@ class TestRenderSegmentsAudioFromInput:
         assert cmd.count("-i") == 4
         graph = cmd[cmd.index("-filter_complex") + 1]
         # Both af inputs (indices 2 + 3) atrim'd to their slice durations.
-        assert "[2:a]atrim=start=0:end=5" in graph
-        assert "[3:a]atrim=start=0:end=10" in graph
-        # The two af streams aconcat into [afout].
-        assert "[af0][af1]aconcat=n=2:v=0:a=1[afout]" in graph
+        assert "[2:a]aresample=48000:async=1:first_pts=0,apad,atrim=start=0:end=5" in graph
+        assert "[3:a]aresample=48000:async=1:first_pts=0,apad,atrim=start=0:end=10" in graph
+        # The two af streams use FFmpeg's supported audio-only concat.
+        assert "[af0][af1]concat=n=2:v=0:a=1[afout]" in graph
+        i_positions = [i for i, arg in enumerate(cmd) if arg == "-i"]
+        assert cmd[i_positions[-1] - 2:i_positions[-1]] == ["-ss", "20.0"]
         # Output maps audio from [afout].
         assert "[afout]" in cmd
 
@@ -2268,7 +2268,7 @@ class TestRenderSegmentsAudioFromInput:
         )
         graph = cmd[cmd.index("-filter_complex") + 1]
         # Output still maps the af-derived audio.
-        assert "[2:a]atrim=start=0:end=15" in graph
+        assert "[2:a]aresample=48000:async=1:first_pts=0,apad,atrim=start=0:end=15" in graph
         map_positions = [i for i, arg in enumerate(cmd) if arg == "-map"]
         mapped = [cmd[i + 1] for i in map_positions]
         # Video + audio (named-source) — not video-only.
