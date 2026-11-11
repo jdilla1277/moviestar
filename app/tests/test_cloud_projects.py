@@ -1,6 +1,10 @@
 """Public CLI behavior for owned Cloud project metadata, using synthetic HTTP."""
 
 import json
+import os
+import subprocess
+import sys
+from uuid import UUID
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 
@@ -16,7 +20,7 @@ TOKEN = "mvs_" + "a" * 43
 
 @pytest.fixture
 def service(tmp_path, monkeypatch):
-    state = {"project": None, "key": None, "calls": [], "revoked": False, "lose_reply": False,
+    state = {"project": None, "projects": {}, "key": None, "calls": [], "revoked": False, "lose_reply": False,
              "capabilities": {"contract_version": "m33.3-personal-projects-1", "operations": ["projects:read", "projects:write"],
                               "scopes": ["projects:read", "projects:write"], "project_access": "owner_only",
                               "limits": {"active_projects_per_owner": 50}, "saved_edits_enabled": False}}
@@ -53,12 +57,15 @@ def service(tmp_path, monkeypatch):
             assert self.headers.get("x-moviestar-client") == "moviestar-cli-v1"
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             key = self.headers.get("Idempotency-Key")
-            if state["project"]:
-                if key != state["key"] or body["title"] != state["project"]["title"]:
+            if key in state["projects"]:
+                original = state["projects"][key]
+                if body["title"] != original["title"]:
                     return self.reply(409, {"error": {"code": "idempotency_conflict"}})
-                return self.reply(200, {"status": "created", "project": state["project"]})
+                return self.reply(200, {"status": "created", "project": original["project"]})
             state["key"] = key
-            state["project"] = {"id": PROJECT, "title": body["title"], "state": "active", "owner_id": OWNER, "current_revision": None}
+            project_id = str(UUID(int=UUID(PROJECT).int + len(state["projects"])))
+            state["project"] = {"id": project_id, "title": body["title"], "state": "active", "owner_id": OWNER, "current_revision": None}
+            state["projects"][key] = {"title": body["title"], "project": state["project"]}
             if state["lose_reply"]:
                 self.close_connection = True
                 return
@@ -113,6 +120,202 @@ def test_lost_create_reply_recovers_same_project_with_original_key(service):
     assert result.exit_code == 0 and recovered["project"]["id"] == PROJECT
     result, conflict = invoke("projects", "create", "Changed", "--idempotency-key", "retry-key")
     assert result.exit_code == 1 and conflict["status"] == "idempotency_conflict"
+
+
+def test_create_generates_a_key_and_new_confirmed_invocations_create_new_projects(service):
+    first_result, first = invoke("projects", "create", "Highlights")
+    assert first_result.exit_code == 0, first_result.output
+    assert UUID(first["idempotency_key"])
+    second_result, second = invoke("projects", "create", "Highlights")
+    assert second_result.exit_code == 0, second_result.output
+    assert second["idempotency_key"] != first["idempotency_key"]
+    assert second["project"]["id"] != first["project"]["id"]
+    assert len(service[0]["projects"]) == 2
+
+
+def test_automatic_key_survives_a_lost_response_and_process_restart(service, tmp_path):
+    service[0]["lose_reply"] = True
+    def create():
+        result = subprocess.run([sys.executable, "-m", "moviestar", "cloud", "projects", "create", "Highlights"],
+                                cwd=tmp_path, env=os.environ.copy(), capture_output=True, text=True, timeout=30)
+        assert result.stdout, result.stderr
+        return result, json.loads(result.stdout)
+    result, failure = create()
+    assert result.returncode == 1 and failure["creation_outcome"] == "unknown"
+    result, recovered = create()
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert recovered["idempotency_key"] == failure["idempotency_key"]
+    assert recovered["project"]["id"] == PROJECT
+    assert len(service[0]["projects"]) == 1
+
+
+@pytest.mark.parametrize("title", ["Highlights", "Different title"])
+def test_reused_explicit_key_suggests_a_new_key_without_a_second_write(service, title):
+    invoke("projects", "create", "Highlights", "--idempotency-key", "existing")
+    result, body = invoke("projects", "create", title, "--idempotency-key", "existing")
+    assert result.exit_code == (0 if title == "Highlights" else 1)
+    assert body["suggested_idempotency_key"] != "existing"
+    assert UUID(body["suggested_idempotency_key"])
+    assert body["suggested_idempotency_key"] in body["hint"]
+    assert "already" in body["hint"].lower()
+    assert len(service[0]["projects"]) == 1
+    result, additional = invoke("projects", "create", title, "--idempotency-key", body["suggested_idempotency_key"])
+    assert result.exit_code == 0
+    assert additional["idempotency_key"] == body["suggested_idempotency_key"]
+    assert additional["project"]["id"] != PROJECT
+    assert len(service[0]["projects"]) == 2
+
+
+def test_explicit_new_key_keeps_an_unresolved_automatic_request_recoverable(service):
+    service[0]["lose_reply"] = True
+    _, pending = invoke("projects", "create", "Highlights")
+    assert pending["creation_outcome"] == "unknown"
+    service[0]["lose_reply"] = False
+    result, separate = invoke("projects", "create", "Highlights", "--idempotency-key", "deliberately-separate")
+    assert result.exit_code == 0
+    result, recovered = invoke("projects", "create", "Highlights")
+    assert result.exit_code == 0
+    assert recovered["idempotency_key"] == pending["idempotency_key"]
+    assert recovered["project"]["id"] != separate["project"]["id"]
+
+
+def test_generated_key_is_saved_before_post_without_credentials(service, monkeypatch):
+    from moviestar import cloud
+    real = cloud._request
+    def request(url, credential, **kwargs):
+        if kwargs.get("payload"):
+            records = list(service[1].parent.glob("cloud-project-requests/**/*.json"))
+            assert len(records) == 1
+            text = records[0].read_text()
+            assert kwargs["key"] in text and "Highlights" in text
+            assert TOKEN not in text
+            if os.name != "nt":
+                assert records[0].stat().st_mode & 0o777 == 0o600
+        return real(url, credential, **kwargs)
+    monkeypatch.setattr(cloud, "_request", request)
+    result, _ = invoke("projects", "create", "Highlights")
+    assert result.exit_code == 0, result.output
+
+
+def test_unknown_create_is_not_forgotten_after_a_rejected_retry(service, monkeypatch):
+    from moviestar import cloud
+    real = cloud._request
+    def request(url, credential, **kwargs):
+        if kwargs.get("payload") and rejected[0]:
+            return 403, {"error": {"code": "account_consent_required"}}
+        return real(url, credential, **kwargs)
+    rejected = [False]
+    monkeypatch.setattr(cloud, "_request", request)
+    service[0]["lose_reply"] = True
+    _, pending = invoke("projects", "create", "Highlights")
+    rejected[0] = True
+    result, failure = invoke("projects", "create", "Highlights")
+    assert result.exit_code == 1 and failure["creation_outcome"] == "unknown"
+    rejected[0] = False
+    result, recovered = invoke("projects", "create", "Highlights")
+    assert result.exit_code == 0
+    assert recovered["idempotency_key"] == pending["idempotency_key"]
+
+
+def test_corrupt_pending_state_stops_creation_and_preserves_recovery(service):
+    service[0]["lose_reply"] = True
+    invoke("projects", "create", "Highlights")
+    records = list(service[1].parent.glob("cloud-project-requests/**/*.json"))
+    assert len(records) == 1
+    records[0].write_text("broken")
+    posts = len([call for call in service[0]["calls"] if call[0] == "POST"])
+    result, failure = invoke("projects", "create", "Highlights")
+    assert result.exit_code == 1 and failure["status"] == "creation_state_unavailable"
+    assert "projects list" in failure["hint"]
+    assert records[0].read_text() == "broken"
+    assert len([call for call in service[0]["calls"] if call[0] == "POST"]) == posts
+
+
+def test_unwritable_recovery_state_stops_before_post(service, monkeypatch):
+    from moviestar import cloud_creation_state
+    def unavailable(*_args, **_kwargs):
+        raise OSError("disk full")
+    monkeypatch.setattr(cloud_creation_state.tempfile, "mkstemp", unavailable)
+    result, failure = invoke("projects", "create", "Highlights")
+    assert result.exit_code == 1 and failure["status"] == "creation_state_unavailable"
+    assert all(call[0] != "POST" for call in service[0]["calls"])
+
+
+@pytest.mark.parametrize("status, body", [(201, {}), (503, {"error": {"code": "cloud_unavailable"}})])
+def test_unconfirmed_responses_keep_generated_keys(service, monkeypatch, status, body):
+    from moviestar import cloud
+    real = cloud._request
+    unknown = [True]
+    def request(url, credential, **kwargs):
+        if kwargs.get("payload") and unknown[0]:
+            real(url, credential, **kwargs)  # Commit before the bad response.
+            return status, body
+        return real(url, credential, **kwargs)
+    monkeypatch.setattr(cloud, "_request", request)
+    result, failure = invoke("projects", "create", "Highlights")
+    assert result.exit_code == 1 and failure["creation_outcome"] == "unknown"
+    unknown[0] = False
+    result, recovered = invoke("projects", "create", "Highlights")
+    assert result.exit_code == 0 and recovered["idempotency_key"] == failure["idempotency_key"]
+    assert len(service[0]["projects"]) == 1
+
+
+def test_confirmed_creation_reports_local_state_failure_without_losing_project(service, monkeypatch):
+    from moviestar import cloud_creation_state
+    real = cloud_creation_state._write
+    def write(path, record):
+        if record["state"] == "resolved":
+            raise cloud_creation_state.CreationStateError("disk full")
+        return real(path, record)
+    monkeypatch.setattr(cloud_creation_state, "_write", write)
+    result, created = invoke("projects", "create", "Highlights")
+    assert result.exit_code == 0 and created["project"]["id"] == PROJECT
+    assert created["recovery_warning"]
+    monkeypatch.setattr(cloud_creation_state, "_write", real)
+    result, recovered = invoke("projects", "create", "Highlights")
+    assert result.exit_code == 0 and recovered["idempotency_key"] == created["idempotency_key"]
+    assert len(service[0]["projects"]) == 1
+
+
+def test_concurrent_same_title_creation_does_not_send_a_second_post(service, monkeypatch):
+    from moviestar import cloud
+    real = cloud._request
+    concurrent = []
+    def request(url, credential, **kwargs):
+        if kwargs.get("payload"):
+            result = subprocess.run([sys.executable, "-m", "moviestar", "cloud", "projects", "create", "Highlights"],
+                                    env=os.environ.copy(), capture_output=True, text=True, timeout=30)
+            concurrent.append(json.loads(result.stdout))
+            assert result.returncode == 1
+        return real(url, credential, **kwargs)
+    monkeypatch.setattr(cloud, "_request", request)
+    result, _ = invoke("projects", "create", "Highlights")
+    assert result.exit_code == 0, result.output
+    assert concurrent[0]["status"] == "creation_in_progress"
+    assert len([call for call in service[0]["calls"] if call[0] == "POST"]) == 1
+
+
+@pytest.mark.parametrize("changed", ["service", "installation", "title"])
+def test_pending_automatic_keys_are_isolated(service, monkeypatch, changed):
+    from moviestar import cloud
+    real_connection = cloud._connection
+    endpoint, token = real_connection("test")
+    observed = []
+    def request(url, credential, **kwargs):
+        if not kwargs.get("payload"):
+            return 200, service[0]["capabilities"]
+        observed.append(kwargs["key"])
+        return 0, {}
+    monkeypatch.setattr(cloud, "_request", request)
+    invoke("projects", "create", "Highlights")
+    title = "Other" if changed == "title" else "Highlights"
+    monkeypatch.setattr(cloud, "_connection", lambda _command:
+        (endpoint + ("-other" if changed == "service" else ""), "mvs_" + "b" * 43 if changed == "installation" else token))
+    invoke("projects", "create", title)
+    assert len(observed) == 2 and observed[0] != observed[1]
+    monkeypatch.setattr(cloud, "_connection", real_connection)
+    invoke("projects", "create", "Highlights")
+    assert observed[2] == observed[0]
 
 
 def test_revocation_and_missing_projects_have_safe_actionable_errors(service):

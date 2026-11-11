@@ -9,6 +9,7 @@ from http.client import HTTPException
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, build_opener
+from uuid import uuid4
 
 import click
 
@@ -16,6 +17,7 @@ from moviestar.account import (
     _CLIENT_MARKER, _NoRedirectHandler, _credential_for_connection,
     _installation_url, _read_state, _service_url_error,
 )
+from moviestar.cloud_creation_state import CreationBusy, CreationStateError, creation_request
 
 _CONTRACT = "m33.3-personal-projects-1"
 _UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
@@ -88,6 +90,11 @@ def _failure(command: str, status: int, body: dict, **fields) -> None:
     code = "credential_invalid" if status == 401 else code
     safe = code if isinstance(code, str) and code in _HINTS else "cloud_unavailable"
     hint = _HINTS[safe]
+    if safe == "idempotency_conflict":
+        suggested = str(uuid4())
+        fields["suggested_idempotency_key"] = suggested
+        hint = ("This key already belongs to a different creation request. "
+                f"To create an additional project, use --idempotency-key {suggested}.")
     if fields.get("creation_outcome") == "unknown":
         hint += " Creation may have succeeded. Retry the exact title and idempotency key to recover the same project."
     _fail(command, safe, hint, **fields)
@@ -153,27 +160,55 @@ def projects():
 
 @projects.command("create")
 @click.argument("title")
-@click.option("--idempotency-key", required=True, help="Keep this key and the exact title to recover a lost create response.")
-def create_project(title: str, idempotency_key: str):
-    """Create TITLE once. Retry the same title/key to recover the same project.
+@click.option("--idempotency-key", help="Optional retry key. Generated and saved automatically when omitted.")
+def create_project(title: str, idempotency_key: str | None):
+    """Create TITLE. Retry an interrupted command to recover the same project.
 
     Requires explicit remote operation and current account consent. This only
-    creates project metadata. A different title with the same key conflicts.
+    creates project metadata. After success, another invocation creates a new
+    project. An explicit key can recover a request or start a separate project.
     """
     command = "cloud projects create"
-    if not 1 <= len(title) <= 200 or title != title.strip() or re.search(r"[\x00-\x1f\x7f]", title) or not _KEY.fullmatch(idempotency_key):
+    if (not 1 <= len(title) <= 200 or title != title.strip() or re.search(r"[\x00-\x1f\x7f]", title)
+            or (idempotency_key is not None and not _KEY.fullmatch(idempotency_key))):
         _fail(command, "invalid_request", _HINTS["invalid_request"])
     endpoint, credential = _connection(command)
     _require(command, _capabilities(command, endpoint, credential), "projects:write")
-    status, body = _request(endpoint + "/projects", credential, payload={"title": title}, key=idempotency_key)
-    common = {"idempotency_key": idempotency_key}
-    if status not in (200, 201):
-        _failure(command, status, body, creation_outcome="rejected" if 400 <= status < 500 else "unknown", **common)
-    project = _project(body.get("project"))
-    if body.get("status") != "created" or project is None:
-        _fail(command, "invalid_response", "Creation may have succeeded. Retry the exact title and idempotency key to recover it.", creation_outcome="unknown", **common)
+    common = {}
+    try:
+        with creation_request(endpoint, credential, title, idempotency_key) as pending:
+            common["idempotency_key"] = pending.key
+            pending.save()  # Durable before the service can commit a creation.
+            status, body = _request(endpoint + "/projects", credential, payload={"title": title}, key=pending.key)
+            if status not in (200, 201):
+                rejected = 400 <= status < 500 and not pending.recovering
+                if rejected:
+                    try:
+                        pending.resolve()
+                    except CreationStateError:
+                        common["recovery_warning"] = "The service rejected this request, but local retry state could not be updated. A retry may reuse the same key."
+                _failure(command, status, body, creation_outcome="rejected" if rejected else "unknown", **common)
+            project = _project(body.get("project"))
+            if body.get("status") != "created" or project is None:
+                _fail(command, "invalid_response", "Creation may have succeeded. Rerun this command to recover it, or retry the original title with the returned idempotency_key.", creation_outcome="unknown", **common)
+            try:
+                pending.resolve()
+            except CreationStateError:
+                # The project is confirmed. Retaining the pending request is
+                # safe, but tell the caller why another invocation may reopen it.
+                common["recovery_warning"] = "Project created, but local retry state could not be updated. Retry the original title/key to recover it; use an explicit new key for an additional project."
+    except CreationBusy:
+        _fail(command, "creation_in_progress", "Another creation with this title is running. Wait for it, then retry this command.")
+    except CreationStateError:
+        _fail(command, "creation_state_unavailable", "Could not read or save project retry state. No new creation was sent. Check 'moviestar cloud projects list' before repairing files under cloud-project-requests beside your account profile; preserve the original title/key for recovery.", **common)
+    hint = f"Reopen with 'moviestar cloud projects show {project['id']}'."
+    if status == 200:
+        suggested = str(uuid4())
+        common.update(replayed=True, suggested_idempotency_key=suggested)
+        hint = (f"This key already belongs to an existing project; that project was recovered. {hint} "
+                f"To create an additional project, use --idempotency-key {suggested}.")
     click.echo(json.dumps({"command": command, "status": "created", "project": project, **common,
-                          "hint": f"Reopen with 'moviestar cloud projects show {project['id']}'."}, indent=2))
+                          "hint": hint}, indent=2))
 
 
 @projects.command("list")

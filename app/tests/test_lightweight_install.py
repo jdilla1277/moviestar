@@ -65,11 +65,12 @@ print(json.dumps({'packages': [d.metadata['Name'].lower().replace('_', '-') for 
         return json.loads(result.stdout)
 
     assert command("capabilities")["project_access"] == "owner_only"
-    created = command("projects", "create", "Wheel project", "--idempotency-key", "wheel-project")
+    created = command("projects", "create", "Wheel project")
     assert created["project"]["id"] == PROJECT
+    assert created["idempotency_key"]
     assert command("projects", "list")["items"][0]["id"] == PROJECT
     assert command("projects", "show", PROJECT) == created["project"]
-    assert command("projects", "create", "Wheel project", "--idempotency-key", "wheel-project")["project"] == created["project"]
+    assert command("projects", "create", "Wheel project", "--idempotency-key", created["idempotency_key"])["project"] == created["project"]
     assert all(path.startswith("/api/v1/account/cloud/") or path.startswith("/api/v1/account/cloud?")
                for _, path, _ in service[0]["calls"])
 
