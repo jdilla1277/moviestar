@@ -16,12 +16,13 @@ def run_page(scenario):
 const assert=require('node:assert/strict'),vm=require('node:vm');
 let nextPoll,responseState,reloads=0;const frames=[],elements={};
 class Element{
- constructor(){this.listeners={};this.children=[];this.style={};this.clientWidth=640;}
+ constructor(){this.listeners={};this.children=[];this.style={};this.clientWidth=640;this.parentElement={clientWidth:696};}
  addEventListener(name,fn){(this.listeners[name]??=[]).push(fn);}
  emit(name){for(const fn of this.listeners[name]??[])fn();}
  replaceChildren(...values){this.children=values;}
  add(value){this.children.push(value);}
  append(value){this.children.push(value);}
+ getBoundingClientRect(){return{top:320};}
  remove(){this.removed=true;}
 }
 class Frame extends Element{
@@ -32,7 +33,7 @@ class Frame extends Element{
  }
  set src(value){const id=new URL(value,'http://localhost').searchParams.get('request');Object.assign(this.contentWindow.moviestarLiveStage.packet,{request_id:id,state_id:'sha256:'+id});}
 }
-const context={window:{},document:{getElementById:id=>elements[id]??=new Element(),createElement:name=>{assert.equal(name,'iframe');const f=new Frame();frames.push(f);return f;}},
+const context={window:{scrollY:0,innerHeight:900,addEventListener(){}},getComputedStyle:()=>({paddingLeft:'28px',paddingRight:'28px'}),document:{querySelector:()=>new Element(),getElementById:id=>elements[id]??=new Element(),createElement:name=>{assert.equal(name,'iframe');const f=new Frame();frames.push(f);return f;}},
  location:{pathname:'/projects/unit/',search:'',reload(){reloads++;}},URL,URLSearchParams,Date,Map,AbortSignal,performance:{timeOrigin:Date.now()-1000},
  ResizeObserver:class{observe(){}},Option:class{constructor(text,value){this.text=text;this.value=value;}},
  fetch:async()=>({ok:true,json:async()=>structuredClone(responseState)}),

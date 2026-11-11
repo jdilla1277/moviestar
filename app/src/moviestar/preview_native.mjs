@@ -17,11 +17,21 @@ function describe(){
   if(current){const p=current.api.packet;$('seek').max=p.range.to-p.range.from;$('seek').step=1/p.fps;if(!seeking)$('seek').value=current.api.time;}
   if(current){$('clock').textContent=current.api.time.toFixed(1)+' s';const p=current.api.packet;$('details').textContent=`Version ${p.state_id.slice(7,19)} · ${p.range.from}–${p.range.to}s · ${p.canvas.width}×${p.canvas.height} · Native browser playback`;$('timing').textContent=`Navigation / detected edit to ready: ${Math.round(current.ready_at-Math.max(performance.timeOrigin,current.item.requested_at*1000))} ms`;}
 }
-function fit(){
-  if(!current)return;
-  const p=current.api.packet;$('stage').style.aspectRatio=`${p.canvas.width}/${p.canvas.height}`;
-  Object.assign(current.frame.style,{width:p.canvas.width+'px',height:p.canvas.height+'px',transform:`scale(${$('stage').clientWidth/p.canvas.width})`});
+function scaleFrame(frame,canvas){
+  Object.assign(frame.style,{width:canvas.width+'px',height:canvas.height+'px',transform:`scale(${$('stage').clientWidth/canvas.width})`});
 }
+function fitFrame(frame,canvas){
+  const stage=$('stage'),container=stage.parentElement,style=getComputedStyle(container);
+  const availableWidth=container.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
+  // Use document position so scrolling does not grow the player underneath
+  // the viewer. Short windows can scroll, but never create a giant portrait.
+  const top=stage.getBoundingClientRect().top+window.scrollY;
+  const availableHeight=Math.max(180,Math.min(720,window.innerHeight-top-24));
+  stage.style.width=Math.max(1,Math.floor(Math.min(availableWidth,availableHeight*canvas.width/canvas.height)))+'px';
+  stage.style.aspectRatio=`${canvas.width}/${canvas.height}`;
+  scaleFrame(frame,canvas);
+}
+function fit(){if(current)fitFrame(current.frame,current.api.packet.canvas);}
 function load(item){
   discard();current?.api.pause();
   const frame=document.createElement('iframe');frame.className='pending';frame.title='Live spatial scene';
@@ -40,8 +50,7 @@ function load(item){
       if(old&&!old.api.metrics.finished&&old.api.time>0)await Promise.race([api.seek(old.api.time),canceled]);
       if(pending!==candidate||!allowed(item))return;
       frame.className='';
-      $('stage').style.aspectRatio=`${api.packet.canvas.width}/${api.packet.canvas.height}`;
-      Object.assign(frame.style,{transform:`scale(${$('stage').clientWidth/api.packet.canvas.width})`});
+      fitFrame(frame,api.packet.canvas);
       await Promise.race([new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))),canceled]);
       if(pending!==candidate||!allowed(item))return;
       clearTimeout(candidate.timer);pending=null;current={...candidate,api,ready_at:Date.now()};failed=null;failureText='';seeking=false;++seekGeneration;
@@ -65,7 +74,12 @@ $('restart').addEventListener('click',()=>current?.api.seek(0).catch(error=>{$('
 $('seek').addEventListener('input',()=>{seeking=true;++seekGeneration;});
 $('seek').addEventListener('change',async()=>{const attempt=++seekGeneration;seeking=true;try{await current?.api.seek(Number($('seek').value));}catch(error){$('error').textContent=error.message;}finally{if(attempt===seekGeneration)seeking=false;}});
 $('seek').addEventListener('blur',()=>{seeking=false;});
-new ResizeObserver(fit).observe($('stage'));
+let containerWidth;
+new ResizeObserver(entries=>{const width=entries[0].contentRect.width;if(width!==containerWidth){containerWidth=width;fit();}}).observe($('stage').parentElement);
+new ResizeObserver(()=>{if(current)scaleFrame(current.frame,current.api.packet.canvas);}).observe($('stage'));
+const controlsObserver=new ResizeObserver(fit);
+for(const element of [$('status'),$('native-controls'),document.querySelector('.intro')])controlsObserver.observe(element);
+window.addEventListener('resize',fit);
 async function poll(){
   try{
     const response=await fetch(base+'state',{cache:'no-store',signal:AbortSignal.timeout(3000)});if(!response.ok)throw Error('Disconnected');
