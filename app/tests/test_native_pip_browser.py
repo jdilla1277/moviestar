@@ -14,9 +14,11 @@ from moviestar.spatial_layout import browser_available, _chrome_path
 
 
 @pytest.mark.skipif(not browser_available(), reason='Chrome and Node required')
-@pytest.mark.parametrize('spatial,cuts,silent_listener', [
-    (False, False, False), (True, False, False), (False, True, False), (True, True, False), (False, False, True)])
-def test_actual_pip_prepares_both_videos_and_keeps_clocks_and_routing(tmp_path, spatial, cuts, silent_listener):
+@pytest.mark.parametrize('spatial,cuts,silent_listener,omit_end_callbacks', [
+    (False, False, False, False), (True, False, False, False),
+    (False, True, False, False), (True, True, False, False),
+    (False, False, True, False), (False, True, False, True)])
+def test_actual_pip_prepares_both_videos_and_keeps_clocks_and_routing(tmp_path, spatial, cuts, silent_listener, omit_end_callbacks):
     repo = Path(__file__).parents[2]; root = tmp_path/'project'
     subprocess.run([sys.executable, str(repo/'experiments/live_browser_preview/pip.py'), '--out', str(root),
         *(['--spatial'] if spatial else []), *(['--cuts'] if cuts else []),
@@ -38,6 +40,18 @@ const {measureCueClock}=await import(CUE_HELPER);
 const {Browser}=await import(HELPER),b=await Browser.launch(CHROME,OUT);
 try{
  await b.send('Emulation.setDeviceMetricsOverride',{width:1280,height:1800,deviceScaleFactor:1,mobile:false});
+ if(OMIT_END_CALLBACKS)await b.send('Page.addScriptToEvaluateOnNewDocument',{source:`
+  const request=HTMLVideoElement.prototype.requestVideoFrameCallback;
+  HTMLVideoElement.prototype.requestVideoFrameCallback=function(callback){
+   const video=this;
+   return request.call(video,function deliver(now,frame){
+    if(!video.paused&&Math.abs(frame.mediaTime-Math.floor(frame.mediaTime)-29/30)<1e-5){
+     window.omittedEndCallbacks=(window.omittedEndCallbacks??0)+1;
+     request.call(video,deliver);
+    }else callback(now,frame);
+   });
+  };
+ `});
  await b.send('Page.navigate',{url:URL+'?audit=1'});
  await b.wait('window.movieStarPreview?.is_current',20000);
  // Use the authored 360x640 raster at 1x for software-headless playback.
@@ -55,6 +69,10 @@ try{
  const m=await b.evaluate('window.movieStarPreview.stage.metrics');
  await writeFile(OUT+'/playback.json',JSON.stringify(m,null,2));
  assert.equal(m.error,null);assert.equal(m.stalls,0);
+ if(OMIT_END_CALLBACKS){
+  const omitted=await b.evaluate(`[...document.querySelector('iframe:not(.pending)').contentDocument.querySelectorAll('iframe')].reduce((n,f)=>n+(f.contentWindow.omittedEndCallbacks??0),0)`);
+  assert.ok(omitted>=6,'Both decoders lose final-frame callbacks without losing presentations');
+ }
  if(CUTS){
   const first=m.frames[0],last=m.frames.at(-1);
   const start=first.display_epoch-first.result_time*1000,end=last.display_epoch-last.result_time*1000;
@@ -92,7 +110,8 @@ try{
 '''
             values = {'HELPER': (repo/'experiments/live_browser_preview/browser.mjs').as_uri(), 'CHROME': chrome,
                       'OUT': str(tmp_path/'browser'), 'URL': ready['url'], 'CUTS': cuts,
-                      'CUE_HELPER': (repo/'experiments/live_browser_preview/cue_clock.mjs').as_uri()}
+                      'CUE_HELPER': (repo/'experiments/live_browser_preview/cue_clock.mjs').as_uri(),
+                      'OMIT_END_CALLBACKS': omit_end_callbacks}
             prefix = ''.join('const '+key+'='+json.dumps(value)+';\n' for key, value in values.items())
             result = subprocess.run(['node', '--input-type=module', '-e', prefix+script], capture_output=True, text=True, timeout=40)
             diagnostics = {}

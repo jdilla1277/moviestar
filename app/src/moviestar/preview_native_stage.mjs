@@ -58,13 +58,13 @@ function freezeLastFrame(){
   if(frozenFrame)return;
   frozenFrame=document.createElement('canvas');frozenFrame.width=video.videoWidth;frozenFrame.height=video.videoHeight;
   frozenFrame.style.cssText=video.style.cssText;
-  frozenFrame.getContext('2d').drawImage(video,0,0);
+  frozenFrame.getContext('2d').drawImage(videos.find(item=>item.primary)?.endFrame??video,0,0);
   video.parentElement.append(frozenFrame);
 }
 function freezeFollower(item){
   if(item.frozen)return;
   const media=item.video,canvas=document.createElement('canvas');canvas.width=media.videoWidth;canvas.height=media.videoHeight;
-  canvas.style.cssText=media.style.cssText;canvas.getContext('2d').drawImage(media,0,0);media.parentElement.append(canvas);item.frozen=canvas;
+  canvas.style.cssText=media.style.cssText;canvas.getContext('2d').drawImage(item.endFrame??media,0,0);media.parentElement.append(canvas);item.frozen=canvas;
 }
 function sourceFrame(item){
   const image=item?(item.primary?(frozenFrame??item.video):(item.frozen??item.video)):(frozenFrame??video);
@@ -82,10 +82,23 @@ async function checkReady(){
   if(readyDone||disposed||!metadataReady||!imageReady||video.readyState<2||video.seeking||Math.abs(video.currentTime-packet.source_start)>1/packet.fps)return;
   if(videos.some(item=>!item.metadata||!item.firstFrame||item.video.readyState<2||item.video.seeking||Math.abs(item.video.currentTime-item.start)>1/packet.fps))return;
   readyDone=true;
-  apply(0);
-  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-  if(disposed)return;
-  metrics.prepared_at=Date.now();metrics.initial_barcode=sourceFrame().number;resolveReady(true);
+  try{
+    // rVFC may omit the last valid presentation even with zero decoder drops.
+    // Prepare its pixels before publishing a cut scene, then return both
+    // decoders to their first frames. No output clip or persistent cache.
+    if(packet.cut_segment){
+      if(!await videoGroup.seek((packet.samples.length-1)/packet.fps)||disposed)return;
+      for(const item of videos){
+        const frame=document.createElement('canvas');frame.width=item.video.videoWidth;frame.height=item.video.videoHeight;
+        frame.getContext('2d').drawImage(item.video,0,0);item.endFrame=frame;
+      }
+      if(!await videoGroup.seek(0)||disposed)return;
+    }
+    apply(0);
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    if(disposed)return;
+    metrics.prepared_at=Date.now();metrics.initial_barcode=sourceFrame().number;resolveReady(true);
+  }catch(error){fail(error);}
 }
 function onFrame(now,metadata){
   if(disposed)return;
@@ -94,10 +107,18 @@ function onFrame(now,metadata){
   if(primary){primary.firstFrame=true;primary.frame={media_time:metadata.mediaTime,display_time:metadata.expectedDisplayTime};}
   if(playing&&videoGroup){try{videoGroup.synchronize(videos.find(item=>item.primary));}catch(error){fail(error);return;}}
   const local=metadata.mediaTime-packet.source_start;
+  if(packet.cut_segment&&running&&!stopTimer){
+    // Schedule from the first presentation's clock, independently of whether
+    // JS receives the final-frame callback. The prepared final pixels cover
+    // an outgoing decoder that advances while the next scene is revealed.
+    const boundary=performance.timeOrigin+metadata.expectedDisplayTime+(packet.source_end-metadata.mediaTime)*1000;
+    const attempt=playGeneration;
+    stopTimer=setTimeout(()=>{if(!disposed&&playing&&attempt===playGeneration)window.moviestarLiveStage.onSegmentEnd?.(boundary);},Math.max(0,boundary-performance.timeOrigin-performance.now()-CUT_PAINT_LEAD_MS));
+  }
   if(packet.cut_segment&&running&&metadata.mediaTime>=packet.source_end-1e-6){
     // The media keeps its audio clock until the cut; the overlaid last valid
     // frame prevents a decoded frame beyond the edit from becoming visible.
-    if(!frozenFrame){fail(Error('Native cut missed its last expected frame'));return;}
+    freezeLastFrame();
     frameCallback=video.requestVideoFrameCallback(onFrame);return;
   }
   if(packet.cut_segment&&running&&metadata.mediaTime>=packet.source_end-1/packet.fps-1e-6)freezeLastFrame();
@@ -111,13 +132,7 @@ function onFrame(now,metadata){
     if(sampled.white&&!metrics.previous_white)metrics.flashes.push({media_time:metadata.mediaTime,display_time:metadata.expectedDisplayTime});
     metrics.previous_white=sampled.white;
     window.moviestarLiveStage.onPresented?.({...metrics.frames.at(-1),white:sampled.white,display_epoch:performance.timeOrigin+metadata.expectedDisplayTime});
-    if(metadata.mediaTime>=packet.source_end-1/packet.fps-1e-6&&!stopTimer){
-      if(packet.cut_segment){
-        const boundary=performance.timeOrigin+metadata.expectedDisplayTime+1000/packet.fps;
-        const attempt=playGeneration;
-        stopTimer=setTimeout(()=>{if(!disposed&&playing&&attempt===playGeneration)window.moviestarLiveStage.onSegmentEnd?.(boundary);},Math.max(0,boundary-performance.timeOrigin-performance.now()-CUT_PAINT_LEAD_MS));
-        frameCallback=video.requestVideoFrameCallback(onFrame);return;
-      }
+    if(!packet.cut_segment&&metadata.mediaTime>=packet.source_end-1/packet.fps-1e-6&&!stopTimer){
       stopTimer=setTimeout(()=>finishScene().catch(fail),Math.max(0,metadata.expectedDisplayTime-performance.now()));
     }
   }
@@ -192,7 +207,7 @@ async function initialize(){
         item.firstFrame=true;item.frame={media_time:frame.mediaTime,display_time:frame.expectedDisplayTime};
         const running=playing&&!video.paused;
         if(packet.cut_segment&&running&&frame.mediaTime>=item.end-1e-6){
-          if(!item.frozen){fail(Error('Native inset missed its last expected frame'));return;}
+          freezeFollower(item);
           item.callback=media.requestVideoFrameCallback(observe);return;
         }
         if(running&&audit){
@@ -323,6 +338,7 @@ window.moviestarLiveStage={ready,metrics,
     for(const item of videos)if(item.callback)item.video.cancelVideoFrameCallback(item.callback);
     if(videoGroup)videoGroup.dispose();else if(videos.length){for(const item of videos){item.video.removeAttribute('src');item.video.load();}}else if(video){video.removeAttribute('src');video.load();}clearTimeout(stopTimer);
     clearFrozenFrame();for(const item of videos){item.audioSource?.disconnect();item.audioGain?.disconnect();}meter?.disconnect();meter?.port.close();
+    for(const item of videos)if(item.endFrame){item.endFrame.width=item.endFrame.height=0;item.endFrame=null;}
     if(audio&&!shared&&audio.state!=='closed')audio.close().catch(()=>{});
     rejectReady(Error('Superseded'));
   }
