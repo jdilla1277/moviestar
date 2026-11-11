@@ -254,6 +254,13 @@ and retry the **same file or video** with `--idempotency-key KEY`. A file/key
 retry recovers the existing upload and link rather than consuming another
 video slot. Never reuse the key for different content.
 
+When the service supplies a create-only upload condition, retries preserve
+bytes already accepted for that reservation. The CLI checks completion and
+validation before reporting the recovered video as ready. Recovery can return
+`upload_performed: false` because no new bytes were stored. If completion or
+validation cannot be confirmed, keep the reservation ID and follow the
+`--resume` hint to continue without another transfer.
+
 If upload succeeds but publication is rejected or cannot be confirmed, the
 error includes `video_id`. An explicit service rejection is reported as
 `publication_outcome: "rejected"` and `link_created: false` for this request;

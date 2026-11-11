@@ -9,7 +9,7 @@ from typing import Callable
 from pathlib import Path
 from http.client import HTTPException
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 from urllib.request import Request, build_opener
 
 import click
@@ -101,15 +101,19 @@ def _json_request(url: str, credential: str, payload: dict | None = None, *, met
     return status, result if isinstance(result, dict) else {}
 
 
-def _put_file(url: str, headers: dict[str, str], file: Path) -> bool:
+def _put_file(url: str, headers: dict[str, str], file: Path) -> int:
+    """Return the storage HTTP status, or zero when the outcome is unknown."""
     opener = build_opener(_NoRedirectHandler())
     try:
         with file.open("rb") as stream:
             request = Request(url, data=stream, headers=headers, method="PUT")
             with opener.open(request, timeout=300) as response:
-                return 200 <= response.status < 300
-    except (HTTPError, URLError, TimeoutError, OSError):
-        return False
+                return response.status
+    except HTTPError as error:
+        with error:
+            return error.code
+    except (URLError, HTTPException, TimeoutError, OSError):
+        return 0
 
 
 def _validate_result(endpoint: str, credential: str, video_id: str,
@@ -283,14 +287,33 @@ def upload_video(file: Path, *, idempotency_key: str | None = None,
         _fail("upload_unavailable", "The upload service returned invalid transfer instructions.", idempotency_key=key)
 
     signed_headers = {"Content-Type": "video/mp4", "Content-Length": str(size)}
-    if not _put_file(signed["url"], signed_headers, file):
+    preconditions = [value for name, value in headers.items()
+                     if isinstance(name, str) and name.lower() == "if-none-match"]
+    signed_names = parse_qs(urlsplit(signed["url"]).query).get("X-Amz-SignedHeaders", [])
+    condition_required = any("if-none-match" in names.lower().split(";") for names in signed_names)
+    if preconditions or condition_required:
+        if len(preconditions) != 1 or preconditions[0] != "*":
+            _fail(
+                "upload_unavailable",
+                "The upload service returned a missing or invalid If-None-Match condition; only '*' is supported. "
+                "Retry with the same idempotency key after the service corrects its transfer instructions.",
+                idempotency_key=key, reservation_id=reservation_id,
+            )
+        signed_headers["If-None-Match"] = "*"
+    transfer_status = _put_file(signed["url"], signed_headers, file)
+    transferred = 200 <= transfer_status < 300
+    # A conditional retry may find bytes accepted by an earlier attempt, or
+    # a marker closing the reservation. Completion/validation is authoritative;
+    # a 412 alone neither proves readiness nor permits an unconditional retry.
+    already_present = bool(preconditions) and transfer_status == 412
+    if not (transferred or already_present):
         _fail(
             "transfer_failed", "Retry 'moviestar upload FILE --idempotency-key KEY' with the same file and reported key.",
             idempotency_key=key, reservation_id=reservation_id,
         )
 
     try:
-        return {**_complete_result(endpoint, credential, reservation_id, file, size, key), "upload_performed": True}
+        return {**_complete_result(endpoint, credential, reservation_id, file, size, key), "upload_performed": transferred}
     except UploadError as error:
-        error.fields["upload_performed"] = True
+        error.fields["upload_performed"] = transferred
         raise
