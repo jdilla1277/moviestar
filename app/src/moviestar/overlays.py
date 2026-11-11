@@ -106,13 +106,15 @@ def length_px(value, canvas: tuple[int, int], axis: str, where: str) -> float:
     return number / 100.0 * extent
 
 
-def _parse_padding(value) -> tuple[int, int]:
+def _parse_padding(value, canvas: tuple[int, int]) -> tuple[int, int]:
     """CSS-style padding shorthand -> (vertical_px, horizontal_px)."""
     if value is None:
         return (0, 0)
-    parts = str(value).replace("px", "").split()
+    # Preserve older accepted spellings such as "18 px 24 px".
+    text = re.sub(r"\s+(px|vmin|vmax|vw|vh|%)", r"\1", str(value), flags=re.IGNORECASE)
+    parts = text.split()
     try:
-        nums = [int(round(float(p))) for p in parts if p]
+        nums = [int(round(length_px(p, canvas, "x", "padding"))) for p in parts]
     except ValueError:
         return (0, 0)
     if not nums:
@@ -465,7 +467,7 @@ def plan_overlays(
         elif transform_case == "lowercase":
             text = text.lower()
 
-        pad_y, pad_x = _parse_padding(resolved.get("padding"))
+        pad_y, pad_x = _parse_padding(resolved.get("padding"), canvas)
         max_width_px: float | None = None
         if resolved.get("max_width") is not None:
             max_width_px = (
@@ -631,6 +633,7 @@ def plan_overlays(
                 "line_exprs": line_exprs,
                 "font": font,
                 "font_size": font_size,
+                "padding": {"x": pad_x, "y": pad_y},
                 "font_color": font_color,
                 "stroke": stroke,
                 "box": box,

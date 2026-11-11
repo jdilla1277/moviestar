@@ -96,6 +96,23 @@ without writing an image or highlight assets. Trims and cuts still map the
 result timecode to the correct source frame. Use `screenshot --file VIDEO`
 to inspect raw or exported file pixels without applying project edits or text.
 
+New manual text overlays use canvas-relative preset defaults. Font sizes,
+strokes, and lower-third padding scale with the shorter canvas side, using
+1080 pixels as the reference. Position margins scale with width and height
+from a 1920×1080 reference. For example, a `title` resolves to 43 px on an
+854×480 canvas and 96 px on either 1920×1080 or 1080×1920. Explicit CSS such
+as `font-size: 27px; padding: 8px 12px` and numeric margins in editable JSON
+stay absolute. Existing saved overlays retain their stored dimensions when
+rendered; applying `overlays set` recomputes style defaults from preset + CSS.
+
+`overlays dump` and `overlays set FILE --dry-run` return `resolved_geometry`
+with the current canvas and each resolved overlay's pixel font size, stroke,
+padding, margins, and estimated block. Editable files retain relative lengths
+so subsequent canvas changes still scale. Check `available` first: projects
+without a single render canvas report why geometry is unavailable. Detached
+scene overlays have no rendered geometry. `export --dry-run` reports the same
+planner's active overlays for the export window.
+
 Run `moviestar captions audit --language en` to inspect caption states across
 the complete result timeline. Duration and connector-word findings are advisory;
 language is opt-in. Select manual text with `--track NAME`, and combine related
