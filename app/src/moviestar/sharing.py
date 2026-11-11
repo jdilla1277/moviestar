@@ -260,7 +260,7 @@ def share(target: str, recipient: str | None, idempotency_key: str | None, dry_r
         except UploadError as error:
             _fail("share", error.status, error.hint, **{**common, **error.fields, "idempotency_key": key})
         video_id = result.get("video_id")
-        uploaded = result.get("upload_performed") is True
+        uploaded = result.get("upload_performed", False)
         if result.get("status") != "ready" or not isinstance(video_id, str) or not _RESERVATION_RE.fullmatch(video_id):
             _fail("share", "video_not_ready", _ERRORS["video_not_ready"], **{**common, "upload_performed": uploaded}, idempotency_key=key)
     fields = {**common, "upload_performed": uploaded, "video_id": video_id, "idempotency_key": key,

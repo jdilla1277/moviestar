@@ -87,6 +87,23 @@ def test_invalid_to_email_rejects_before_any_upload_or_request(connected, tmp_pa
     assert body["upload_performed"] is False and body["email_sent"] is False
 
 
+@pytest.mark.parametrize("publication_available", [False, True])
+def test_share_preserves_reconciled_transfer_uncertainty(connected, tmp_path, monkeypatch, publication_available):
+    file = tmp_path / "cut.mp4"
+    file.write_bytes(b"video")
+    monkeypatch.setattr(sharing, "upload_video", lambda *a, **k: {
+        "status": "ready", "video_id": VIDEO, "upload_performed": None,
+    })
+    response = (201, {"status": "shared", "video_id": VIDEO, "link": link(), "quota": QUOTA})
+    if not publication_available:
+        response = (503, {"status": "publication_paused"})
+    monkeypatch.setattr(sharing, "_json_request", lambda *a, **k: response)
+    result, body = invoke("share", str(file), "--idempotency-key", "one-key")
+    assert result.exit_code == (0 if publication_available else 1)
+    assert body["upload_performed"] is None
+    assert body["video_id"] == VIDEO and body["idempotency_key"] == "one-key"
+
+
 @pytest.mark.parametrize("status,code", [("consent_required",409), ("video_not_ready",409), ("not_connected",401), ("over_quota",409), ("rate_limited",429), ("link_revoked",409), ("idempotency_conflict",409)])
 def test_share_errors_are_retryable_and_redact_remote_details(connected, monkeypatch, status, code):
     monkeypatch.setattr(sharing, "_json_request", lambda *a, **k: (code, {"status": status, "hint": CREDENTIAL, "url": "https://secret", "private": "secret"}))
