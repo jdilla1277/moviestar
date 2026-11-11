@@ -164,7 +164,7 @@ def read_snapshot(root, start, end):
 
     spec = load_spec(root)
     project = load_project(root)
-    if spec is None or not spec.get("composition"):
+    if spec is None or not spec.get("composition") or any("layout" not in scene for scene in spec["composition"]):
         raise ValueError("Local preview requires a saved scene composition.")
     # Rendering consumes the current edit, never undo payloads. Keep history
     # on disk; omit it from dependency scans, queue copies and worker packets.

@@ -110,3 +110,22 @@ def test_preset_pip_rejects_unimplemented_content_instead_of_dropping_it(pip_pro
     save_spec(spec, cwd=root)
     with pytest.raises(NativePreviewUnsupported):
         compile_snapshot(read_snapshot(root, 0, 5))
+
+
+@pytest.mark.parametrize('speaker', [None, 'listener'])
+def test_preset_invalid_audio_routing_is_a_native_capability_error(pip_project, speaker):
+    spec, project, root = pip_project
+    spec.pop('spatial'); spec['overlays'] = []; spec['composition'][0]['audio_from'] = speaker
+    if speaker == 'listener': project['sources'][1]['audio_codec'] = None
+    save_spec(spec, cwd=root); save_project(project, cwd=root)
+    with pytest.raises(NativePreviewUnsupported, match='audio'):
+        compile_snapshot(read_snapshot(root, 0, 5))
+
+
+def test_flat_compositions_fail_before_native_scene_preparation(pip_project):
+    spec, _, root = pip_project
+    spec.pop('spatial'); spec['overlays'] = []
+    spec['composition'] = [{'source': 'camera', 'source_from': '0:00:01.000', 'source_to': '0:00:06.000'}]
+    save_spec(spec, cwd=root)
+    with pytest.raises(ValueError, match='scene composition'):
+        read_snapshot(root, 0, 5)

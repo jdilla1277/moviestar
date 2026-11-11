@@ -83,6 +83,8 @@ def _compile_span(snapshot, timeline, start, end, span):
         fail('audio mixing, gain and fades are not implemented')
     preset = None
     if span.scene_id not in (spec.get('spatial') or {}).get('scenes', {}):
+        if not scene['slots']:
+            fail('native preset review requires video slots')
         from moviestar.native_preset import prepare_preset
         preset = prepare_preset(spec, project, timeline, span, start, end, fail)
     metadata = {source['id']: source for source in project['sources']}
