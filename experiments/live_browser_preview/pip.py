@@ -12,13 +12,13 @@ from moviestar.spec import save_spec
 from moviestar.timecodes import format_timecode
 
 
-def prepare_pip(root, *, spatial=False, sources=None, offsets=(1, 2), cuts=False):
+def prepare_pip(root, *, spatial=False, sources=None, offsets=(1, 2), cuts=False, silent_listener=False):
     spec, _ = generate(root, portrait=True, pattern=True)
     if sources is None:
         other = root/'other.mp4'
         subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', str(root/'cues.mp4'),
-            '-vf', 'hue=h=120', '-af', 'volume=0.25', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
-            '-c:a', 'aac', '-movflags', '+faststart', str(other)], check=True, timeout=30)
+            '-vf', 'hue=h=120', *(['-an'] if silent_listener else ['-af', 'volume=0.25', '-c:a', 'aac']),
+            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', str(other)], check=True, timeout=30)
         sources = (root/'cues.mp4', other)
     sources = tuple(Path(p).resolve() for p in sources)
     subprocess.run([sys.executable, '-m', 'moviestar.cli', 'load', *(str(p) for p in sources),
@@ -76,5 +76,6 @@ if __name__ == '__main__':
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--spatial', action='store_true')
     parser.add_argument('--cuts', action='store_true')
+    parser.add_argument('--silent-listener', action='store_true')
     args = parser.parse_args()
-    prepare_pip(args.out.resolve(), spatial=args.spatial, cuts=args.cuts)
+    prepare_pip(args.out.resolve(), spatial=args.spatial, cuts=args.cuts, silent_listener=args.silent_listener)

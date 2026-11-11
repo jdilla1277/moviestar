@@ -3,6 +3,7 @@ import {readFile,writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {Browser} from './browser.mjs';
 import {startCommand,observeEdit,previewProbeExpression} from './diagnostics.mjs';
+import {measureCueClock} from './cue_clock.mjs';
 const [url,root,out,python,chrome]=process.argv.slice(2),fixture=JSON.parse(await readFile(join(out,'case.json'),'utf8'));
 const result={edits:[],edit_attempts:[],problems:[],browser_exceptions:[]};
 const persist=()=>writeFile(join(out,'browser-report.json'),JSON.stringify(result,null,2));
@@ -21,7 +22,7 @@ function probe(expected){
         const element=wrapper?.querySelector('video');
         return media?.asset===v.asset&&Math.abs(media.source_start-v.start)<1e-6&&media.object_position===v.object_position&&box&&
           element&&stage.getComputedStyle(element).objectPosition===v.object_position&&
-          element.muted===(JSON.stringify(v.path)!==JSON.stringify(packet.video_path))&&
+          decoded.audio_gain===(JSON.stringify(v.path)===JSON.stringify(packet.video_path)?1:0)&&
           decoded?.asset===v.asset&&decoded.ready_state>=2&&!decoded.seeking&&Math.abs(decoded.media_time-v.start)<1e-3&&
           ['x','y','width','height'].every(k=>Math.abs(box.rect[k]-v.rect[k])<=.2);
       }));
@@ -63,8 +64,9 @@ try{
         result.problems.push('Swapped speaker audio does not match the quieter source; listener must remain muted');
       if(fixture.media_kind==='generated'){
         const m=result.swapped_playback;
-        if(m.flashes.length!==5||m.beeps.length!==5||m.flashes.some((f,i)=>!m.beeps[i]||Math.abs(m.beeps[i].display_time-f.display_time)>50))
-          result.problems.push('Swapped speaker flash/beep sync exceeds the 50ms reference');
+        const sourceStart=await browser.evaluate('window.moviestarLive.stage.packet.source_start');
+        result.swapped_cue_clock=measureCueClock(m,{fps:30,sourceStart,count:5});
+        result.problems.push(...result.swapped_cue_clock.problems);
       }
       await browser.evaluate('window.moviestarLive.stage.seek(0)');
     }

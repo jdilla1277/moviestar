@@ -1,6 +1,6 @@
 import {render} from './spatial_dom.mjs';
 
-let resolveReady,rejectReady,packet,video,audio,source,meter,frameCallback,stopTimer,cuts,shared,frozenFrame,disposed=false;
+let resolveReady,rejectReady,packet,video,audio,meter,frameCallback,stopTimer,cuts,shared,frozenFrame,disposed=false;
 const controller=new AbortController(),audit=new URLSearchParams(location.search).has('audit');
 const pendingSeeks=new Set();
 let lastIndex=-1, playing=false, readyDone=false, metadataReady=false, imageReady=false,finishing=false,playGeneration=0;
@@ -175,7 +175,7 @@ async function initialize(){
     }else{
       const primary=key(asset.path)===key(packet.video_path),item={video:media,path:asset.path,start:asset.source_start??packet.source_start,end:asset.source_end??packet.source_end,fps:packet.fps,primary};
       videos.push(item);if(primary)video=media;
-      media.preload=packet.media.filter(item=>item.kind==='video').length>1?'auto':'metadata';media.playsInline=true;media.muted=!primary;
+      media.preload=packet.media.filter(item=>item.kind==='video').length>1?'auto':'metadata';media.playsInline=true;
       media.addEventListener('error',()=>fail(Error('Source video could not load.')));
       media.addEventListener('canplay',checkReady);media.addEventListener('seeked',checkReady);
       media.addEventListener('loadedmetadata',()=>{
@@ -214,8 +214,18 @@ async function initialize(){
   if(!audio.audioWorklet||typeof audio.getOutputTimestamp!=='function')throw Error('Native preview needs the browser audio output clock; use --mode rendered.');
   if(!shared)await audio.audioWorklet.addModule('preview_native_meter.mjs');
   if(disposed){if(!shared)await audio.close();return;}
-  source=audio.createMediaElementSource(video);meter=new AudioWorkletNode(audio,'cue-meter');
-  source.connect(meter);meter.connect(shared?shared.destinations[Number(new URLSearchParams(location.search).get('segment'))]:audio.destination);
+  meter=new AudioWorkletNode(audio,'cue-meter',{channelCount:2,channelCountMode:'explicit',
+    channelInterpretation:'speakers',outputChannelCount:[2]});
+  for(const item of videos){
+    // Both media pipelines use the same audio output clock. Silence the
+    // listener in the graph: element.muted would select a different video
+    // scheduling path and require startup priming at every scene handoff.
+    const node=audio.createMediaElementSource(item.video),gain=audio.createGain();
+    gain.channelCount=2;gain.channelCountMode='explicit';gain.channelInterpretation='speakers';
+    gain.gain.value=item.primary?1:0;node.connect(gain);gain.connect(meter);
+    item.audioSource=node;item.audioGain=gain;
+  }
+  meter.connect(shared?shared.destinations[Number(new URLSearchParams(location.search).get('segment'))]:audio.destination);
   meter.port.onmessage=event=>{
     if(!playing)return;
     const stamp=audio.getOutputTimestamp();
@@ -300,7 +310,7 @@ window.moviestarLiveStage={ready,metrics,
   snapshot(){
     if(cuts)return cuts.snapshot();
     return {request_id:packet.request_id,state_id:packet.state_id,time:this.time,source:sourceFrame(),
-      videos:videos.map(item=>({path:item.path,asset:item.video.currentSrc.match(/\/assets\/([a-f0-9]{24})(?:[?#]|$)/)?.[1]??null,source:sourceFrame(item),media_time:item.video.currentTime,paused:item.video.paused,seeking:item.video.seeking,ready_state:item.video.readyState})),
+      videos:videos.map(item=>({path:item.path,asset:item.video.currentSrc.match(/\/assets\/([a-f0-9]{24})(?:[?#]|$)/)?.[1]??null,audio_gain:item.audioGain?.gain.value,source:sourceFrame(item),media_time:item.video.currentTime,paused:item.video.paused,seeking:item.video.seeking,ready_state:item.video.readyState})),
       boxes:window.moviestarScene.entries.map(({node,element})=>{
         const r=element.getBoundingClientRect();let opacity=1;
         for(let ancestor=element;ancestor;ancestor=ancestor.parentElement)opacity*=Number(getComputedStyle(ancestor).opacity);
@@ -312,7 +322,7 @@ window.moviestarLiveStage={ready,metrics,
     if(frameCallback)video?.cancelVideoFrameCallback(frameCallback);
     for(const item of videos)if(item.callback)item.video.cancelVideoFrameCallback(item.callback);
     if(videoGroup)videoGroup.dispose();else if(videos.length){for(const item of videos){item.video.removeAttribute('src');item.video.load();}}else if(video){video.removeAttribute('src');video.load();}clearTimeout(stopTimer);
-    clearFrozenFrame();source?.disconnect();meter?.disconnect();meter?.port.close();
+    clearFrozenFrame();for(const item of videos){item.audioSource?.disconnect();item.audioGain?.disconnect();}meter?.disconnect();meter?.port.close();
     if(audio&&!shared&&audio.state!=='closed')audio.close().catch(()=>{});
     rejectReady(Error('Superseded'));
   }

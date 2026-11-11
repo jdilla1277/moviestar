@@ -14,12 +14,13 @@ from moviestar.spatial_layout import browser_available, _chrome_path
 
 
 @pytest.mark.skipif(not browser_available(), reason='Chrome and Node required')
-@pytest.mark.parametrize('spatial', [False, True])
-@pytest.mark.parametrize('cuts', [False, True])
-def test_actual_pip_prepares_both_videos_and_keeps_clocks_and_routing(tmp_path, spatial, cuts):
+@pytest.mark.parametrize('spatial,cuts,silent_listener', [
+    (False, False, False), (True, False, False), (False, True, False), (True, True, False), (False, False, True)])
+def test_actual_pip_prepares_both_videos_and_keeps_clocks_and_routing(tmp_path, spatial, cuts, silent_listener):
     repo = Path(__file__).parents[2]; root = tmp_path/'project'
     subprocess.run([sys.executable, str(repo/'experiments/live_browser_preview/pip.py'), '--out', str(root),
-        *(['--spatial'] if spatial else []), *(['--cuts'] if cuts else [])], check=True, capture_output=True, text=True, timeout=40)
+        *(['--spatial'] if spatial else []), *(['--cuts'] if cuts else []),
+        *(['--silent-listener'] if silent_listener else [])], check=True, capture_output=True, text=True, timeout=40)
     chrome = os.environ.get('MOVIESTAR_CHROME_PATH') or str(_chrome_path())
     with (tmp_path/'server.log').open('w') as log:
         server = subprocess.Popen([sys.executable, '-m', 'moviestar.cli', 'preview', '--workspace', str(root),
@@ -33,6 +34,7 @@ def test_actual_pip_prepares_both_videos_and_keeps_clocks_and_routing(tmp_path, 
             script = r'''
 import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
+const {measureCueClock}=await import(CUE_HELPER);
 const {Browser}=await import(HELPER),b=await Browser.launch(CHROME,OUT);
 try{
  await b.send('Emulation.setDeviceMetricsOverride',{width:1280,height:1800,deviceScaleFactor:1,mobile:false});
@@ -43,6 +45,8 @@ try{
  for(const at of [0,1,2,3,4]){
   const s=await b.evaluate(`(async()=>{const api=window.movieStarPreview.stage;await api.seek(${at});return api.snapshot();})()`);
   assert.equal(s.videos.length,2);
+  assert.equal(s.videos.filter(v=>v.audio_gain===1).length,1);
+  assert.equal(s.videos.filter(v=>v.audio_gain===0).length,1);
   assert.deepEqual(s.videos.map(v=>v.source.number),CUTS&&at>=1&&at<3?[(2+at)*30,(1+at)*30]:[(1+at)*30,(2+at)*30]);
   assert.ok(s.videos.every(v=>v.ready_state>=2&&!v.seeking&&v.paused));
  }
@@ -50,13 +54,20 @@ try{
  await b.wait('window.movieStarPreview.stage.metrics.finished||window.movieStarPreview.stage.error',12000);
  const m=await b.evaluate('window.movieStarPreview.stage.metrics');
  await writeFile(OUT+'/playback.json',JSON.stringify(m,null,2));
- assert.equal(m.error,null);assert.equal(m.stalls,0);assert.equal(m.flashes.length,5);assert.equal(m.beeps.length,5);
- m.flashes.forEach((f,i)=>assert.ok(Math.abs(m.beeps[i].display_time-f.display_time)<=50,'Selected voice stays synchronized'));
+ assert.equal(m.error,null);assert.equal(m.stalls,0);
+ if(CUTS){
+  const first=m.frames[0],last=m.frames.at(-1);
+  const start=first.display_epoch-first.result_time*1000,end=last.display_epoch-last.result_time*1000;
+  assert.ok(Math.abs(end-start)<=50,`Cuts preserve the program clock within 50ms: ${end-start}ms`);
+ }
  const videoFrames=CUTS?(await b.evaluate(`[...document.querySelector('iframe:not(.pending)').contentDocument.querySelectorAll('iframe')].flatMap(frame=>frame.contentWindow.moviestarLiveStage.metrics.video_frames??[])`)):m.video_frames;
  const qualities=CUTS?(await b.evaluate(`[...document.querySelector('iframe:not(.pending)').contentDocument.querySelectorAll('iframe')].flatMap(frame=>frame.contentWindow.moviestarLiveStage.metrics.video_quality??[])`)):m.video_quality;
  await writeFile(OUT+'/video-frames.json',JSON.stringify({videoFrames,qualities},null,2));
  assert.equal(qualities.length,CUTS?6:2);
  assert.ok(qualities.every(q=>q.dropped_frames===0),'Neither decoder drops frames');
+ const cueClock=measureCueClock(m,{fps:30,sourceStart:1,count:5,quality:qualities});
+ await writeFile(OUT+'/cue-clock.json',JSON.stringify(cueClock,null,2));
+ assert.deepEqual(cueClock.problems,[],'Selected voice follows the presented-frame clock within 50ms');
  if(!CUTS)assert.ok(qualities.every(q=>q.total_frames>=140),'Both decoders continue through the complete clip');
  const paths=[...new Set(videoFrames.map(f=>JSON.stringify(f.path)))];assert.equal(paths.length,CUTS?6:2);
  const frames=paths.map(path=>videoFrames.filter(f=>JSON.stringify(f.path)===path));
@@ -80,10 +91,20 @@ try{
 }finally{await b.close();}
 '''
             values = {'HELPER': (repo/'experiments/live_browser_preview/browser.mjs').as_uri(), 'CHROME': chrome,
-                      'OUT': str(tmp_path/'browser'), 'URL': ready['url'], 'CUTS': cuts}
+                      'OUT': str(tmp_path/'browser'), 'URL': ready['url'], 'CUTS': cuts,
+                      'CUE_HELPER': (repo/'experiments/live_browser_preview/cue_clock.mjs').as_uri()}
             prefix = ''.join('const '+key+'='+json.dumps(value)+';\n' for key, value in values.items())
             result = subprocess.run(['node', '--input-type=module', '-e', prefix+script], capture_output=True, text=True, timeout=40)
-            assert result.returncode == 0, result.stdout+result.stderr
+            diagnostics = {}
+            for name in ('playback.json', 'video-frames.json', 'cue-clock.json'):
+                path = tmp_path/'browser'/name
+                if path.exists():
+                    data = json.loads(path.read_text())
+                    if name == 'playback.json':
+                        data = {key: data.get(key) for key in ('error', 'stalls', 'flashes', 'beeps', 'video_quality')}
+                    if name == 'video-frames.json': data = {'qualities': data['qualities']}
+                    diagnostics[name] = data
+            assert result.returncode == 0, result.stdout+result.stderr+'\n'+json.dumps(diagnostics, indent=2)
             if not spatial and not cuts:
                 reference = tmp_path/'export-frame.png'
                 subprocess.run([sys.executable, '-m', 'moviestar.cli', 'screenshot', '--at', '0', '--out', str(reference)],

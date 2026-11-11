@@ -1,7 +1,7 @@
 // A bounded scene's decoders share transport operations and cancellation.
 export function createVideoGroup(entries){
   let generation=0,seekGeneration=0,disposed=false,pendingSeek;
-  const cancels=new Set(),priming=new Set();
+  const cancels=new Set();
   const stop=()=>entries.forEach(({video})=>{video.pause();if(video.playbackRate!==1)video.playbackRate=1;});
   const api={
     async play(){
@@ -9,35 +9,14 @@ export function createVideoGroup(entries){
       if(pendingSeek)await pendingSeek;
       if(disposed||attempt!==generation)return;
       try{
-        const clock=entries.find(item=>item.primary)??entries[0],followers=entries.filter(item=>item!==clock);
-        const starts=followers.map(item=>item.video.currentTime);
-        await Promise.all(followers.map(({video})=>video.play()));
-        if(disposed||attempt!==generation)return;
-        // A successful play() does not mean a muted picture has reached the
-        // compositor. Prime its first moving frame before starting the voice.
-        const prepared=await Promise.all(followers.map((item,i)=>{
-          if(typeof item.video.requestVideoFrameCallback!=='function'||item.end-item.start<=1/(item.fps??30)+1e-6)return true;
-          return new Promise(resolve=>{
-            let callback,timer,settled=false;
-            const finish=value=>{if(settled)return;settled=true;clearTimeout(timer);item.video.cancelVideoFrameCallback(callback);priming.delete(cancel);resolve(value);};
-            const cancel=()=>finish(false);priming.add(cancel);
-            const frame=(now,metadata)=>{
-              if(settled)return;
-              if(metadata.mediaTime>starts[i]+1e-6)finish(true);
-              else callback=item.video.requestVideoFrameCallback(frame);
-            };
-            callback=item.video.requestVideoFrameCallback(frame);
-            timer=setTimeout(()=>finish(false),1000);
-          });
-        }));
-        if(disposed||attempt!==generation)return;
-        if(prepared.some(value=>!value))throw Error('Native inset did not start; use --mode rendered');
-        await clock.video.play();
+        // Every element feeds the shared audio clock (inaudible gains are
+        // applied in Web Audio), avoiding a separate muted-video startup path.
+        await Promise.all(entries.map(({video})=>video.play()));
         if(disposed||attempt!==generation)return;
         return true;
       }catch(error){if(!disposed&&attempt===generation){api.pause();throw error;}}
     },
-    pause(){++generation;for(const cancel of priming)cancel();stop();},
+    pause(){++generation;stop();},
     synchronize(clock){
       if(clock.video.paused)return;
       const at=clock.video.currentTime-clock.start;

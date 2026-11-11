@@ -60,8 +60,9 @@ Each selected span can have **one or two visible MP4s**. One visible video
 carries the resolved speaker audio; the other stays muted. Each video keeps its
 own source offset. Play, Pause, seek and revision replacement operate on both
 pictures. Both first frames must be prepared before the version becomes current.
-On Play, the muted decoder's first moving frame is primed before the audible
-clock starts; Pause, seek and replacement cancel that startup too.
+Both video elements feed the same Web Audio clock. The selected speaker's gain
+is one and the listener's gain is zero; both transport starts are submitted
+together. Pause, seek and replacement cancel pending startup too.
 A cut switches the composition and its selected speaker audio together. A → B → A can return to
 the same recording at a different source position, with a different layout,
 caption state or component arrangement in each scene.

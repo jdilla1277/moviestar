@@ -47,40 +47,41 @@ assert.equal(a.removed&&b.removed,true,'Both decoders are released');
 
 
 @pytest.mark.skipif(not shutil.which('node'), reason='Node required')
-@pytest.mark.parametrize('action', ['play', 'pause', 'dispose', 'timeout'])
-def test_muted_first_moving_frame_precedes_the_voice_and_priming_is_cancelable(action):
+@pytest.mark.parametrize('action', ['play', 'pause', 'dispose', 'seek'])
+@pytest.mark.parametrize('delayed', ['a', 'b'])
+def test_both_audio_clock_play_promises_are_owned_and_cancelable(action, delayed):
     module = (Path(__file__).parents[1]/'src/moviestar/preview_native_videos.mjs').as_uri()
     script = r'''
 import assert from 'node:assert/strict';
-const {createVideoGroup}=await import(MODULE);let callback,id=0;
+const {createVideoGroup}=await import(MODULE);let release;
 const make=()=>({currentTime:1,playbackRate:1,plays:0,paused:true,
  play(){this.plays++;this.paused=false;return Promise.resolve();},pause(){this.paused=true;},removeAttribute(){},load(){}});
-const a=make(),b=make();b.requestVideoFrameCallback=fn=>{callback=fn;return ++id;};b.cancelVideoFrameCallback=()=>{callback=null;};
+const a=make(),b=make(),slow=DELAYED==='a'?a:b;
+slow.play=function(){this.plays++;this.paused=false;return new Promise(r=>release=r);};
 const group=createVideoGroup([{video:a,start:1,end:6,primary:true},{video:b,start:1,end:6}]);
 const play=group.play();await new Promise(r=>setImmediate(r));
-assert.equal(a.plays,0);assert.equal(b.plays,1,'Only the muted pipeline has started');
+assert.equal(a.plays,1);assert.equal(b.plays,1,'Both audio-clock pipelines start together');
 if(ACTION==='pause')group.pause();
 if(ACTION==='dispose')group.dispose();
-if(ACTION==='play')callback(0,{mediaTime:1.033333});
-if(ACTION==='timeout')await assert.rejects(play,/inset did not start/);else await play;
-assert.equal(a.plays,ACTION==='play'?1:0,'Canceled priming cannot start the voice');
-if(ACTION!=='play')assert.equal(b.paused,true);
-assert.equal(callback,null);group.dispose();
+if(ACTION==='seek')await group.seek(0);
+release();await play;
+assert.equal(a.paused&&b.paused,ACTION!=='play','Canceled startup cannot restart either video');
+group.dispose();
 '''
-    prefix = f'const MODULE={json.dumps(module)},ACTION={json.dumps(action)};\n'
+    prefix = f'const MODULE={json.dumps(module)},ACTION={json.dumps(action)},DELAYED={json.dumps(delayed)};\n'
     result = subprocess.run(['node', '--input-type=module', '-e', prefix+script], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stdout+result.stderr
 
 
 @pytest.mark.skipif(not shutil.which('node'), reason='Node required')
-def test_priming_does_not_report_drift_against_a_paused_voice_clock():
+def test_startup_does_not_report_drift_against_a_paused_voice_clock():
     module = (Path(__file__).parents[1]/'src/moviestar/preview_native_videos.mjs').as_uri()
     script = r'''
 import assert from 'node:assert/strict';
 const {createVideoGroup}=await import(MODULE);
 const clock={start:1,video:{currentTime:1,paused:true}},follower={start:2,video:{currentTime:2.2,paused:false,seeking:false}};
 const group=createVideoGroup([clock,follower]);
-assert.doesNotThrow(()=>group.synchronize(clock),'The voice intentionally stays paused while the inset is primed');
+assert.doesNotThrow(()=>group.synchronize(clock),'Do not compare running time against a paused clock');
 clock.video.paused=false;assert.throws(()=>group.synchronize(clock),/lost synchronization/,'Real running drift still fails');
 '''
     result = subprocess.run(['node', '--input-type=module', '-e', f'const MODULE={json.dumps(module)};\n'+script], capture_output=True, text=True, timeout=10)
