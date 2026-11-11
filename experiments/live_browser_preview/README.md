@@ -52,8 +52,11 @@ from the project directory), or use a coding agent. Undo uses the existing CLI.
 
 The probe fails explicitly outside this subset:
 
-- Up to three spatial scene spans joined by frame-aligned hard cuts, each with
-  exactly one visible video and its embedded source audio on the same unit-speed clock. The project can have other spatial
+- Up to three scene spans joined by frame-aligned hard cuts, each with one or
+  two visible videos and one selected embedded source-audio route. Both pipelines
+  share an audio output clock; a listener gain of zero makes it inaudible. Static
+  `single`, `two-up` and `picture-in-picture` presets use the export planner. The
+  project can have other spatial
   or preset scenes, and pacing/transition behavior outside the review window.
 - A frame-aligned window of at most ten seconds, at 24–60 fps, matching the indexed source rate (the installed profile excludes
   low rates whose early last-frame stop would exceed the reference timing budget).
@@ -63,7 +66,7 @@ The probe fails explicitly outside this subset:
 - Relative/absolute media wrappers without padding, border widths or children.
 
 Source edit operations on the chosen video, ranges crossing in-scene pacing boundaries
-or overlapping transitions, multiple video clocks, live caption derivation on placed tracks, external
+or overlapping transitions, more than two visible videos per scene, live caption derivation on placed tracks, external
 soundtracks, gain/fades/mixing, holds and speed changes are not implemented here.
 Other codecs, VFR, HDR/color-management parity, network
 sources and cloud/phone delivery remain unverified. Private camera evaluation
@@ -651,7 +654,9 @@ resize the inset, reframe the main picture, swap the cameras and speaker audio,
 and undo each edit. Setup/ingestion/history seeding stays outside edit timing.
 Generated source pictures have a horizontal pattern so crop changes affect
 visible content. A quieter second audio source checks the swapped output and
-the actual listener element must stay muted. The software-headless reference
+the actual listener audio gain must stay zero. Both video elements feed a
+shared Web Audio clock; muting the element itself can select a different video
+scheduling path and add startup delay at cuts. The software-headless reference
 view is the authored 360×640 raster at 1×; this does not certify the viewer's
 default upscaling/viewport behavior. Browser tests separately compare masks/borders with
 export pixels and exercise reusable components and two-video hard cuts.
@@ -674,24 +679,36 @@ composition referencing large files; it does not replace the existing
 real-input artifacts must remain private. Physical speech/lip-sync review is a
 separate owner check, not established by command success or decoder counters.
 
-Reference run at `42fb920` (one host, generated media, authored 360×640 at 1×):
+Reference run at `5c1ba92` (one host, Chrome for Testing 156.0.8078.73,
+generated media, authored 360×640 at 1×):
 
 | Initial undo entries | Completed operations | Maximum command-to-visible-ready | ≥3,000 ms misses |
 | --- | --- | --- | --- |
-| 0 | 8/8 | 811 ms | 0 |
-| 20 | 8/8 | 849 ms | 0 |
-| 50 | 8/8 | 725 ms | 0 |
+| 0 | 8/8 | 813 ms | 0 |
+| 20 | 8/8 | 744 ms | 0 |
+| 50 | 8/8 | 1,330 ms | 0 |
 
 All three cases restored current content through four individual undos,
 including the expected FIFO cap behavior. Swapped-speaker playback had no stalls
-or dropped decoder frames; maximum flash/beep phase error was 20.18 ms against
+or dropped decoder frames; maximum flash/beep phase error was 24.05 ms against
 the existing 50 ms reference. This small single-scene sample does not establish
 general long-project, cloud or full native-feature acceptance.
 
-Retain the separate earlier default/upscaled-view run: it completed all 24
-latency checks, but each playback reported one dropped muted-video frame.
-The authored-size reference passes; default viewport/upscaling behavior remains
-part of [viewer follow-up #149](https://github.com/jdilla1277/moviestar/issues/149).
-These are distinct observation conditions, not a product-speed comparison or
-proof of the sole cause of a dropped frame. No deadline or fidelity budget was
-changed to make the reference run pass.
+Frame callbacks can omit observations without a decoder presentation drop.
+The generated cue check correlates each known cue instant with a presented-frame
+clock within one frame, requires all five actual output audio cues, a usable
+output clock and complete zero-drop decoder counters, and keeps the 50 ms limit.
+Raw observed flash counts remain in the report. Negative controls reject missing
+clock/sample/audio data, 51 ms audio drift and decoder drops. Separate cut tests
+also require whole-program clock drift within 50 ms. Starting a muted follower
+before the speaker had introduced real delay at each cut; both pipelines now
+start together on the same audio clock with independent output gains.
+
+Earlier producer `42fb920` used Chrome 157 and a different startup path; its
+generated maxima were 811 / 849 / 725 ms. A separate earlier default/upscaled-view
+run met latency but reported one dropped follower frame per playback. Keep those
+failures: neither is a controlled speed comparison with this reference. The
+ordinary viewport/upscaling behavior remains under
+[viewer follow-up #149](https://github.com/jdilla1277/moviestar/issues/149);
+the current 1× result does not certify every display condition. No deadline or
+fidelity budget was widened to make this run pass.
