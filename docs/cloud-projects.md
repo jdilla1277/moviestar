@@ -297,6 +297,33 @@ create local editing workspaces, or require FFmpeg. Use a CLI version whose
 `cloud projects --help` includes `add-asset` and `remove-asset`; older installed
 versions need an update once that release is available.
 
+Start with a ready original from the account asset API. Creating that original
+is currently an API journey; CLI, MCP, and Web reference an existing asset:
+
+1. With a same-environment personal key, send
+   `POST /api/v1/assets/uploads` with JSON
+   `{"filename":"image.png","size_bytes":1234}` using the file's actual length.
+   Save the returned `asset.id`, distinct `upload_id`, and `idempotency_key`.
+   Supply a saved `Idempotency-Key` header before the first request if you need
+   recovery from a completely lost reservation response.
+2. PUT the original bytes to `upload.url` using the returned upload headers.
+   **Do not send your Moviestar API key to storage.** The create-only transfer
+   uses `If-None-Match: *`; after an uncertain PUT, check completion instead of
+   replacing the original with another file.
+3. Call `POST /api/v1/assets/uploads/UPLOAD_ID/complete` with your personal key.
+   Continue with the returned ready `asset.id`. After a temporary failure,
+   retry that same upload ID rather than reserving another original.
+4. Read `GET /api/v1/assets/ASSET_ID` or download
+   `GET /api/v1/assets/ASSET_ID/download` with your personal key. The download
+   preserves the original bytes; comparing hashes before and after project
+   changes verifies that the asset survived unchanged.
+
+Starter originals include MP4/MOV and WebM video, MP3/WAV/M4A/FLAC audio,
+JPEG/PNG/WebP/GIF images, and UTF-8 SRT/VTT/TXT captions/transcripts. Video
+admission supports H.264/HEVC in MP4/MOV and VP8/VP9 in WebM; it does not promise
+browser playback or a full-file decode. Format and account-plan size limits
+apply. Asset creation requires no project, publication, or separate provisioning.
+
 ```sh
 moviestar cloud assets list
 moviestar cloud projects add-asset PROJECT_A ASSET_ID
