@@ -12,11 +12,15 @@ function probe(expected){
     const live=window.moviestarLive,api=live?.stage,wanted=${JSON.stringify(expected)};
     try{
       const packet=api.packet,snapshot=api.snapshot(),videos=packet.media.filter(m=>m.kind==='video');
+      const stage=document.querySelector('iframe:not(.pending)')?.contentWindow;
       const selected=videos.find(m=>JSON.stringify(m.path)===JSON.stringify(packet.video_path));
       observation.expected_text_visible=Boolean(selected?.asset===wanted.speaker_asset&&videos.length===2&&wanted.videos.every(v=>{
         const media=videos.find(m=>JSON.stringify(m.path)===JSON.stringify(v.path)),box=snapshot.boxes.find(b=>JSON.stringify(b.path)===JSON.stringify(v.path));
         const decoded=snapshot.videos.find(m=>JSON.stringify(m.path)===JSON.stringify(v.path));
+        const wrapper=stage?.moviestarScene?.entries.find(e=>JSON.stringify(e.node.path)===JSON.stringify(v.path))?.element;
+        const element=wrapper?.querySelector('video');
         return media?.asset===v.asset&&Math.abs(media.source_start-v.start)<1e-6&&media.object_position===v.object_position&&box&&
+          element&&stage.getComputedStyle(element).objectPosition===v.object_position&&
           decoded?.asset===v.asset&&decoded.ready_state>=2&&!decoded.seeking&&Math.abs(decoded.media_time-v.start)<1e-3&&
           ['x','y','width','height'].every(k=>Math.abs(box.rect[k]-v.rect[k])<=.2);
       }));
@@ -29,6 +33,7 @@ try{
   await persist();await browser.send('Page.navigate',{url:url+'?audit=1'});
   await browser.wait(`(${probe(fixture.initial)}).is_current&&(${probe(fixture.initial)}).expected_text_visible`,20000);
   const initial=await browser.evaluate('window.moviestarLive.current');
+  result.source_buffering=await browser.evaluate('window.moviestarLive.stage.metrics.source_buffering');
   for(const [i,action] of fixture.actions.entries()){
     const prior=await browser.evaluate('window.moviestarLive.current.request_id'),label=`edit-${String(i+1).padStart(2,'0')}-${action.name}`;
     const attempt=await observeEdit({specPath:join(root,'moviestar/spec.json'),priorRequest:prior,
@@ -40,7 +45,8 @@ try{
     if(attempt.trace.outcome!=='succeeded')throw Error(`${label}: ${attempt.trace.outcome}`);
     const saved=JSON.parse(await readFile(join(root,'moviestar/spec.json'),'utf8'));
     result.edits.push({name:action.name,ms:attempt.trace.measurement_ms,cli_ms:attempt.trace.cli_completion_ms,
-      request_id:attempt.preview.current.request_id,state_id:attempt.preview.current.state_id,history:saved.revisions.length});
+      request_id:attempt.preview.current.request_id,state_id:attempt.preview.current.state_id,history:saved.revisions.length,
+      source_delivery:(await(await fetch(url+'state')).json()).native_video_delivery});
     if(attempt.trace.measurement_ms>=3000)result.problems.push(`${label} exceeds 3000ms`);
     if(i===3){
       await browser.click('#play');await browser.wait('window.moviestarLive.stage.metrics.finished||window.moviestarLive.stage.error',12000);

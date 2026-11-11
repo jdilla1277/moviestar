@@ -80,6 +80,7 @@ def run_case(folder, depth, chrome, sources=None):
     actions.extend({'name': 'undo-'+names[i], 'args': ['undo'], 'expected': expected(states[i], root)}
                    for i in reversed(range(4)))
     case = {'initial_history': depth, 'media_kind': 'private' if sources else 'generated',
+        'code_commit': subprocess.check_output(['git', '-C', str(HERE.parents[1]), 'rev-parse', 'HEAD'], text=True).strip(),
         'initial': expected(states[0], root), 'actions': actions, 'producer_hashes': driver_hashes(),
         'environment': {'python': sys.version, 'node': subprocess.check_output(['node', '--version'], text=True).strip(),
             'chrome': subprocess.check_output([chrome, '--version'], text=True).strip(),
