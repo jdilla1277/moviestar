@@ -125,7 +125,8 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
 }
 
 export async function mountCuts(packet,signal,metrics){
-  const stages=[],audio=new AudioContext(),frames=[];
+  const multipleVideos=packet.segments.some(segment=>segment.packet.media.filter(item=>item.kind==='video').length>1);
+  const stages=[],audio=new AudioContext(multipleVideos?{sampleRate:48000}:{}),frames=[];
   let delegate,closed=false;
   const cleanup=()=>{
     if(closed)return;closed=true;

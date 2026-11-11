@@ -246,7 +246,10 @@ async function initialize(){
   videoGroup=createVideoGroup(videos);
   shared=packet.cut_segment?window.parent.moviestarCutShared:null;
   if(packet.cut_segment&&!shared)throw Error('Native cut audio context is unavailable');
-  audio=shared?.audio??new AudioContext();
+  // Use the export audio rate for multiple media clocks, rather than a
+  // device-preferred rate that can vary across playback hosts.
+  audio=shared?.audio??new AudioContext(videos.length>1?{sampleRate:48000}:{});
+  metrics.audio_device={latency_hint:'interactive',sample_rate:audio.sampleRate,base_latency:audio.baseLatency,output_latency:audio.outputLatency};
   if(!audio.audioWorklet||typeof audio.getOutputTimestamp!=='function')throw Error('Native preview needs the browser audio output clock; use --mode rendered.');
   if(!shared)await audio.audioWorklet.addModule('preview_native_meter.mjs');
   if(disposed){if(!shared)await audio.close();return;}
@@ -338,7 +341,7 @@ window.moviestarLiveStage={ready,metrics,
       if(!active())return;
       metrics.device_ready_at=Date.now();if(packet.cut_segment&&packet.samples.length===1){freezeLastFrame();videos.filter(item=>!item.primary).forEach(freezeFollower);}
       for(const item of videos){item.beforePlay=item.video.getVideoPlaybackQuality();delete item.reportedDrops;}
-      metrics.initial_presented=videos.map(item=>({path:item.path,media_time:item.video.currentTime,...item.frame,quality:item.beforePlay}));playing=true;
+      metrics.initial_presented=videos.map(item=>({path:item.path,media_time:item.video.currentTime,...item.frame,quality:{totalVideoFrames:item.beforePlay.totalVideoFrames,droppedVideoFrames:item.beforePlay.droppedVideoFrames}}));playing=true;
       if(videoGroup)await videoGroup.play();else await video.play();
     }catch(error){if(active()){fail(error);throw error;}}
   },

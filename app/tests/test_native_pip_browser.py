@@ -131,7 +131,7 @@ try{
                     data = json.loads(path.read_text())
                     if name == 'playback.json':
                         data['first_frames'] = data.get('frames', [])[:25]
-                        data = {key: data.get(key) for key in ('first_frames', 'error', 'stalls', 'waiting_events', 'cuts', 'quality_events', 'flashes', 'beeps', 'video_quality', 'paused_quality', 'settled_quality', 'initial_presented')}
+                        data = {key: data.get(key) for key in ('first_frames', 'error', 'stalls', 'waiting_events', 'cuts', 'quality_events', 'flashes', 'beeps', 'video_quality', 'paused_quality', 'settled_quality', 'initial_presented', 'audio_device')}
                     if name == 'video-frames.json': data = {key: data.get(key) for key in ('qualities', 'qualityEvents', 'firstSamples')}
                     diagnostics[name] = data
             assert result.returncode == 0, result.stdout+result.stderr+'\n'+json.dumps(diagnostics, indent=2)
