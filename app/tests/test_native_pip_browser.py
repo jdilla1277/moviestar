@@ -40,6 +40,8 @@ import {writeFile} from 'node:fs/promises';
 const {measureCueClock}=await import(CUE_HELPER);
 const {Browser}=await import(HELPER),b=await Browser.launch(CHROME,OUT);
 try{
+ const mediaEvents=[];b.socket.addEventListener('message',event=>{const data=JSON.parse(event.data);if(data.method?.startsWith('Media.'))mediaEvents.push(data);});
+ await b.send('Media.enable');
  await b.send('Emulation.setDeviceMetricsOverride',{width:1280,height:1800,deviceScaleFactor:1,mobile:false});
  if(OMIT_END_CALLBACKS)await b.send('Page.addScriptToEvaluateOnNewDocument',{source:`
   const request=HTMLVideoElement.prototype.requestVideoFrameCallback;
@@ -76,6 +78,7 @@ try{
  await checkRaster();
  const m=await b.evaluate('window.movieStarPreview.stage.metrics');
  await writeFile(OUT+'/playback.json',JSON.stringify(m,null,2));
+ await writeFile(OUT+'/media-events.json',JSON.stringify(mediaEvents,null,2));
  assert.equal(m.error,null);assert.equal(m.stalls,0);
  if(OMIT_END_CALLBACKS){
   const omitted=await b.evaluate(`[...document.querySelector('iframe:not(.pending)').contentDocument.querySelectorAll('iframe')].flatMap(f=>f.contentWindow.omittedEndCallbacks??[])`);
@@ -93,7 +96,7 @@ try{
  const firstSamples=Object.fromEntries([...new Set(videoFrames.map(f=>JSON.stringify(f.path)))].map(path=>[path,videoFrames.filter(f=>JSON.stringify(f.path)===path).slice(0,25)]));
  await writeFile(OUT+'/video-frames.json',JSON.stringify({videoFrames,qualities,qualityEvents,firstSamples},null,2));
  assert.equal(qualities.length,CUTS?6:2);
- assert.ok(qualities.every(q=>q.dropped_frames===0),'Neither decoder drops frames');
+ assert.ok(qualities.every(q=>q.dropped_frames===0),'Neither decoder drops frames: '+JSON.stringify(mediaEvents));
  if(!CUTS)assert.ok(qualities.every(q=>q.total_frames>=140),'Both decoders continue through the complete clip');
  if(PIXEL_AUDIT){
  const cueClock=measureCueClock(m,{fps:30,sourceStart:1,count:5,quality:qualities});
