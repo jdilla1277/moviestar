@@ -46,7 +46,8 @@ try{
    const video=this;
    return request.call(video,function deliver(now,frame){
     if(!video.paused&&Math.abs(frame.mediaTime-Math.floor(frame.mediaTime)-29/30)<1e-5){
-     window.omittedEndCallbacks=(window.omittedEndCallbacks??0)+1;
+     const path=window.moviestarScene.entries.find(e=>e.element===video.parentElement).node.path;
+     (window.omittedEndCallbacks??=[]).push({path,media_time:frame.mediaTime});
      request.call(video,deliver);
     }else callback(now,frame);
    });
@@ -70,8 +71,9 @@ try{
  await writeFile(OUT+'/playback.json',JSON.stringify(m,null,2));
  assert.equal(m.error,null);assert.equal(m.stalls,0);
  if(OMIT_END_CALLBACKS){
-  const omitted=await b.evaluate(`[...document.querySelector('iframe:not(.pending)').contentDocument.querySelectorAll('iframe')].reduce((n,f)=>n+(f.contentWindow.omittedEndCallbacks??0),0)`);
-  assert.ok(omitted>=6,'Both decoders lose final-frame callbacks without losing presentations');
+  const omitted=await b.evaluate(`[...document.querySelector('iframe:not(.pending)').contentDocument.querySelectorAll('iframe')].flatMap(f=>f.contentWindow.omittedEndCallbacks??[])`);
+  assert.ok(omitted.some(f=>f.path.includes('main'))&&omitted.some(f=>f.path.includes('inset')),
+   'Suppress callbacks for both video roles; natural callback counts are not frame counts');
  }
  if(CUTS){
   const first=m.frames[0],last=m.frames.at(-1);
@@ -120,7 +122,7 @@ try{
                 if path.exists():
                     data = json.loads(path.read_text())
                     if name == 'playback.json':
-                        data = {key: data.get(key) for key in ('error', 'stalls', 'flashes', 'beeps', 'video_quality')}
+                        data = {key: data.get(key) for key in ('error', 'stalls', 'waiting_events', 'flashes', 'beeps', 'video_quality', 'paused_quality', 'settled_quality')}
                     if name == 'video-frames.json': data = {'qualities': data['qualities']}
                     diagnostics[name] = data
             assert result.returncode == 0, result.stdout+result.stderr+'\n'+json.dumps(diagnostics, indent=2)

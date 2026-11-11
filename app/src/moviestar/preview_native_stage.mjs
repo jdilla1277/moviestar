@@ -141,11 +141,15 @@ function onFrame(now,metadata){
 }
 async function finishScene(){
   if(finishing||disposed||metrics.finished)return;
+  // Pausing/seeking can discard decoded read-ahead frames. Measure playback
+  // before that control work, while retaining the raw post-settle counters.
+  recordQuality();
   finishing=true;const attempt=playGeneration;playing=false;videoGroup?.pause();video.pause();
+  metrics.paused_quality=quality();
   try{
     if(videos.length>1)await seekTo((packet.samples.length-1)/packet.fps);
     if(disposed||attempt!==playGeneration)return;
-    recordQuality();metrics.end_time=video.currentTime;metrics.finished=true;
+    metrics.settled_quality=quality();metrics.end_time=video.currentTime;metrics.finished=true;
   }finally{finishing=false;}
 }
 function complete(){
@@ -198,7 +202,12 @@ async function initialize(){
         if(!media.videoWidth||!media.videoHeight)fail(Error('Source has no decodable video.'));
         checkReady();
       });
-      media.addEventListener('waiting',()=>{if(playing)metrics.stalls++;});
+      media.addEventListener('waiting',()=>{
+        if(!playing)return;
+        metrics.stalls++;
+        if(audit)(metrics.waiting_events??=[]).push({path:item.path,media_time:media.currentTime,
+          source_end:item.end,ready_state:media.readyState,paused:media.paused,at:Date.now()});
+      });
       if(primary){media.addEventListener('pause',complete);media.addEventListener('ended',complete);}
       media.src=`assets/${asset.asset}?native_video=1#t=${item.start}${packet.cut_segment?'':','+item.end}`;
       if(typeof media.requestVideoFrameCallback!=='function')throw Error('Native preview needs video-frame callbacks; use --mode rendered.');
@@ -302,7 +311,7 @@ window.moviestarLiveStage={ready,metrics,
     try{
       if(!packet.cut_segment&&(metrics.finished||this.time>=(packet.samples.length-1)/packet.fps-1e-6))await seekTo(0);
       if(!active())return;
-      metrics.frames=[];metrics.flashes=[];metrics.beeps=[];metrics.video_frames=[];metrics.stalls=0;metrics.finished=false;metrics.previous_white=false;delete metrics.first_presented_at;
+      metrics.frames=[];metrics.flashes=[];metrics.beeps=[];metrics.video_frames=[];metrics.waiting_events=[];metrics.stalls=0;metrics.finished=false;metrics.previous_white=false;delete metrics.first_presented_at;
       metrics.play_at=Date.now();
       await audio.resume();
       if(!active())return;
