@@ -651,7 +651,9 @@ resize the inset, reframe the main picture, swap the cameras and speaker audio,
 and undo each edit. Setup/ingestion/history seeding stays outside edit timing.
 Generated source pictures have a horizontal pattern so crop changes affect
 visible content. A quieter second audio source checks the swapped output and
-that the listener is muted. Browser tests separately compare masks/borders with
+the actual listener element must stay muted. The software-headless reference
+view is the authored 360×640 raster at 1×; this does not certify the viewer's
+default upscaling/viewport behavior. Browser tests separately compare masks/borders with
 export pixels and exercise reusable components and two-video hard cuts.
 
 Readiness requires a fresh visible revision with **both** decoded source frames,

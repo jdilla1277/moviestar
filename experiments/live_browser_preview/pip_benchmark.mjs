@@ -21,6 +21,7 @@ function probe(expected){
         const element=wrapper?.querySelector('video');
         return media?.asset===v.asset&&Math.abs(media.source_start-v.start)<1e-6&&media.object_position===v.object_position&&box&&
           element&&stage.getComputedStyle(element).objectPosition===v.object_position&&
+          element.muted===(JSON.stringify(v.path)!==JSON.stringify(packet.video_path))&&
           decoded?.asset===v.asset&&decoded.ready_state>=2&&!decoded.seeking&&Math.abs(decoded.media_time-v.start)<1e-3&&
           ['x','y','width','height'].every(k=>Math.abs(box.rect[k]-v.rect[k])<=.2);
       }));
@@ -32,6 +33,10 @@ try{
   browser.socket.addEventListener('message',event=>{const m=JSON.parse(event.data);if(m.method==='Runtime.exceptionThrown')result.browser_exceptions.push(m.params.exceptionDetails);});
   await persist();await browser.send('Page.navigate',{url:url+'?audit=1'});
   await browser.wait(`(${probe(fixture.initial)}).is_current&&(${probe(fixture.initial)}).expected_text_visible`,20000);
+  // Match the authored 360x640 reference raster in software-headless Chrome.
+  // UI upscaling/viewport behavior is recorded separately from this benchmark.
+  await browser.evaluate(`(async()=>{const s=document.getElementById('stage');s.style.maxWidth='none';s.style.width=(360+s.offsetWidth-s.clientWidth)+'px';await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));})()`);
+  result.reference_view={width:360,height:640,scale:1};
   const initial=await browser.evaluate('window.moviestarLive.current');
   result.source_buffering=await browser.evaluate('window.moviestarLive.stage.metrics.source_buffering');
   for(const [i,action] of fixture.actions.entries()){
