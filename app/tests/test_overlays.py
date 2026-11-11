@@ -118,8 +118,9 @@ class TestWindowFiltering:
 
 class TestTextLayout:
     def test_wraps_to_max_width(self):
-        [plan] = plan_overlays([_record()], CANVAS, 0.0, 6.0)["plans"]
-        # 19 chars at 96px * 0.55em exceeds 90% of 1080 -> two lines.
+        record = _record()
+        record["style"]["resolved"]["max_width"] = "600px"
+        [plan] = plan_overlays([record], CANVAS, 0.0, 6.0)["plans"]
         assert len(plan["lines"]) == 2
         assert " ".join(plan["lines"]) == "PM in the age of AI"
 

@@ -7,21 +7,22 @@ strings, and timing local to a render window. The ffmpeg module
 consumes plans to build drawtext filter chains; the CLI consumes the
 same plans for envelope reporting (fonts, estimated bounds, warnings).
 
-Estimation note: drawtext positions single-line text exactly via
-``text_w``/``text_h`` expressions. Wrapping and bounding boxes use a
-character-width heuristic (``CHAR_WIDTH_RATIO`` em per char) because
-nothing in the stack measures real glyphs; estimates are labeled as
-such in envelopes.
+Line fitting uses the selected font's HarfBuzz advances, independently of
+outline ink bounds (including italic overhang). Drawtext positions single
+lines via ``text_w``/``text_h``. Block bounds remain estimates for vertical
+placement, effects, rotation, and renderer shaping/rasterization differences;
+measurement provenance and any unsupported-font fallback are reported.
 """
 
 from __future__ import annotations
 
+import math
 import re
 
 from .fonts import resolve_font
+from .text_metrics import TextMeasurer
 from .timecodes import format_timecode, parse_timecode
 
-CHAR_WIDTH_RATIO = 0.55
 DEFAULT_LINE_HEIGHT = 1.25
 
 # ffmpeg's color parser accepts hex (0xRRGGBB) and its own name table,
@@ -140,23 +141,20 @@ def _parse_transform(transform: str | None) -> tuple[float, float]:
     return (rotate, scale)
 
 
-def _wrap_text(text: str, font_size: int, max_width_px: float | None) -> list[str]:
-    """Greedy word wrap using the char-width heuristic. Manual line
-    breaks in the text are always honored."""
+def _wrap_text(text: str, measurer: TextMeasurer, max_width_px: float | None) -> list[str]:
+    """Greedy wrap by shaped advance; keep hard breaks and whole words."""
     lines: list[str] = []
-    char_w = font_size * CHAR_WIDTH_RATIO
     for raw_line in text.split("\n"):
         words = raw_line.split()
         if not words:
             lines.append("")
             continue
-        if max_width_px is None or max_width_px <= 0:
+        if max_width_px is None:
             lines.append(" ".join(words))
             continue
-        max_chars = max(1, int(max_width_px / char_w))
         current = words[0]
         for word in words[1:]:
-            if len(current) + 1 + len(word) <= max_chars:
+            if measurer.measure(current + " " + word)["advance_width"] <= max_width_px:
                 current += " " + word
             else:
                 lines.append(current)
@@ -474,11 +472,19 @@ def plan_overlays(
                 length_px(resolved["max_width"], canvas, "x", f"{oid}: max-width")
                 - 2 * pad_x
             )
-        lines = _wrap_text(text, font_size, max_width_px)
+        measurer = TextMeasurer(font["path"], font_size)
+        lines = _wrap_text(text, measurer, max_width_px)
+        text_metrics = measurer.summary(lines, max_width_px)
+        if measurer.reason:
+            warnings.append(
+                f"{oid}: font metrics unavailable ({measurer.reason}); wrapping "
+                "and bounds use character estimates for the selected font."
+            )
         line_height = _line_height_px(resolved, font_size)
 
-        char_w = font_size * CHAR_WIDTH_RATIO
-        est_text_w = max((len(line) for line in lines), default=0) * char_w
+        est_text_w = max(
+            (line["advance_width"] for line in text_metrics["lines"]), default=0
+        )
         est_w = est_text_w + 2 * pad_x
         est_h = len(lines) * line_height + 2 * pad_y
 
@@ -564,17 +570,36 @@ def plan_overlays(
         bounds_x, bounds_y = _anchor_bounds(
             anchor, canvas, est_w, est_h, margin_x, margin_y, norm_x, norm_y
         )
+        # Keep advance-based layout independent of ink overhang. Expand only
+        # the diagnostic bounds, so italic glyphs cannot change line fitting
+        # or shift the anchor used by the renderer.
+        ink_left, ink_right = bounds_x, bounds_x + est_w
+        anchor_x, _ = _anchor_point(
+            anchor, canvas, margin_x, margin_y, norm_x, norm_y
+        )
+        for metrics in text_metrics["lines"]:
+            ink = metrics["ink_bounds"]
+            if ink is None or not ink["width"]:
+                continue
+            advance = math.ceil(metrics["advance_width"])
+            origin = anchor_x - advance / 2
+            if "left" in anchor:
+                origin = anchor_x
+            elif "right" in anchor:
+                origin = anchor_x - advance
+            ink_left = min(ink_left, origin + ink["x"])
+            ink_right = max(ink_right, origin + ink["x"] + ink["width"])
         estimated_bounds = {
             "estimate": True,
-            "x": int(round(bounds_x)),
+            "x": math.floor(ink_left),
             "y": int(round(bounds_y)),
-            "width": int(round(est_w)),
+            "width": math.ceil(ink_right) - math.floor(ink_left),
             "height": int(round(est_h)),
         }
         if (
-            bounds_x < 0
+            ink_left < 0
             or bounds_y < 0
-            or bounds_x + est_w > width
+            or ink_right > width
             or bounds_y + est_h > height
         ):
             warnings.append(
@@ -630,6 +655,7 @@ def plan_overlays(
                 "z_index": record.get("z_index", 0),
                 "text": text,
                 "lines": lines,
+                "text_metrics": text_metrics,
                 "line_exprs": line_exprs,
                 "font": font,
                 "font_size": font_size,
@@ -704,6 +730,7 @@ def overlay_plan_summary(plan: dict) -> dict:
         "z_index": plan["z_index"],
         "text": plan["text"],
         "lines": plan["lines"],
+        "text_metrics": plan["text_metrics"],
         "from": format_timecode(plan["from_result"]),
         "to": format_timecode(plan["to_result"]),
         "font": {
