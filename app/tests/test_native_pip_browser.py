@@ -18,7 +18,7 @@ from moviestar.spatial_layout import browser_available, _chrome_path
     (False, False, False, False, True), (True, False, False, False, True),
     (False, True, False, False, True), (True, True, False, False, True),
     (False, False, True, False, True), (False, True, False, True, True),
-    (True, False, False, False, False)])
+    (True, False, False, False, False), (False, True, False, False, False)])
 def test_actual_pip_prepares_both_videos_and_keeps_clocks_and_routing(tmp_path, spatial, cuts, silent_listener, omit_end_callbacks, pixel_audit):
     repo = Path(__file__).parents[2]; root = tmp_path/'project'
     subprocess.run([sys.executable, str(repo/'experiments/live_browser_preview/pip.py'), '--out', str(root),
