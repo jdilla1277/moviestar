@@ -669,7 +669,7 @@ def model_apply(document: Path) -> None:
     bindings may be saved and diagnosed by `model inspect`.
     """
     from moviestar.cli import _error_exit
-    from moviestar.spatial_model import spatial_state_id
+    from moviestar.spatial_model import SpatialModelError, spatial_state_id
     from moviestar.spec import SpecValidationError, load_spec, save_spec
 
     try:
@@ -686,12 +686,15 @@ def model_apply(document: Path) -> None:
         _error_exit("composition model apply", "No spec.json found. Load a project first.")
     spec["spatial"] = spatial
     try:
+        # A successful apply promises an identity. Check it before the durable
+        # write, including opaque metadata the structural schema may retain.
+        state_id = spatial_state_id(spec)
         saved = save_spec(spec, command="composition model apply")
-    except SpecValidationError as exc:
+    except (SpecValidationError, SpatialModelError) as exc:
         _error_exit("composition model apply", str(exc))
     click.echo(json.dumps({"status": "saved", "writes_spec": True,
                            "revision": len(saved["revisions"]),
-                           "state_id": spatial_state_id(saved),
+                           "state_id": state_id,
                            "definitions": sorted(spatial.get("definitions", {})),
                            "scenes": sorted(spatial.get("scenes", {}))}, indent=2))
 
@@ -715,11 +718,12 @@ def model_inspect(scene_id: str) -> None:
     if spec is None:
         _error_exit("composition model inspect", "No spec.json found. Load a project first.")
     try:
+        state_id = spatial_state_id(spec)
         expanded = expand_spatial_scene(spec, scene_id)
     except SpatialModelError as exc:
         _error_exit("composition model inspect", str(exc))
     click.echo(json.dumps({"status": "expanded", "renders_pixels": False,
-                           "state_id": spatial_state_id(spec), "scene": expanded,
+                           "state_id": state_id, "scene": expanded,
                            "inputs": spec['spatial']['scenes'][scene_id].get('inputs', []),
                            "bindings": spec['spatial']['scenes'][scene_id].get('bindings', {})}, indent=2))
 

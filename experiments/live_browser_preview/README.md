@@ -273,9 +273,12 @@ Incoming gain switches as soon as its media pipeline runs, without extra future
 padding that could outlive the outgoing file. Five additional EOF browser runs
 passed without relaxing the one-audio-quantum silence gate.
 Earlier runs before these corrections are not acceptance for the final build.
-Fixture integral offsets are normalized for JSON round trips; the general
-state-ID numeric normalization issue remains separate in
-[#157](https://github.com/jdilla1277/moviestar/issues/157).
+Fixture integral offsets were normalized to work around the numeric state-ID
+failure recorded in [#157](https://github.com/jdilla1277/moviestar/issues/157).
+That convention remains for comparisons with archived runs. Production identity
+now handles equivalent numbers directly, with separate unnormalized float/JSON
+round-trip regressions. The earlier failed restoration report remains a failed
+run; this fix does not turn it into passing benchmark evidence.
 
 A subsequent review found that Play during a pending cross-cut seek could start
 the old scene. Play now waits for the seek destination; Pause/disposal cancel

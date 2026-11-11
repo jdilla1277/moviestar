@@ -1092,12 +1092,31 @@ that new definition. `instance.duplicate` creates a new scene occurrence ID;
 `input.bind` changes one scene-owned instance's input; `component.rename`
 changes the display name without changing its ID. `component.delete` and
 `asset.delete` reject referenced definitions or image assets, including uses in
-unplaced drafts. Every successful edit saves one project revision, and a request
+unplaced drafts. Each content-changing edit saves one project revision, and a request
 may include `expected_state_id` from `model inspect` to reject a stale edit.
 The state ID fingerprints the current editable spec and changes even when the
-undo journal is full. The dry run reports its before and after state IDs,
-affected scenes, changed occurrence paths, and created definition IDs without
-writing the spec.
+undo journal is full. Identity treats numerically equal integral floats and
+integers alike (`1.0` and `1`, including `-0.0` and `0`). Nested values follow
+the same rule. Booleans remain distinct from numbers, integers keep their full
+precision, and fractional values retain the JSON precision of the parsed Python
+float. Values changed by a lossy JavaScript conversion, including large integers
+outside its safe range, remain content changes. Nonfinite values are rejected.
+
+This normalization is used only for identity. It does not rewrite authored
+source times, layouts, saved specs, or undo entries. Applying an equivalent
+numeric document retains its state ID and adds no undo entry; the apply still
+saves the incoming document's authored numeric representation. The dry run
+reports before and after state IDs, affected scenes, changed occurrence paths,
+and created definition IDs without writing the spec.
+
+State IDs computed with the previous numeric spelling rules can change once
+when upgrading, including projects with default `0.0` values. IDs whose numbers
+already had the canonical spelling stay unchanged. Reinspect the project before
+reusing `expected_state_id`, and restart an existing preview session after
+upgrading. Historical preview labels keep their original IDs; neither saved
+history nor project/media identities are migrated. Undo restoring prior content
+returns that content's current state ID, while preview requests retain their
+own fresh request IDs.
 
 An omitted range uses the source's full recorded duration. Missing or invalid
 media appears in diagnostics without making the document unreadable. The frame

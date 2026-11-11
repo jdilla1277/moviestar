@@ -12,8 +12,9 @@ from moviestar.timecodes import format_timecode
 
 
 def prepare_cuts(root, portrait=False, sources=None, offsets=(1,0,4), long_project=False):
-    # Keep integral offsets stable through the authoring CLI's JSON -> JS ->
-    # JSON round trip; 2126.0 and 2126 render alike but hash differently.
+    # Historical #157 fixture convention: older state IDs distinguished 1.0
+    # from 1. Keep offsets consistent with archived runs; current production
+    # identity handles equivalent numbers without this workaround.
     offsets=tuple(int(value) if float(value).is_integer() else value for value in offsets)
     spec, _ = generate(root,portrait)
     pilot = sources is None
