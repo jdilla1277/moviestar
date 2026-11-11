@@ -13,9 +13,10 @@ function probe(expected){
     const live=window.moviestarLive,api=live?.stage,wanted=${JSON.stringify(expected)};
     try{
       const packet=api.packet,snapshot=api.snapshot(),videos=packet.media.filter(m=>m.kind==='video');
-      const stage=document.querySelector('iframe:not(.pending)')?.contentWindow;
+      const frame=document.querySelector('iframe:not(.pending)'),stage=frame?.contentWindow,raster=frame?.getBoundingClientRect();
+      observation.reference_raster=raster?{width:raster.width,height:raster.height}:null;
       const selected=videos.find(m=>JSON.stringify(m.path)===JSON.stringify(packet.video_path));
-      observation.expected_text_visible=Boolean(selected?.asset===wanted.speaker_asset&&videos.length===2&&wanted.videos.every(v=>{
+      observation.expected_text_visible=Boolean(raster?.width===360&&raster?.height===640&&selected?.asset===wanted.speaker_asset&&videos.length===2&&wanted.videos.every(v=>{
         const media=videos.find(m=>JSON.stringify(m.path)===JSON.stringify(v.path)),box=snapshot.boxes.find(b=>JSON.stringify(b.path)===JSON.stringify(v.path));
         const decoded=snapshot.videos.find(m=>JSON.stringify(m.path)===JSON.stringify(v.path));
         const wrapper=stage?.moviestarScene?.entries.find(e=>JSON.stringify(e.node.path)===JSON.stringify(v.path))?.element;
@@ -33,11 +34,13 @@ function probe(expected){
 try{
   browser.socket.addEventListener('message',event=>{const m=JSON.parse(event.data);if(m.method==='Runtime.exceptionThrown')result.browser_exceptions.push(m.params.exceptionDetails);});
   await persist();await browser.send('Page.navigate',{url:url+'?audit=1'});
-  await browser.wait(`(${probe(fixture.initial)}).is_current&&(${probe(fixture.initial)}).expected_text_visible`,20000);
+  await browser.wait('window.moviestarLive?.is_current',20000);
   // Match the authored 360x640 reference raster in software-headless Chrome.
   // UI upscaling/viewport behavior is recorded separately from this benchmark.
-  await browser.evaluate(`(async()=>{const s=document.getElementById('stage');s.style.maxWidth='none';s.style.width=(360+s.offsetWidth-s.clientWidth)+'px';await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));})()`);
-  result.reference_view={width:360,height:640,scale:1};
+  await browser.evaluate(`(async()=>{const s=document.getElementById('stage'),style=document.createElement('style');style.textContent='#stage{max-width:none!important;width:'+(360+s.offsetWidth-s.clientWidth)+'px!important}';document.head.append(style);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));})()`);
+  result.reference_view=await browser.evaluate(`(()=>{const r=document.querySelector('iframe:not(.pending)').getBoundingClientRect();return{width:r.width,height:r.height,scale:r.width/360};})()`);
+  if(result.reference_view.width!==360||result.reference_view.height!==640)throw Error('Reference playback raster must stay at authored 360x640/1x');
+  await browser.wait(`(${probe(fixture.initial)}).is_current&&(${probe(fixture.initial)}).expected_text_visible`,20000);
   const initial=await browser.evaluate('window.moviestarLive.current');
   result.source_buffering=await browser.evaluate('window.moviestarLive.stage.metrics.source_buffering');
   for(const [i,action] of fixture.actions.entries()){

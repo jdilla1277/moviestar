@@ -57,7 +57,12 @@ try{
  await b.send('Page.navigate',{url:URL+(PIXEL_AUDIT?'?audit=1':'')});
  await b.wait('window.movieStarPreview?.is_current',20000);
  // Use the authored 360x640 raster at 1x for software-headless playback.
- await b.evaluate(`(async()=>{const s=document.getElementById('stage');s.style.maxWidth='none';s.style.width=(360+s.offsetWidth-s.clientWidth)+'px';await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));})()`);
+ await b.evaluate(`(async()=>{const s=document.getElementById('stage'),style=document.createElement('style');style.textContent='#stage{max-width:none!important;width:'+(360+s.offsetWidth-s.clientWidth)+'px!important}';document.head.append(style);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));})()`);
+ const checkRaster=async()=>{
+  const box=await b.evaluate(`(()=>{const r=document.querySelector('iframe:not(.pending)').getBoundingClientRect();return{width:r.width,height:r.height};})()`);
+  assert.deepEqual(box,{width:360,height:640},'Fidelity/playback workload stays at the authored 1x canvas');
+ };
+ await checkRaster();
  for(const at of [0,1,2,3,4]){
   const s=await b.evaluate(`(async()=>{const api=window.movieStarPreview.stage;await api.seek(${at});return api.snapshot();})()`);
   assert.equal(s.videos.length,2);
@@ -68,6 +73,7 @@ try{
  }
  await b.evaluate('window.movieStarPreview.stage.seek(0)');await b.click('#play');
  await b.wait('window.movieStarPreview.stage.metrics.finished||window.movieStarPreview.stage.error',12000);
+ await checkRaster();
  const m=await b.evaluate('window.movieStarPreview.stage.metrics');
  await writeFile(OUT+'/playback.json',JSON.stringify(m,null,2));
  assert.equal(m.error,null);assert.equal(m.stalls,0);
@@ -112,10 +118,12 @@ try{
  await b.click('#restart');await b.click('#play');await b.click('#pause');
  const paused=await b.evaluate('window.movieStarPreview.stage.snapshot()');assert.ok(paused.videos.every(v=>v.paused));
  // Capture after timing: CDP screenshots can perturb headless frame scheduling.
- await b.evaluate(`(async()=>{await window.movieStarPreview.stage.seek(0);const stage=document.getElementById('stage');stage.style.maxWidth='none';stage.style.width=(360+stage.offsetWidth-stage.clientWidth)+'px';await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));})()`);
+ await b.evaluate('window.movieStarPreview.stage.seek(0)');
+ await checkRaster();
  const clip=await b.evaluate(`(()=>{const r=document.querySelector('iframe:not(.pending)').getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,scale:1};})()`);
  const screenshot=await b.send('Page.captureScreenshot',{format:'png',clip,captureBeyondViewport:true});
  await writeFile(OUT+'/native.png',Buffer.from(screenshot.data,'base64'));
+ await checkRaster();
 }finally{await b.close();}
 '''
             values = {'HELPER': (repo/'experiments/live_browser_preview/browser.mjs').as_uri(), 'CHROME': chrome,
