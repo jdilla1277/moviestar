@@ -1,7 +1,7 @@
 # Personal Cloud projects
 
 Use the explicit `cloud` command group to create and reopen projects owned by
-your connected account. Your service must have personal Cloud project access
+your connected account, or discover projects shared with it when supported. Your service must have personal Cloud project access
 enabled. This initial client supports project metadata; inspect capabilities
 for the operations your service currently advertises.
 
@@ -55,13 +55,36 @@ account website.
 You can open **My projects** on the same service's account page and select it,
 or bookmark `/account/projects?project=PROJECT_ID` on that service.
 
-Each project currently reports `id`, `title`, `state`, `owner_id`, and
-`current_revision`. Missing source, job, or result collections are unavailable
+Each project reports `id`, `title`, `state`, `owner_id`, and
+`current_revision`. List results include `access.role`; detail reads preserve
+the service’s `owner` or `viewer` role when supplied. Missing source, job, or result collections are unavailable
 through this metadata contract; they do not establish that the project has no
 media. Local editing commands retain their current behavior and operate on
 local workspaces. Cloud metadata commands require no local FFmpeg execution or
 transcription and never upload media or select a local workspace. The package's
 base installation omits the optional local transcription stack.
+
+## Owned and shared discovery
+
+Owned projects and accepted shared projects are separate collections:
+
+```sh
+moviestar cloud projects list
+moviestar cloud projects list --shared
+moviestar cloud projects show PROJECT_ID
+```
+
+Call both lists to find all accessible projects. Owned items report
+`access.role: "owner"`; shared items report `access.role: "viewer"` and
+`shared_by`. Opening a shared ID uses the same `show` command and rechecks
+current access. Viewer invitations currently permit project metadata only;
+they do not grant access to assets, edits, rendering, downloads or resharing.
+
+The service must advertise the `recipient-projects-v1` sharing contract in
+`cloud capabilities`. An older or sharing-disabled service returns an explicit
+`unsupported_operation` for `--shared`; that does not mean the shared list is
+empty. Owned commands continue to work. The client uses the connected service's
+fixed routes and never follows a foreign discovery URL from capabilities.
 
 ## Pagination and recovery
 
@@ -71,7 +94,9 @@ moviestar cloud projects list --limit 20 --cursor NEXT_CURSOR
 ```
 
 Pass the previous response's opaque `next_cursor` unchanged; stop when it is
-null. Project IDs are explicit, so you can reopen an ID outside the first page.
+null. Keep a cursor with the same collection: use `--shared --cursor NEXT_CURSOR`
+for a shared page. Project IDs are explicit, so you can reopen an ID outside
+the first page. Titles can repeat; reopen by ID rather than guessing from a title.
 
 After a lost create response, rerun the same command with the **exact original
 title**. The CLI saves the key before sending the request and reuses it across
@@ -148,8 +173,8 @@ curl --fail-with-body \
 ```
 
 The service also accepts `GET /api/v1/account/cloud/projects` and
-`GET /api/v1/account/cloud/capabilities` with that key. Another account cannot
-read an owned private project by knowing its ID; missing and inaccessible
+`GET /api/v1/account/cloud/capabilities` with that key. Without an accepted grant, another account cannot
+read a private project just by knowing its ID; missing and inaccessible
 projects return HTTP 404. Revoking the key ends its API and MCP access while
 the owner can continue using the website.
 
@@ -204,3 +229,59 @@ one. Retry the original title/key after an uncertain outcome; never silently
 substitute a new key. Reuse returns the existing project or a conflict with a
 fresh-key suggestion. A discovered tool does not establish that the environment
 has enabled Cloud access, and an older service may not advertise the tool yet.
+
+
+## List and reopen through HTTP or hosted MCP
+
+HTTP API clients use the same service origin and active personal key:
+
+```sh
+curl --fail-with-body 'https://trymoviestar.com/api/v1/account/cloud/projects?limit=20' \
+  -H "Authorization: Bearer $MOVIESTAR_API_KEY"
+curl --fail-with-body 'https://trymoviestar.com/api/v1/account/cloud/shared-projects?limit=20' \
+  -H "Authorization: Bearer $MOVIESTAR_API_KEY"
+```
+
+Owned pages contain `{items: [PROJECT], next_cursor}`. When sharing is enabled,
+shared pages use `contract_version: "recipient-projects-v1"` and items containing
+`{project: PROJECT, shared_by, role: "viewer", permissions: ["projects:read"]}`.
+Read either project using `GET /api/v1/account/cloud/projects/PROJECT_ID`;
+with sharing enabled, detail includes `access.role`. Check `/capabilities` for
+sharing support before interpreting a missing discovery route. A missing route
+on a sharing-disabled service returns 404; it is not an empty shared collection.
+
+On an MCP service advertising `moviestar_list_projects` and
+`moviestar_get_project`, ask:
+
+> List my owned projects and projects shared with me. Show which is which.
+> Open project PROJECT_ID and give me its website link.
+
+Developer MCP calls:
+
+```javascript
+const owned = await client.callTool({
+  name: "moviestar_list_projects",
+  arguments: { collection: "owned", limit: 20 },
+});
+const shared = await client.callTool({
+  name: "moviestar_list_projects",
+  arguments: { collection: "shared", limit: 20 },
+});
+const opened = await client.callTool({
+  name: "moviestar_get_project",
+  arguments: { project_id: "PROJECT_ID" },
+});
+```
+
+Each list returns `{collection, items: [{project, url, shared_by?}], next_cursor}`.
+Follow each collection's cursor unchanged until null. Get returns `{project, url}`;
+`project.access.role` distinguishes owner and viewer. The URL points to the same
+project in the account website, using the shared-project page for a viewer.
+The same ID works after reconnecting or when moving between Web, API, CLI and MCP.
+
+Shared MCP discovery disabled by the service returns
+`project_sharing_unavailable`, separately from a successful empty page. Revoked
+or inaccessible project IDs return the same safe unavailable error as missing
+IDs. A previous list, an old URL, or a cached role never authorizes a later read.
+These operations read metadata only and do not upload, publish, select a local
+workspace or create another project.

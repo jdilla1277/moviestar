@@ -89,7 +89,9 @@ and MCP access; deleting the revoked key record does not restore either.
 
 The account check advertises `account:read`. On services with personal Cloud
 projects enabled, the same key also authorizes
-[the project creation tool](cloud-projects.md#create-through-hosted-mcp).
+[project creation, listing and reopening tools](cloud-projects.md#list-and-reopen-through-http-or-hosted-mcp),
+subject to current ownership or accepted viewer grants. Account access does not
+grant collaborator writes or resharing.
 It does not unlock media/editing/render tools. OAuth discovery and ChatGPT
 linking remain available alongside this developer-controlled mode.
 
