@@ -60,6 +60,15 @@ base package normally. Avoid removing shared libraries from an environment used
 by other tools. No model runs or downloads merely because you add an extra;
 model use remains explicit through local transcription or `models pull`.
 
+Moviestar defaults ONNX Runtime's
+[`ORT_DISABLE_TELEMETRY`](https://github.com/microsoft/onnxruntime/blob/v1.31.1/docs/Privacy.md#disabling-telemetry)
+to `1` before
+loading the local speech dependencies. This prevents its native telemetry
+uploader from starting and potentially hanging during process shutdown after
+transcription finishes. It does not change inference settings or model
+downloads. An explicit value already set by the caller is preserved; changing
+the setting after ONNX Runtime has initialized cannot stop an existing uploader.
+
 For a source checkout used to develop or run the complete test suite:
 
 ```sh
