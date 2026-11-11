@@ -17,7 +17,7 @@ function probe(expected){
         const media=videos.find(m=>JSON.stringify(m.path)===JSON.stringify(v.path)),box=snapshot.boxes.find(b=>JSON.stringify(b.path)===JSON.stringify(v.path));
         const decoded=snapshot.videos.find(m=>JSON.stringify(m.path)===JSON.stringify(v.path));
         return media?.asset===v.asset&&Math.abs(media.source_start-v.start)<1e-6&&media.object_position===v.object_position&&box&&
-          decoded?.ready_state>=2&&!decoded.seeking&&Math.abs(decoded.media_time-v.start)<1e-3&&
+          decoded?.asset===v.asset&&decoded.ready_state>=2&&!decoded.seeking&&Math.abs(decoded.media_time-v.start)<1e-3&&
           ['x','y','width','height'].every(k=>Math.abs(box.rect[k]-v.rect[k])<=.2);
       }));
       observation.semantic_snapshot=snapshot;

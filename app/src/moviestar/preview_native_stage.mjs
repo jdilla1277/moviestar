@@ -300,7 +300,7 @@ window.moviestarLiveStage={ready,metrics,
   snapshot(){
     if(cuts)return cuts.snapshot();
     return {request_id:packet.request_id,state_id:packet.state_id,time:this.time,source:sourceFrame(),
-      videos:videos.map(item=>({path:item.path,source:sourceFrame(item),media_time:item.video.currentTime,paused:item.video.paused,seeking:item.video.seeking,ready_state:item.video.readyState})),
+      videos:videos.map(item=>({path:item.path,asset:item.video.currentSrc.match(/\/assets\/([a-f0-9]{24})(?:[?#]|$)/)?.[1]??null,source:sourceFrame(item),media_time:item.video.currentTime,paused:item.video.paused,seeking:item.video.seeking,ready_state:item.video.readyState})),
       boxes:window.moviestarScene.entries.map(({node,element})=>{
         const r=element.getBoundingClientRect();let opacity=1;
         for(let ancestor=element;ancestor;ancestor=ancestor.parentElement)opacity*=Number(getComputedStyle(ancestor).opacity);
