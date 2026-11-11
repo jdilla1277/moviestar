@@ -109,6 +109,7 @@ for browser acceptance, pagination, offline previews and revocation.
 
 - [Getting started](docs/getting-started.md)
 - [Agent guide](docs/agent-guide.md)
+- [Personal API keys and remote MCP](docs/api-keys.md)
 - [Install the Moviestar skill](docs/install-skill.md)
 - [Documentation index](docs/README.md)
 
