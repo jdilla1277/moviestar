@@ -27,6 +27,8 @@ AI agents. Start with the path that matches your task:
   installations.
 - [v0.7.0 release notes](releases/v0.7.0.md) — preview the first open-source
   release and its upgrade notes.
+- [Overlay font metrics](font-metrics.md) — font-aware wrapping, ink overhang,
+  and the limits of estimated bounds.
 - [Complete command guide](../app/README.md) — browse every command family and
   feature.
 

@@ -29,6 +29,7 @@ dependencies = [
     "click>=8.0",
     "keyring>=25.0",
     "rapidfuzz>=3.0",
+    "uharfbuzz>=0.53.0",  # Apache-2.0; bundled HarfBuzz: MIT (see docs/font-metrics.md)
 ]
 
 [project.urls]

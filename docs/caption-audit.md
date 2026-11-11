@@ -103,8 +103,9 @@ error; any already-created frames remain available for diagnosis.
 ## What this establishes
 
 The interval report covers selected authored text on the complete result clock.
-Its rectangles are the current overlay planner's character-width estimates,
-not measured glyph ink; rotation and italic overhang can extend beyond them.
+Its rectangles use the overlay planner's [font advances and horizontal ink
+overhang](font-metrics.md), while vertical placement and effects remain estimates.
+Rotation, stroke, shadow, and renderer differences can extend beyond them.
 Authored presence and opacity do not establish actual pixel visibility through
 other elements or against a changing background.
 
