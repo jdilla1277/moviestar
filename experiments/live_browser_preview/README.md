@@ -507,3 +507,77 @@ The selected-window change adds no proxy, persistent scene cache, new rendering
 backend or viewer redesign. General native/export pixel/color parity remains
 separate; the regression suite also checks a nonzero-result window against
 actual watch/export output and routed audio.
+
+## Undo-history depth comparison
+
+`history_benchmark.py` repeats the unchanged real-CLI/browser gates with fresh
+owned fixtures starting at **0, 20 and 50** undo entries. Twenty timed edits
+finish at 20, 40 and 50 entries respectively; the last case exercises FIFO
+rollover on every edit. Source media and the current document are held constant
+across starting depths. The setup uses real revision diffs, validates the seeded
+chain and returns to the same current state before timing. It resets only a new
+fixture's setup journal, never a supplied project or the timed edit history.
+
+```sh
+python experiments/live_browser_preview/history_benchmark.py \
+  --profile long-source --revision TESTED_COMMIT --out /tmp/history-depth-new
+python experiments/live_browser_preview/history_benchmark.py \
+  --profile cuts --revision TESTED_COMMIT --out /tmp/history-cuts-new
+```
+
+The long-source profile covers beginning/middle/end of a 90-minute synthetic
+recording in hour-long 121-scene projects, in both orientations. The cut profile
+uses the generated nine-second A → B → A reference, retaining source-frame,
+caption/layout, output-cue and cut-clock checks. The package regression suite
+also covers pending-seek Play/Pause/disposal, source-EOF audio and surround
+center-channel dialogue; passing edit latency alone does not replace those tests.
+
+For a before/after comparison, run this **same harness** with each version's
+separately installed Python environment and identical dependencies/browser.
+Supply the first run's generated `ninety-minutes.mp4` through `--source` on the
+second run so both reference the same file. Record the actual product revision
+through `--revision`; the report also records the imported `spec.py` hash and
+harness-file hashes. Keep failed samples and version/environment boundaries.
+`--orientation landscape --positions middle` selects a smaller diagnostic run;
+it is not the complete matrix. `--histories` selects explicit depths.
+
+Each edit records `cli_completion_ms`, `journal_before`, `journal_after` and
+`spec_bytes`, in addition to the existing command-plus-visible timing and source
+counters. Reading those diagnostic spec sizes happens after the timed result.
+Every sample still needs a fresh correct visible revision and command success
+within **3,000 ms**; a p95 below the limit cannot hide a slow individual edit.
+Cold navigation, canonical/source seeks, undo/restoration and actual Play keep
+their separate fields and unchanged gates. Profiling must run separately from
+these uninstrumented series.
+
+Private-media checks reference footage in place and put paths, caption text,
+pixels and logs in the output directory: **keep the entire directory private**.
+
+```sh
+python experiments/live_browser_preview/history_benchmark.py \
+  --profile real --source /private/recording.mp4 --srt /private/subtitles.srt \
+  --source-offset 2 --revision TESTED_COMMIT --out /private/history-real-new
+```
+
+The selected five-second window begins one second after `--source-offset`,
+inside the hour-long project. Supplied SRT cues must already fit the recording's
+clock and speaker; clipping time ranges does not align words or separate speakers.
+Canonical caption parity is distinct from physical speech/caption/lip-sync review.
+
+The first #154 implementation removes copies of journals that are immediately
+discarded. It preserves caller/result isolation, all historical-state validation,
+the 50-entry cap and `save_spec`'s fresh on-disk reread. It does not introduce
+validation caching or change the single-writer atomic-replacement contract into
+a transaction/conflict-detection guarantee for concurrent writers.
+
+The retained [synthetic comparison](history-copy-results.json) measures baseline
+`a09dba6` and product candidate `6b555a3` with the same locked harness and installed
+wheels on an Apple M4 / 24 GiB shared Mac. It includes all 24 cases / 480 edits per
+build, actual depths/spec sizes, provenance and failures. Long-source case p95s
+at 50 entries ranged 3,926–4,040 ms before and 2,871–4,138 ms after; at 20 entries
+they ranged 3,079–3,199 ms before and 2,298–2,888 ms after. These are ranges of
+case-specific p95s, not pooled percentiles. Every synthetic non-latency gate
+passed, including all hard-cut playback checks. Misses fell from 142/480 to
+14/480; the candidate maximum was 4,487 ms. **The copy reduction does not meet
+the complete per-edit target or close #154.** All samples remain in the report;
+no profiler timing is used for acceptance.
