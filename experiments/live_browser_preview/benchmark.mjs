@@ -82,6 +82,11 @@ try{
   await browser.evaluate('window.moviestarLive.stage.seek(0)');
   const specPath=join(root,'moviestar/spec.json'),original=JSON.parse(await readFile(specPath,'utf8')).spatial;
   const initial=await browser.evaluate('window.moviestarLive.current');
+  let journalBefore=fixture.initial_history;
+  if(journalBefore!==undefined){
+    const saved=JSON.parse(await readFile(specPath,'utf8'));
+    check(saved.revisions.length===journalBefore,'requested starting history depth is exact');
+  }
   for(let i=0;i<20;i++){
     const model=structuredClone(original),title='CLI edit '+(i+1);
     for(const scene of segmented?fixture.segments.map(segment=>segment.scene_id):['review']){
@@ -92,15 +97,21 @@ try{
     }
     const before=await browser.evaluate('window.moviestarLive.current.request_id');
     const started=Date.now(),file=join(out,'edit.json');await writeFile(file,JSON.stringify(model));
-    const operation=cli(['composition','model','apply',file]);operation.catch(()=>{});
+    let commandMs;const operation=cli(['composition','model','apply',file]).then(value=>{commandMs=Date.now()-started;return value;});operation.catch(()=>{});
     await browser.wait(`window.moviestarLive.is_current&&window.moviestarLive.current.request_id!==${JSON.stringify(before)}&&window.moviestarLive.stage.snapshot().boxes.some(box=>box.kind==='text'&&box.text===${JSON.stringify(title)})`,10000);
     const event=await browser.evaluate('window.moviestarLive.events.at(-1)');
     await operation;const ended=Date.now();
     const current=await browser.evaluate('({item:window.moviestarLive.current,prepared_at:window.moviestarLive.stage.metrics.prepared_at})');
-    const entry={edit:i+1,visible_ms:event.ready_at-started,cli_and_visible_ms:Math.max(ended,event.ready_at)-started,
+    const entry={edit:i+1,cli_completion_ms:commandMs,visible_ms:event.ready_at-started,cli_and_visible_ms:Math.max(ended,event.ready_at)-started,
       detected_after_ms:Math.round(current.item.requested_at*1000-started),generation_ms:current.item.generation_ms,
       generation_to_stage_prepared_ms:Math.round(current.prepared_at-current.item.finished_at*1000),
       request_id:event.request_id,state_id:event.state_id};
+    if(journalBefore!==undefined){
+      const raw=await readFile(specPath,'utf8'),saved=JSON.parse(raw);
+      Object.assign(entry,{journal_before:journalBefore,journal_after:saved.revisions.length,spec_bytes:Buffer.byteLength(raw)});
+      check(saved.revisions.length===Math.min(journalBefore+1,fixture.revision_limit),`edit ${i+1} preserves the journal and FIFO cap`);
+      journalBefore=saved.revisions.length;
+    }
     const delivery=await(await fetch(url+'state')).json().then(s=>s.native_video_delivery);
     if(delivery){entry.source_bytes_written=delivery.bytes_written;entry.source_validated_heads=delivery.validated_heads;}
     result.edits.push(entry);check(entry.visible_ms>=0&&entry.cli_and_visible_ms<3000,`CLI edit ${i+1} visible and command complete within 3000ms`);await persist();

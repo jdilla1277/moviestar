@@ -68,6 +68,9 @@ def run_project_case(root, folder, start, end, chrome, case_fields, *, sample_ti
     # Establish the same CLI-normalized state before the timed edit series.
     model = folder/'initial.json'; model.write_text(json.dumps(json.loads((root/'moviestar'/'spec.json').read_text())['spatial']))
     subprocess.run([sys.executable, '-m', 'moviestar.cli', 'composition', 'model', 'apply', str(model)], cwd=root, check=True, capture_output=True)
+    if 'initial_history' in case_fields:
+        from history import seed_history
+        case_fields = {**case_fields, **seed_history(root, case_fields['initial_history'])}
     before = time.perf_counter()
     snapshot = read_snapshot(root, start, end)
     snapshot_ms = (time.perf_counter() - before) * 1000
