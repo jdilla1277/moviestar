@@ -50,7 +50,8 @@ jobs:
             -q
 
   test:
-    runs-on: ubuntu-latest
+    # Keep the OS/distro FFmpeg policy explicit as ubuntu-latest migrates.
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -71,12 +72,9 @@ jobs:
           cache-dependency-path: app/pyproject.toml
 
       # Moviestar shells out to FFmpeg and ffprobe for media operations.
-      - name: Install ffmpeg
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          ffmpeg -version | head -1
-          ffprobe -version | head -1
+      - name: Set up and verify FFmpeg
+        timeout-minutes: 4
+        run: python bin/setup-ci-ffmpeg
 
       # Cache the faster-whisper tiny model so CI doesn't re-download ~75MB
       # on every run. Key includes the model name; bump to invalidate.

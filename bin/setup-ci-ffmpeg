@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""Bound FFmpeg setup on the Ubuntu media-test runner; no extra dependencies."""
+
+import argparse
+import json
+from pathlib import Path
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+
+ROOT = Path(__file__).resolve().parents[1]
+FILTERS = {
+    "drawtext", "ass", "subtitles", "concat", "overlay", "xfade", "aresample", "atempo",
+}
+ENCODERS = {"libx264", "aac", "mpeg4", "png", "mjpeg", "pcm_s16le"}
+
+
+class Runner:
+    def __init__(self):
+        # Leave cancellation/cleanup margin inside the workflow's four minutes.
+        self.deadline = time.monotonic() + 210
+
+    def run(self, args, *, seconds=10, root=False):
+        # sudo's descendants must be timed out as root, so cancellation cannot
+        # leave an apt/dpkg process holding locks after the helper has exited.
+        reserve = 10 if root else 0
+        budget = min(seconds, self.deadline - time.monotonic() - reserve)
+        if budget <= 0:
+            raise RuntimeError("FFmpeg setup exhausted its 210-second budget")
+        if root:
+            args = ["sudo", "-n", "timeout", "--kill-after=5s", f"{budget}s", *args]
+        try:
+            result = subprocess.run(
+                args, check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, timeout=budget + reserve,
+            )
+            return result.stdout
+        except FileNotFoundError as exc:
+            raise RuntimeError(f"Missing executable: {args[0]}") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"Command timed out after {budget:.1f}s: {shlex.join(args)}") from exc
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(
+                f"Command failed (exit {exc.returncode}): {shlex.join(args)}\n{exc.stdout[-4000:]}"
+            ) from exc
+
+
+def verify(runner):
+    majors = []
+    for tool in ("ffmpeg", "ffprobe"):
+        version = runner.run([tool, "-version"]).splitlines()[0]
+        print(f"{shutil.which(tool)}: {version}", flush=True)
+        match = re.search(r"version (?:n)?(\d+)\.", version)
+        if not match or int(match[1]) < 6:
+            raise RuntimeError(f"Need FFmpeg/ffprobe 6 or newer: {version}")
+        majors.append(int(match[1]))
+    if majors[0] != majors[1]:
+        raise RuntimeError("FFmpeg and ffprobe major versions differ")
+    for flag, required in (("-filters", FILTERS), ("-encoders", ENCODERS)):
+        listing = runner.run(["ffmpeg", "-hide_banner", flag])
+        available = {
+            fields[1] for line in listing.splitlines()
+            if len(fields := line.split()) >= 2
+        }
+        if missing := required - available:
+            raise RuntimeError(f"FFmpeg {flag} missing: {', '.join(sorted(missing))}")
+
+    # Listing a filter is insufficient: execute drawtext + libass and encode
+    # both H.264 and AAC, then verify that ffprobe can read the generated media.
+    with tempfile.TemporaryDirectory(prefix="moviestar-ci-") as directory:
+        folder = Path(directory)
+        ass = folder / "smoke.ass"
+        ass.write_text("""[Script Info]
+ScriptType: v4.00+
+PlayResX: 96
+PlayResY: 64
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Inter,12,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,2,0,0,0,1
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:00.25,Default,,0,0,0,,CI
+""", encoding="utf-8")
+        fonts = ROOT / "app/src/moviestar/fonts"
+        output = folder / "smoke.mp4"
+        runner.run([
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "color=blue:s=96x64:r=24:d=0.25",
+            "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=0.25",
+            "-filter_complex", f"[0:v]drawtext=fontfile='{fonts / 'Inter-Regular.ttf'}':"
+            f"text=Moviestar:fontsize=12,ass=filename='{ass}':fontsdir='{fonts}'[v]",
+            "-map", "[v]", "-map", "1:a", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-t", "0.25", str(output),
+        ], seconds=20)
+        probe = json.loads(runner.run([
+            "ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(output),
+        ]))
+        codecs = {(s["codec_type"], s["codec_name"]) for s in probe["streams"]}
+        if (
+            not {("video", "h264"), ("audio", "aac")} <= codecs
+            or not .24 <= float(probe["format"]["duration"]) <= .30
+        ):
+            raise RuntimeError(f"FFmpeg smoke render has unexpected streams/duration: {probe}")
+    print("FFmpeg filters, encoders, and generated-media smoke check passed.", flush=True)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--check-only", action="store_true", help="Verify tools without installing anything")
+    args = parser.parse_args(argv)
+    runner = Runner()
+    try:
+        try:
+            verify(runner)
+            print("Reusing capable preinstalled FFmpeg; no apt network access needed.", flush=True)
+            return 0
+        except (RuntimeError, ValueError, KeyError, IndexError) as exc:
+            if args.check_only:
+                raise RuntimeError(str(exc)) from exc
+            print(f"Preinstalled FFmpeg is unavailable or unsuitable: {exc}", flush=True)
+        print("Installing Ubuntu's FFmpeg package with bounded apt waits (update 45s, install 120s).", flush=True)
+        apt = ["apt-get", "-o", "Acquire::Retries=0", "-o", "Acquire::http::Timeout=15",
+               "-o", "Acquire::https::Timeout=15", "-o", "DPkg::Lock::Timeout=15"]
+        print(runner.run(
+            [*apt, "-o", "APT::Update::Error-Mode=any", "update"], seconds=45, root=True,
+        ), flush=True)
+        print(runner.run(
+            [*apt, "install", "-y", "--no-install-recommends", "ffmpeg"], seconds=120, root=True,
+        ), flush=True)
+        verify(runner)
+        return 0
+    except (RuntimeError, ValueError, KeyError, IndexError) as exc:
+        print(f"FFmpeg setup failed: {exc}\nCheck the runner image, PATH, and Ubuntu mirror health; see #135. "
+              "Package tests were not run. Fix setup before retrying; do not skip the media suite.", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

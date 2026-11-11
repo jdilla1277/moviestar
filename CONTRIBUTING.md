@@ -37,6 +37,33 @@ The shared Conductor settings create `app/.venv` when a workspace is created.
 The Run menu provides the fast test suite and the full preflight check; FFmpeg
 and ffprobe must still be installed on the host.
 
+### Media-test CI setup
+
+The fast and full media suites use `ubuntu-26.04`, rather than the moving
+`ubuntu-latest` label. `python bin/setup-ci-ffmpeg` first checks the tools on
+PATH. A usable pair must have matching FFmpeg/ffprobe major versions, version
+6 or newer, the required filters (including drawtext and libass), and the
+encoders used by our generated-media tests. Patch versions follow Ubuntu's
+maintained archive; exact versions and executable paths appear in each run.
+The [runner's software inventory](https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2604-Readme.md)
+does not currently list FFmpeg, so the helper also supports a missing install.
+
+When tools are missing or unsuitable, setup makes one attempt with Ubuntu's
+official `ffmpeg` package and `--no-install-recommends`. Apt update has a
+45-second limit and installation a 120-second limit, with no download retries,
+15-second network/lock waits, and root-owned GNU timeout cleanup. The helper's
+overall budget is 210 seconds inside a four-minute workflow step. A failed
+mirror or unsuitable build fails setup with diagnostics, preserving the
+remaining job budget instead of retrying tests or reducing coverage.
+
+Setup verifies filter/encoder listings and renders a short video with the
+bundled Inter font, drawtext, ASS subtitles, H.264, and AAC, then probes the
+result. `python bin/setup-ci-ffmpeg --check-only` runs these checks without
+installing anything. The test suite covers failed downloads, timeouts, and
+unsuitable tools; on GitHub's Linux runner it also exercises a real privileged
+command timeout. This helper is CI tooling; local installation still follows
+the [installation guide](docs/installation.md).
+
 ## Contribution terms
 
 Moviestar is licensed under the Apache License 2.0. By intentionally submitting
