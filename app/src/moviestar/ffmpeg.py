@@ -1754,11 +1754,16 @@ def measure_region_stability(
     Used by camera preview to detect the selected content changing
     mid-hold (a menu closing, a page scrolling). Best-effort: returns
     None when ffmpeg fails or emits no score, and the caller skips the
-    check rather than failing the command.
+    check rather than failing the command. Compare exactly the first decoded
+    frame at each seek, with both timestamps reset for frame synchronization.
     """
     if not os.path.exists(video_path):
         return None
-    crop_filter = (
+    # An output limit does not bound filter evaluation: FFmpeg can feed later
+    # frames to SSIM, whose summary averages every comparison. Bound each input
+    # before SSIM and align their single frames even at fractional/EOF seeks.
+    frame_filter = (
+        "trim=end_frame=1,setpts=PTS-STARTPTS,"
         f"crop={round(crop['w'])}:{round(crop['h'])}:"
         f"{round(crop['x'])}:{round(crop['y'])},"
         f"scale={scale_width}:-2,setsar=1"
@@ -1768,8 +1773,8 @@ def measure_region_stability(
         "-ss", str(at_a), "-i", video_path,
         "-ss", str(at_b), "-i", video_path,
         "-filter_complex",
-        f"[0:v]{crop_filter}[a];[1:v]{crop_filter}[b];[a][b]ssim",
-        "-frames:v", "1", "-f", "null", "-",
+        f"[0:v]{frame_filter}[a];[1:v]{frame_filter}[b];[a][b]ssim",
+        "-an", "-frames:v", "1", "-f", "null", "-",
     ]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -1777,7 +1782,8 @@ def measure_region_stability(
         return None
     if result.returncode != 0:
         return None
-    match = re.search(r"All:([0-9.]+)", result.stderr)
+    # Strongly inverted content can have a valid negative SSIM score.
+    match = re.search(r"All:(-?[0-9.]+)", result.stderr)
     if match is None:
         return None
     return float(match.group(1))
