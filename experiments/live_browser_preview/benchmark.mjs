@@ -1,22 +1,24 @@
 // Real CLI save -> fresh visible browser revision; no completed video export.
-import {spawn} from 'node:child_process';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {Browser,sleep} from './browser.mjs';
+import {DIAGNOSTICS_SCHEMA,startCommand,observeEdit,previewProbeExpression} from './diagnostics.mjs';
 
 const [url,root,out,python,chrome]=process.argv.slice(2);
 if(!chrome)throw Error('usage: benchmark.mjs URL PROJECT OUT PYTHON CHROME');
 await mkdir(out,{recursive:true});
-const result={cold:{},edits:[],checks:[],problems:[],browser_exceptions:[]};
+const result={diagnostics_schema:DIAGNOSTICS_SCHEMA,cold:{},edits:[],edit_attempts:[],commands:[],checks:[],problems:[],browser_exceptions:[]};
 const check=(condition,message)=>{result.checks.push({check:message,passed:Boolean(condition)});if(!condition)result.problems.push(message);};
 const persist=()=>writeFile(join(out,'browser-report.json'),JSON.stringify(result,null,2));
+let commandNumber=0;
+function launchCli(args,label='command-'+String(++commandNumber).padStart(2,'0')){
+  const operation=startCommand(python,['-m','moviestar.cli',...args],{cwd:root,out,label});
+  result.commands.push(operation.record);return operation;
+}
 async function cli(args){
-  const child=spawn(python,['-m','moviestar.cli',...args],{cwd:root,stdio:['ignore','pipe','pipe']});
-  let stdout='',stderr='';child.stdout.on('data',value=>stdout+=value);child.stderr.on('data',value=>stderr+=value);
-  const timer=setTimeout(()=>child.kill('SIGKILL'),15000);
-  const code=await new Promise((a,b)=>{child.on('error',b);child.on('exit',a);});clearTimeout(timer);
-  if(code!==0)throw Error(`CLI exit ${code}: ${stdout} ${stderr}`);
-  return JSON.parse(stdout);
+  const operation=launchCli(args);await operation.done;await operation.flush();
+  if(operation.record.status!=='succeeded')throw Error(`${operation.record.label}: ${operation.record.status}; see its command/stdout/stderr files`);
+  return operation.value;
 }
 await persist();
 const browser=await Browser.launch(chrome,out);
@@ -96,13 +98,19 @@ try{
       children.find(node=>node.instance_id==='speaker').layout.left=50+(i%2?0:20);
     }
     const before=await browser.evaluate('window.moviestarLive.current.request_id');
-    const started=Date.now(),file=join(out,'edit.json');await writeFile(file,JSON.stringify(model));
-    let commandMs;const operation=cli(['composition','model','apply',file]).then(value=>{commandMs=Date.now()-started;return value;});operation.catch(()=>{});
-    await browser.wait(`window.moviestarLive.is_current&&window.moviestarLive.current.request_id!==${JSON.stringify(before)}&&window.moviestarLive.stage.snapshot().boxes.some(box=>box.kind==='text'&&box.text===${JSON.stringify(title)})`,10000);
-    const event=await browser.evaluate('window.moviestarLive.events.at(-1)');
-    await operation;const ended=Date.now();
-    const current=await browser.evaluate('({item:window.moviestarLive.current,prepared_at:window.moviestarLive.stage.metrics.prepared_at})');
-    const entry={edit:i+1,cli_completion_ms:commandMs,visible_ms:event.ready_at-started,cli_and_visible_ms:Math.max(ended,event.ready_at)-started,
+    const label='edit-'+String(i+1).padStart(2,'0'),file=join(out,label+'.input.json');
+    const attempt=await observeEdit({specPath,priorRequest:before,
+      prepare:()=>writeFile(file,JSON.stringify(model)),
+      start:()=>launchCli(['composition','model','apply',file],label),
+      serverProbe:async()=>{const response=await fetch(url+'state',{signal:AbortSignal.timeout(1000)});if(!response.ok)throw Error('Server state HTTP '+response.status);return response.json();},
+      probe:()=>browser.evaluate(previewProbeExpression(title))});
+    attempt.trace.edit=i+1;attempt.trace.input_file=label+'.input.json';result.edit_attempts.push(attempt.trace);
+    await writeFile(join(out,label+'.trace.json'),JSON.stringify(attempt.trace,null,2));await persist();
+    if(attempt.trace.outcome!=='succeeded')throw Error(`${label}: ${attempt.trace.outcome}; see ${label}.trace.json and command/stdout/stderr files`);
+    const started=attempt.trace.started_at,event=attempt.preview.visible_event;
+    if(event?.request_id!==attempt.preview.current.request_id)throw Error('Visible event does not match the confirmed preview');
+    const current={item:attempt.preview.current,prepared_at:attempt.preview.frames.find(frame=>frame.request_id===event.request_id)?.prepared_at};
+    const entry={edit:i+1,cli_completion_ms:attempt.trace.cli_completion_ms,visible_ms:event.ready_at-started,cli_and_visible_ms:attempt.trace.measurement_ms,
       detected_after_ms:Math.round(current.item.requested_at*1000-started),generation_ms:current.item.generation_ms,
       generation_to_stage_prepared_ms:Math.round(current.prepared_at-current.item.finished_at*1000),
       request_id:event.request_id,state_id:event.state_id};

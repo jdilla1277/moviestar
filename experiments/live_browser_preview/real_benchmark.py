@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 
-from benchmark import run_project_case
+from benchmark import driver_hashes, run_project_case
 from scaling import prepare_window
 from moviestar.spec import save_spec
 from moviestar.timecodes import format_timecode
@@ -56,7 +56,7 @@ def main():
     if args.baseline_results:
         for case in json.loads(args.baseline_results.read_text())['cases']:
             references[case['canvas']] = {str(item['at']): item['source_pixels']['sha256'] for item in case['parity']}
-    report = {'profile': 'private-real-media', 'cases': [], 'resources': [], 'problems': [],
+    report = {'profile': 'private-real-media', 'driver_files_sha256': driver_hashes(), 'cases': [], 'resources': [], 'problems': [],
               'versions': {'python': sys.version.split()[0], 'node': subprocess.check_output(['node', '--version'], text=True).strip(),
                            'chrome': subprocess.check_output([chrome, '--version'], text=True).strip()},
               'scope': 'Private source paths/text/pixels may appear in this directory. No upload is performed.'}

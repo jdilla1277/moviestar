@@ -7,7 +7,7 @@ import platform
 import subprocess
 import sys
 
-from benchmark import run_project_case
+from benchmark import driver_hashes, run_project_case
 from cuts import prepare_cuts
 from real_benchmark import srt_cues
 from moviestar.spec import save_spec
@@ -27,7 +27,7 @@ def main():
     if args.source and len(args.source)!=2:parser.error('supply exactly two --source recordings')
     if os.environ.get('PYTHONPATH'):
         os.environ['PYTHONPATH']=os.pathsep.join(str(Path(p).resolve()) for p in os.environ['PYTHONPATH'].split(os.pathsep) if p)
-    report={'profile':'private-real-cuts' if args.source else args.profile,'versions':{
+    report={'profile':'private-real-cuts' if args.source else args.profile,'driver_files_sha256':driver_hashes(),'versions':{
         'python':sys.version.split()[0],'node':subprocess.check_output(['node','--version'],text=True).strip(),
         'chrome':subprocess.check_output([chrome,'--version'],text=True).strip(),'platform':platform.platform()},
         'cases':[],'resources':[],'problems':[]}
