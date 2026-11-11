@@ -948,6 +948,31 @@ def open_account(email_link: str | None = None, request_id: str | None = None,
     )
 
 
+@account.command("keys")
+@click.option("--no-browser", is_flag=True, help="Return the website link without opening a browser.")
+def api_keys(no_browser: bool = False) -> None:
+    """Create and manage API keys on the Moviestar website.
+
+    Sign in on the website to create, copy, or revoke a key. This command only
+    opens that page; it never issues, reads, or stores API keys.
+    """
+    parsed = urlsplit(_account_url())
+    url = parsed._replace(path="/account/api-keys", query="", fragment="").geturl()
+    opened = False
+    if not no_browser:
+        try:
+            opened = bool(webbrowser.open(url))
+        except Exception:
+            pass
+    _emit({
+        "command": "account keys",
+        "status": "website_required" if no_browser else "opened" if opened else "browser_unavailable",
+        "url": url,
+        "opened_browser": opened,
+        "hint": "Sign in on the website to create, copy, or revoke an API key. Give this URL to the account owner; do not paste keys into conversations.",
+    })
+
+
 # Imported after the account helpers to avoid a circular command registration.
 from moviestar.account_terminal import resend, terms, verify
 
