@@ -82,7 +82,8 @@ try{
  }
  const videoFrames=CUTS?(await b.evaluate(`[...document.querySelector('iframe:not(.pending)').contentDocument.querySelectorAll('iframe')].flatMap(frame=>frame.contentWindow.moviestarLiveStage.metrics.video_frames??[])`)):m.video_frames;
  const qualities=CUTS?(await b.evaluate(`[...document.querySelector('iframe:not(.pending)').contentDocument.querySelectorAll('iframe')].flatMap(frame=>frame.contentWindow.moviestarLiveStage.metrics.video_quality??[])`)):m.video_quality;
- await writeFile(OUT+'/video-frames.json',JSON.stringify({videoFrames,qualities},null,2));
+ const qualityEvents=CUTS?(await b.evaluate(`[...document.querySelector('iframe:not(.pending)').contentDocument.querySelectorAll('iframe')].flatMap(frame=>frame.contentWindow.moviestarLiveStage.metrics.quality_events??[])`)):m.quality_events;
+ await writeFile(OUT+'/video-frames.json',JSON.stringify({videoFrames,qualities,qualityEvents},null,2));
  assert.equal(qualities.length,CUTS?6:2);
  assert.ok(qualities.every(q=>q.dropped_frames===0),'Neither decoder drops frames');
  const cueClock=measureCueClock(m,{fps:30,sourceStart:1,count:5,quality:qualities});
@@ -122,8 +123,8 @@ try{
                 if path.exists():
                     data = json.loads(path.read_text())
                     if name == 'playback.json':
-                        data = {key: data.get(key) for key in ('error', 'stalls', 'waiting_events', 'flashes', 'beeps', 'video_quality', 'paused_quality', 'settled_quality')}
-                    if name == 'video-frames.json': data = {'qualities': data['qualities']}
+                        data = {key: data.get(key) for key in ('error', 'stalls', 'waiting_events', 'cuts', 'quality_events', 'flashes', 'beeps', 'video_quality', 'paused_quality', 'settled_quality')}
+                    if name == 'video-frames.json': data = {key: data.get(key) for key in ('qualities', 'qualityEvents')}
                     diagnostics[name] = data
             assert result.returncode == 0, result.stdout+result.stderr+'\n'+json.dumps(diagnostics, indent=2)
             if not spatial and not cuts:

@@ -105,6 +105,7 @@ function onFrame(now,metadata){
   const running=playing&&!video.paused;
   const primary=videos.find(item=>item.primary);
   if(primary){primary.firstFrame=true;primary.frame={media_time:metadata.mediaTime,display_time:metadata.expectedDisplayTime};}
+  if(running&&primary)recordVideoQuality(primary,'frame');
   if(playing&&videoGroup){try{videoGroup.synchronize(videos.find(item=>item.primary));}catch(error){fail(error);return;}}
   const local=metadata.mediaTime-packet.source_start;
   if(packet.cut_segment&&running&&!stopTimer){
@@ -143,6 +144,7 @@ async function finishScene(){
   if(finishing||disposed||metrics.finished)return;
   // Pausing/seeking can discard decoded read-ahead frames. Measure playback
   // before that control work, while retaining the raw post-settle counters.
+  videos.forEach(item=>recordVideoQuality(item,'before-finish'));
   recordQuality();
   finishing=true;const attempt=playGeneration;playing=false;videoGroup?.pause();video.pause();
   metrics.paused_quality=quality();
@@ -162,6 +164,15 @@ function recordQuality(){
   metrics.quality=quality();metrics.video_quality=videos.map(item=>{const q=item.video.getVideoPlaybackQuality();return{
     path:item.path,total_frames:q.totalVideoFrames-(item.beforePlay?.totalVideoFrames??0),
     dropped_frames:q.droppedVideoFrames-(item.beforePlay?.droppedVideoFrames??0)};});
+}
+function recordVideoQuality(item,phase){
+  if(!audit||!item.beforePlay)return;
+  const q=item.video.getVideoPlaybackQuality(),drops=q.droppedVideoFrames-item.beforePlay.droppedVideoFrames;
+  if(phase==='frame'&&drops===item.reportedDrops)return;
+  item.reportedDrops=drops;
+  (metrics.quality_events??=[]).push({path:item.path,phase,at:Date.now(),media_time:item.video.currentTime,
+    callback_media_time:item.frame?.media_time,source_end:item.end,paused:item.video.paused,seeking:item.video.seeking,
+    rate:item.video.playbackRate,dropped_frames:drops,total_frames:q.totalVideoFrames-item.beforePlay.totalVideoFrames});
 }
 async function initialize(){
   const params=new URLSearchParams(location.search),request=params.get('request');
@@ -220,6 +231,7 @@ async function initialize(){
           item.callback=media.requestVideoFrameCallback(observe);return;
         }
         if(running&&audit){
+          recordVideoQuality(item,'frame');
           metrics.video_frames??=[];metrics.video_frames.push({path:item.path,...item.frame,number:sourceFrame(item).number});
         }
         if(packet.cut_segment&&running&&frame.mediaTime>=item.end-1/packet.fps-1e-6)freezeFollower(item);
@@ -311,7 +323,7 @@ window.moviestarLiveStage={ready,metrics,
     try{
       if(!packet.cut_segment&&(metrics.finished||this.time>=(packet.samples.length-1)/packet.fps-1e-6))await seekTo(0);
       if(!active())return;
-      metrics.frames=[];metrics.flashes=[];metrics.beeps=[];metrics.video_frames=[];metrics.waiting_events=[];metrics.stalls=0;metrics.finished=false;metrics.previous_white=false;delete metrics.first_presented_at;
+      metrics.frames=[];metrics.flashes=[];metrics.beeps=[];metrics.video_frames=[];metrics.waiting_events=[];metrics.quality_events=[];metrics.stalls=0;metrics.finished=false;metrics.previous_white=false;delete metrics.first_presented_at;
       metrics.play_at=Date.now();
       await audio.resume();
       if(!active())return;
@@ -325,11 +337,11 @@ window.moviestarLiveStage={ready,metrics,
       }
       if(!active())return;
       metrics.device_ready_at=Date.now();if(packet.cut_segment&&packet.samples.length===1){freezeLastFrame();videos.filter(item=>!item.primary).forEach(freezeFollower);}
-      for(const item of videos)item.beforePlay=item.video.getVideoPlaybackQuality();playing=true;
+      for(const item of videos){item.beforePlay=item.video.getVideoPlaybackQuality();delete item.reportedDrops;}playing=true;
       if(videoGroup)await videoGroup.play();else await video.play();
     }catch(error){if(active()){fail(error);throw error;}}
   },
-  pause(){if(cuts){cuts.pause();return;}if(playing&&videos.length)recordQuality();++playGeneration;playing=false;clearTimeout(stopTimer);stopTimer=null;videoGroup?.pause();video?.pause();},
+  pause(){if(cuts){cuts.pause();return;}if(playing&&videos.length){videos.forEach(item=>recordVideoQuality(item,'before-pause'));recordQuality();}++playGeneration;playing=false;clearTimeout(stopTimer);stopTimer=null;videoGroup?.pause();video?.pause();},
   async seek(at){if(cuts)return cuts.seek(at);this.pause();try{if(await seekTo(at))metrics.finished=false;}catch(error){fail(error);throw error;}},
   snapshot(){
     if(cuts)return cuts.snapshot();

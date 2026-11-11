@@ -34,8 +34,9 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
       return;
     }
     index++;reveal(index,false);
-    metrics.cuts.push({from:i,to:index,result_time:packet.range.from+packet.segments[index].offset,
-      expected_at:expectedAt,switched_at:Date.now()});
+    const cut={from:i,to:index,result_time:packet.range.from+packet.segments[index].offset,
+      expected_at:expectedAt,switched_at:Date.now()};
+    metrics.cuts.push(cut);
     try{
       await stages[index].api.play();
       if(!disposed&&playing&&attempt===generation){
@@ -44,6 +45,8 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
         // render quantum. Extra future padding here can outlive an outgoing
         // source's EOF and introduce silence even though the next clip runs.
         outputs(index);
+        Object.assign(cut,{audio_switched_at:Date.now(),audio_context_time:audio.currentTime,
+          incoming_time:stages[index].api.time,outgoing_time:stages[i].api.time});
         handoffTimer=setTimeout(()=>{if(!disposed&&playing&&attempt===generation)stages[i].api.pause();},1);
         arm(attempt);
       }

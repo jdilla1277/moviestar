@@ -129,13 +129,19 @@ jobs:
           pip install -e "./app[url-captions]"
           bin/check-dependency-licenses --extra url-captions
 
-      # --run-slow includes the fast tests too. Run the complete suite once:
-      # rendering tests made the old fast-then-full sequence exceed 25 minutes.
+      # Fail quickly on real-time PiP playback; run each test once across these
+      # two steps. The remaining suite retains every fast and slow test.
+      - name: Check native PiP playback
+        run: |
+          cd app
+          source .venv/bin/activate
+          pytest tests/test_native_pip_browser.py -q --basetemp="$RUNNER_TEMP/native-pip"
+
       - name: Run full suite (with --run-slow)
         run: |
           cd app
           source .venv/bin/activate
-          pytest --run-slow
+          pytest --run-slow --ignore=tests/test_native_pip_browser.py
 
       - name: Build and check package artifacts
         run: |
