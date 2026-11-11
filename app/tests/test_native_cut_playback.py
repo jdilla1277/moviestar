@@ -8,7 +8,7 @@ import pytest
 
 
 @pytest.mark.skipif(not shutil.which('node'), reason='Node required')
-@pytest.mark.parametrize('case',['initial_play','sequence','seek','pause_startup','dispose_startup','cancel_restart_seek','failure','source_eof_audio','buffer_fallback'])
+@pytest.mark.parametrize('case',['initial_play','sequence','seek','pause_startup','dispose_startup','cancel_restart_seek','failure','source_eof_audio','buffer_fallback','settle_failure','settle_cancel'])
 def test_cut_playback_controls(case):
     module=(Path(__file__).parents[1]/'src/moviestar/preview_native_cuts.mjs').as_uri()
     script=r'''
@@ -54,6 +54,15 @@ if(CASE==='initial_play'){
  const normal=stages[0].api.seek;stages[0].api.seek=async function(at){await new Promise(resolve=>resolveSeek=resolve);this.time=at;};
  metrics.finished=true;const pending=api.play();await flush();api.pause();resolveSeek();await pending;
  assert.equal(stages.reduce((n,s)=>n+s.api.plays,0),0,'Pause during restart seek must cancel Play');
+}else if(CASE==='settle_failure'||CASE==='settle_cancel'){
+ await api.seek(6);await api.play();
+ let release;
+ stages[2].api.settleEnd=CASE==='settle_failure'?async()=>{throw Error('final frame failed');}:()=>new Promise(r=>release=r);
+ stages[2].api.time=3;const pending=stages[2].api.onSegmentEnd(Date.now());
+ if(CASE==='settle_cancel'){await flush();api.pause();release();}
+ await pending;assert.equal(api.paused,true);assert.deepEqual(gains(),[0,0,0]);
+ assert.equal(metrics.finished,false,'Failed/canceled final seek must not claim completion');
+ if(CASE==='settle_failure')assert.match(metrics.error,/final frame failed/);
 }else if(CASE==='failure'){
  await api.play();stages[0].api.onFailure(Error('source expired'));
  assert.equal(api.paused,true);assert.match(metrics.error,/source expired/);assert.deepEqual(gains(),[0,0,0]);

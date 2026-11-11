@@ -15,7 +15,7 @@ from moviestar.project import load_project
 from moviestar.spec import empty_spec, save_spec
 
 
-def generate(root, portrait=False):
+def generate(root, portrait=False, *, pattern=False):
     root.mkdir(parents=True, exist_ok=False)
     source = root / 'cues.mp4'
     expression = 'aevalsrc=if(between(mod(t\\,1)\\,0.2\\,0.2666667)\\,0.25*sin(2*PI*880*t)\\,0):s=48000:d=8'
@@ -27,6 +27,9 @@ def generate(root, portrait=False):
         frame = np.empty((360,640,3),dtype=np.uint8)
         for number in range(240):
             frame[:] = (255,255,255) if number % 30 in {6,7} else (16,32,64)
+            if pattern and number % 30 not in {6,7}:
+                # A crop change must alter visible pixels, not just metadata.
+                frame[:, :, 0] = np.arange(640, dtype=np.uint16)*200//640
             for bit in range(8):
                 frame[:16,bit*16:(bit+1)*16] = 255 if number & (1<<bit) else 0
             process.stdin.write(frame.tobytes())

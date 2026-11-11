@@ -158,12 +158,13 @@ def test_native_window_rejects_misaligned_composition_wide_audio(live_project):
         compile_snapshot(read_snapshot(root, 2, 5))
 
 
-def test_native_window_rejects_a_selected_preset_with_native_fallback_guidance(live_project):
+def test_native_window_accepts_a_static_preset_without_rewriting_it(live_project):
     spec, _, root = live_project
     surround_scene(spec)
     save_spec(spec, cwd=root)
-    with pytest.raises(NativePreviewUnsupported, match='spatial'):
-        compile_snapshot(read_snapshot(root, 0, 1))
+    packet, _ = compile_snapshot(read_snapshot(root, 0, 1))
+    assert len(packet['media']) == 1
+    assert packet['source_start'] == 0
 
 
 @pytest.mark.parametrize('window,accepted', [((4, 6), True), ((2, 5), False), ((3, 4), False)])

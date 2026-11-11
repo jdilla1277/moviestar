@@ -636,3 +636,38 @@ harness before attributing a timing difference to a product change.
 **Keep real-input output directories entirely private.** Input models and raw
 CLI output may contain source paths, captions or other customer content. No
 upload is performed; do not attach these artifacts to a public issue or PR.
+
+### Representative picture-in-picture edits
+
+From the repository root, use a new output directory:
+
+```bash
+app/.venv/bin/python experiments/live_browser_preview/pip_benchmark.py --out /tmp/moviestar-pip-run-1
+```
+
+This prepares a small portrait two-camera preset composition, then measures
+eight actual command operations at each initial undo depth 0/20/50: move and
+resize the inset, reframe the main picture, swap the cameras and speaker audio,
+and undo each edit. Setup/ingestion/history seeding stays outside edit timing.
+Generated source pictures have a horizontal pattern so crop changes affect
+visible content. A quieter second audio source checks the swapped output and
+that the listener is muted. Browser tests separately compare masks/borders with
+export pixels and exercise reusable components and two-video hard cuts.
+
+Readiness requires a fresh visible revision with **both** decoded source frames,
+the expected asset identities/source offsets, measured boxes, crop anchors and
+audio carrier, plus command success. The diagnostic observer's legacy
+`expected_text_visible` field carries this semantic predicate in the PiP adapter;
+there is no title-only shortcut. The 3,000 ms every-edit gate and 10/15-second
+readiness/command deadlines are unchanged. A miss is retained and makes the
+runner fail. Each case preserves the command arguments/input JSON, raw outputs,
+traces, package source hashes, experiment hashes, runtime versions, observed
+history counts and final content/FIFO-undo checks.
+
+Optional `--sources FIRST.mp4 SECOND.mp4` references supplied recordings in
+place, selects seconds 3–8 and keeps the entire output local. These inputs must
+be compatible same-rate MP4s at least eight seconds long. This checks a small
+composition referencing large files; it does not replace the existing
+121-scene/full-history stress case or certify general native coverage. Raw
+real-input artifacts must remain private. Physical speech/lip-sync review is a
+separate owner check, not established by command success or decoder counters.

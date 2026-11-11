@@ -1140,9 +1140,9 @@ cli.add_command(composition)
               help="Local viewer port; 0 chooses a temporary port.")
 @click.option("--open/--no-open", "open_browser", default=True, help="Open the viewer in your local browser.")
 @click.option("--mode", type=click.Choice(["rendered", "native"]), default="rendered", show_default=True,
-              help="Rendered MP4 review or fast native playback for supported single-video scenes.")
+              help="Rendered MP4 review or fast native playback for supported one/two-video scenes.")
 def preview(from_tc, to_tc, port, open_browser, mode):
-    """Keep one local playback page open while an agent edits spatial scenes.
+    """Keep one local playback page open while an agent edits scenes.
 
     Runs in the foreground until Ctrl-C. Watches saved edits, including undo,
     and prepares versioned previews with audio. Rendered mode generates an MP4;

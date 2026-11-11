@@ -25,7 +25,14 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
   async function advance(i,attempt,expectedAt){
     if(disposed||!playing||attempt!==generation||index!==i)return;
     clearTimeout(timer);
-    if(i===stages.length-1){stages[i].api.pause();finish();return;}
+    if(i===stages.length-1){
+      try{
+        stages[i].api.pause();
+        if(stages[i].api.settleEnd)await stages[i].api.settleEnd();
+        if(!disposed&&playing&&attempt===generation)finish();
+      }catch(error){if(attempt===generation)fail(error);}
+      return;
+    }
     index++;reveal(index,false);
     metrics.cuts.push({from:i,to:index,result_time:packet.range.from+packet.segments[index].offset,
       expected_at:expectedAt,switched_at:Date.now()});
