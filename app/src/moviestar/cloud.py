@@ -111,7 +111,7 @@ def _capabilities(command: str, endpoint: str, credential: str) -> dict:
         _fail(command, "invalid_response", "The service returned incomplete Cloud capabilities. Retry later.")
     fields = ("contract_version", "operations", "scopes", "project_access", "limits", "source_uploads_enabled",
               "source_imports_enabled", "media_processing_enabled", "saved_edits_enabled", "transcript_imports_enabled",
-              "edit_formats", "source_formats", "transcript_formats", "retention")
+              "edit_formats", "source_formats", "transcript_formats", "retention", "project_access_scope", "project_sharing")
     return {name: body[name] for name in fields if name in body}
 
 
@@ -133,7 +133,23 @@ def _project(raw: object) -> dict | None:
     revision = raw["current_revision"]
     if revision is not None and (not isinstance(revision, str) or not _UUID.fullmatch(revision)):
         return None
-    return {name: raw[name] for name in ("id", "title", "state", "owner_id", "current_revision")}
+    parsed = {name: raw[name] for name in ("id", "title", "state", "owner_id", "current_revision")}
+    if "access" in raw:
+        access = raw["access"]
+        if not isinstance(access, dict) or access.get("role") not in ("owner", "viewer"):
+            return None
+        parsed["access"] = {"role": access["role"]}
+    return parsed
+
+
+def _sharing_supported(capabilities: dict) -> bool:
+    sharing = capabilities.get("project_sharing")
+    return (isinstance(sharing, dict) and sharing.get("contract_version") == "recipient-projects-v1"
+            and sharing.get("discovery_path") == "/api/v1/account/cloud/shared-projects"
+            and sharing.get("detail_path") == "/api/v1/account/cloud/projects/:id"
+            and sharing.get("roles") == {"viewer": ["projects:read"]}
+            and sharing.get("permissions_are_resource_specific") is True
+            and sharing.get("account_scopes_do_not_grant_collaborator_writes") is True)
 
 
 @click.group()
@@ -155,7 +171,7 @@ def capabilities_command():
 
 @cloud.group()
 def projects():
-    """Create, find, and reopen projects owned by the connected account."""
+    """Create, find, and reopen owned projects or accepted shared projects."""
 
 
 @projects.command("create")
@@ -214,19 +230,46 @@ def create_project(title: str, idempotency_key: str | None):
 @projects.command("list")
 @click.option("--limit", type=click.IntRange(1, 100), default=20, show_default=True)
 @click.option("--cursor", help="Use next_cursor from the previous page unchanged.")
-def list_projects(limit: int, cursor: str | None):
-    """Read one page of owned projects. Missing media fields are unavailable, not empty."""
+@click.option("--shared", is_flag=True, help="List accepted shared projects instead of owned projects.")
+def list_projects(limit: int, cursor: str | None, shared: bool):
+    """Read one owned page, or --shared for accepted viewer invitations.
+
+    Call both collections to find all accessible projects. Keep pagination
+    cursors with their original collection. Missing media fields are
+    unavailable, not empty. Listing does not authorize editing or resharing.
+    """
     command = "cloud projects list"
     if cursor is not None and not _CURSOR.fullmatch(cursor):
         _fail(command, "invalid_request", _HINTS["invalid_request"])
     endpoint, credential = _connection(command)
-    _require(command, _capabilities(command, endpoint, credential), "projects:read")
+    capabilities = _capabilities(command, endpoint, credential)
+    _require(command, capabilities, "projects:read")
+    if shared and not _sharing_supported(capabilities):
+        _fail(command, "unsupported_operation", "Shared project discovery is not supported on this service. Owned projects can still be listed without --shared.")
     query = urlencode({"limit": limit, **({"cursor": cursor} if cursor else {})})
-    status, body = _request(endpoint + "/projects?" + query, credential)
+    status, body = _request(endpoint + ("/shared-projects?" if shared else "/projects?") + query, credential)
     if status != 200:
         _failure(command, status, body)
     items, cursor = body.get("items"), body.get("next_cursor")
-    parsed = [_project(item) for item in items] if isinstance(items, list) else None
+    parsed = [] if isinstance(items, list) and len(items) <= limit else None
+    if parsed is not None:
+        for item in items:
+            project = _project(item.get("project")) if shared and isinstance(item, dict) else _project(item)
+            if project is None:
+                parsed = None
+                break
+            if shared:
+                handle = item.get("shared_by")
+                if (body.get("contract_version") != "recipient-projects-v1" or item.get("role") != "viewer"
+                        or item.get("permissions") != ["projects:read"] or not isinstance(handle, str)
+                        or not re.fullmatch(r"[a-z0-9][a-z0-9_]{2,29}", handle)):
+                    parsed = None
+                    break
+                project["shared_by"] = handle
+            project["access"] = {"role": "viewer" if shared else "owner"}
+            parsed.append(project)
+    if shared and body.get("contract_version") != "recipient-projects-v1":
+        parsed = None
     if parsed is None or any(item is None for item in parsed) or "next_cursor" not in body or (cursor is not None and (not isinstance(cursor, str) or not _CURSOR.fullmatch(cursor))):
         _fail(command, "invalid_response", "The service returned an incomplete project page. Retry later.")
     click.echo(json.dumps({"items": parsed, "next_cursor": cursor}, indent=2))
@@ -235,7 +278,11 @@ def list_projects(limit: int, cursor: str | None):
 @projects.command("show")
 @click.argument("project_id")
 def show_project(project_id: str):
-    """Reopen PROJECT_ID from any directory without creating a local workspace."""
+    """Reopen an owned or accepted shared PROJECT_ID without a local workspace.
+
+    Access roles come from the service. Viewer access is metadata-only and
+    does not grant media access, editing, rendering or resharing.
+    """
     command = "cloud projects show"
     if not _UUID.fullmatch(project_id):
         _fail(command, "invalid_request", _HINTS["invalid_request"])
