@@ -140,6 +140,8 @@ export async function observeEdit({start,prepare=async()=>{},probe,serverProbe,s
     }
     trace.command_finished_after_failure=trace.failure_at_ms!==null&&
       operation.record.finished_monotonic_ms>started.monotonic_ms+trace.failure_at_ms;
+    trace.cli_completion_ms=operation.record.finished_monotonic_ms-started.monotonic_ms;
+    trace.measurement_ms=visible?Math.max(trace.cli_completion_ms,trace.visible_at_ms):null;
     trace.measurement_finished_at=visible?Math.max(operation.record.finished_at,trace.ready_observed_at):null;
     trace.spec_after_command=await fileSnapshot(specPath);
     if(!trace.spec_after_command.error&&stamp(trace.spec_after_command)!==lastStamp){

@@ -611,7 +611,9 @@ Use request IDs to distinguish an old displayed preview from a new request.
 Requests preserve the server's `requested_at`, `started_at`, `finished_at`
 timestamps (epoch seconds); frame `prepared_at` and visible-event `ready_at`
 are epoch milliseconds. Poll observations are offsets in monotonic milliseconds
-from edit start. Missing stages remain absent. File notifications and fallback
+from edit start; command/completed-edit durations also use the monotonic clock,
+so wall-clock adjustments cannot produce a passing negative duration.
+Missing stages remain absent. File notifications and fallback
 post-command snapshots are **observations**, not precise save-completion times;
 snapshot reads carry start/end timestamps. Shared-host load is recorded at the
 start/end of each attempt and does not establish a cause for a timeout.

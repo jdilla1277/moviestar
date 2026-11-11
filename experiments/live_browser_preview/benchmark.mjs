@@ -110,7 +110,7 @@ try{
     const started=attempt.trace.started_at,event=attempt.preview.visible_event;
     if(event?.request_id!==attempt.preview.current.request_id)throw Error('Visible event does not match the confirmed preview');
     const current={item:attempt.preview.current,prepared_at:attempt.preview.frames.find(frame=>frame.request_id===event.request_id)?.prepared_at};
-    const entry={edit:i+1,cli_completion_ms:attempt.trace.command.finished_at-started,visible_ms:event.ready_at-started,cli_and_visible_ms:attempt.trace.measurement_finished_at-started,
+    const entry={edit:i+1,cli_completion_ms:attempt.trace.cli_completion_ms,visible_ms:event.ready_at-started,cli_and_visible_ms:attempt.trace.measurement_ms,
       detected_after_ms:Math.round(current.item.requested_at*1000-started),generation_ms:current.item.generation_ms,
       generation_to_stage_prepared_ms:Math.round(current.prepared_at-current.item.finished_at*1000),
       request_id:event.request_id,state_id:event.state_id};

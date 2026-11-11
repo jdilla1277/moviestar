@@ -134,3 +134,15 @@ test('success requires fresh identity, expected content AND successful CLI; stag
   assert.equal(result.trace.requests[0].requested_at,1);
   assert.equal(result.trace.spec_after_command.sha256,result.trace.spec_before.sha256);
 });
+
+test('completed-edit duration stays valid when the wall clock moves backwards',async t=>{
+  const {out,spec}=await fixture(t),dateNow=Date.now;
+  try{
+    const result=await observeEdit({start:()=>command(out,`setTimeout(()=>console.log('{}'),80)`),
+      probe:async()=>{Date.now=()=>dateNow()-60000;return fresh();},
+      specPath:spec,priorRequest:prior,readyTimeoutMs:500});
+    assert.equal(result.trace.outcome,'succeeded');
+    assert.ok(result.trace.measurement_ms>=result.trace.command.duration_ms);
+    assert.ok(result.trace.cli_completion_ms>=80);
+  }finally{Date.now=dateNow;}
+});
