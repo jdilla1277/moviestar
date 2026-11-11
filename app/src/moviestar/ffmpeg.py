@@ -1782,7 +1782,8 @@ def measure_region_stability(
         return None
     if result.returncode != 0:
         return None
-    match = re.search(r"All:([0-9.]+)", result.stderr)
+    # Strongly inverted content can have a valid negative SSIM score.
+    match = re.search(r"All:(-?[0-9.]+)", result.stderr)
     if match is None:
         return None
     return float(match.group(1))

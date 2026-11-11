@@ -47,7 +47,7 @@ def isolated_reference(video, a, b, tmp_path):
         "ffmpeg", "-v", "info", "-i", str(paths[0]), "-i", str(paths[1]),
         "-filter_complex", "[0:v][1:v]ssim", "-an", "-f", "null", "-",
     ], check=True, capture_output=True, text=True)
-    return float(re.search(r"All:([0-9.]+)", result.stderr).group(1))
+    return float(re.search(r"All:(-?[0-9.]+)", result.stderr).group(1))
 
 
 @pytest.mark.parametrize("a,b,changes", [
@@ -102,10 +102,8 @@ def test_absent_frame_at_eof_has_no_score(switching_video, a, b):
     ) is None
 
 
-def test_preview_stays_quiet_when_only_later_frames_change(
-    switching_video, loaded_project, tmp_path
-):
-    loaded_project(str(switching_video), frames=False)
+def preview_hold(video, loaded_project, tmp_path, *, at, hold, move):
+    loaded_project(str(video), frames=False)
     runner = CliRunner()
     scene = runner.invoke(cli, [
         "scenes", "set", "--canvas", "320x240", "--scene", "demo=single",
@@ -115,13 +113,54 @@ def test_preview_stays_quiet_when_only_later_frames_change(
     spec_path = tmp_path / "moviestar" / "spec.json"
     before = spec_path.read_bytes()
     preview = runner.invoke(cli, [
-        "scenes", "motion", "camera", "preview", "--at", "0.1", "--slot", "main",
-        "--box", "80,60,240,180", "--padding", "0", "--move-in", "0.05",
-        "--hold", "0.8", "--move-out", "0.05",
+        "scenes", "motion", "camera", "preview", "--at", str(at), "--slot", "main",
+        "--box", "80,60,240,180", "--padding", "0", "--move-in", str(move),
+        "--hold", str(hold), "--move-out", str(move),
     ])
     assert preview.exit_code == 0, preview.output
+    assert spec_path.read_bytes() == before
+    return json.loads(preview.stdout)
+
+
+def test_preview_stays_quiet_when_only_later_frames_change(
+    switching_video, loaded_project, tmp_path
+):
+    data = preview_hold(switching_video, loaded_project, tmp_path, at=0.1, hold=0.8, move=0.05)
     assert not [
-        warning for warning in json.loads(preview.stdout).get("warnings", [])
+        warning for warning in data.get("warnings", [])
         if warning["code"] == "selection_changes_during_hold"
     ]
-    assert spec_path.read_bytes() == before
+
+
+@pytest.fixture(scope="module")
+def inverted_pattern(tmp_path_factory):
+    path = tmp_path_factory.mktemp("inverted-hold") / "pattern.mp4"
+    subprocess.run([
+        "ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i",
+        "nullsrc=s=320x240:r=30:d=2,"
+        "geq=lum='16+219*mod(floor(X/4)+floor(Y/4)+gte(T,1),2)':cb=128:cr=128",
+        "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(path),
+    ], check=True, capture_output=True)
+    return path
+
+
+def test_valid_negative_similarity_matches_isolated_frames(inverted_pattern, tmp_path):
+    expected = isolated_reference(inverted_pattern, 0.8, 1.4, tmp_path)
+    assert expected < 0
+    assert ffmpeg.measure_region_stability(
+        str(inverted_pattern), 0.8, 1.4, {"x": 80, "y": 60, "w": 160, "h": 120}
+    ) == pytest.approx(expected, abs=1e-6)
+
+
+def test_valid_negative_similarity_produces_a_real_preview_warning(
+    inverted_pattern, loaded_project, tmp_path
+):
+    data = preview_hold(inverted_pattern, loaded_project, tmp_path, at=0.8, hold=0.6, move=0.3)
+    [warning] = [
+        warning for warning in data.get("warnings", [])
+        if warning["code"] == "selection_changes_during_hold"
+    ]
+    assert warning["similarity"] < 0
+    assert warning["source_range_compared"]["from"] == "0:00:00.800"
+    assert warning["source_range_compared"]["to"] == "0:00:01.400"
