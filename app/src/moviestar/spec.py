@@ -3505,7 +3505,8 @@ def append_revision(before: dict, after: dict, command: str) -> dict:
         for field in REVISION_FIELDS
         if before.get(field) != after.get(field)
     }
-    new_spec = copy.deepcopy(after)
+    # The incoming journal is replaced below; do not clone it first.
+    new_spec = copy.deepcopy({key: value for key, value in after.items() if key != "revisions"})
     # The persisted journal belongs to the project being mutated, not to
     # an incoming replacement document (notably `spec --edit`).
     new_spec["revisions"] = copy.deepcopy(before.get("revisions", []))
@@ -3566,7 +3567,8 @@ def _validate_revision_chain(spec: dict) -> None:
     revisions = spec.get("revisions", [])
     if not revisions:
         return
-    candidate = copy.deepcopy(spec)
+    # Copy the current document, not the journal that is read separately.
+    candidate = copy.deepcopy({key: value for key, value in spec.items() if key != "revisions"})
     candidate["revisions"] = []
     for index in range(len(revisions) - 1, -1, -1):
         for field, prior in revisions[index]["changed"].items():
