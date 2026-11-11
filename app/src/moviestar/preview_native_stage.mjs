@@ -89,20 +89,21 @@ async function checkReady(){
 }
 function onFrame(now,metadata){
   if(disposed)return;
+  const running=playing&&!video.paused;
   const primary=videos.find(item=>item.primary);
   if(primary){primary.firstFrame=true;primary.frame={media_time:metadata.mediaTime,display_time:metadata.expectedDisplayTime};}
   if(playing&&videoGroup){try{videoGroup.synchronize(videos.find(item=>item.primary));}catch(error){fail(error);return;}}
   const local=metadata.mediaTime-packet.source_start;
-  if(packet.cut_segment&&playing&&metadata.mediaTime>=packet.source_end-1e-6){
+  if(packet.cut_segment&&running&&metadata.mediaTime>=packet.source_end-1e-6){
     // The media keeps its audio clock until the cut; the overlaid last valid
     // frame prevents a decoded frame beyond the edit from becoming visible.
     if(!frozenFrame){fail(Error('Native cut missed its last expected frame'));return;}
     frameCallback=video.requestVideoFrameCallback(onFrame);return;
   }
-  if(packet.cut_segment&&playing&&metadata.mediaTime>=packet.source_end-1/packet.fps-1e-6)freezeLastFrame();
+  if(packet.cut_segment&&running&&metadata.mediaTime>=packet.source_end-1/packet.fps-1e-6)freezeLastFrame();
   apply(local);
-  if(!playing&&metrics.initial_frame===undefined&&Math.abs(local)<1/packet.fps)metrics.initial_frame=metadata.mediaTime;
-  if(playing){
+  if(!running&&metrics.initial_frame===undefined&&Math.abs(local)<1/packet.fps)metrics.initial_frame=metadata.mediaTime;
+  if(running){
     if(metrics.first_presented_at===undefined)metrics.first_presented_at=performance.timeOrigin+metadata.expectedDisplayTime;
     const sampled=audit?sourceFrame():{};
     if(audit&&primary){metrics.video_frames??=[];metrics.video_frames.push({path:primary.path,...primary.frame,number:sampled.number});}
@@ -189,14 +190,15 @@ async function initialize(){
       const observe=(now,frame)=>{
         if(disposed)return;
         item.firstFrame=true;item.frame={media_time:frame.mediaTime,display_time:frame.expectedDisplayTime};
-        if(packet.cut_segment&&playing&&frame.mediaTime>=item.end-1e-6){
+        const running=playing&&!video.paused;
+        if(packet.cut_segment&&running&&frame.mediaTime>=item.end-1e-6){
           if(!item.frozen){fail(Error('Native inset missed its last expected frame'));return;}
           item.callback=media.requestVideoFrameCallback(observe);return;
         }
-        if(playing&&audit){
+        if(running&&audit){
           metrics.video_frames??=[];metrics.video_frames.push({path:item.path,...item.frame,number:sourceFrame(item).number});
         }
-        if(packet.cut_segment&&playing&&frame.mediaTime>=item.end-1/packet.fps-1e-6)freezeFollower(item);
+        if(packet.cut_segment&&running&&frame.mediaTime>=item.end-1/packet.fps-1e-6)freezeFollower(item);
         checkReady();item.callback=media.requestVideoFrameCallback(observe);
       };
       if(primary)frameCallback=media.requestVideoFrameCallback(onFrame);
