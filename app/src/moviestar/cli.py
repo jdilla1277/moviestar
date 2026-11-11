@@ -159,6 +159,7 @@ from moviestar.spec import (
     SpecValidationError,
     append_cut,
     append_overlay,
+    append_revision,
     append_trim,
     default_slot_margin,
     empty_spec,
@@ -12553,6 +12554,10 @@ def scenes_set(
                         f"scenes[{scene_index}].audio_from", message
                     )
                 raise ValueError(message)
+        if dry_run:
+            # Validate the completed edit's prospective journal, just as save
+            # does for a write. The loaded journal was checked at its old head.
+            validate_spec(append_revision(spec, new_spec, "scenes set"))
         scene_plan = _scene_composition_plan_with_audio(
             project=project,
             spec=new_spec,
@@ -24423,6 +24428,8 @@ def concat(
                 audio_from=audio_from,
                 canvas=canvas,
             )
+            if dry_run:
+                validate_spec(append_revision(spec, new_spec, "concat"))
         except (json.JSONDecodeError, FileNotFoundError) as exc:
             _error_exit("concat", f"Could not read project.json: {exc}")
         except (SpecValidationError, ValueError) as exc:
@@ -24560,6 +24567,8 @@ def concat(
             canvas=canvas,
             framings=framings,
         )
+        if dry_run:
+            validate_spec(append_revision(spec, new_spec, "concat"))
     except SpecValidationError as exc:
         _error_exit("concat", str(exc))
 
