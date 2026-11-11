@@ -1147,6 +1147,10 @@ def preview(from_tc, to_tc, port, open_browser, mode):
     Runs in the foreground until Ctrl-C. Watches saved edits, including undo,
     and prepares versioned previews with audio. Rendered mode generates an MP4;
     native mode plays supported source media directly with the canonical layout.
+    Native scenes may contain one or two same-rate MP4 videos; one visible
+    video supplies the selected speaker audio. Static presets and spatial
+    components are supported. Preset caption overlays and independent audio
+    tracks still require rendered mode.
     Unsupported native projects fail explicitly; retry with --mode rendered.
     No account, upload, or cloud render is required. The URL works on this
     machine only. Edit with the existing CLI in another terminal.
