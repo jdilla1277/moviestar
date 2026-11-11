@@ -581,3 +581,56 @@ passed, including all hard-cut playback checks. Misses fell from 142/480 to
 14/480; the candidate maximum was 4,487 ms. **The copy reduction does not meet
 the complete per-edit target or close #154.** All samples remain in the report;
 no profiler timing is used for acceptance.
+
+### Diagnosing an edit timeout
+
+New runs retain every command outcome independently of browser readiness.
+For each edit, inspect these files in its case output directory:
+
+- `edit-01.input.json`: the exact model submitted to the real editing command.
+- `edit-01.command.json`, `.stdout.txt`, `.stderr.txt`: command completion,
+  exit code/signal, timeout or spawn/JSON-output error, and complete raw output.
+- `edit-01.trace.json`: file fingerprints before the command, at failure and
+  after completion; observed file changes; viewer/server requests and frame
+  readiness; the original failure and any later command outcome.
+- `browser-report.json`: `commands` and `edit_attempts` include failed attempts,
+  while `edits` still contains only successfully completed measurements. An
+  incomplete case does not become a passing short series.
+
+The readiness deadline remains **10 seconds**, the command lifetime limit
+**15 seconds**, and the acceptance gate **under 3,000 ms for every edit**.
+If readiness times out, the trace freezes that failure, then collects the
+command's eventual result within its existing lifetime limit. A late successful
+save cannot turn the original timeout into a pass. Signal interruption and
+command timeout terminate the owned command process group on POSIX. Raw output
+is finalized on pipe closure, including trailing bytes; forced incomplete
+capture is explicitly marked. Undo and restore commands retain their own
+`command-01.*` artifacts.
+
+Use request IDs to distinguish an old displayed preview from a new request.
+Requests preserve the server's `requested_at`, `started_at`, `finished_at`
+timestamps (epoch seconds); frame `prepared_at` and visible-event `ready_at`
+are epoch milliseconds. Poll observations are offsets in monotonic milliseconds
+from edit start. Missing stages remain absent. File notifications and fallback
+post-command snapshots are **observations**, not precise save-completion times;
+snapshot reads carry start/end timestamps. Shared-host load is recorded at the
+start/end of each attempt and does not establish a cause for a timeout.
+
+On failure, `server_at_failure` independently fetches the server's state with a
+one-second limit. Compare it with `preview_at_failure`, which is the state the
+browser actually observed; either observation can fail and is then marked
+unknown. A driver-level failure also retains prior samples and partial report
+data instead of replacing them with an empty result. An abrupt kill may leave
+incomplete artifacts; missing command/stage data must never be treated as success.
+
+Baseline fingerprints precede the edit timer; artifact writes and post-command
+fingerprints follow the completed-edit timing boundary. Snapshot read timestamps
+retain that extra work separately. Diagnostic observation still adds work, so these reports are
+not an overhead-free product profile. New reports fingerprint all experiment
+producer scripts. The archived copy comparison above used the harness at
+`6b555a3`; it is unchanged. Compare product builds with the **same** diagnostic
+harness before attributing a timing difference to a product change.
+
+**Keep real-input output directories entirely private.** Input models and raw
+CLI output may contain source paths, captions or other customer content. No
+upload is performed; do not attach these artifacts to a public issue or PR.

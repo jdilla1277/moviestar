@@ -1,5 +1,6 @@
 """Run portable canonical-layout, CLI-edit and native audio/video review checks."""
 import argparse
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
@@ -19,6 +20,25 @@ from moviestar.spatial_layout import measure_spatial_layout
 from moviestar.native_preview import compile_snapshot
 
 HERE = Path(__file__).resolve().parent
+
+
+def driver_hashes():
+    """Identify the actual experiment producer, independently of product revision."""
+    return {path.name: sha256(path.read_bytes()).hexdigest()
+            for path in sorted(HERE.iterdir()) if path.suffix in ('.py', '.mjs')}
+
+
+def driver_failure_result(folder, case, error):
+    """Retain prior samples and partial diagnostics without rewriting raw evidence."""
+    try:
+        result = json.loads((folder/'browser-report.json').read_text())
+        if not isinstance(result, dict):
+            raise ValueError('Partial driver report is not an object')
+    except (OSError, ValueError):
+        result = {'cold': {}, 'problems': []}
+    result.setdefault('problems', []).append(str(error))
+    result['fixture'] = case
+    return result
 
 
 class ResourceSampler:
@@ -128,7 +148,9 @@ def run_project_case(root, folder, start, end, chrome, case_fields, *, sample_ti
                 result['problems'].append(f'driver exited {code}')
             result.update(server_start_ms=round(startup), driver_exit=code, fixture=case)
         except Exception as exc:
-            result = {'cold': {}, 'problems': [str(exc)], 'fixture': case}
+            # Preserve completed samples and partial diagnostics on outer driver
+            # timeouts too; never replace retained evidence with an empty case.
+            result = driver_failure_result(folder, case, exc)
         finally:
             server.terminate()
             try:server.wait(timeout=9)
@@ -152,7 +174,7 @@ def main():
     chrome = os.environ.get('MOVIESTAR_CHROME_PATH') or shutil.which('chrome-headless-shell')
     if not chrome:
         parser.error('set MOVIESTAR_CHROME_PATH to Chrome/Chrome for Testing')
-    report = {'profile': args.profile, 'versions': {'python': sys.version.split()[0], 'platform': platform.platform(),
+    report = {'profile': args.profile, 'driver_files_sha256': driver_hashes(), 'versions': {'python': sys.version.split()[0], 'platform': platform.platform(),
         'chrome': subprocess.check_output([chrome, '--version'], text=True).strip(),
         'node': subprocess.check_output(['node', '--version'], text=True).strip(),
         'ffmpeg': subprocess.check_output(['ffmpeg', '-version'], text=True).splitlines()[0]},

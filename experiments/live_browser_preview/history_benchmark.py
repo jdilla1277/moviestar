@@ -8,7 +8,7 @@ import platform
 import subprocess
 import sys
 
-from benchmark import run_project_case
+from benchmark import driver_hashes, run_project_case
 from scaling import long_source, prepare_window
 from cuts import prepare_cuts
 from real_benchmark import srt_cues
@@ -38,7 +38,7 @@ def main():
     if args.profile == 'long-source' and source is None: source = long_source(out)
     report = {'profile': args.profile, 'code_revision': args.revision,
               'spec_module_sha256': sha256(Path(spec_module.__file__).read_bytes()).hexdigest(),
-              'driver_files_sha256': {name: sha256((Path(__file__).parent/name).read_bytes()).hexdigest() for name in ['history_benchmark.py','history.py','benchmark.py','benchmark.mjs']},
+              'driver_files_sha256': driver_hashes(),
               'versions': {'python': sys.version.split()[0], 'platform': platform.platform(),
                   'node': subprocess.check_output(['node','--version'], text=True).strip(),
                   'chrome': subprocess.check_output([chrome,'--version'], text=True).strip(),
