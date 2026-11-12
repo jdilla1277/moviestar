@@ -65,6 +65,55 @@ local workspaces. Cloud metadata commands require no local FFmpeg execution or
 transcription and never upload media or select a local workspace. The package's
 base installation omits the optional local transcription stack.
 
+## Rename the same project
+
+When capabilities advertise `projects:rename`, change its title with:
+
+```sh
+moviestar cloud projects rename PROJECT_ID "Tournament highlights"
+moviestar cloud projects show PROJECT_ID
+```
+
+The CLI reads the current title first and sends one conditional update. The
+project keeps its ID, assets and access grants. Shared viewer access does not
+permit renaming. Local projects and filenames are unchanged.
+
+If the project was renamed elsewhere, `project_changed` stops the update.
+Read its current title and review your intended change before trying again.
+If the reply is lost, the JSON error retains `title`, `project_id` and
+`expected_title`. Inspect the project, or explicitly retry the same request:
+
+```sh
+moviestar cloud projects rename PROJECT_ID "Tournament highlights" \
+  --expected-title "Previous title"
+```
+
+Preserve the original previous title after uncertainty. Replacing it with a
+newer title means deliberately submitting a new change. An already-matching
+desired title confirms success without another update. A title precondition
+does not lock unrelated project metadata.
+
+The Web project page offers **Rename project**. It keeps a conflicting draft
+and offers **Load latest title** before another save. A lost reply preserves the
+same pending rename for an explicit retry after reopening in that browser tab.
+
+The HTTP equivalent uses a personal API key and exactly two fields:
+
+```sh
+curl --fail-with-body https://trymoviestar.com/api/v1/account/cloud/projects/PROJECT_ID \
+  -X PATCH \
+  -H "Authorization: Bearer $MOVIESTAR_API_KEY" \
+  -H 'Content-Type: application/json' \
+  --data '{"title":"Tournament highlights","expected_title":"Previous title"}'
+```
+
+An enabled hosted MCP connection offers `moviestar_rename_project`. First call
+`moviestar_get_project`, then pass its exact title as `expected_title` alongside
+the new `title` and `project_id`. Its response includes the same project's Web
+link. After a conflict, read again and review the requested change; do not
+automatically substitute a new precondition. These operations change no assets,
+editing state, rendering or sharing rights.
+
 ## Owned and shared discovery
 
 Owned projects and accepted shared projects are separate collections:

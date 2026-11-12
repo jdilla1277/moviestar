@@ -34,6 +34,7 @@ _HINTS = {
     "capacity_exceeded": "The service's active project allowance has been reached. This is separate from finished-video storage.",
     "invalid_request": "Check the title, project ID, pagination, and idempotency key in the command help.",
     "request_too_large": "Use a project title of at most 200 characters.",
+    "project_changed": "This project was renamed elsewhere. Read its current title with 'moviestar cloud projects show' and review the change before renaming again.",
 }
 
 
@@ -159,7 +160,7 @@ def cloud():
     """Work explicitly with personal Cloud projects using this approved installation.
 
     Ordinary local commands stay local. These commands create/read Cloud
-    metadata and manage existing asset references when supported; they do not
+    metadata, rename projects and manage existing asset references when supported; they do not
     select a local workspace, upload media, or render.
     Connect the installation with 'moviestar account connect' first.
     """
@@ -298,6 +299,46 @@ def show_project(project_id: str):
     if project is None or project["id"].lower() != project_id.lower():
         _fail(command, "invalid_response", "The service did not return the requested project. Retry later.")
     click.echo(json.dumps(project, indent=2))
+
+
+@projects.command("rename")
+@click.argument("project_id")
+@click.argument("title")
+@click.option("--expected-title", help="Exact title previously read; preserve it when retrying an uncertain rename. Otherwise read the current title first.")
+def rename_project(project_id: str, title: str, expected_title: str | None):
+    """Rename PROJECT_ID while keeping its ID, assets and access unchanged.
+
+    A conflicting title stops the change. After an uncertain reply, inspect the
+    project or retry with the SAME --expected-title; never blindly override a
+    newer title. This command does not select or rename a local project.
+    """
+    command = "cloud projects rename"
+    def valid(value):
+        return isinstance(value, str) and 1 <= len(value) <= 200 and value == value.strip() and not re.search(r"[\x00-\x1f\x7f]", value)
+    if not _UUID.fullmatch(project_id) or not valid(title) or (expected_title is not None and not valid(expected_title)):
+        _fail(command, "invalid_request", "Use a project UUID and a trimmed title of 1–200 characters without control characters.")
+    endpoint, credential = _connection(command)
+    _require(command, _capabilities(command, endpoint, credential), "projects:rename")
+    path = endpoint + "/projects/" + project_id.lower()
+    if expected_title is None:
+        status, body = _request(path, credential)
+        if status != 200:
+            _failure(command, status, body)
+        project = _project(body)
+        if project is None or project["id"].lower() != project_id.lower():
+            _fail(command, "invalid_response", "Could not read the requested project's current title.")
+        if project.get("access", {}).get("role") == "viewer":
+            _fail(command, "project_read_only", "Viewer access does not permit renaming this project.")
+        expected_title = project["title"]
+    fields = {"project_id": project_id.lower(), "title": title, "expected_title": expected_title}
+    status, body = _request(path, credential, method="PATCH", payload={"title": title, "expected_title": expected_title})
+    if status != 200 and 400 <= status < 500:
+        _failure(command, status, body, rename_outcome="rejected", **fields)
+    project = _project(body.get("project"))
+    if (status != 200 or body.get("status") != "renamed" or type(body.get("changed")) is not bool or project is None
+            or project["id"].lower() != project_id.lower() or project["title"] != title or project.get("access") != {"role": "owner"}):
+        _fail(command, "rename_unconfirmed", "The rename may have succeeded. Inspect the project, or retry with the exact returned expected_title using --expected-title. No automatic retry was sent.", rename_outcome="unknown", **fields)
+    click.echo(json.dumps({"command": command, "status": "renamed", "changed": body["changed"], "project": project}, indent=2))
 
 
 from moviestar.cloud_assets import register_asset_commands
