@@ -1055,7 +1055,7 @@ ACCOUNT COMMANDS
 
 \b
   account connect EMAIL  Ask Moviestar to email the human an account claim.
-  cloud                 Create, list, and reopen owned Cloud project metadata.
+  cloud                 Work with Cloud projects and private developer guides.
   account status         Show approval or connection state for this install.
   account disconnect     Revoke this install; local editing keeps working.
   account keys           Open the website to create or manage API keys.
