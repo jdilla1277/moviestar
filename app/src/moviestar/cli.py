@@ -1149,8 +1149,11 @@ def preview(from_tc, to_tc, port, open_browser, mode):
     native mode plays supported source media directly with the canonical layout.
     Native scenes may contain one or two same-rate MP4 videos; one visible
     video supplies the selected speaker audio. Static presets and spatial
-    components are supported. Preset caption overlays and independent audio
-    tracks still require rendered mode.
+    components, preset captions and spoken-word highlighting are supported.
+    Caption changes and undo update the viewer without encoding a preview
+    movie. Live caption recipes stay live. Spatial caption elements currently
+    support plain text; use preset overlays for spoken-word highlighting.
+    Rotated preset text and independent audio tracks still require rendered mode.
     Unsupported native projects fail explicitly; retry with --mode rendered.
     No account, upload, or cloud render is required. The URL works on this
     machine only. Edit with the existing CLI in another terminal.
@@ -1731,7 +1734,8 @@ def _load_or_init_spec(project: dict) -> dict:
     return _refresh_caption_tracks(project, spec)
 
 
-def _refresh_caption_tracks(project: dict, spec: dict, *, tracks: set[str] | None = None) -> dict:
+def _refresh_caption_tracks(project: dict, spec: dict, *, tracks: set[str] | None = None,
+                            project_dir: Path | None = None) -> dict:
     recipes = spec.get("captions") or []
     if not recipes:
         return spec
@@ -1749,7 +1753,7 @@ def _refresh_caption_tracks(project: dict, spec: dict, *, tracks: set[str] | Non
         try:
             with contextlib.redirect_stdout(io.StringIO()):
                 records, _meta = _derive_caption_records(
-                    project, spec, recipe, "captions refresh"
+                    project, spec, recipe, "captions refresh", project_dir=project_dir
                 )
         except SystemExit:
             # Derivation failed (e.g. transcript unavailable). Keep the
@@ -22145,7 +22149,7 @@ def _caption_audio_windows(
 
 
 def _transcript_items_for_source(
-    project: dict, source_id: str, command: str
+    project: dict, source_id: str, command: str, *, project_dir: Path | None = None
 ) -> dict:
     """Load one source's transcript as caption-mapper items:
     ``{"words": [...], "segments": [...]}`` with float seconds."""
@@ -22167,7 +22171,7 @@ def _transcript_items_for_source(
             "transcribe it, or check transcription_skipped_reason in "
             "'moviestar status'.",
         )
-    transcript_path = (get_project_dir() / info["path"]).resolve()
+    transcript_path = ((project_dir or get_project_dir()) / info["path"]).resolve()
     try:
         data = json.loads(transcript_path.read_text())
     except (json.JSONDecodeError, FileNotFoundError) as exc:
@@ -22336,7 +22340,7 @@ def _caption_records_from_cues(
 
 
 def _derive_caption_records(
-    project: dict, spec: dict, recipe: dict, command: str
+    project: dict, spec: dict, recipe: dict, command: str, *, project_dir: Path | None = None
 ) -> tuple[list[dict], dict]:
     """Derive one track's cue records from its recipe against the
     current compiled timeline.
@@ -22376,7 +22380,7 @@ def _derive_caption_records(
 
     needed_sources = sorted({window["source"] for window in windows})
     transcripts = {
-        sid: _transcript_items_for_source(project, sid, command)
+        sid: _transcript_items_for_source(project, sid, command, project_dir=project_dir)
         for sid in needed_sources
     }
 

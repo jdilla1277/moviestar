@@ -61,12 +61,12 @@ The probe fails explicitly outside this subset:
 - A frame-aligned window of at most ten seconds, at 24–60 fps, matching the indexed source rate (the installed profile excludes
   low rates whose early last-frame stop would exceed the reference timing budget).
 - Native-compatible MP4; the portable benchmark uses H.264/AAC at 30 fps.
-- Reusable nested components, shapes, text, images, manual/frozen captions,
+- Reusable nested components, shapes, text, images, placed caption tracks,
   static canonical CSS layout, and canonical motion/opacity samples.
 - Relative/absolute media wrappers without padding, border widths or children.
 
 Source edit operations on the chosen video, ranges crossing in-scene pacing boundaries
-or overlapping transitions, more than two visible videos per scene, live caption derivation on placed tracks, external
+or overlapping transitions, more than two visible videos per scene, external
 soundtracks, gain/fades/mixing, holds and speed changes are not implemented here.
 Other codecs, VFR, HDR/color-management parity, network
 sources and cloud/phone delivery remain unverified. Private camera evaluation
@@ -81,6 +81,32 @@ too coarse at the end, so a video-frame callback schedules the pause. A producti
 player needs broader timing and seek tests before it can own general timelines.
 
 ## Measure
+
+For authored preset captions and spoken-word highlighting, use:
+
+```sh
+python experiments/live_browser_preview/caption_benchmark.py --out /tmp/caption-results
+python experiments/live_browser_preview/caption_benchmark.py --canvas 1080x1920 --out /tmp/caption-hd-results
+```
+
+Each run creates generated H.264/AAC PiP media and portable word-timed transcripts,
+then times actual caption suppression, resizing, placement, highlight-color and
+four individual undo commands at histories 0/20/50. A measurement ends only after
+command success and the correct fresh, decoded caption image is visibly placed
+at the review time. Every edit must stay below 3,000 ms; actual playback must
+have zero decoder drops/stalls and audio/display phase within 50 ms. Word-plane
+selection and application lateness are also checked on presented frames. The
+driver retains all attempts, exact inputs, process outputs, producer/package
+hashes and runtime versions. Reusing an output folder is forbidden.
+
+Caption glyphs reuse export's drawtext/ASS painting over synthetic mattes;
+source footage is not decoded and no preview movie is encoded. Transparent
+planes are cropped, preloaded, request-scoped and pruned with history. Unit
+checks compare their composition with independent opaque export-filter output
+(maximum channel error 5), including outlines, opacity and plain background
+boxes. Preset highlighted captions and ordinary spatial live-caption text have
+separate canonical placement paths; this does not add highlighting to spatial
+caption elements. See [the installed profile](../../docs/local-preview.md).
 
 ```sh
 python experiments/live_browser_preview/benchmark.py --out /tmp/live-results

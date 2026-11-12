@@ -1,0 +1,261 @@
+{
+  "scope": "Generated five-second, single-span PiP at authored 1080x1920/1x; built and installed wheel, source H.264/AAC 640x360/30fps. Not hour-project/cloud/general codec acceptance.",
+  "environment": {
+    "python": "3.12.12 (main, Oct  9 2025, 11:07:00) [Clang 17.0.0 (clang-1700.4.4.1)]",
+    "chrome": "Google Chrome for Testing 156.0.8078.73",
+    "ffmpeg": "ffmpeg version 9.0.1 Copyright (c) 2000-2026 the FFmpeg developers",
+    "node": "v24.5.0",
+    "machine": "Apple M4",
+    "memory_bytes": 25769803776,
+    "platform": "macOS-15.6-arm64-arm-64bit-Mach-O"
+  },
+  "conditions": "Local regression suite was running concurrently. Every sample retained, limits unchanged. Actual Chrome launch flags recorded per case; reference disables OnBeginFrameThrottleVideo.",
+  "limits": {
+    "every_edit_ms": 3000,
+    "audio_display_phase_ms": 50,
+    "caption_apply_lateness_ms": 50,
+    "dropped_frames": 0,
+    "stalls": 0,
+    "uncompressed_caption_channel_error": 5
+  },
+  "cases": [
+    {
+      "history": 0,
+      "edits_and_undos": 8,
+      "max_edit_ms": 2441.7596250000006,
+      "max_cli_ms": 334.7783330000002,
+      "max_audio_display_phase_ms": 42.299666714350224,
+      "caption_playback": {
+        "observations": 142,
+        "max_apply_lateness_ms": 1.4999999523163297,
+        "states": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "video_quality": [
+        {
+          "path": [
+            "review",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 150,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "review",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 150,
+          "dropped_frames": 0
+        }
+      ],
+      "stalls": 0,
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 0
+      },
+      "problems": []
+    },
+    {
+      "history": 20,
+      "edits_and_undos": 8,
+      "max_edit_ms": 2274.8895829999983,
+      "max_cli_ms": 225.22358300000087,
+      "max_audio_display_phase_ms": 28.65666666666658,
+      "caption_playback": {
+        "observations": 142,
+        "max_apply_lateness_ms": 0,
+        "states": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "video_quality": [
+        {
+          "path": [
+            "review",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 150,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "review",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 150,
+          "dropped_frames": 0
+        }
+      ],
+      "stalls": 0,
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 20
+      },
+      "problems": []
+    },
+    {
+      "history": 50,
+      "edits_and_undos": 8,
+      "max_edit_ms": 2396.861625,
+      "max_cli_ms": 523.9303749999999,
+      "max_audio_display_phase_ms": 39.067666690508304,
+      "caption_playback": {
+        "observations": 139,
+        "max_apply_lateness_ms": 1.600000023841858,
+        "states": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "video_quality": [
+        {
+          "path": [
+            "review",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 150,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "review",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 150,
+          "dropped_frames": 0
+        }
+      ],
+      "stalls": 0,
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 46
+      },
+      "problems": []
+    }
+  ],
+  "producer_hashes": {
+    "benchmark.mjs": "c830c36cdbe23266656e9e0b29abfe1ce7bc093a37fd37af496063ec031fc778",
+    "benchmark.py": "0347abc59df33a1628288bce87bddbb660c2f040426b84ab7eff3a9bdff86c1e",
+    "browser.mjs": "136b11fe43adeada3026f84d3798c81b4ff423b672881bf57a7db70b341709e6",
+    "caption_benchmark.mjs": "4813907fdb37b59aced93bf771fa7b8fb9bfa50545af87158b831860249207f4",
+    "caption_benchmark.py": "567092e442ff64f630d4f9a42cf36d2293dede378150ddfb5b035ea6ae5a038d",
+    "cue_clock.mjs": "358689d73b2ece05666ca1097cc1702ae0f7d0a00c850d9fe6ef69a5aaa20c9a",
+    "cut_benchmark.py": "76a99955570d7f22fbe6be1e589ebd1f4781d9a1ae7ae8db861923a791cc2f11",
+    "cuts.py": "676914a473869fa7fc4fefe57324ccbfc471ad8ba33e33e71e7ae868d6543948",
+    "diagnostics.mjs": "4f26cc054b8e5320d92c6ecdbff87ab716eab1315d8d5abf7a1cfcbb578bbcb5",
+    "fixtures.py": "becd1072c5980378695b217ff84e19d86f81aa1532ae8676d91890b0a7c9bb85",
+    "history.py": "3272e0acbfcb0fe5bcbf67303b0fb546ce63a34ad12125ee4678511b8a02a612",
+    "history_benchmark.py": "1cd7adec8626170d17312291c8ccc79dfb8b5ff497f99240632abbf6c78b4901",
+    "pip.py": "2ee0888c5eea7e71ad927645d9950c11053ce5e2335b9400576a472c2240f14e",
+    "pip_benchmark.mjs": "72e9c76b4cad2bbae0ed4554b0b4cf527eafeb774a359beb8ba488587d9ebec6",
+    "pip_benchmark.py": "a0632460e265e5d45354cb5c75ed87fcaa12449f0e3e69638df90e4cf66b2669",
+    "real_benchmark.py": "e573fd17b9379cd5e09137fc55b32a4e75c4cb955d684dacd22308223efad327",
+    "scaling.py": "26051152829f1838649ab8347d0c9bf348da388dece429fe892144bb5bda76d0",
+    "serve.py": "d21dc5d0e564fd238d08fda9fc5ae1395f67277bd90e3024ba158c57238300a9"
+  },
+  "package_source_hashes": {
+    "app/src/moviestar/__init__.py": "4d6069e3615cfb759eff4a69169348d83d5dec81d5c376c2f34466db0d26504a",
+    "app/src/moviestar/__main__.py": "83555779bc550efd4cd1013ff0131956f4eea8bf5838a38019ee33f359cbb038",
+    "app/src/moviestar/account.py": "ac8e33c5f9a856435ace85e1a4eb9d681bed71f207607176992c8886d1dbccea",
+    "app/src/moviestar/activity.py": "eb764e61ac747d4e88a16c37c813131620c92f4ce30bf3446d99956a7c1c525c",
+    "app/src/moviestar/audio_surface.py": "71df8189805594ea2ad3d484bbe3c6c6a95471f77fe2e5460fb6f569f5af856d",
+    "app/src/moviestar/camera.py": "2b4dc252d57d743093d984cb0ac6a5a162056215b3a670820b908a80c521f5f5",
+    "app/src/moviestar/caption_import.py": "eb61ef59750129b47976017f56c920c615ab8acd2ce66e14e56580fc357218ef",
+    "app/src/moviestar/captions.py": "441ff58a85f7bf0a627c369a16074c1be9bbdf07d74898d7961fd29560e7b68e",
+    "app/src/moviestar/cli.py": "5b1c251403aa02e98cee6d36dfc076133eb479c32de8c02067659859cef7d80e",
+    "app/src/moviestar/composition_mock.py": "c6d0f47b00da81542f350cce66d160dca7ee842652152fd2a0004a38b4d624a1",
+    "app/src/moviestar/feedback.py": "ec51bbc56da56823721769b5d79f331b88d3f957b1ef6ec9e9d3d146c2161d3b",
+    "app/src/moviestar/ffmpeg.py": "e26134006afd0c5fc04f83157a3da510ccad72be1af01a496c1c3323f5ff4d9c",
+    "app/src/moviestar/find.py": "0d2b06a64c80a0f6dd5b1a166364a610373c3e2d912d4bd1d8c1c6d05970f4b6",
+    "app/src/moviestar/fonts.py": "5f2134271761dca57965d079b37d69fed48e110ff4348df141921660e1644027",
+    "app/src/moviestar/local_preview.py": "55bbd220f5d292c7e47d85e77b7baf3811e4d40f84dd8b04caaf8d44aceef087",
+    "app/src/moviestar/masks.py": "8438b14fbe411577230df941184d779b482f7240006f90c160d6beb1d8999fa1",
+    "app/src/moviestar/motion.py": "ed21f8d8b8b5835a3311a07d7588f8ce3fc15c172562a5700e08351d6c8d8119",
+    "app/src/moviestar/native_captions.py": "5c7455d419d64a2ceedee06dbac4b8a6f3cdebb75dbc5613760e6f9aa6975a61",
+    "app/src/moviestar/native_preset.py": "7ee5bd99dbc140b1528d6b1a12afd767f113d7392b44e97919a13dd3de7cd851",
+    "app/src/moviestar/native_preview.py": "a3fe41d33b4576f97e5743db1df97dacf4df1ca5ed99f80e658b764b193c2809",
+    "app/src/moviestar/overlays.py": "8cbfa6ddc96d86a441abf05eaae4170785fadce3e51902af34a4cccedb231d51",
+    "app/src/moviestar/platforms.py": "9d47069428f5b1971b2c8adc242549fe2a7e368ecb0c219d265d1dad16d684be",
+    "app/src/moviestar/preview_native.mjs": "27e8c47708923e38528b31ff41bfc6a404d24a9d7dfc1d4b895e2893d16eb11e",
+    "app/src/moviestar/preview_native_buffer.mjs": "acd43432c3a40abe7ab638a599e70721ad57858b540da4dd7c569e9cd0737722",
+    "app/src/moviestar/preview_native_cut_meter.mjs": "2db4b82de6a886ec48e91932ab54828a17286549b91eaf43e65ee84e8762bb3a",
+    "app/src/moviestar/preview_native_cuts.mjs": "363c24cf2f006a10649a886f046f10f18d8ebbe206710165dc66c73beb00a3f6",
+    "app/src/moviestar/preview_native_meter.mjs": "9d546fa96d6ce8a7b83589cfed7e3f8ab89284c75910a1ee81fe2ab927e71840",
+    "app/src/moviestar/preview_native_stage.mjs": "5257aac55d635e24dac524c97c427a402db25e48d7104035b4b9fcc1844d21ab",
+    "app/src/moviestar/preview_native_videos.mjs": "e6421f6abe0a34e8ad7b3a4d938e4e5f00fde8b9d2fde05308dfc8a05247766a",
+    "app/src/moviestar/preview_native_worker.mjs": "3410f31905b13b31a70fdf45b9475d0cea52c7a13593cb678b65a710ed1f7a83",
+    "app/src/moviestar/preview_worker.py": "f45932fe6048e8602685b031c60fa733215a3952388e681879da75a5bb080db7",
+    "app/src/moviestar/project.py": "e5ed3cb9d8182360d4a564bb8a850ac2b4e728f75e7e0164bdc2bdd71fe58d40",
+    "app/src/moviestar/remote_captions.py": "2707cbcbcf516ba7fa1f4beb4927ce7e63a4afeacc2579eb01f829585e623558",
+    "app/src/moviestar/resolved.py": "0e33bdc8c72c68775eb11f588b2e71aac4980bfd546b75c2ded7c9afb517ed75",
+    "app/src/moviestar/sharing.py": "fde7c87d9e01c3cd9c6548ed80a1d78759c13f9f283514ef39d6c0a3ebe3c943",
+    "app/src/moviestar/spatial_browser.mjs": "0ae46ca5d343bcfc191935b316b9b9e921b2b8cafc44019864196c23759dce01",
+    "app/src/moviestar/spatial_browser_lifecycle.mjs": "658d220fa2f1bd937624ad3f2064d967f95c1179b05c039a2f20ed461775f2ef",
+    "app/src/moviestar/spatial_catalog.py": "1132c131a5c8c2bb925175e7b8c68dea67b85d3c91ce35312f2d1af0e8ca9fa9",
+    "app/src/moviestar/spatial_composite.py": "920b128dd4ced2ae0bab9c5d0e60edb337c69f1f61d8ac1724c95f67cc227ca1",
+    "app/src/moviestar/spatial_dom.mjs": "59054c107bc21c7493697b8d25b6bf3f884347fcdab8f701218d06453f2abdac",
+    "app/src/moviestar/spatial_edit.py": "1dd115452d415c4f3266b9d9eac55739431f7c29dee4397584810d9192a264a6",
+    "app/src/moviestar/spatial_format.py": "dcea57c2e2eb37e313b83d5f6fcf77312f8d65fcd89885c7bfc62e6a9d956a6b",
+    "app/src/moviestar/spatial_inspection.py": "e4db79164d6d95564a844f85197477aed59f0239c5dbd573fc6b1c0732f1fee5",
+    "app/src/moviestar/spatial_layout.py": "0ddcf669500b727a90575aec2fc411d5e869f365aa6dc951eda0f4e7904bdb8e",
+    "app/src/moviestar/spatial_model.py": "2383444bfa92c2e9b72992eb31bfcb0c316b4bad7e43ff86b5c6c6b0998b7d9b",
+    "app/src/moviestar/spatial_motion.py": "4ee7bee35583f3479b584b79b54193476c75e2d90dfd364dce2b5e355e042b05",
+    "app/src/moviestar/spatial_preset.py": "3e4c6df132c09920d3fc26ba24766f0af0a55b9c4b13ad47584a979796a84db7",
+    "app/src/moviestar/spatial_regions.py": "e08806b95517a613738b6061a2bd74c1b86b6be49acf846fb3333c0b590ec530",
+    "app/src/moviestar/spatial_render.py": "1acbbb05081e1d27efc111dab0017678004898588981bfce00e69b183d388893",
+    "app/src/moviestar/spatial_saved_layouts.py": "07a3bea01dd6d1fa77ccc5d3973dd69ed8a155e58a9e3fc91ab237fbcccc0d86",
+    "app/src/moviestar/spatial_session.py": "dbc2637a039ee7a32f98765e0649d32cb405ee2b7ca189de5574e2528006bbf9",
+    "app/src/moviestar/spatial_transition.py": "f0fb5728fc3409fd494f024ae4f1e06c2081026769060ba032e30329642c7c3c",
+    "app/src/moviestar/spatial_video.py": "965c27a11898d3ea407b4d8cbdcece7d896b2b7be2124421db625da9fef4274f",
+    "app/src/moviestar/spec.py": "5edb477e54e600d74c748a6277260441fac58cecf5c0e096667656985a4f6662",
+    "app/src/moviestar/subscribe.py": "a0c2bb146c39263f209abfea9b16fd030b8b4035d9244914f58d0bfeaac4468c",
+    "app/src/moviestar/timecodes.py": "37b2b686be6bd81322174908622cef437139ce9d013ac1b146cc11fc737aebdf",
+    "app/src/moviestar/transcribe.py": "6d35a82cedee63d69d36aa624d2d5c6d3016de8cc65a1b99870ca23c8fa4ac71",
+    "app/src/moviestar/transitions.py": "ab2425f6812626aae2d22b1fe7630a163feb1b7f21920700cea519530506dd15"
+  },
+  "development_failures": [
+    "Direct transparent painting darkened edges and failed pixel parity; replaced by two opaque mattes.",
+    "First browser series failed loading caption PNGs because request cleanup and registry pruning removed them; publication/expiration regression coverage added. All raw attempts retained locally."
+  ],
+  "manual_playback": "Pending owner confirmation; automated source/audio clocks do not establish physical lip-sync or transcript accuracy."
+}
