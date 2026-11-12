@@ -773,3 +773,20 @@ The feature is present and enabled in the [pinned Chromium source](https://chrom
 Failed acceptance runs remain failed. On failure, CI can collect generated-only
 browser traces in a separate diagnostic run; a diagnostic rerun never replaces
 the original acceptance result.
+
+### Cut-frame observations and compositor counts
+
+The cut regression records two different quantities: pixel observations from
+`requestVideoFrameCallback` and frames submitted for composition. The
+[rVFC specification](https://wicg.github.io/video-rvfc/) permits omitted callbacks;
+`presentedFrames` identifies those gaps. `presented_frames.mjs` anchors that
+counter to the prepared first source frame immediately before Play, requires
+each observed source index to match its counter delta, and requires the final
+observed frame to establish all 90 submissions per three-second/30 fps span.
+It retains exact barcode checks on every observed frame, zero decoder drops and
+stalls, and the existing 50 ms timing limits. Reports separately count callbacks,
+observed source frames and unobserved callbacks. A counter cannot establish the
+pixel contents of an unobserved frame. Negative controls reject actual missing
+or duplicate submissions, wrong pixels, bad baselines and a missing final frame.
+The earlier Linux barcode mismatch remains tracked in #189; omitted callbacks
+do not explain a mismatching pixel sample.
