@@ -1,18 +1,17 @@
 """A user's Pause/seek/dispose must cancel a pending audio-device startup."""
 import json
-from pathlib import Path
 import shutil
 import subprocess
 
 import pytest
+from tests.native_stage_harness import stage_script
 
 
 @pytest.mark.skipif(not shutil.which('node'), reason='Node is required')
 @pytest.mark.parametrize('action', ['pause', 'seek', 'dispose', 'dispose_seek'])
 @pytest.mark.parametrize('phase', ['resume', 'output_clock'])
 def test_cancel_during_audio_startup(action, phase):
-    path = Path(__file__).parents[1]/'src/moviestar/preview_native_stage.mjs'
-    stage = path.read_text().split('\n', 1)[1]
+    stage = stage_script()
     script = r'''
 const vm=require('node:vm'),assert=require('node:assert/strict');
 let resume,clock,releaseClock;const clockWait=new Promise(resolve=>releaseClock=resolve);
@@ -54,8 +53,7 @@ const api=context.window.moviestarLiveStage,flush=()=>new Promise(resolve=>setIm
 @pytest.mark.skipif(not shutil.which('node'), reason='Node is required')
 @pytest.mark.parametrize('playback_drops', [0, 2])
 def test_final_seek_discards_are_separate_from_playback_quality(playback_drops):
-    path = Path(__file__).parents[1]/'src/moviestar/preview_native_stage.mjs'
-    stage = path.read_text().split('\n', 1)[1]
+    stage = stage_script()
     script = r'''
 const vm=require('node:vm'),assert=require('node:assert/strict');
 const context={window:{moviestarScene:{entries:[],applyMotion(){}}},document:{createElement:()=>({getContext:()=>({})})},
@@ -89,7 +87,7 @@ vm.runInContext(`
 @pytest.mark.parametrize('shared', [False, True])
 @pytest.mark.parametrize('silent_listener', [False, True])
 def test_audio_graph_uses_one_final_meter_and_only_real_streams(shared, silent_listener):
-    stage = (Path(__file__).parents[1]/'src/moviestar/preview_native_stage.mjs').read_text().split('\n', 1)[1]
+    stage = stage_script()
     script = r'''
 const vm=require('node:vm'),assert=require('node:assert/strict');
 const sources=[],gains=[],meters=[],destination={id:'device'},scene={id:'scene'};
