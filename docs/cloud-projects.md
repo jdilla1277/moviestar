@@ -2,7 +2,8 @@
 
 Use the explicit `cloud` command group to create and reopen projects owned by
 your connected account, or discover projects shared with it when supported. Your service must have personal Cloud project access
-enabled. This initial client supports project metadata; inspect capabilities
+enabled. The client supports project metadata and, when advertised, existing
+account-asset references; inspect capabilities
 for the operations your service currently advertises.
 
 ## Install
@@ -285,3 +286,128 @@ or inaccessible project IDs return the same safe unavailable error as missing
 IDs. A previous list, an old URL, or a cached role never authorizes a later read.
 These operations read metadata only and do not upload, publish, select a local
 workspace or create another project.
+
+## Reuse existing assets across projects
+
+On a service advertising `project_assets.contract_version:
+"project-asset-references-v1"`, a ready account asset can belong to several owned
+projects. Supported kinds are video, audio, image, and transcript/captions.
+These commands work with existing originals; they do not upload or copy files,
+create local editing workspaces, or require FFmpeg. Use a CLI version whose
+`cloud projects --help` includes `add-asset` and `remove-asset`; older installed
+versions need an update once that release is available.
+
+Start with a ready original from the account asset API. Creating that original
+is currently an API journey; CLI, MCP, and Web reference an existing asset:
+
+1. With a same-environment personal key, send
+   `POST /api/v1/assets/uploads` with JSON
+   `{"filename":"image.png","size_bytes":1234}` using the file's actual length.
+   Save the returned `asset.id`, distinct `upload_id`, and `idempotency_key`.
+   Supply a saved `Idempotency-Key` header before the first request if you need
+   recovery from a completely lost reservation response.
+2. PUT the original bytes to `upload.url` using the returned upload headers.
+   **Do not send your Moviestar API key to storage.** The create-only transfer
+   uses `If-None-Match: *`; after an uncertain PUT, check completion instead of
+   replacing the original with another file.
+3. Call `POST /api/v1/assets/uploads/UPLOAD_ID/complete` with your personal key.
+   Continue with the returned ready `asset.id`. After a temporary failure,
+   retry that same upload ID rather than reserving another original.
+4. Read `GET /api/v1/assets/ASSET_ID` or download
+   `GET /api/v1/assets/ASSET_ID/download` with your personal key. The download
+   preserves the original bytes; comparing hashes before and after project
+   changes verifies that the asset survived unchanged.
+
+Starter originals include MP4/MOV and WebM video, MP3/WAV/M4A/FLAC audio,
+JPEG/PNG/WebP/GIF images, and UTF-8 SRT/VTT/TXT captions/transcripts. Video
+admission supports H.264/HEVC in MP4/MOV and VP8/VP9 in WebM; it does not promise
+browser playback or a full-file decode. Format and account-plan size limits
+apply. Asset creation requires no project, publication, or separate provisioning.
+
+```sh
+moviestar cloud assets list
+moviestar cloud projects add-asset PROJECT_A ASSET_ID
+moviestar cloud projects add-asset PROJECT_B ASSET_ID
+moviestar cloud projects assets PROJECT_A
+moviestar cloud projects assets PROJECT_B
+moviestar cloud projects remove-asset PROJECT_A REFERENCE_ID_FROM_A
+```
+
+Replace the placeholders with service-returned UUIDs. Each project membership
+has its own `reference_id`, distinct from the original `asset.id`. Remove uses
+that reference ID, so retrying an old removal cannot remove a later membership.
+List the second project afterward: the same original asset remains there and
+in your account. References add no storage or asset-slot charge; removing one
+does not free the original's charge or delete it. Deleting a project likewise
+preserves account originals.
+
+All three list commands support `--limit` and `--cursor`. Follow `next_cursor`
+unchanged until null. Account asset pages return ready originals; project asset
+pages return `{reference_id, asset}` entries. Legacy project-source uploads and
+assets owned by other people are not supported in this initial catalog. An
+accepted viewer project invitation does not grant asset access or membership
+changes. Unsupported services fail clearly before sending a mutation.
+
+`add-asset` generates and saves a retry key before sending. Rerun the same command
+after a lost response, or provide the original `--idempotency-key`. Its retry
+state is isolated by service, credential, project and asset. A `reference_removed`
+response means that attempt's membership remains removed; only use the suggested
+new key if deliberately adding it again. No fresh-key write happens
+automatically. If recovery storage fails, preserve the returned key and inspect
+the project's assets before repairing retry files beside your account profile.
+
+In the website, open an owned project, choose **Add existing assets**, select a
+ready original, and reopen the other project to add it there too. **Remove from
+project** removes only that membership. The account picker is separate from
+**Earlier project uploads**, which remain under their existing source contract.
+
+### HTTP reference operations
+
+Use the same environment's personal API key. First discover ready originals:
+
+```sh
+curl --fail-with-body 'https://trymoviestar.com/api/v1/account/cloud/assets?limit=20' \
+  -H "Authorization: Bearer $MOVIESTAR_API_KEY"
+curl --fail-with-body \
+  https://trymoviestar.com/api/v1/account/cloud/projects/PROJECT_A/asset-references \
+  -H "Authorization: Bearer $MOVIESTAR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: add-original-to-project-a" \
+  --data '{"asset_id":"ASSET_ID"}'
+```
+
+Attach returns HTTP 201 for a new membership, or 200 for an existing active
+membership, with `{status: "attached", reference, idempotency_key, replayed}` and
+`contract_version`. Omitted keys are generated and returned, but clients that
+need to recover a completely lost response should save a key before sending.
+The same key is bound to the same actor, project and asset. After removal, an
+old attach key returns HTTP 409 `reference_removed` rather than resurrecting it.
+
+```sh
+curl --fail-with-body \
+  'https://trymoviestar.com/api/v1/account/cloud/projects/PROJECT_A/assets?limit=20' \
+  -H "Authorization: Bearer $MOVIESTAR_API_KEY"
+curl --fail-with-body -X DELETE \
+  https://trymoviestar.com/api/v1/account/cloud/projects/PROJECT_A/asset-references/REFERENCE_ID_FROM_A \
+  -H "Authorization: Bearer $MOVIESTAR_API_KEY"
+```
+
+Removal returns HTTP 204, including an authorized replay. It never deletes the
+original, removes another membership, or releases storage. Current credentials,
+consent, project ownership and asset readiness/access are checked by the service
+on every operation. Missing and inaccessible IDs share HTTP 404.
+
+### Hosted MCP reference operations
+
+On a connection advertising the asset-reference tools, ask:
+
+> List my ready account assets. Add asset ASSET_ID to projects PROJECT_A and
+> PROJECT_B. Reopen both and confirm the asset ID matches. Remove only its
+> reference from PROJECT_A, then verify PROJECT_B still contains the same asset.
+
+Tools are `moviestar_list_assets`, `moviestar_list_project_assets`,
+`moviestar_add_project_asset`, and `moviestar_remove_project_asset`. Add accepts
+`project_id`, `asset_id`, and an optional `idempotency_key`; remove accepts
+`project_id` and `reference_id`. Agents generate and retain retry keys themselves.
+Listing returns metadata, not a download, analysis of contents, or a sharing
+grant. Reconnect and list by the same project ID to reopen its memberships.

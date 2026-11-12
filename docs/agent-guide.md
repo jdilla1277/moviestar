@@ -22,6 +22,13 @@ and `show`. Keep a create's original title and idempotency key for recovery.
 This does not redirect local editing commands or upload media. See
 [Personal Cloud projects](cloud-projects.md).
 
+When capabilities advertise project asset references, use `cloud assets list`
+and `cloud projects assets PROJECT_ID` to discover existing originals and their
+memberships. `cloud projects add-asset` reuses an original; `remove-asset` takes
+the specific reference ID and preserves that original and its other projects.
+Keep an uncertain attachment's retry key. These operations currently require
+owned assets and owned projects and do not migrate legacy project sources.
+
 ## Structured command loop
 
 1. Discover the relevant surface with `moviestar --help` and nested help.
