@@ -164,8 +164,8 @@ def read_snapshot(root, start, end):
 
     spec = load_spec(root)
     project = load_project(root)
-    if spec is None or not (spec.get("spatial") or {}).get("scenes"):
-        raise ValueError("Local preview currently requires a saved spatial scene project.")
+    if spec is None or not spec.get("composition") or any("layout" not in scene for scene in spec["composition"]):
+        raise ValueError("Local preview requires a saved scene composition.")
     # Rendering consumes the current edit, never undo payloads. Keep history
     # on disk; omit it from dependency scans, queue copies and worker packets.
     spec = {**spec, "revisions": []}
@@ -411,7 +411,7 @@ class _Handler(BaseHTTPRequestHandler):
         elif self.server.mode == "native" and route in {
                 "preview_native.mjs", "preview_native_stage.mjs", "preview_native_meter.mjs", "spatial_dom.mjs",
                 "preview_native_worker.mjs", "preview_native_buffer.mjs", "preview_native_cuts.mjs",
-                "preview_native_cut_meter.mjs"}:
+                "preview_native_cut_meter.mjs", "preview_native_videos.mjs"}:
             self._reply(200, files("moviestar").joinpath(route).read_bytes(), "text/javascript")
         elif self.server.mode == "native" and route == "stage":
             self._reply(200, b'<!doctype html><html><head><meta charset="utf-8"></head><body><script type="module" src="preview_native_stage.mjs"></script></body></html>', "text/html; charset=utf-8")

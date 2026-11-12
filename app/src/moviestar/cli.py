@@ -1140,13 +1140,17 @@ cli.add_command(composition)
               help="Local viewer port; 0 chooses a temporary port.")
 @click.option("--open/--no-open", "open_browser", default=True, help="Open the viewer in your local browser.")
 @click.option("--mode", type=click.Choice(["rendered", "native"]), default="rendered", show_default=True,
-              help="Rendered MP4 review or fast native playback for supported single-video scenes.")
+              help="Rendered MP4 review or fast native playback for supported one/two-video scenes.")
 def preview(from_tc, to_tc, port, open_browser, mode):
-    """Keep one local playback page open while an agent edits spatial scenes.
+    """Keep one local playback page open while an agent edits scenes.
 
     Runs in the foreground until Ctrl-C. Watches saved edits, including undo,
     and prepares versioned previews with audio. Rendered mode generates an MP4;
     native mode plays supported source media directly with the canonical layout.
+    Native scenes may contain one or two same-rate MP4 videos; one visible
+    video supplies the selected speaker audio. Static presets and spatial
+    components are supported. Preset caption overlays and independent audio
+    tracks still require rendered mode.
     Unsupported native projects fail explicitly; retry with --mode rendered.
     No account, upload, or cloud render is required. The URL works on this
     machine only. Edit with the existing CLI in another terminal.

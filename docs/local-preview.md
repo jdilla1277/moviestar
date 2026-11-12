@@ -1,12 +1,12 @@
 # Local preview viewer
 
-Keep one browser page open while a coding agent edits a spatial scene project.
+Keep one browser page open while a coding agent edits a scene project.
 Choose rendered MP4 review or the opt-in native player. Both follow saved edits,
 including `moviestar undo`, and need no account, upload or cloud render.
 
 | Mode | How review works | Use it for |
 | --- | --- | --- |
-| `--mode native` | The browser plays source media directly with the canonical scene layout, components, text, images, captions and motion. No preview MP4 is encoded. | Fast review of the supported single-video subset described below. |
+| `--mode native` | The browser plays source media directly with the canonical scene layout. No preview MP4 is encoded. | Fast review of the supported one/two-video subset described below. |
 | `--mode rendered` (default) | The shared spatial renderer produces a completed short MP4 with audio. | Projects outside the native subset, or review through the export renderer. Generation remains slow. |
 
 The viewer uses moviestar's gold star, serif wordmark and blue palette in a
@@ -17,7 +17,7 @@ account. Fonts are bundled, so branding does not require a network connection.
 
 ## Start the viewer
 
-From a project containing saved spatial scenes, in a persistent terminal:
+From a project containing saved scenes, in a persistent terminal:
 
 ```bash
 moviestar preview --mode native --from 0 --to 5
@@ -50,28 +50,45 @@ occupied port is an error, never a silent switch to another URL.
 ## Native profile and explicit fallback
 
 Native mode supports a frame-aligned window of at most ten seconds covering
-up to **three spatial scene spans joined by hard cuts**. Each cut must land on
+up to **three scene spans joined by hard cuts**. Each cut must land on
 the output frame grid. The project can contain other spatial or preset
 scenes before and after it; `--from`/`--to` stay on the full composition's result
 clock. For example, `--from 1801 --to 1806` reviews that section without preparing
 the preceding thirty minutes. Restart the viewer to select another range.
 
-Each selected span must have one visible MP4 carrying its own resolved audio.
-A cut switches picture and that clip’s audio together. A → B → A can return to
+Each selected span can have **one or two visible MP4s**. One visible video
+carries the resolved speaker audio; the other stays muted. Each video keeps its
+own source offset. Play, Pause, seek and revision replacement operate on both
+pictures. Both first frames must be prepared before the version becomes current.
+Both video elements feed the same Web Audio clock. The selected speaker's gain
+is one and the listener's gain is zero; both transport starts are submitted
+together. Pause, seek and replacement cancel pending startup too.
+A cut switches the composition and its selected speaker audio together. A → B → A can return to
 the same recording at a different source position, with a different layout,
 caption state or component arrangement in each scene.
-The source clock must be unit speed, matching the indexed output rate
+Every source clock must be unit speed, matching the indexed output rate
 (24–60 fps). Reusable components, text, shapes, images, manual/frozen captions and
 canonical sampled translation/scale/opacity are supported. Media wrappers must
 be relative/absolute, without padding, border widths or nested children.
 
 Audio can be explicitly selected for the scene, inferred from its single
 audio-capable slot, or selected by `composition_audio_from`. These routes are
-accepted when the canonical resolved audio follows the visible video's source
+accepted when the canonical resolved audio follows one visible video's source
 and clock. A scene's `audio_from: null` allows inference; it does not mute audio.
+An inset without embedded audio is allowed when another visible video provides
+the selected audio. Multiple audio-capable sources need an unambiguous route.
+
+Ordinary static `single`, `two-up` and `picture-in-picture` preset scenes also
+work, including fill/fit framing, crop anchors, rounded/circular inset masks and
+outside borders. The native adapter consumes the export planner's regions and
+does not rewrite the saved scene into a spatial document. Changes made with
+`scenes set`, `scenes geometry` and `undo` appear in the viewer. Preset camera or
+pacing motion and preset text/caption overlays intersecting the review window
+still require rendered mode. Spatial scenes retain their existing component,
+image, text, frozen-caption and motion support.
 
 Windows containing more than three spans, crossing pacing boundaries inside
-one scene, overlapping any transition, or needing multiple visible video clocks
+one scene, overlapping any transition, or needing more than two visible videos
 at once are rejected. Transitions elsewhere in the
 project do not block an otherwise supported window. The chosen sources must have
 no source edit operations, and placed caption tracks must use manual/frozen
@@ -112,16 +129,20 @@ encoded export.
 
 The viewer prepares every selected scene’s actual first video frame, images,
 fonts and canonical DOM before the version becomes current. At most three scene
-players/decoders are prepared per version, independent of the full project’s
+players with two decoders each are prepared per version, independent of the full project’s
 length. One shared audio context switches source gains at the cut; audio is
 measured after that switch. The output is stereo, using the browser's speaker
 downmix so center-channel dialogue in a surround source is preserved.
-A disposable snapshot of the outgoing last valid
-video frame covers the brief decoder/audio handoff, so a decoded frame beyond
-the edit is not displayed. This is an in-memory boundary frame, not an encoded
-or reusable rendered clip.
+A disposable snapshot of each outgoing last valid video frame covers the brief
+decoder/audio handoff. Cut players seek to prepare those pixels, then return to
+their initial frames before the version becomes current. Cut scheduling uses
+the presentation clock even when the browser omits a final-frame callback. The
+boundary frames live only in memory for those prepared players and are released
+on disposal; they are not encoded or reusable rendered clips.
 
-Cut and audio/display timing use a 50 ms reference tolerance. The program clock
+Cut and audio/display timing use a 50 ms reference tolerance. Inaudible pictures
+follow the audible video's clock with bounded rate correction; a drift beyond
+100 ms stops playback with rendered-mode guidance. The program clock
 is also checked across the complete sequence, not reset for each source. These
 are preview tolerances; export owns delivery-quality sample/frame encoding.
 The shared clock starts only on Play, and Pause, seek, revision replacement and

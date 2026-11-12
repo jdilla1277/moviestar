@@ -8,13 +8,13 @@ import pytest
 
 
 @pytest.mark.skipif(not shutil.which('node'), reason='Node required')
-@pytest.mark.parametrize('case',['initial_play','sequence','seek','pause_startup','dispose_startup','cancel_restart_seek','failure','source_eof_audio','buffer_fallback'])
+@pytest.mark.parametrize('case',['initial_play','sequence','seek','pause_startup','dispose_startup','cancel_restart_seek','failure','source_eof_audio','buffer_fallback','settle_failure','settle_cancel','drain_finish','drain_cancel','drain_failure'])
 def test_cut_playback_controls(case):
     module=(Path(__file__).parents[1]/'src/moviestar/preview_native_cuts.mjs').as_uri()
     script=r'''
 import assert from 'node:assert/strict';
 const {createCutPlayback}=await import(MODULE);
-let resolvePlay,resolveSeek,delayPlay=false,delaySeek=false,cleaned=0,shown=[];
+let resolvePlay,resolveSeek,resolveDrain,rejectDrain,delayDrain=false,delayPlay=false,delaySeek=false,cleaned=0,shown=[];
 const metrics={},audio={currentTime:1,state:'running'},packet={range:{from:0,to:9},fps:30,
  segments:[0,3,6].map((offset,i)=>({offset,packet:{range:{from:offset,to:offset+3}}}))};
 const stages=packet.segments.map((segment,i)=>{
@@ -23,7 +23,7 @@ const stages=packet.segments.map((segment,i)=>{
   async seek(at){if(delaySeek)await new Promise(resolve=>resolveSeek=resolve);this.time=at;},snapshot(){return{source:{number:i},boxes:[]};}};
  return{api,gain:{value:0,gain:{cancelScheduledValues(){},setValueAtTime(value,at){this.value=value;this.at=at;}}}};
 });
-const api=createCutPlayback({packet,stages,audio,metrics,show:i=>shown.push(i),cleanup:()=>cleaned++});
+const api=createCutPlayback({packet,stages,audio,metrics,show:i=>shown.push(i),cleanup:()=>cleaned++,drain:async()=>{if(delayDrain)await new Promise((resolve,reject)=>{resolveDrain=resolve;rejectDrain=reject;});}});
 const gains=()=>stages.map(stage=>stage.gain.gain.value),flush=()=>new Promise(resolve=>setImmediate(resolve));
 if(CASE==='initial_play'){
  await api.play();await new Promise(resolve=>setTimeout(resolve,15));assert.equal(api.paused,false);assert.equal(metrics.cuts.length,0);
@@ -54,6 +54,25 @@ if(CASE==='initial_play'){
  const normal=stages[0].api.seek;stages[0].api.seek=async function(at){await new Promise(resolve=>resolveSeek=resolve);this.time=at;};
  metrics.finished=true;const pending=api.play();await flush();api.pause();resolveSeek();await pending;
  assert.equal(stages.reduce((n,s)=>n+s.api.plays,0),0,'Pause during restart seek must cancel Play');
+}else if(CASE==='settle_failure'||CASE==='settle_cancel'){
+ await api.seek(6);await api.play();
+ let release;
+ stages[2].api.settleEnd=CASE==='settle_failure'?async()=>{throw Error('final frame failed');}:()=>new Promise(r=>release=r);
+ stages[2].api.time=3;const pending=stages[2].api.onSegmentEnd(Date.now());
+ if(CASE==='settle_cancel'){await flush();api.pause();release();}
+ await pending;assert.equal(api.paused,true);assert.deepEqual(gains(),[0,0,0]);
+ assert.equal(metrics.finished,false,'Failed/canceled final seek must not claim completion');
+ if(CASE==='settle_failure')assert.match(metrics.error,/final frame failed/);
+}else if(CASE.startsWith('drain_')){
+ await api.seek(6);await api.play();delayDrain=true;stages[2].api.time=3;
+ const pending=stages[2].api.onSegmentEnd(Date.now());await flush();
+ assert.equal(metrics.finished,false,'Do not publish completion before the final audio measurements arrive');
+ if(CASE==='drain_cancel')api.pause();
+ if(CASE==='drain_failure')rejectDrain(Error('meter failed'));else resolveDrain();
+ await pending;
+ assert.equal(metrics.finished,CASE==='drain_finish');
+ assert.equal(api.paused,true);
+ if(CASE==='drain_failure')assert.match(metrics.error,/meter failed/);
 }else if(CASE==='failure'){
  await api.play();stages[0].api.onFailure(Error('source expired'));
  assert.equal(api.paused,true);assert.match(metrics.error,/source expired/);assert.deepEqual(gains(),[0,0,0]);
@@ -125,11 +144,42 @@ const meter=new Processor({processorOptions:{audit:true}});
 const left=Float32Array.of(.1,-.2,.3,0),right=Float32Array.of(.5,-.5,.5,-.5),output=[new Float32Array(4),new Float32Array(4)];
 assert.equal(meter.process([[left,right]],[output]),true);
 assert.deepEqual([...output[0]],[...left]);assert.deepEqual([...output[1]],[...right]);
-assert.equal(messages.find(x=>x.kind==='block').rms,.5);assert.equal(messages.filter(x=>x.kind==='cue').length,1);
+meter.port.onmessage({data:{kind:'flush',id:1}});assert.equal(messages.find(x=>x.kind==='blocks').blocks[0].rms,.5);assert.equal(messages.filter(x=>x.kind==='cue').length,1);
 messages=[];meter.process([[left]],[output]);assert.deepEqual([...output[1]],[...left]);
 meter.process([],[output]);assert.deepEqual([...output[0]],[0,0,0,0]);assert.deepEqual([...output[1]],[0,0,0,0]);
 const normal=new Processor({processorOptions:{audit:false}});messages=[];normal.process([[left,right]],[output]);
-assert.equal(messages.filter(x=>x.kind==='block').length,0,'Normal playback emits no per-quantum audit stream');
+assert.equal(messages.filter(x=>x.kind==='blocks').length,0,'Normal playback emits no per-quantum audit stream');
 '''
     result=subprocess.run(['node','-e','const SOURCE='+json.dumps(module)+';\n'+script],capture_output=True,text=True,timeout=10)
     assert result.returncode==0,result.stdout+result.stderr
+
+
+def test_cut_meter_batches_without_losing_any_quantum_or_final_partial_batch():
+    if not shutil.which('node'): pytest.skip('Node required')
+    module = (Path(__file__).parents[1]/'src/moviestar/preview_native_cut_meter.mjs').read_text()
+    script = r'''
+const vm=require('node:vm'),assert=require('node:assert/strict');let Processor,messages=[];
+class Base{port={postMessage:data=>messages.push(data)};}
+const context={AudioWorkletProcessor:Base,currentFrame:0,sampleRate:48000,registerProcessor:(name,klass)=>Processor=klass};
+vm.runInNewContext(SOURCE,context);
+const meter=new Processor({processorOptions:{audit:true}}),output=[new Float32Array(128),new Float32Array(128)];
+for(let i=0;i<13;i++){
+ context.currentFrame=i*128;
+ const value=i===7?0:.125,channel=new Float32Array(128).fill(value);
+ meter.process([[channel,channel]],[output]);
+ assert.deepEqual([...output[0]],[...channel]);assert.deepEqual([...output[1]],[...channel]);
+}
+const batches=()=>messages.filter(x=>x.kind==='blocks');
+assert.ok(batches().length>0&&batches().length<13,'Send fewer IPC messages, not fewer measurements');
+assert.ok(batches().flatMap(x=>x.blocks).length<13,'Retain a partial batch until explicitly drained');
+meter.port.onmessage({data:{kind:'flush',id:9}});
+const blocks=batches().flatMap(x=>x.blocks);
+assert.equal(blocks.length,13,'Every render quantum, including the final partial batch, survives');
+blocks.forEach((block,i)=>{
+ assert.equal(block.kind,'block');assert.equal(block.context_time,i*128/48000);
+ assert.equal(block.duration,128/48000);assert.equal(block.rms,i===7?0:.125);
+});
+assert.equal(messages.at(-1).kind,'flushed');assert.equal(messages.at(-1).id,9,'Acknowledge after publishing the final data');
+'''
+    result = subprocess.run(['node', '-e', 'const SOURCE='+json.dumps(module)+';\n'+script], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stdout+result.stderr

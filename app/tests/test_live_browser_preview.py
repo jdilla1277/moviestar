@@ -77,6 +77,8 @@ def test_live_packet_rejects_unimplemented_behavior(live_project, mutation):
         extra = deepcopy(spec['spatial']['scenes']['scene']['layout']['children'][0])
         extra['instance_id'] = 'other'
         spec['spatial']['scenes']['scene']['layout']['children'].append(extra)
+        third = deepcopy(extra); third['instance_id'] = 'third'
+        spec['spatial']['scenes']['scene']['layout']['children'].append(third)
     elif mutation == 'audio_mix':
         spec['audio_mix']['source_audio']['gain_db'] = -3
     elif mutation == 'no_audio':

@@ -52,8 +52,11 @@ from the project directory), or use a coding agent. Undo uses the existing CLI.
 
 The probe fails explicitly outside this subset:
 
-- Up to three spatial scene spans joined by frame-aligned hard cuts, each with
-  exactly one visible video and its embedded source audio on the same unit-speed clock. The project can have other spatial
+- Up to three scene spans joined by frame-aligned hard cuts, each with one or
+  two visible videos and one selected embedded source-audio route. Both pipelines
+  share an audio output clock; a listener gain of zero makes it inaudible. Static
+  `single`, `two-up` and `picture-in-picture` presets use the export planner. The
+  project can have other spatial
   or preset scenes, and pacing/transition behavior outside the review window.
 - A frame-aligned window of at most ten seconds, at 24–60 fps, matching the indexed source rate (the installed profile excludes
   low rates whose early last-frame stop would exceed the reference timing budget).
@@ -63,7 +66,7 @@ The probe fails explicitly outside this subset:
 - Relative/absolute media wrappers without padding, border widths or children.
 
 Source edit operations on the chosen video, ranges crossing in-scene pacing boundaries
-or overlapping transitions, multiple video clocks, live caption derivation on placed tracks, external
+or overlapping transitions, more than two visible videos per scene, live caption derivation on placed tracks, external
 soundtracks, gain/fades/mixing, holds and speed changes are not implemented here.
 Other codecs, VFR, HDR/color-management parity, network
 sources and cloud/phone delivery remain unverified. Private camera evaluation
@@ -636,3 +639,105 @@ harness before attributing a timing difference to a product change.
 **Keep real-input output directories entirely private.** Input models and raw
 CLI output may contain source paths, captions or other customer content. No
 upload is performed; do not attach these artifacts to a public issue or PR.
+
+### Representative picture-in-picture edits
+
+From the repository root, use a new output directory:
+
+```bash
+app/.venv/bin/python experiments/live_browser_preview/pip_benchmark.py --out /tmp/moviestar-pip-run-1
+```
+
+This prepares a small portrait two-camera preset composition, then measures
+eight actual command operations at each initial undo depth 0/20/50: move and
+resize the inset, reframe the main picture, swap the cameras and speaker audio,
+and undo each edit. Setup/ingestion/history seeding stays outside edit timing.
+Generated source pictures have a horizontal pattern so crop changes affect
+visible content. A quieter second audio source checks the swapped output and
+the actual listener audio gain must stay zero. Both video elements feed a
+shared Web Audio clock; muting the element itself can select a different video
+scheduling path and add startup delay at cuts. The software-headless reference
+view is the authored 360×640 raster at 1×; this does not certify the viewer's
+default upscaling/viewport behavior. Browser tests separately compare masks/borders with
+export pixels and exercise reusable components and two-video hard cuts.
+
+Readiness requires a fresh visible revision with **both** decoded source frames,
+the expected asset identities/source offsets, measured boxes, crop anchors and
+audio carrier, plus command success. The diagnostic observer's legacy
+`expected_text_visible` field carries this semantic predicate in the PiP adapter;
+there is no title-only shortcut. The 3,000 ms every-edit gate and 10/15-second
+readiness/command deadlines are unchanged. A miss is retained and makes the
+runner fail. Each case preserves the command arguments/input JSON, raw outputs,
+traces, package source hashes, experiment hashes, runtime versions, observed
+history counts and final content/FIFO-undo checks.
+
+Optional `--sources FIRST.mp4 SECOND.mp4` references supplied recordings in
+place, selects seconds 3–8 and keeps the entire output local. These inputs must
+be compatible same-rate MP4s at least eight seconds long. This checks a small
+composition referencing large files; it does not replace the existing
+121-scene/full-history stress case or certify general native coverage. Raw
+real-input artifacts must remain private. Physical speech/lip-sync review is a
+separate owner check, not established by command success or decoder counters.
+
+Reference run at `5c1ba92` (one host, Chrome for Testing 156.0.8078.73,
+generated media, authored 360×640 at 1×):
+
+This single-span timing reference predates explicit outgoing-frame preparation
+for cuts. It does not measure two-video cut-edit preparation latency. Browser
+regressions separately suppress final-frame callbacks and require smooth cut
+completion, both held final frames and unchanged timing/quality limits.
+
+| Initial undo entries | Completed operations | Maximum command-to-visible-ready | ≥3,000 ms misses |
+| --- | --- | --- | --- |
+| 0 | 8/8 | 813 ms | 0 |
+| 20 | 8/8 | 744 ms | 0 |
+| 50 | 8/8 | 1,330 ms | 0 |
+
+All three cases restored current content through four individual undos,
+including the expected FIFO cap behavior. Swapped-speaker playback had no stalls
+or dropped decoder frames; maximum flash/beep phase error was 24.05 ms against
+the existing 50 ms reference. This small single-scene sample does not establish
+general long-project, cloud or full native-feature acceptance.
+
+Frame callbacks can omit observations without a decoder presentation drop.
+The generated cue check correlates each known cue instant with a presented-frame
+clock within one frame, requires all five actual output audio cues, a usable
+output clock and complete zero-drop decoder counters, and keeps the 50 ms limit.
+Raw observed flash counts remain in the report. Negative controls reject missing
+clock/sample/audio data, 51 ms audio drift and decoder drops. Separate cut tests
+also require whole-program clock drift within 50 ms. Starting a muted follower
+before the speaker had introduced real delay at each cut; both pipelines now
+start together on the same audio clock with independent output gains.
+
+Earlier producer `42fb920` used Chrome 157 and a different startup path; its
+generated maxima were 811 / 849 / 725 ms. A separate earlier default/upscaled-view
+run met latency but reported one dropped follower frame per playback. Keep those
+failures: neither is a controlled speed comparison with this reference. The
+ordinary viewport/upscaling behavior remains under
+[viewer follow-up #149](https://github.com/jdilla1277/moviestar/issues/149);
+the current 1× result does not certify every display condition. No deadline or
+fidelity budget was widened to make this run pass.
+
+
+### Headless playback cadence
+
+The browser driver disables `OnBeginFrameThrottleVideo` in Chrome for Testing.
+The pinned 156.0.8078.73 Linux build can leave a gap in video-compositor frame
+requests while the audio output and decoding buffers continue normally. A
+captured generated-fixture trace showed a roughly 67 ms gap, followed by two
+reported video drops; the renderer's main thread was not blocked for that
+interval. This is a browser scheduling investigation, not evidence that every
+historical timeout or drop has the same cause.
+
+The headless reference uses display-vsync frame requests instead of per-video
+throttling. Source dimensions, encoded FPS, playback speed, wall-clock audio,
+raw dropped-frame counters and all existing fidelity/per-edit budgets stay the
+same. Reproduction with a separately launched headless browser needs the same
+`--disable-features=OnBeginFrameThrottleVideo` flag; record browser version and
+flags with benchmark results. Ordinary human browsers are separate physical
+playback checks, and these reference results do not certify every browser/host.
+
+The feature is present and enabled in the [pinned Chromium source](https://chromium.googlesource.com/chromium/src/+/refs/tags/156.0.8078.73/components/viz/common/features.cc).
+Failed acceptance runs remain failed. On failure, CI can collect generated-only
+browser traces in a separate diagnostic run; a diagnostic rerun never replaces
+the original acceptance result.

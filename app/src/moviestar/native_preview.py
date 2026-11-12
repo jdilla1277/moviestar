@@ -19,7 +19,8 @@ def walk(nodes):
 
 PROFILE = {"name": "native", "transport": "native-browser", "max_window_s": 10,
            "clip_end_tolerance_ms": 50, "clip_end": "approximate",
-           "min_fps": 24, "max_fps": 60, "max_segments": 3, "fallback_mode": "rendered"}
+           "min_fps": 24, "max_fps": 60, "max_segments": 3, "max_videos_per_segment": 2,
+           "fallback_mode": "rendered"}
 
 
 class NativePreviewUnsupported(ValueError):
@@ -72,8 +73,6 @@ def _compile_span(snapshot, timeline, start, end, span):
     spec, project, root = snapshot['spec'], snapshot['project'], Path(snapshot['root'])
     fps = timeline.output_fps
     scene = spec['composition'][span.scene_index]
-    if span.scene_id not in (spec.get('spatial') or {}).get('scenes', {}):
-        fail('the selected span must have a spatial scene layout')
     # Inside a single span, scene/edge transition windows can intersect the
     # review only at its ends. Check the half-open interval, including the
     # unsampled tail after the last frame; unrelated transitions are harmless.
@@ -82,6 +81,12 @@ def _compile_span(snapshot, timeline, start, end, span):
     expected_mix = {'source_audio': {'muted': False, 'gain_db': 0.0, 'fade_in': 0.0, 'fade_out': 0.0}, 'tracks': []}
     if spec['audio_mix'] != expected_mix:
         fail('audio mixing, gain and fades are not implemented')
+    preset = None
+    if span.scene_id not in (spec.get('spatial') or {}).get('scenes', {}):
+        if not scene['slots']:
+            fail('native preset review requires video slots')
+        from moviestar.native_preset import prepare_preset
+        preset = prepare_preset(spec, project, timeline, span, start, end, fail)
     metadata = {source['id']: source for source in project['sources']}
     durations = {key: source['duration']['seconds'] for key, source in metadata.items()}
     source_paths = {source['id']: (root / source['path']).resolve() for source in spec['sources']}
@@ -89,10 +94,11 @@ def _compile_span(snapshot, timeline, start, end, span):
                    for key, value in spec.get('spatial', {}).get('assets', {}).items()}
     assets, media, samples = {}, [], []
     initial = shape = None
-    source_start = video_path = video_asset = None
+    source_start = video_path = None
+    clocks = {}
     for index in range(round((end-start)*fps)):
         at = start+index/fps
-        frame = compile_spatial_frame(spec, timeline, at, source_durations=durations)
+        frame = preset(at) if preset else compile_spatial_frame(spec, timeline, at, source_durations=durations)
         if frame.get('kind') in {'transition', 'preset'}:
             fail('this native profile requires a spatial scene without transitions')
         prepared = prepare_layout_frame(frame, timeline.canvas)
@@ -106,37 +112,41 @@ def _compile_span(snapshot, timeline, start, end, span):
                    for recipe in spec.get('captions', [])):
                 fail('live caption recipes are not implemented; use manual/frozen cues')
         videos = [node for node in expanded.values() if node.get('type') == 'video']
-        if len(videos) != 1 or not (videos[0].get('media') or {}).get('visible'):
-            fail('exactly one video must be visible throughout this review window')
-        video = videos[0]
+        if not 1 <= len(videos) <= PROFILE['max_videos_per_segment']:
+            fail('one or two videos must be visible throughout this review window')
+        if any(not (v.get('media') or {}).get('visible') for v in videos):
+            fail('every video must remain visible with an ordinary unit-speed source clock')
         if index == 0:
-            video_path = video['occurrence_path']
-            video_asset = video['media']['asset_id']
-            if any(source.get('operations') for source in spec['sources'] if source['id'] == video_asset):
-                fail('source operations are not implemented in this native profile')
-            source_start = video['media']['source_time_s']
-            native_fps = metadata[video_asset].get('fps')
-            if not isinstance(native_fps, (int, float)) or abs(native_fps-fps) > 1e-6:
-                fail('the indexed source rate must match the preview rate')
-            if source_paths[video_asset].suffix.lower() != '.mp4' or not metadata[video_asset].get('audio_codec'):
-                fail('use a native-compatible MP4 with embedded audio for this native profile')
+            for video in videos:
+                asset = video['media']['asset_id']
+                if any(s.get('operations') for s in spec['sources'] if s['id'] == asset):
+                    fail('source operations are not implemented in this native profile')
+                native_fps = metadata[asset].get('fps')
+                if not isinstance(native_fps, (int, float)) or abs(native_fps-fps) > 1e-6:
+                    fail('every indexed source rate must match the preview rate')
+                if source_paths[asset].suffix.lower() != '.mp4':
+                    fail('use native-compatible MP4 sources')
+                clock = video['media']['source_time_s']
+                if clock < 0 or clock+end-start > durations[asset]+1e-6:
+                    fail('the review window exceeds a video source duration')
+                clocks[tuple(video['occurrence_path'])] = clock
             audio = span.audio
-            if (audio.source_id != video_asset or len(audio.slices) != 1
-                    or abs(audio.speed-1) > 1e-8 or len(scene['slots']) != 1
-                    or scene['slots'][0]['source'] != video_asset):
-                fail('audio must follow the single visible video and its carrier slot')
-            slot = span.slot(scene['slots'][0]['slot'])
+            if (len(audio.slices) != 1 or abs(audio.speed-1) > 1e-8
+                    or not metadata.get(audio.source_id, {}).get('audio_codec')):
+                fail('audio must follow one visible video with embedded audio')
             audio_start, audio_end = audio.slices[0]
-            # The canonical route may be explicit, inferred or composition-wide.
-            # Check its source-time slice against the span-relative review
-            # window, rather than requiring a particular authored route.
-            if (slot is None or slot.held or abs(slot.speed-1) > 1e-8
-                    or abs(slot.source_from_s+start-span.start_s-source_start) > 1e-6
-                    or abs(audio_start+start-span.start_s-source_start) > 1e-6
+            selected = [v for v in videos if v['media']['asset_id'] == audio.source_id
+                        and abs(v['media']['source_time_s']-(audio_start+start-span.start_s)) < 1e-6]
+            carriers = [span.slot(s['slot']) for s in scene['slots'] if s['source'] == audio.source_id]
+            if (not selected or not any(s is not None and not s.held and abs(s.speed-1) < 1e-8
+                    and abs(s.source_from_s-audio_start) < 1e-6 for s in carriers)
                     or audio_end+1e-6 < audio_start+end-span.start_s):
                 fail('audio and video must share an ordinary unit-speed source clock')
-        if abs(video['media']['source_time_s']-(source_start+index/fps)) > 1e-5:
-            fail('holds and source-speed changes are not implemented')
+            video_path = selected[0]['occurrence_path']
+            source_start = selected[0]['media']['source_time_s']
+        if ({tuple(v['occurrence_path']) for v in videos} != set(clocks) or any(
+                abs(v['media']['source_time_s']-(clocks[tuple(v['occurrence_path'])]+index/fps)) > 1e-5 for v in videos)):
+            fail('all videos require stable paths and ordinary unit-speed source clocks')
         current_shape = [(node['path'], node['kind'], node['style']) for node in walk(prepared['nodes'])]
         if shape is not None and current_shape != shape:
             fail('topology/style changes inside a window are not implemented')
@@ -168,7 +178,11 @@ def _compile_span(snapshot, timeline, start, end, span):
                 key = sha256(json.dumps([str(path), identity]).encode()).hexdigest()[:24]
                 assets[key] = {'path': path, 'identity': identity, 'kind': kind}
                 media.append({'path': node['path'], 'kind': kind, 'asset': key,
-                              'object_fit': style.get('object-fit', 'fill')})
+                              'object_fit': style.get('object-fit', 'fill'),
+                              'object_position': original.get('native_object_position', '50% 50%'),
+                              **({'has_audio': bool(metadata[asset].get('audio_codec')),
+                                  'source_start': clocks[tuple(node['path'])],
+                                  'source_end': clocks[tuple(node['path'])]+end-start} if kind == 'video' else {})})
         def dynamic(nodes):
             return [{'path': node['path'], 'content': node['content'],
                      'motion': node.get('motion'), 'caption': node.get('caption'),

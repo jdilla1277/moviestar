@@ -1,6 +1,16 @@
 // Passthrough mix meter. Per-quantum diagnostics are opt-in, local benchmark data.
 class CutOutputMeter extends AudioWorkletProcessor {
-  constructor(options){super();this.audit=options.processorOptions?.audit===true;this.active=false;}
+  constructor(options){
+    super();this.audit=options.processorOptions?.audit===true;this.active=false;this.blocks=[];
+    this.port.onmessage=({data})=>{
+      if(data.kind!=='flush')return;
+      this.flush();this.port.postMessage({kind:'flushed',id:data.id});
+    };
+  }
+  flush(){
+    if(!this.blocks.length)return;
+    this.port.postMessage({kind:'blocks',blocks:this.blocks});this.blocks=[];
+  }
   process(inputs,outputs){
     const input=inputs[0]??[],output=outputs[0]??[];
     for(let i=0;i<output.length;i++){
@@ -15,8 +25,10 @@ class CutOutputMeter extends AudioWorkletProcessor {
       // The synthetic fixture's right channel is a continuous pilot tone.
       const samples=output[1]??output[0];let energy=0;
       if(samples)for(const value of samples)energy+=value*value;
-      this.port.postMessage({kind:'block',context_time:currentFrame/sampleRate,rms:samples?Math.sqrt(energy/samples.length):0,
+      this.blocks.push({kind:'block',context_time:currentFrame/sampleRate,rms:samples?Math.sqrt(energy/samples.length):0,
         duration:samples?samples.length/sampleRate:0});
+      // Preserve every quantum but avoid hundreds of main-thread IPC tasks.
+      if(this.blocks.length>=8)this.flush();
     }
     return true;
   }
