@@ -54,11 +54,11 @@ def test_caption_worker_paints_only_changed_states_to_scoped_pngs(pip_project, t
     request = read_snapshot(root, 0, 5)
     request.update(request_id='a'*24, requested_at=1)
     path = tmp_path/'request.json'; path.write_text(json.dumps(request))
-    original = subprocess.run; calls = []
+    original = subprocess.Popen; calls = []
     def run(args, **kwargs):
         calls.append(args)
         return original(args, **kwargs)
-    monkeypatch.setattr(subprocess, 'run', run)
+    monkeypatch.setattr(subprocess, 'Popen', run)
     build(path)
     packet = json.loads((tmp_path/'preview.json').read_text())
     registry = json.loads((tmp_path/'assets.json').read_text())

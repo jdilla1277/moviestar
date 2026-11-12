@@ -98,10 +98,16 @@ have zero decoder drops/stalls and audio/display phase within 50 ms. Word-plane
 selection and application lateness are also checked on presented frames. The
 driver retains all attempts, exact inputs, process outputs, producer/package
 hashes and runtime versions. Reusing an output folder is forbidden.
+Each caption-only edit must also preserve the existing iframe/decoders. Separate
+browser checks hold an obsolete preparation while a newer edit completes,
+verify that it never publishes, play again after editing a finished preview, and
+require geometry changes to rebuild the player. Source fingerprint changes
+invalidate decoder reuse too.
 
 Caption glyphs reuse export's drawtext/ASS painting over synthetic mattes;
 source footage is not decoded and no preview movie is encoded. Transparent
-planes are cropped, preloaded, request-scoped and pruned with history. Unit
+planes stream through one matte-pair buffer, are cropped, preloaded,
+request-scoped and pruned with history. Unit
 checks compare their composition with independent opaque export-filter output
 (maximum channel error 5), including outlines, opacity and plain background
 boxes. Preset highlighted captions and ordinary spatial live-caption text have

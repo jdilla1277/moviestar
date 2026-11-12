@@ -6,10 +6,10 @@ const target=()=>selection?state?.history.find(item=>item.request_id===selection
 const allowed=item=>target()?.request_id===item.request_id&&(selection||state.latest.request_id===item.request_id);
 function discard(){
   if(!pending)return;
-  clearTimeout(pending.timer);pending.cancel(Error('Superseded'));pending.frame.contentWindow?.moviestarLiveStage?.dispose();pending.frame.remove();pending=null;
+  clearTimeout(pending.timer);pending.controller.abort();pending.transaction?.cancel();pending.cancel(Error('Superseded'));pending.frame.contentWindow?.moviestarLiveStage?.dispose();pending.frame.remove();pending=null;
 }
 function describe(){
-  const upToDate=current&&current.item.request_id===state?.latest?.request_id&&!selection;
+  const upToDate=current&&current.item.request_id===state?.latest?.request_id&&!selection&&!pending;
   $('status').textContent=!connected?'Disconnected — showing the last loaded preview.':selection?(current?.item.request_id===selection?'Historical preview — project unchanged.':'Loading historical preview — project unchanged.'):current?.api.error?'Native playback failed — showing its last frame.':state?.latest?.status==='failed'?'Latest native preview failed. Any preview shown is from an older edit.':failed?'The requested native preview could not load. Any preview shown is from an older edit.':upToDate?'Current native preview · Play to review video and sound.':current?'Updating — showing an older preview.':'Preparing native preview…';
   $('play').disabled=Boolean(pending||!current||current.api.error);
   $('error').textContent=selection&&!state?.history.some(item=>item.request_id===selection)?'That historical preview is no longer retained in this session.':state?.latest?.status==='failed'?state.latest.error:failed?(failureText||'The requested native preview could not load. Use --mode rendered.'):current?.api.error??'';
@@ -36,7 +36,7 @@ function load(item){
   discard();current?.api.pause();
   const frame=document.createElement('iframe');frame.className='pending';frame.title='Live spatial scene';
   let cancel;const canceled=new Promise((_,reject)=>{cancel=reject;});canceled.catch(()=>{});
-  const candidate={item,frame,cancel,timer:setTimeout(()=>finishError(Error('Native preview timed out')),30000)};
+  const candidate={item,frame,cancel,controller:new AbortController(),timer:setTimeout(()=>finishError(Error('Native preview timed out')),30000)};
   pending=candidate;
   function finishError(error){if(pending!==candidate)return;failed=item.request_id;failureText='The requested native preview could not load: '+error.message+' Use --mode rendered if this browser or project is unsupported.';discard();describe();}
   frame.addEventListener('load',async()=>{
@@ -60,7 +60,28 @@ function load(item){
       describe();
     }catch(error){finishError(error);}
   },{once:true});
-  frame.src=base+'stage?request='+item.request_id+(new URLSearchParams(location.search).has('audit')?'&audit=1':'');$('stage').append(frame);
+  (async()=>{
+    if(current?.api.prepareCaptionUpdate&&!current.api.error){
+      const response=await fetch(base+'packet?request='+item.request_id,{cache:'no-store',signal:candidate.controller.signal});
+      if(!response.ok)throw Error('The requested packet is no longer retained.');
+      const packet=await response.json();
+      if(packet.request_id!==item.request_id||packet.state_id!==item.state_id)throw Error('Wrong native preview revision.');
+      const transaction=await current.api.prepareCaptionUpdate(packet,candidate.controller.signal);
+      candidate.transaction=transaction;
+      if(pending!==candidate||!allowed(item)){transaction?.cancel();return;}
+      if(transaction){
+        if(current.api.metrics.finished)await current.api.seek(0);
+        if(pending!==candidate||!allowed(item)){transaction.cancel();return;}
+        transaction.commit();current={...current,item};
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+        if(pending!==candidate||!allowed(item))return;
+        clearTimeout(candidate.timer);pending=null;current.ready_at=Date.now();failed=null;failureText='';seeking=false;++seekGeneration;
+        events.push({request_id:item.request_id,state_id:item.state_id,ready_at:current.ready_at,requested_at:item.requested_at*1000,reused_decoders:true});if(events.length>64)events.shift();describe();return;
+      }
+    }
+    if(pending!==candidate||!allowed(item))return;
+    frame.src=base+'stage?request='+item.request_id+(new URLSearchParams(location.search).has('audit')?'&audit=1':'');$('stage').append(frame);
+  })().catch(finishError);
 }
 function update(){
   if(pending&&!allowed(pending.item))discard();
@@ -94,6 +115,6 @@ window.movieStarPreview=window.moviestarLive={mode:'native',events,
   get displayed(){return current?.item;},
   get measurements(){return Object.fromEntries(events.map(item=>[item.request_id,{playable_ready_ms:Math.round(item.ready_at-item.requested_at),stalls:current?.item.request_id===item.request_id?current.api.metrics.stalls:undefined}]));},
   get state(){return state;},get current(){return current?.item;},
-  get is_current(){return Boolean(!selection&&current&&allowed(current.item)&&!current.api.error);},
+  get is_current(){return Boolean(!selection&&!pending&&current&&allowed(current.item)&&!current.api.error);},
   get stage(){return current?.api;},get pending(){return pending?.item;}};
 poll();

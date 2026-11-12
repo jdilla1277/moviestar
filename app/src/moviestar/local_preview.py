@@ -433,7 +433,7 @@ class _Handler(BaseHTTPRequestHandler):
         elif self.server.mode == "native" and route in {
                 "preview_native.mjs", "preview_native_stage.mjs", "preview_native_meter.mjs", "spatial_dom.mjs",
                 "preview_native_worker.mjs", "preview_native_buffer.mjs", "preview_native_cuts.mjs",
-                "preview_native_cut_meter.mjs", "preview_native_videos.mjs"}:
+                "preview_native_cut_meter.mjs", "preview_native_videos.mjs", "preview_native_captions.mjs"}:
             self._reply(200, files("moviestar").joinpath(route).read_bytes(), "text/javascript")
         elif self.server.mode == "native" and route == "stage":
             self._reply(200, b'<!doctype html><html><head><meta charset="utf-8"></head><body><script type="module" src="preview_native_stage.mjs"></script></body></html>', "text/html; charset=utf-8")

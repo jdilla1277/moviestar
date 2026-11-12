@@ -8,6 +8,8 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import subprocess
+import tempfile
+import threading
 
 import av
 import numpy as np
@@ -93,38 +95,47 @@ def paint_plane(job, directory):
         filters += build_overlay_filter_parts(job['plans'], job['canvas'], job['duration'],
             input_label=color+'selected', output_label=color+'paint', highlight_ass=ass, label_prefix=color)
     filters.append('[blackpaint][whitepaint]hstack=inputs=2[both]')
-    raw = directory/'mattes.rgb'
     args += ['-filter_complex', ';'.join(filters), '-map', '[both]', '-an', '-fps_mode', 'vfr',
-        '-frames:v', str(len(job['frames'])), '-threads', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', str(raw)]
-    try:
-        result = subprocess.run(args, capture_output=True, text=True, timeout=30)
-    except subprocess.TimeoutExpired as exc:
-        raise ValueError('Native caption painting timed out; use --mode rendered.') from exc
-    if result.returncode:
-        raise ValueError('Native caption painting failed; use --mode rendered. ' + result.stderr[-2000:])
-    if raw.stat().st_size != len(job['frames'])*width*height*6:
-        raise ValueError('Native caption painting did not produce every required state; use --mode rendered.')
-    mattes = np.memmap(raw, mode='r', dtype=np.uint8, shape=(len(job['frames']), height, width*2, 3))
+        '-frames:v', str(len(job['frames'])), '-threads', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1']
     outputs = []
-    try:
-        for index, pair in enumerate(mattes):
-            black, white = pair[:, :width].astype(np.int16), pair[:, width:].astype(np.int16)
-            alpha = np.clip(255 - np.median(white-black, axis=2), 0, 255).astype(np.uint8)
-            ys, xs = np.nonzero(alpha)
-            left, top = (int(xs.min()), int(ys.min())) if len(xs) else (0, 0)
-            right, bottom = (int(xs.max())+1, int(ys.max())+1) if len(xs) else (1, 1)
-            crop_alpha = alpha[top:bottom, left:right]
-            rgba = np.empty((bottom-top, right-left, 4), dtype=np.uint8)
-            rgba[:, :, :3] = np.clip(np.rint(black[top:bottom, left:right]*255.0 /
-                np.maximum(crop_alpha[:, :, None], 1)), 0, 255).astype(np.uint8)
-            rgba[:, :, 3] = crop_alpha
-            encoder = av.CodecContext.create('png', 'w')
-            encoder.width, encoder.height = right-left, bottom-top
-            encoder.pix_fmt = 'rgba'; encoder.time_base = Fraction(1, 25); encoder.thread_count = 1
-            path = directory/f'state-{index+1:03d}.png'
-            path.write_bytes(b''.join(bytes(p) for p in encoder.encode(av.VideoFrame.from_ndarray(rgba, format='rgba'))))
-            outputs.append((path, {'x': left, 'y': top, 'width': right-left, 'height': bottom-top}))
-    finally:
-        del mattes
-        raw.unlink()
+    # Keep one matte pair in memory, not a full-canvas sequence on disk.
+    # A deadline also bounds a blocked pipe read, not only process.wait().
+    with tempfile.TemporaryFile() as errors:
+        process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=errors)
+        timer = threading.Timer(30, process.kill); timer.daemon = True; timer.start()
+        try:
+            for index in range(len(job['frames'])):
+                raw = process.stdout.read(width*height*6)
+                if len(raw) != width*height*6:
+                    raise ValueError('Native caption painting did not produce every required state; use --mode rendered.')
+                pair = np.frombuffer(raw, dtype=np.uint8).reshape(height, width*2, 3)
+                black, white = pair[:, :width], pair[:, width:]
+                # Scan empty canvas cheaply before allocating/color-converting it.
+                # Captions occupy a small strip even on an authored 1080p canvas.
+                covered = (black[:, :, 0] | black[:, :, 1] | black[:, :, 2]) != 0
+                covered |= (white[:, :, 0] & white[:, :, 1] & white[:, :, 2]) != 255
+                ys, xs = np.nonzero(covered)
+                left, top = (int(xs.min()), int(ys.min())) if len(xs) else (0, 0)
+                right, bottom = (int(xs.max())+1, int(ys.max())+1) if len(xs) else (1, 1)
+                black = black[top:bottom, left:right].astype(np.int16)
+                white = white[top:bottom, left:right].astype(np.int16)
+                crop_alpha = np.clip(255 - np.median(white-black, axis=2), 0, 255).astype(np.uint8)
+                rgba = np.empty((bottom-top, right-left, 4), dtype=np.uint8)
+                rgba[:, :, :3] = np.clip(np.rint(black*255.0 /
+                    np.maximum(crop_alpha[:, :, None], 1)), 0, 255).astype(np.uint8)
+                rgba[:, :, 3] = crop_alpha
+                encoder = av.CodecContext.create('png', 'w')
+                encoder.width, encoder.height = right-left, bottom-top
+                encoder.pix_fmt = 'rgba'; encoder.time_base = Fraction(1, 25); encoder.thread_count = 1
+                path = directory/f'state-{index+1:03d}.png'
+                path.write_bytes(b''.join(bytes(p) for p in encoder.encode(av.VideoFrame.from_ndarray(rgba, format='rgba'))))
+                outputs.append((path, {'x': left, 'y': top, 'width': right-left, 'height': bottom-top}))
+            if process.stdout.read(1) or process.wait():
+                errors.seek(0)
+                raise ValueError('Native caption painting failed; use --mode rendered. ' + errors.read().decode(errors='replace')[-2000:])
+        finally:
+            timer.cancel()
+            if process.poll() is None:
+                process.kill()
+            process.wait(); process.stdout.close()
     return outputs

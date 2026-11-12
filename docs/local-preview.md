@@ -98,9 +98,19 @@ paint **only distinct caption states** over synthetic black/white mattes. It
 recovers transparent, cropped PNGs and preloads them before publishing a playable
 version. The video-frame clock selects the matching caption image during play,
 seek and scene cuts. It does not decode source footage or encode a preview MP4.
-These request-owned images expire with the retained version/session; they are
+Matte pairs stream through one bounded buffer; no full-canvas raster sequence is
+written to disk. These request-owned images expire with the retained version/session; they are
 not a persistent export cache. Static preset text, strokes, ordinary background
 boxes, opacity and supported word-highlight colors use this same path.
+
+Caption-only revisions preload fresh planes and atomically update the existing
+video players. Reuse requires identical source-input fingerprints, media assets,
+audio route, source clocks, canvas, frame rate, range, geometry and sampled layout.
+Changes to any playback input rebuild the player. Superseded caption preparations
+are canceled before publication; all cut scenes update together. The viewer
+preserves the current paused position, or restarts at zero after a finished
+preview. New revisions clear prior playback measurements. This is bounded live
+player reuse, not encoded-clip caching or reuse during final export.
 
 Native preset captions explicitly reject rotated text and combinations the
 canonical renderer cannot reproduce (for example highlighted background boxes,

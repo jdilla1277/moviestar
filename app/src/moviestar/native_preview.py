@@ -225,7 +225,8 @@ def build(request_file):
     request_file = Path(request_file)
     request = json.loads(request_file.read_text())
     packet, assets = compile_snapshot(request)
-    packet.update(request_id=request['request_id'], requested_at=request['requested_at'])
+    packet.update(request_id=request['request_id'], requested_at=request['requested_at'],
+                  input_identity=request['input_identity'])
     folder = request_file.parent
     from moviestar.native_captions import paint_plane
     packets = [s['packet'] for s in packet['segments']] if 'segments' in packet else [packet]

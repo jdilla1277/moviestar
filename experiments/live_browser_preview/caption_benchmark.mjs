@@ -32,6 +32,7 @@ try{
   await browser.evaluate(`(async()=>{const s=document.getElementById('stage'),style=document.createElement('style');style.textContent='#stage{max-width:none!important;width:'+(${fixture.canvas[0]}+s.offsetWidth-s.clientWidth)+'px!important}';document.head.append(style);await window.moviestarLive.stage.seek(.2);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));})()`);
   await browser.wait(`(${probe(fixture.initial)}).expected_text_visible`,5000);
   const initial=await browser.evaluate('window.moviestarLive.current');
+  await browser.evaluate('window.captionReferenceFrame=document.querySelector("iframe:not(.pending)")');
   for(const [i,action] of fixture.actions.entries()){
     const prior=await browser.evaluate('window.moviestarLive.current.request_id'),label=`edit-${i+1}-${action.name}`;
     const attempt=await observeEdit({specPath:join(root,'moviestar/spec.json'),priorRequest:prior,
@@ -41,7 +42,9 @@ try{
     result.edit_attempts.push(attempt.trace);await writeFile(join(out,label+'.trace.json'),JSON.stringify(attempt.trace,null,2));await persist();
     if(attempt.trace.outcome!=='succeeded')throw Error(`${label}: ${attempt.trace.outcome}`);
     result.edits.push({name:action.name,ms:attempt.trace.measurement_ms,cli_ms:attempt.trace.cli_completion_ms,
-      request_id:attempt.preview.current.request_id,state_id:attempt.preview.current.state_id});
+      request_id:attempt.preview.current.request_id,state_id:attempt.preview.current.state_id,
+      reused_decoders:await browser.evaluate('document.querySelector("iframe:not(.pending)")===window.captionReferenceFrame')});
+    if(!result.edits.at(-1).reused_decoders)result.problems.push(`${label} rebuilt unchanged decoders`);
     if(attempt.trace.measurement_ms>=3000)result.problems.push(`${label} exceeds 3000ms`);
     await persist();
   }

@@ -61,7 +61,8 @@ try{
  for(const [i,start] of OFFSETS.entries()){
   const frames=m.frames.filter(f=>f.segment===i);
   assert.ok(frames.every(f=>f.media_time>=start-1e-6&&f.media_time<start+3-1e-6),'No outgoing frame beyond its cut');
-  assert.ok(frames.every(f=>f.number===Math.round(f.media_time*30)%240));
+  const mismatches=frames.filter(f=>f.number!==Math.round(f.media_time*30)%240);
+  assert.deepEqual(mismatches,[],`Segment ${i}: barcode pixels must match each source timestamp`);
   const shown=m.segments_shown.find(s=>s.segment===i);
   assert.equal(shown.source.number,start*30);
   assert.equal(new Set([shown.source.number,...frames.map(f=>f.number)]).size,90,'Every expected segment frame is visible');

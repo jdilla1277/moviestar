@@ -1,10 +1,12 @@
 import {render} from './spatial_dom.mjs';
+import {playbackKey,prepareCaptionImages} from './preview_native_captions.mjs';
 
 let resolveReady,rejectReady,packet,video,audio,meter,frameCallback,stopTimer,cuts,shared,frozenFrame,disposed=false;
 const controller=new AbortController(),audit=new URLSearchParams(location.search).has('audit');
 const pendingSeeks=new Set();
 let lastIndex=-1, playing=false, readyDone=false, metadataReady=false, imageReady=false,finishing=false,playGeneration=0;
 let videoGroup;
+let playbackIdentity;
 let captionLayer,captionImages=[],captionState=-1;
 const videos=[];
 const ready=new Promise((resolve,reject)=>{resolveReady=resolve;rejectReady=reject;});
@@ -135,6 +137,7 @@ function onFrame(now,metadata){
     const sampled=audit?sourceFrame():{};
     if(audit&&primary){metrics.video_frames??=[];metrics.video_frames.push({path:primary.path,...primary.frame,number:sampled.number});}
     metrics.frames.push({media_time:metadata.mediaTime,number:sampled.number,display_time:metadata.expectedDisplayTime,presented_frames:metadata.presentedFrames,
+      ...(audit?{callback_time:performance.now(),current_time:video.currentTime,frozen:Boolean(frozenFrame)}:{}),
       ...(audit&&packet.caption_plane?{caption_state:captionState,caption_asset:captionLayer.firstElementChild?.getAttribute('src'),caption_applied_at:performance.now()}:{} )});
     if(sampled.white&&!metrics.previous_white)metrics.flashes.push({media_time:metadata.mediaTime,display_time:metadata.expectedDisplayTime,presented_frames:metadata.presentedFrames});
     metrics.previous_white=sampled.white;
@@ -215,6 +218,9 @@ async function initialize(){
   const response=await fetch('packet?request='+encodeURIComponent(request)+(params.has('segment')?'&segment='+encodeURIComponent(params.get('segment')):''),{cache:'no-store',signal:controller.signal});
   if(!response.ok)throw Error('The requested live packet is no longer retained.');
   packet=await response.json();if(disposed)return;
+  // Canonical DOM entries acquire sampled motion while playing. Fingerprint
+  // the immutable descriptor before render/apply touches those node objects.
+  playbackIdentity=playbackKey(packet);
   if(packet.segments){
     Object.assign(window.frameElement.style,{width:packet.canvas.width+'px',height:packet.canvas.height+'px'});
     const {mountCuts}=await import('./preview_native_cuts.mjs');
@@ -344,6 +350,29 @@ window.moviestarLiveStage={ready,metrics,
   get paused(){return cuts?cuts.paused:video?.paused??true;},
   get audioState(){return cuts?cuts.audioState:audio?.state;},
   get error(){return metrics.error;},
+  async prepareCaptionUpdate(next,signal){
+    await ready;signal?.throwIfAborted();
+    if(disposed||metrics.error||playbackIdentity!==playbackKey(next))return null;
+    const transaction=cuts?await cuts.prepareCaptionUpdate(next,signal):await prepareCaptionImages(next.caption_plane,signal);
+    if(!transaction)return null;
+    let committed=false;
+    return{
+      commit:()=>{
+        signal?.throwIfAborted();if(disposed)throw Error('Superseded');
+        if(cuts)transaction.commit();
+        else{
+          for(const image of captionImages){image.remove();image.removeAttribute('src');}
+          captionLayer?.remove();captionLayer=null;captionImages=transaction.images;
+          if(next.caption_plane){captionLayer=document.createElement('div');captionLayer.style.cssText='position:absolute;inset:0;pointer-events:none';window.moviestarScene.scene.append(captionLayer);}
+        }
+        playbackIdentity=playbackKey(next);packet=next;committed=true;lastIndex=-1;captionState=-1;
+        if(!cuts)apply(window.moviestarLiveStage.time);
+        Object.assign(metrics,{frames:[],flashes:[],beeps:[],video_frames:[],cuts:[],segments_shown:[],audio_blocks:[],stalls:0,finished:false,prepared_at:Date.now()});
+        for(const key of ['quality','video_quality','play_context_time','pause_context_time','first_presented_at','finished_at','end_result_time'])delete metrics[key];
+      },
+      cancel:()=>{if(!committed)(cuts?transaction.cancel:transaction.dispose)();}
+    };
+  },
   async settleEnd(){
     if(videos.length>1){this.pause();await seekTo((packet.samples.length-1)/packet.fps);}
   },
