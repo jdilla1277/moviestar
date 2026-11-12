@@ -24,6 +24,8 @@ import threading
 import time
 from urllib.parse import parse_qs, urlsplit
 
+from moviestar.json_identity import canonical_json
+
 POLL_SECONDS = .2
 CANCEL_SECONDS = 6.0
 RETAINED_REQUESTS = 8
@@ -234,7 +236,7 @@ class PreviewSession:
                 # the idle guard. Retry next tick unless this read was stable.
                 if before == after[:2] and _input_identity(after[2:]) == snapshot["input_identity"]:
                     self.watched_paths, self.watched_stamps = [*documents, *paths], after
-            identity = json.dumps(snapshot, sort_keys=True)
+            identity = canonical_json(snapshot)
             if identity != self.identity:
                 self.identity = identity
                 self.queue.submit(snapshot)

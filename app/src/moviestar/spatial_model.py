@@ -10,10 +10,10 @@ from __future__ import annotations
 
 from copy import deepcopy
 from hashlib import sha256
-import json
 from math import ceil, isfinite
 from typing import TYPE_CHECKING
 
+from moviestar.json_identity import canonical_json
 from moviestar.spatial_format import canonical_property
 
 if TYPE_CHECKING:
@@ -43,10 +43,12 @@ def _format_rules(owner: dict, path: str) -> None:
 
 
 def spatial_state_id(spec: dict) -> str:
-    """Fingerprint the editable project state, independent of capped undo history."""
+    """Fingerprint editable content, independent of history and numeric spelling."""
     state = {key: value for key, value in spec.items() if key != "revisions"}
-    encoded = json.dumps(state, sort_keys=True, separators=(",", ":"),
-                         ensure_ascii=False).encode("utf-8")
+    try:
+        encoded = canonical_json(state).encode("utf-8")
+    except ValueError as exc:
+        raise SpatialModelError(str(exc)) from exc
     return f"sha256:{sha256(encoded).hexdigest()}"
 
 

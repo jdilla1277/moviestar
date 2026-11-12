@@ -187,6 +187,12 @@ the check. Preview-worker snapshots contain the current document without its
 undo payloads; the saved revision journal remains intact. Large journals still
 cost time to validate when an actual edit is loaded.
 
+A lossless numeric JSON round trip (such as `1.0` returning as `1`) keeps the
+[state ID](spatial-model.md) and does not queue another preview. Project metadata
+and source/asset changes still trigger fresh requests. Editing from A to B and
+then undoing restores A's content ID but always creates a new request, so a late
+result from an earlier request cannot become current.
+
 Only one generation runs per project, with at most one pending request. Rapid
 edits replace the pending request with the newest one. Obsolete work receives an
 interrupt; after six seconds its owned process group is killed. New generation
