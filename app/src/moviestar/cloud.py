@@ -160,7 +160,7 @@ def cloud():
     """Work with Cloud projects, account assets and private developer guides.
 
     Use this approved installation to manage remote metadata, rename projects,
-    manage asset references, probe Cloud assets, read guides, or upload a private
+    manage asset references, probe Cloud assets, inspect ready video frames, read guides, or upload a private
     original with 'cloud assets create'. Ordinary local commands stay local;
     Cloud commands do not select a local workspace or render media.
     Connect the installation with 'moviestar account connect' first.
@@ -412,3 +412,6 @@ register_probe(cloud)
 
 from moviestar.cloud_project_delete import register_project_delete
 register_project_delete(projects)
+
+from moviestar.cloud_screenshot import register_screenshot_commands
+register_screenshot_commands(cloud)
