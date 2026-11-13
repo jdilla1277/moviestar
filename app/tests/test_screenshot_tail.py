@@ -12,9 +12,10 @@ from moviestar.cli import cli
 from moviestar.ffmpeg import extract_frame
 
 
-@pytest.fixture(scope="module", params=["cfr", "vfr", "offset"])
+@pytest.fixture(scope="module", params=["cfr", "vfr", "offset", "streaming-webm"])
 def tail_video(request, tmp_path_factory):
-    path = tmp_path_factory.mktemp("screenshot-tail") / "source.mp4"
+    streaming = request.param == "streaming-webm"
+    path = tmp_path_factory.mktemp("screenshot-tail") / ("source.webm" if streaming else "source.mp4")
     vfr = request.param == "vfr"
     command = [
         "ffmpeg", "-v", "error", "-f", "lavfi", "-i",
@@ -22,10 +23,15 @@ def tail_video(request, tmp_path_factory):
     ]
     if vfr:
         command += ["-vf", "select='eq(n,0)+eq(n,10)+eq(n,49)'", "-fps_mode", "vfr"]
-    command += ["-c:v", "libx264", "-g", "50", "-bf", "3"]
+    command += (["-c:v", "libvpx-vp9"] if streaming
+                else ["-c:v", "libx264", "-g", "50", "-bf", "3"])
     if request.param == "offset":
         command += ["-output_ts_offset", "5"]
-    subprocess.run(command + [str(path)], check=True)
+    if streaming:
+        with path.open("wb") as output:
+            subprocess.run(command + ["-f", "webm", "pipe:1"], stdout=output, check=True)
+    else:
+        subprocess.run(command + [str(path)], check=True)
     raw = subprocess.check_output([
         "ffmpeg", "-v", "error", "-i", str(path), "-fps_mode", "passthrough",
         "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
@@ -91,14 +97,17 @@ def test_half_open_bounds_are_structured_and_preserve_output(
     assert out.read_bytes() == b"prior proof"
 
 
+@pytest.mark.parametrize("mode", ["file", "project"])
 def test_empty_extraction_is_structured_and_never_returns_stale_output(
-    tail_video, tmp_path, monkeypatch,
+    tail_video, tmp_path, monkeypatch, mode,
 ):
     from moviestar import ffmpeg
     path, _ = tail_video
     monkeypatch.chdir(tmp_path)
     out = tmp_path / "existing.png"
     out.write_bytes(b"prior proof")
+    if mode == "project":
+        _invoke("load", str(path), "--no-transcribe", "--no-frames")
     real_run = ffmpeg.subprocess.run
 
     def no_image(command, **kwargs):
@@ -107,9 +116,10 @@ def test_empty_extraction_is_structured_and_never_returns_stale_output(
         return real_run(command, **kwargs)
 
     monkeypatch.setattr(ffmpeg.subprocess, "run", no_image)
-    result = CliRunner().invoke(cli, [
-        "screenshot", "--file", str(path), "--at", "1.999", "--out", str(out),
-    ])
+    args = ["screenshot", "--at", "1.999", "--out", str(out)]
+    if mode == "file":
+        args += ["--file", str(path)]
+    result = CliRunner().invoke(cli, args)
     assert result.exit_code == 1
     assert json.loads(result.stdout)["hint"]
     assert out.read_bytes() == b"prior proof"
@@ -200,7 +210,7 @@ def test_failed_retry_restores_existing_output(tail_video, tmp_path, monkeypatch
 
     def run(command, **kwargs):
         attempts.append(command)
-        Path(command[-1]).write_bytes(b"")
+        Path(command[-1]).write_bytes(b"" if len(attempts) == 1 else b"partial image")
         return SimpleNamespace(returncode=len(attempts) - 1, stderr="encoder failed")
 
     monkeypatch.setattr(ffmpeg.subprocess, "run", run)
@@ -233,3 +243,10 @@ def test_recovery_metadata_failure_is_an_unavailable_frame(monkeypatch):
     monkeypatch.setattr(ffmpeg, "run_ffprobe", unavailable)
     with pytest.raises(ffmpeg.FrameNotProducedError, match="source metadata"):
         ffmpeg._preceding_frame_seek("source.mp4", 1.999)
+
+
+def test_real_interleaved_audio_video_scan_cannot_hide_packet_limit(test_video, monkeypatch):
+    from moviestar import ffmpeg
+    monkeypatch.setattr(ffmpeg, "_FRAME_PROBE_PACKET_LIMIT", 1)
+    with pytest.raises(ffmpeg.FrameNotProducedError, match="packet scan budget"):
+        ffmpeg._preceding_frame_seek(test_video, 1.999)
