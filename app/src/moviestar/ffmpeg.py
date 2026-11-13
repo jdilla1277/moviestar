@@ -286,7 +286,14 @@ def _audio_volume_filter(
     if fade_in:
         parts.append(f"afade=t=in:st=0:d={_audio_number(fade_in)}:curve=tri")
     if fade_out:
-        parts.append(f"afade=t=out:st={_audio_number(layer_duration-fade_out)}:d={_audio_number(fade_out)}:curve=tri")
+        # Validation tolerates a millisecond of timecode rounding. Preserve
+        # (duration - t) / fade_out when the accepted fade exceeds duration:
+        # shorten afade's nonnegative range and scale its initial amplitude.
+        # Merely clamping st to zero would change the authored envelope.
+        if fade_out > layer_duration:
+            parts.append(f"volume='{_audio_number(layer_duration/fade_out)}':eval=frame")
+        fade_duration = min(fade_out, layer_duration)
+        parts.append(f"afade=t=out:st={_audio_number(layer_duration-fade_duration)}:d={_audio_number(fade_duration)}:curve=tri")
     if layer_offset:
         parts.append("asetpts=PTS-STARTPTS")
     return ','.join(parts)

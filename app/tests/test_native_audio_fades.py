@@ -78,3 +78,36 @@ def test_partial_fade_matches_analytic_stereo_envelope(tmp_path):
     envelope=10**(-6/20)*np.minimum(1,track_time/2)*np.minimum(1,(5.5-track_time)/2)
     expected=envelope[:,None]*np.array([.1,.2])
     assert abs(actual-expected).max()<1e-5
+
+
+@pytest.mark.parametrize('layer', ['source','track'])
+@pytest.mark.parametrize('fade', [1.033,1.034])
+def test_millisecond_fade_rounding_keeps_valid_frame_duration_envelope(tmp_path,layer,fade):
+    source=tmp_path/'constant.wav'
+    subprocess.run(['ffmpeg','-v','error','-y','-f','lavfi','-i',
+        'aevalsrc=0.1|0.2:s=48000:d=2','-c:a','pcm_f32le',str(source)],check=True,timeout=10)
+    duration=31/30
+    intent=default_audio_mix();intent['source_audio'].update(muted=layer=='track',
+        fade_in=.2,fade_out=fade)
+    if layer=='track':intent['tracks']=[{'id':'dialogue','kind':'voiceover','path':str(source),
+        'at':0,'source_from':0,'source_to':duration,'fade_in':.2,'fade_out':fade}]
+    mix=resolve_audio_mix(intent,result_duration=duration,base_dir=tmp_path,probe_audio=_audio_probe_file)
+    start=.1;window=duration-start
+    path=prepare_audio({'mix':mix,'result_duration':duration,'window_start':start,'duration':window,
+        'source_pieces':[{'path':str(source) if layer=='source' else None,'source_start':start,'duration':window}]},tmp_path/'native')
+    raw=subprocess.check_output(['ffmpeg','-v','error','-i',str(path),'-f','f32le','-'],timeout=10)
+    actual=np.frombuffer(raw,dtype='<f4').reshape(-1,2)
+    time=start+np.arange(len(actual))/48000
+    layer_duration=duration if layer=='source' else mix['tracks'][0]['placed_range']['duration']['seconds']
+    expected=np.minimum(1,time/.2)[:,None]*np.clip((layer_duration-time)/fade,0,1)[:,None]*np.array([.1,.2])
+    assert abs(actual-expected).max()<1e-5
+    # Export and loudness use this same layer graph. Exercise the full-duration
+    # command too, rather than checking only that its string parses.
+    graph=_build_mix_layer_graph(mix,duration,source_audio_available=layer=='source')
+    parts,label=_finish_mix_graph(graph)
+    inputs=['-i',str(source)]+[arg for p in graph['track_inputs'] for arg in ('-i',p)]
+    full=subprocess.check_output(['ffmpeg','-v','error',*inputs,'-filter_complex',';'.join(parts),
+        '-map',f'[{label}]','-f','f32le','-'],timeout=10)
+    expected_full=np.frombuffer(full,dtype='<f4').reshape(-1,2)[round(start*48000):]
+    assert actual.shape==expected_full.shape
+    assert abs(actual-expected_full).max()<1e-5
