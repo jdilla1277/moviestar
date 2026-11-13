@@ -409,3 +409,5 @@ def show_docs(page: str, json_output: bool, markdown: bool):
 
 from moviestar.cloud_probe import register_probe
 register_probe(cloud)
+from moviestar.cloud_screenshot import register_screenshot_commands
+register_screenshot_commands(cloud)
