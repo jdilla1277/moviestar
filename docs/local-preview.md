@@ -67,7 +67,7 @@ A cut switches the composition and its selected speaker audio together. A → B 
 the same recording at a different source position, with a different layout,
 caption state or component arrangement in each scene.
 Every source clock must be unit speed, matching the indexed output rate
-(24–60 fps). Reusable components, text, shapes, images, manual/frozen captions and
+(24–60 fps). Reusable components, text, shapes, images, placed caption tracks and
 canonical sampled translation/scale/opacity are supported. Media wrappers must
 be relative/absolute, without padding, border widths or nested children.
 
@@ -82,17 +82,50 @@ Ordinary static `single`, `two-up` and `picture-in-picture` preset scenes also
 work, including fill/fit framing, crop anchors, rounded/circular inset masks and
 outside borders. The native adapter consumes the export planner's regions and
 does not rewrite the saved scene into a spatial document. Changes made with
-`scenes set`, `scenes geometry` and `undo` appear in the viewer. Preset camera or
-pacing motion and preset text/caption overlays intersecting the review window
-still require rendered mode. Spatial scenes retain their existing component,
-image, text, frozen-caption and motion support.
+`scenes set`, `scenes geometry` and `undo` appear in the viewer. Preset scenes
+also support authored caption/text overlays, including
+`captions generate --highlight spoken-word`, caption placement, suppression,
+regeneration and undo. Preset camera/pacing motion still requires rendered mode.
+Spatial caption elements retain their canonical DOM placement, text and motion;
+live recipes now refresh through the same derivation used by export. Spoken-word
+highlight painting in this slice is for preset overlays. Placed spatial caption
+elements with active spoken-word highlights are explicitly rejected rather than
+shown with the highlighting silently removed.
+
+Native video still plays from the original sources. For preset overlays, a worker
+uses export's wrapping, font resolution, drawtext and ASS highlight events to
+paint **only distinct caption states** over synthetic black/white mattes. It
+recovers transparent, cropped PNGs and preloads them before publishing a playable
+version. The video-frame clock selects the matching caption image during play,
+seek and scene cuts. It does not decode source footage or encode a preview MP4.
+Matte pairs stream through one bounded buffer; no full-canvas raster sequence is
+written to disk. These request-owned images expire with the retained version/session; they are
+not a persistent export cache. Static preset text, strokes, ordinary background
+boxes, opacity and supported word-highlight colors use this same path.
+
+Caption-only revisions preload fresh planes and atomically update the existing
+video players. Reuse requires identical source-input fingerprints, media assets,
+audio route, source clocks, canvas, frame rate, range, geometry and sampled layout.
+Changes to any playback input rebuild the player. Superseded caption preparations
+are canceled before publication; all cut scenes update together. The viewer
+preserves the current paused position, or restarts at zero after a finished
+preview. New revisions clear prior playback measurements. This is bounded live
+player reuse, not encoded-clip caching or reuse during final export.
+
+Native preset captions explicitly reject rotated text and combinations the
+canonical renderer cannot reproduce (for example highlighted background boxes,
+ignored transforms/letter spacing and mismatched word tokens). They never
+silently remove these properties. A live recipe that cannot refresh fails with
+`stale_caption_track`; frozen cues remain frozen. Planning does not save a new
+spec, create undo entries or freeze recipes. The stage inspection snapshot
+includes the current caption text, lines, font size, active word and estimated
+bounds; preset glyphs themselves come from the export renderer, not browser fonts.
 
 Windows containing more than three spans, crossing pacing boundaries inside
 one scene, overlapping any transition, or needing more than two visible videos
 at once are rejected. Transitions elsewhere in the
 project do not block an otherwise supported window. The chosen sources must have
-no source edit operations, and placed caption tracks must use manual/frozen
-cues. Edits on unrelated sources and unplaced live caption tracks do not block
+no source edit operations. Edits on unrelated sources and unplaced live caption tracks do not block
 this window. Independent continuous audio across camera cuts, project-wide audio
 mixing/gain/fades remain unsupported, as do
 held/speed-changed media in the selected span. Ordinary unit-speed spans after

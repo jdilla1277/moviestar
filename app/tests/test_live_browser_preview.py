@@ -105,10 +105,10 @@ def test_live_packet_rejects_unimplemented_behavior(live_project, mutation):
         _compiler()(read_snapshot(root, 0, 5))
 
 
-def test_live_probe_rejects_live_caption_recipes(live_project):
+def test_live_probe_rejects_unrefreshable_caption_recipes(live_project):
     snapshot = read_snapshot(live_project[2], 0, 5)
     snapshot['spec']['captions'] = [{'track': 'captions', 'frozen': False}]
-    with pytest.raises(ValueError, match='live caption'):
+    with pytest.raises(ValueError, match='stale_caption_track'):
         _compiler()(snapshot)
 
 

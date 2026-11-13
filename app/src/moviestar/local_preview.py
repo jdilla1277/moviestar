@@ -290,9 +290,14 @@ class PreviewSession:
                 if published:
                     self.assets.update(assets)
             self.process = self.active = self.cancel_at = None
-            # All intermediates are session-owned and disposable; retain only completed media.
+            # Native caption PNGs are part of the completed review, owned by
+            # this request. Queue pruning removes them with the descriptor.
+            retained = {media}
+            if published and self.mode == 'native':
+                retained.update(folder / Path(a['path']).relative_to(folder).parts[0]
+                    for a in assets.values() if Path(a['path']).is_relative_to(folder))
             for path in folder.iterdir():
-                if path != media or not published:
+                if path not in retained or not published:
                     if path.is_dir():
                         import shutil
                         shutil.rmtree(path)
@@ -334,7 +339,24 @@ class PreviewSession:
                 if item.get("media"):
                     packet = json.loads(Path(item["media"]).read_text())
                     referenced.update(media["asset"] for media in packet["media"])
+                    children = [s['packet'] for s in packet['segments']] if 'segments' in packet else [packet]
+                    for child in children:
+                        referenced.update(state['asset'] for state in child.get('caption_plane', {}).get('states', []))
+            expired = [value for key, value in self.assets.items() if key not in referenced]
             self.assets = {key: value for key, value in self.assets.items() if key in referenced}
+            # Source files are never ours to delete. Caption directories are
+            # generated two levels below this session root, one per request.
+            for value in expired:
+                directory = Path(value['path']).parent
+                if (directory.parent.parent == self.directory
+                        and re.fullmatch(r'captions-[a-f0-9]{24}', directory.name)
+                        and not any(Path(a['path']).parent == directory for a in self.assets.values())):
+                    import shutil
+                    shutil.rmtree(directory, ignore_errors=True)
+                    try:
+                        directory.parent.rmdir()
+                    except OSError:
+                        pass
 
     def run(self):
         try:
@@ -413,7 +435,7 @@ class _Handler(BaseHTTPRequestHandler):
         elif self.server.mode == "native" and route in {
                 "preview_native.mjs", "preview_native_stage.mjs", "preview_native_meter.mjs", "spatial_dom.mjs",
                 "preview_native_worker.mjs", "preview_native_buffer.mjs", "preview_native_cuts.mjs",
-                "preview_native_cut_meter.mjs", "preview_native_videos.mjs"}:
+                "preview_native_cut_meter.mjs", "preview_native_videos.mjs", "preview_native_captions.mjs"}:
             self._reply(200, files("moviestar").joinpath(route).read_bytes(), "text/javascript")
         elif self.server.mode == "native" and route == "stage":
             self._reply(200, b'<!doctype html><html><head><meta charset="utf-8"></head><body><script type="module" src="preview_native_stage.mjs"></script></body></html>', "text/html; charset=utf-8")

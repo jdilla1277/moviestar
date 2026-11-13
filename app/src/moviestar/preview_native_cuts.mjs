@@ -120,6 +120,16 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
       finally{if(pendingSeek===operation)pendingSeek=null;}
     },
     snapshot(){return{...stages[index].api.snapshot(),time:api.time,segment:index};},
+    async prepareCaptionUpdate(next,signal){
+      const results=await Promise.allSettled(stages.map((stage,i)=>stage.api.prepareCaptionUpdate({
+        ...next.segments[i].packet,request_id:next.request_id,requested_at:next.requested_at,cut_segment:true},signal)));
+      if(results.some(r=>r.status==='rejected'||!r.value)){
+        for(const r of results)if(r.status==='fulfilled')r.value?.cancel();
+        const failure=results.find(r=>r.status==='rejected');if(failure)throw failure.reason;
+        return null;
+      }
+      return{commit(){for(const r of results)r.value.commit();},cancel(){for(const r of results)r.value.cancel();}};
+    },
     dispose(){if(disposed)return;api.pause();disposed=true;cleanup();},
     get playing(){return playing;},
   };

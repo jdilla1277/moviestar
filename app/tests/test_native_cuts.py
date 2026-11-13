@@ -68,7 +68,7 @@ def test_single_span_protocol_stays_compatible(cut_project):
     assert packet['initial']['scene_id'] == 'middle'
 
 
-@pytest.mark.parametrize('change,reason', [('audio','audio'),('fps','rate'),('transition','transition'),('live_caption','live caption'),('too_many','three')])
+@pytest.mark.parametrize('change,reason', [('audio','audio'),('fps','rate'),('transition','transition'),('live_caption','stale_caption_track'),('too_many','three')])
 def test_every_segment_is_validated_and_resources_are_bounded(cut_project,change,reason):
     spec, project, root = cut_project
     if change=='audio':spec['composition_audio_from']='camera'

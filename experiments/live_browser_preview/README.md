@@ -61,12 +61,12 @@ The probe fails explicitly outside this subset:
 - A frame-aligned window of at most ten seconds, at 24–60 fps, matching the indexed source rate (the installed profile excludes
   low rates whose early last-frame stop would exceed the reference timing budget).
 - Native-compatible MP4; the portable benchmark uses H.264/AAC at 30 fps.
-- Reusable nested components, shapes, text, images, manual/frozen captions,
+- Reusable nested components, shapes, text, images, placed caption tracks,
   static canonical CSS layout, and canonical motion/opacity samples.
 - Relative/absolute media wrappers without padding, border widths or children.
 
 Source edit operations on the chosen video, ranges crossing in-scene pacing boundaries
-or overlapping transitions, more than two visible videos per scene, live caption derivation on placed tracks, external
+or overlapping transitions, more than two visible videos per scene, external
 soundtracks, gain/fades/mixing, holds and speed changes are not implemented here.
 Other codecs, VFR, HDR/color-management parity, network
 sources and cloud/phone delivery remain unverified. Private camera evaluation
@@ -81,6 +81,41 @@ too coarse at the end, so a video-frame callback schedules the pause. A producti
 player needs broader timing and seek tests before it can own general timelines.
 
 ## Measure
+
+For authored preset captions and spoken-word highlighting, use:
+
+```sh
+python experiments/live_browser_preview/caption_benchmark.py --out /tmp/caption-results
+python experiments/live_browser_preview/caption_benchmark.py --canvas 1080x1920 --out /tmp/caption-hd-results
+```
+
+Each run creates generated H.264/AAC PiP media and portable word-timed transcripts,
+then times actual caption suppression, resizing, placement, highlight-color and
+four individual undo commands at histories 0/20/50. A measurement ends only after
+command success and the correct fresh, decoded caption image is visibly placed
+at the review time. Every edit must stay below 3,000 ms; actual playback must
+have zero decoder drops/stalls and audio/display phase within 50 ms. Word-plane
+selection and application lateness are also checked on presented frames. The
+driver retains all attempts, exact inputs, process outputs, producer/package
+hashes and runtime versions. Reusing an output folder is forbidden.
+Each caption-only edit must also preserve the existing iframe/decoders. Separate
+browser checks hold an obsolete preparation while a newer edit completes,
+verify that it never publishes, play again after editing a finished preview, and
+require geometry changes to rebuild the player. Source fingerprint changes
+invalidate decoder reuse too.
+
+Caption glyphs reuse export's drawtext/ASS painting over synthetic mattes;
+source footage is not decoded and no preview movie is encoded. Transparent
+planes stream through one matte-pair buffer, are cropped, preloaded,
+request-scoped and pruned with history. Unit
+checks compare their composition with independent opaque export-filter output
+(maximum channel error 5), including outlines, opacity and plain background
+boxes. A clipped-word regression compares the transient overlapping ASS paint
+stack and later frames after it ends; raster deduplication keeps the complete
+ordered active-event stack even when the final active word is unchanged.
+Preset highlighted captions and ordinary spatial live-caption text have
+separate canonical placement paths; this does not add highlighting to spatial
+caption elements. See [the installed profile](../../docs/local-preview.md).
 
 ```sh
 python experiments/live_browser_preview/benchmark.py --out /tmp/live-results
@@ -744,3 +779,20 @@ The feature is present and enabled in the [pinned Chromium source](https://chrom
 Failed acceptance runs remain failed. On failure, CI can collect generated-only
 browser traces in a separate diagnostic run; a diagnostic rerun never replaces
 the original acceptance result.
+
+### Cut-frame observations and compositor counts
+
+The cut regression records two different quantities: pixel observations from
+`requestVideoFrameCallback` and frames submitted for composition. The
+[rVFC specification](https://wicg.github.io/video-rvfc/) permits omitted callbacks;
+`presentedFrames` identifies those gaps. `presented_frames.mjs` anchors that
+counter to the prepared first source frame immediately before Play, requires
+each observed source index to match its counter delta, and requires the final
+observed frame to establish all 90 submissions per three-second/30 fps span.
+It retains exact barcode checks on every observed frame, zero decoder drops and
+stalls, and the existing 50 ms timing limits. Reports separately count callbacks,
+observed source frames and unobserved callbacks. A counter cannot establish the
+pixel contents of an unobserved frame. Negative controls reject actual missing
+or duplicate submissions, wrong pixels, bad baselines and a missing final frame.
+The earlier Linux barcode mismatch remains tracked in #189; omitted callbacks
+do not explain a mismatching pixel sample.

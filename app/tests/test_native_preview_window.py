@@ -232,10 +232,10 @@ def test_loaded_multi_scene_native_cli_recovers_and_undoes_at_nonzero_result_tim
             packet = json.load(response)
         assert packet['source_start'] == 2 and packet['source_end'] == 5
         assert packet['range'] == {'from': 2, 'to': 5}
-        # Move a cut inside the fixed result window: fail visibly, without
+        # Move a cut off the frame grid inside the fixed window: fail visibly, without
         # silently changing scenes or rendering a fallback MP4.
         invalid = deepcopy(spec)
-        invalid['composition'][1]['slots'][0]['source_to'] = '0:00:03.000'
+        invalid['composition'][1]['slots'][0]['source_to'] = '0:00:03.010'
         save_spec(invalid, cwd=root)
         failed = wait_for(ready['url'], lambda state: state['latest']['status'] == 'failed')
         assert failed['displayed']['request_id'] == original and not failed['is_current']

@@ -1,6 +1,7 @@
-"""Compile bounded native review descriptors; no media decoding or output encode."""
+"""Compile native review descriptors; paint captions without decoding footage."""
 
 from hashlib import sha256
+from copy import deepcopy
 import json
 from math import nextafter
 from pathlib import Path
@@ -39,7 +40,6 @@ def asset_identity(path):
 
 def compile_snapshot(snapshot):
     spec, project = snapshot['spec'], snapshot['project']
-    root = Path(snapshot['root'])
     timeline = resolve_project(project, spec)
     start, end = snapshot['range']['from'], snapshot['range']['to']
     fps = timeline.output_fps
@@ -54,6 +54,27 @@ def compile_snapshot(snapshot):
         fail('native review supports at most three spatial spans')
     if len({span.scene_index for span in spans}) != len(spans):
         fail('pacing boundaries inside a scene are not implemented')
+    if spec.get('captions'):
+        from moviestar.cli import _refresh_caption_tracks, _caption_staleness
+        from moviestar.project import get_project_dir
+        from moviestar.spatial_model import expand_spatial_scene
+        structured = (spec.get('spatial') or {}).get('scenes', {})
+        tracks = set()
+        for span in spans:
+            if span.scene_id not in structured:
+                tracks.update(recipe['track'] for recipe in spec['captions'])
+            else:
+                expanded = expand_spatial_scene(spec, span.scene_id)
+                tracks.update((node.get('content') or {}).get('track', 'captions')
+                    for node in walk(expanded['children']) if node.get('type') == 'caption'
+                    and not (node.get('content') or {}).get('empty'))
+        spec = deepcopy(spec)
+        _refresh_caption_tracks(project, spec, tracks=tracks,
+            project_dir=get_project_dir(Path(snapshot['root'])))
+        for recipe in spec['captions']:
+            if recipe['track'] in tracks and not recipe.get('frozen') and _caption_staleness(project, spec, recipe):
+                fail(f"stale_caption_track {recipe['track']}: live cues could not be refreshed")
+        snapshot = {**snapshot, 'spec': spec}
     packets, assets = [], {}
     for span in spans:
         left, right = max(start, span.start_s), min(end, span.end_s)
@@ -96,6 +117,8 @@ def _compile_span(snapshot, timeline, start, end, span):
     initial = shape = None
     source_start = video_path = None
     clocks = {}
+    highlighted = {o['id'] for o in spec.get('overlays', [])
+                   if (o.get('highlight') or {}).get('mode') == 'spoken-word'}
     for index in range(round((end-start)*fps)):
         at = start+index/fps
         frame = preset(at) if preset else compile_spatial_frame(spec, timeline, at, source_durations=durations)
@@ -105,12 +128,9 @@ def _compile_span(snapshot, timeline, start, end, span):
         if any(item.get('severity') != 'warning' for item in prepared['diagnostics']):
             fail('the canonical frame has unresolved diagnostics')
         expanded = {tuple(node['occurrence_path']): node for node in walk(frame['children'])}
-        if index == 0:
-            placed_tracks = {node['caption']['track'] for node in expanded.values()
-                             if node.get('type') == 'caption'}
-            if any(recipe['track'] in placed_tracks and not recipe.get('frozen')
-                   for recipe in spec.get('captions', [])):
-                fail('live caption recipes are not implemented; use manual/frozen cues')
+        if not preset and any(cue['id'] in highlighted for node in expanded.values()
+                if node.get('type') == 'caption' for cue in node.get('caption', {}).get('cues', [])):
+            fail('spoken-word highlighting in spatial caption elements is not implemented; use preset caption overlays for highlighting')
         videos = [node for node in expanded.values() if node.get('type') == 'video']
         if not 1 <= len(videos) <= PROFILE['max_videos_per_segment']:
             fail('one or two videos must be visible throughout this review window')
@@ -188,9 +208,16 @@ def _compile_span(snapshot, timeline, start, end, span):
                      'motion': node.get('motion'), 'caption': node.get('caption'),
                      'children': dynamic(node['children'])} for node in nodes]
         samples.append({'nodes': dynamic(prepared['nodes'])})
-    return {'state_id': snapshot['state_id'], 'canvas': initial['canvas'], 'fps': fps,
+    packet = {'state_id': snapshot['state_id'], 'canvas': initial['canvas'], 'fps': fps,
             'range': {'from': start, 'to': end}, 'source_start': source_start, 'source_end': source_start+end-start,
-            'video_path': video_path, 'initial': initial, 'media': media, 'samples': samples}, assets
+            'video_path': video_path, 'initial': initial, 'media': media, 'samples': samples}
+    if preset:
+        from moviestar.native_captions import compile_plane
+        plane, job = compile_plane(spec, timeline, start, end, fail)
+        if plane:
+            packet['caption_plane'] = plane
+            assets[job[0]] = job[1]
+    return packet, assets
 
 
 def build(request_file):
@@ -198,8 +225,28 @@ def build(request_file):
     request_file = Path(request_file)
     request = json.loads(request_file.read_text())
     packet, assets = compile_snapshot(request)
-    packet.update(request_id=request['request_id'], requested_at=request['requested_at'])
+    packet.update(request_id=request['request_id'], requested_at=request['requested_at'],
+                  input_identity=request['input_identity'])
     folder = request_file.parent
+    from moviestar.native_captions import paint_plane
+    packets = [s['packet'] for s in packet['segments']] if 'segments' in packet else [packet]
+    painted = {}
+    for child in packets:
+        plane = child.get('caption_plane')
+        if not plane:
+            continue
+        job_id = plane.pop('job')
+        if job_id not in painted:
+            paths = paint_plane(assets.pop(job_id), folder/('captions-'+job_id))
+            painted[job_id] = []
+            for path, rect in paths:
+                identity = asset_identity(path)
+                key = sha256(json.dumps([str(path), identity]).encode()).hexdigest()[:24]
+                assets[key] = {'path': path, 'identity': identity, 'kind': 'image'}
+                painted[job_id].append((key, rect))
+        for state, (key, rect) in zip(plane['states'], painted[job_id]):
+            state['asset'] = key
+            state['rect'] = rect
     (folder/'assets.json').write_text(json.dumps({key: {**value, 'path': str(value['path'])}
         for key, value in assets.items()}))
     staged = folder/'packet.tmp'

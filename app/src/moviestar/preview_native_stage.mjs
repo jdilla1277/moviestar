@@ -1,10 +1,13 @@
 import {render} from './spatial_dom.mjs';
+import {playbackKey,prepareCaptionImages} from './preview_native_captions.mjs';
 
 let resolveReady,rejectReady,packet,video,audio,meter,frameCallback,stopTimer,cuts,shared,frozenFrame,disposed=false;
 const controller=new AbortController(),audit=new URLSearchParams(location.search).has('audit');
 const pendingSeeks=new Set();
 let lastIndex=-1, playing=false, readyDone=false, metadataReady=false, imageReady=false,finishing=false,playGeneration=0;
 let videoGroup;
+let playbackIdentity;
+let captionLayer,captionImages=[],captionState=-1;
 const videos=[];
 const ready=new Promise((resolve,reject)=>{resolveReady=resolve;rejectReady=reject;});
 // Parent attaches after iframe load; keep early failures observable through ready.
@@ -42,6 +45,10 @@ function apply(at){
   const index=Math.max(0,Math.min(packet.samples.length-1,Math.round(at*packet.fps)));
   if(index===lastIndex)return;
   lastIndex=index;
+  if(packet.caption_plane){
+    const state=packet.caption_plane.frames[index];
+    if(state!==captionState){captionState=state;captionLayer.replaceChildren(captionImages[state]);}
+  }
   const next=new Map([...walk(packet.samples[index].nodes)].map(node=>[key(node.path),node]));
   for(const entry of window.moviestarScene.entries){
     const node=next.get(key(entry.node.path));
@@ -129,7 +136,9 @@ function onFrame(now,metadata){
     if(metrics.first_presented_at===undefined)metrics.first_presented_at=performance.timeOrigin+metadata.expectedDisplayTime;
     const sampled=audit?sourceFrame():{};
     if(audit&&primary){metrics.video_frames??=[];metrics.video_frames.push({path:primary.path,...primary.frame,number:sampled.number});}
-    metrics.frames.push({media_time:metadata.mediaTime,number:sampled.number,display_time:metadata.expectedDisplayTime,presented_frames:metadata.presentedFrames});
+    metrics.frames.push({media_time:metadata.mediaTime,number:sampled.number,display_time:metadata.expectedDisplayTime,presented_frames:metadata.presentedFrames,
+      ...(audit?{callback_time:performance.now(),current_time:video.currentTime,frozen:Boolean(frozenFrame)}:{}),
+      ...(audit&&packet.caption_plane?{caption_state:captionState,caption_asset:captionLayer.firstElementChild?.getAttribute('src'),caption_applied_at:performance.now()}:{} )});
     if(sampled.white&&!metrics.previous_white)metrics.flashes.push({media_time:metadata.mediaTime,display_time:metadata.expectedDisplayTime,presented_frames:metadata.presentedFrames});
     metrics.previous_white=sampled.white;
     window.moviestarLiveStage.onPresented?.({...metrics.frames.at(-1),white:sampled.white,display_epoch:performance.timeOrigin+metadata.expectedDisplayTime});
@@ -209,6 +218,9 @@ async function initialize(){
   const response=await fetch('packet?request='+encodeURIComponent(request)+(params.has('segment')?'&segment='+encodeURIComponent(params.get('segment')):''),{cache:'no-store',signal:controller.signal});
   if(!response.ok)throw Error('The requested live packet is no longer retained.');
   packet=await response.json();if(disposed)return;
+  // Canonical DOM entries acquire sampled motion while playing. Fingerprint
+  // the immutable descriptor before render/apply touches those node objects.
+  playbackIdentity=playbackKey(packet);
   if(packet.segments){
     Object.assign(window.frameElement.style,{width:packet.canvas.width+'px',height:packet.canvas.height+'px'});
     const {mountCuts}=await import('./preview_native_cuts.mjs');
@@ -223,6 +235,17 @@ async function initialize(){
   if(bad)throw Error(bad.code);
   const entries=new Map(window.moviestarScene.entries.map(entry=>[key(entry.node.path),entry]));
   const images=[];
+  if(packet.caption_plane){
+    captionLayer=document.createElement('div');
+    captionLayer.style.cssText='position:absolute;inset:0;pointer-events:none';
+    window.moviestarScene.scene.append(captionLayer);
+    for(const state of packet.caption_plane.states){
+      const image=new Image(),rect=state.rect;
+      Object.assign(image.style,{display:'block',position:'absolute',left:rect.x+'px',top:rect.y+'px',width:rect.width+'px',height:rect.height+'px'});
+      image.src='assets/'+state.asset;captionImages.push(image);
+      const decoded=image.decode();decoded.catch(()=>{});images.push(decoded);
+    }
+  }
   for(const asset of packet.media){
     const {element}=entries.get(key(asset.path));
     const computed=getComputedStyle(element);
@@ -231,7 +254,7 @@ async function initialize(){
     Object.assign(media.style,{position:'absolute',left:'0',top:'0',width:'100%',height:'100%',objectFit:asset.object_fit,objectPosition:asset.object_position??'50% 50%',borderRadius:computed.borderRadius});
     element.append(media);
     if(asset.kind==='image'){
-      media.src='assets/'+asset.asset;images.push(media.decode());
+      media.src='assets/'+asset.asset;const decoded=media.decode();decoded.catch(()=>{});images.push(decoded);
     }else{
       const primary=key(asset.path)===key(packet.video_path),item={video:media,path:asset.path,start:asset.source_start??packet.source_start,end:asset.source_end??packet.source_end,fps:packet.fps,primary,hasAudio:asset.has_audio!==false};
       videos.push(item);if(primary)video=media;
@@ -327,6 +350,29 @@ window.moviestarLiveStage={ready,metrics,
   get paused(){return cuts?cuts.paused:video?.paused??true;},
   get audioState(){return cuts?cuts.audioState:audio?.state;},
   get error(){return metrics.error;},
+  async prepareCaptionUpdate(next,signal){
+    await ready;signal?.throwIfAborted();
+    if(disposed||metrics.error||playbackIdentity!==playbackKey(next))return null;
+    const transaction=cuts?await cuts.prepareCaptionUpdate(next,signal):await prepareCaptionImages(next.caption_plane,signal);
+    if(!transaction)return null;
+    let committed=false;
+    return{
+      commit:()=>{
+        signal?.throwIfAborted();if(disposed)throw Error('Superseded');
+        if(cuts)transaction.commit();
+        else{
+          for(const image of captionImages){image.remove();image.removeAttribute('src');}
+          captionLayer?.remove();captionLayer=null;captionImages=transaction.images;
+          if(next.caption_plane){captionLayer=document.createElement('div');captionLayer.style.cssText='position:absolute;inset:0;pointer-events:none';window.moviestarScene.scene.append(captionLayer);}
+        }
+        playbackIdentity=playbackKey(next);packet=next;committed=true;lastIndex=-1;captionState=-1;
+        if(!cuts)apply(window.moviestarLiveStage.time);
+        Object.assign(metrics,{frames:[],flashes:[],beeps:[],video_frames:[],cuts:[],segments_shown:[],audio_blocks:[],stalls:0,finished:false,prepared_at:Date.now()});
+        for(const key of ['quality','video_quality','play_context_time','pause_context_time','first_presented_at','finished_at','end_result_time'])delete metrics[key];
+      },
+      cancel:()=>{if(!committed)(cuts?transaction.cancel:transaction.dispose)();}
+    };
+  },
   async settleEnd(){
     if(videos.length>1){this.pause();await seekTo((packet.samples.length-1)/packet.fps);}
   },
@@ -362,6 +408,7 @@ window.moviestarLiveStage={ready,metrics,
   snapshot(){
     if(cuts)return cuts.snapshot();
     return {request_id:packet.request_id,state_id:packet.state_id,time:this.time,source:sourceFrame(),
+      captions:packet.caption_plane?.states[captionState]?.cues??[],
       videos:videos.map(item=>({path:item.path,asset:item.video.currentSrc.match(/\/assets\/([a-f0-9]{24})(?:[?#]|$)/)?.[1]??null,audio_gain:item.audioGain?.gain.value,audio_connected:Boolean(item.audioSource),source:sourceFrame(item),media_time:item.video.currentTime,paused:item.video.paused,seeking:item.video.seeking,ready_state:item.video.readyState})),
       boxes:window.moviestarScene.entries.map(({node,element})=>{
         const r=element.getBoundingClientRect();let opacity=1;
@@ -375,6 +422,7 @@ window.moviestarLiveStage={ready,metrics,
     for(const item of videos)if(item.callback)item.video.cancelVideoFrameCallback(item.callback);
     if(videoGroup)videoGroup.dispose();else if(videos.length){for(const item of videos){item.video.removeAttribute('src');item.video.load();}}else if(video){video.removeAttribute('src');video.load();}clearTimeout(stopTimer);
     clearFrozenFrame();for(const item of videos){item.audioSource?.disconnect();item.audioGain?.disconnect();}meter?.disconnect();meter?.port.close();
+    for(const image of captionImages)image.removeAttribute('src');captionImages=[];captionLayer?.remove();
     for(const item of videos)if(item.endFrame){item.endFrame.width=item.endFrame.height=0;item.endFrame=null;}
     if(audio&&!shared&&audio.state!=='closed')audio.close().catch(()=>{});
     rejectReady(Error('Superseded'));

@@ -2734,6 +2734,32 @@ def _ass_event_text(
     return "\\N".join(out_lines)
 
 
+def highlight_events(plan: dict) -> list[dict]:
+    """Canonical ASS event windows, including centisecond rounding and gaps.
+
+    Export and native caption painting consume the same events. Times remain
+    ASS timestamps so callers cannot accidentally use unquantized word times.
+    """
+    events = []
+    def emit(start, end, active):
+        if end - start <= 0.0005:
+            return
+        first, last = _ass_timestamp(start), _ass_timestamp(end)
+        if first == last:
+            last = _ass_timestamp(start + 0.01)
+        events.append({'from': first, 'to': last, 'word_index': active})
+    cursor = plan['enable_from']
+    for token in sorted(plan['highlight']['tokens'], key=lambda t: t['from_local']):
+        token_from = max(token['from_local'], cursor)
+        if token_from > cursor:
+            emit(cursor, token_from, None)
+        emit(token_from, token['to_local'], token['word_index'])
+        cursor = max(cursor, token['to_local'])
+    if cursor < plan['enable_to']:
+        emit(cursor, plan['enable_to'], None)
+    return events
+
+
 def build_highlight_ass(
     overlay_plans: list[dict], canvas: tuple[int, int]
 ) -> str:
@@ -2788,33 +2814,12 @@ def build_highlight_ass(
             f"{{\\an{alignment}\\pos({round(ax, 2)},{round(ay, 2)})\\q2}}"
         )
 
-        def emit(start: float, end: float, active: int | None) -> None:
-            if end - start <= 0.0005:
-                return
-            start_ts = _ass_timestamp(start)
-            end_ts = _ass_timestamp(end)
-            if end_ts == start_ts:
-                # Sub-centisecond events (static single-frame windows)
-                # would round to zero length and never render; one
-                # centisecond keeps them visible at t=0.
-                end_ts = _ass_timestamp(start + 0.01)
-            text = _ass_event_text(plan, active, base_color, highlight_color)
+        for event in highlight_events(plan):
+            text = _ass_event_text(plan, event['word_index'], base_color, highlight_color)
             events.append(
-                f"Dialogue: {layer},{start_ts},"
-                f"{end_ts},{style_name},,0,0,0,,{prefix}{text}"
+                f"Dialogue: {layer},{event['from']},"
+                f"{event['to']},{style_name},,0,0,0,,{prefix}{text}"
             )
-
-        cursor = plan["enable_from"]
-        for token in sorted(
-            highlight["tokens"], key=lambda t: t["from_local"]
-        ):
-            token_from = max(token["from_local"], cursor)
-            if token_from > cursor:
-                emit(cursor, token_from, None)
-            emit(token_from, token["to_local"], token["word_index"])
-            cursor = max(cursor, token["to_local"])
-        if cursor < plan["enable_to"]:
-            emit(cursor, plan["enable_to"], None)
 
     return "\n".join(
         [
@@ -2891,6 +2896,7 @@ def build_overlay_filter_parts(
     output_label: str,
     static: bool = False,
     highlight_ass: tuple[str, str] | None = None,
+    label_prefix: str = "",
 ) -> list[str]:
     """Filter parts that burn overlay plans onto a composed stream.
 
@@ -2937,7 +2943,7 @@ def build_overlay_filter_parts(
         steps.append({"plan": plan})
 
     for i, step in enumerate(steps):
-        out = output_label if i == len(steps) - 1 else f"txt{i}"
+        out = output_label if i == len(steps) - 1 else f"{label_prefix}txt{i}"
         if step.get("ass"):
             ass_path, fontsdir = highlight_ass
             parts.append(
@@ -2971,7 +2977,7 @@ def build_overlay_filter_parts(
                 f"rotate={radians}:ow=rotw({radians}):oh=roth({radians})"
                 f":c=none"
             )
-            lane_label = f"txtlane{i}"
+            lane_label = f"{label_prefix}txtlane{i}"
             parts.append(",".join(lane_chain) + f"[{lane_label}]")
             cx, cy = plan["lane_center"]
             overlay_opts = [

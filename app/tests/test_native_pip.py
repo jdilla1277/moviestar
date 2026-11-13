@@ -96,15 +96,11 @@ def test_preset_pip_uses_authoring_geometry_without_mutating_the_project(pip_pro
     assert inset['children'][0]['style']['width'] == f"{region['width']}px"
 
 
-@pytest.mark.parametrize('change', ['overlay', 'motion', 'mix'])
+@pytest.mark.parametrize('change', ['motion', 'mix'])
 def test_preset_pip_rejects_unimplemented_content_instead_of_dropping_it(pip_project, change):
     spec, _, root = pip_project
     spec.pop('spatial'); spec['overlays'] = []
-    if change == 'overlay':
-        spec['overlays'] = [{'id': 'note', 'track': 'notes', 'kind': 'manual', 'text': 'Must not disappear',
-            'timing': {'space': 'scene', 'scene': 'scene', 'from': '0:00:01.000', 'to': '0:00:03.000'},
-            'position': {'preset': 'bottom'}, 'style': {'preset': 'plain'}}]
-    elif change == 'motion':
+    if change == 'motion':
         spec['composition'][0]['layout']['geometry'] = {'inset': {'motion': {'preset': 'bounce'}}}
     else:
         spec['audio_mix']['source_audio']['gain_db'] = -3

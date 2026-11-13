@@ -154,7 +154,16 @@ jobs:
         run: |
           cd app
           source .venv/bin/activate
-          pytest --run-slow --ignore=tests/test_native_pip_browser.py
+          pytest --run-slow --ignore=tests/test_native_pip_browser.py --basetemp="$RUNNER_TEMP/full-suite"
+
+      - name: Retain generated native cut playback evidence
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: native-cut-playback-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/full-suite/test_actual_native_cuts_keep_*/browser/*.json
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Build and check package artifacts
         run: |

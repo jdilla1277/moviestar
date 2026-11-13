@@ -41,6 +41,7 @@ def test_actual_native_cuts_keep_source_frames_and_audio_continuity(tmp_path,off
 import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
 const {Browser}=await import(HELPER),b=await Browser.launch(CHROME,OUT);
+const {assertPresentedSegment}=await import(FRAME_AUDIT);
 const exceptions=[];b.socket.addEventListener('message',event=>{const message=JSON.parse(event.data);if(message.method==='Runtime.exceptionThrown')exceptions.push(message.params.exceptionDetails);});
 try{
  await b.send('Page.navigate',{url:URL+'?audit=1'});
@@ -51,7 +52,13 @@ try{
  }
  await b.evaluate('window.movieStarPreview.stage.seek(0)');await b.click('#play');
  await b.wait('window.movieStarPreview.stage.metrics.finished',15000);
- const m=await b.evaluate('window.movieStarPreview.stage.metrics');
+ const m=await b.evaluate(`(()=>{
+  const root=document.querySelector('iframe:not(.pending)').contentDocument;
+  return {...window.movieStarPreview.stage.metrics,segment_initial_presented:[...root.querySelectorAll('iframe')].map(frame=>{
+   const api=frame.contentWindow.moviestarLiveStage;
+   return api.metrics.initial_presented.find(item=>JSON.stringify(item.path)===JSON.stringify(api.packet.video_path));
+  })};
+ })()`);
  await writeFile(OUT+'/playback.json',JSON.stringify(m));
  assert.deepEqual(exceptions,[],'No uncaught browser exceptions');
  assert.equal(m.cuts.length,2);assert.ok(Math.abs(m.end_result_time-9)<=.05);
@@ -61,11 +68,16 @@ try{
  for(const [i,start] of OFFSETS.entries()){
   const frames=m.frames.filter(f=>f.segment===i);
   assert.ok(frames.every(f=>f.media_time>=start-1e-6&&f.media_time<start+3-1e-6),'No outgoing frame beyond its cut');
-  assert.ok(frames.every(f=>f.number===Math.round(f.media_time*30)%240));
+  const mismatches=frames.filter(f=>f.number!==Math.round(f.media_time*30)%240);
+  assert.deepEqual(mismatches,[],`Segment ${i}: barcode pixels must match each source timestamp`);
   const shown=m.segments_shown.find(s=>s.segment===i);
   assert.equal(shown.source.number,start*30);
-  assert.equal(new Set([shown.source.number,...frames.map(f=>f.number)]).size,90,'Every expected segment frame is visible');
+  // Keep the 90-frame requirement. rVFC can omit an observation while its
+  // compositor counter advances; do not mistake callbacks for submissions.
+  m.segment_presentations??=[];
+  m.segment_presentations.push(assertPresentedSegment({baseline:m.segment_initial_presented[i],frames,shown,start,fps:30,count:90}));
  }
+ await writeFile(OUT+'/playback.json',JSON.stringify(m));
  assert.equal(m.flashes.length,9);assert.equal(m.beeps.length,9);
  m.flashes.forEach((f,i)=>assert.ok(Math.abs(m.beeps[i].display_time-f.display_time)<=50,'Cue sync survives the cut'));
  const blocks=m.audio_blocks,firstBlock=blocks.findIndex(x=>x.rms>.01),last=blocks.findLastIndex(x=>x.rms>.01);
@@ -85,7 +97,7 @@ try{
 
 }finally{await b.close();}
 '''
-            values={'HELPER':(repo/'experiments/live_browser_preview/browser.mjs').as_uri(),'CHROME':chrome,'OFFSETS':list(offsets),'OUT':str(tmp_path/'browser'),'URL':url}
+            values={'FRAME_AUDIT':(repo/'experiments/live_browser_preview/presented_frames.mjs').as_uri(),'HELPER':(repo/'experiments/live_browser_preview/browser.mjs').as_uri(),'CHROME':chrome,'OFFSETS':list(offsets),'OUT':str(tmp_path/'browser'),'URL':url}
             prefix=''.join('const '+key+'='+json.dumps(value)+';\n' for key,value in values.items())
             result=subprocess.run(['node','--input-type=module','-e',prefix+script],capture_output=True,text=True,timeout=45)
             assert result.returncode==0,result.stdout+result.stderr

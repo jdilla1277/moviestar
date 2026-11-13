@@ -134,7 +134,8 @@ vm.runInNewContext(WORKER,{self,SourceBuffer,URL,Response,console});
 @pytest.mark.skipif(not shutil.which('node'), reason='Node 22+ is required')
 @pytest.mark.parametrize('case', ['controlled', 'unavailable', 'rejected', 'timeout', 'abort'])
 def test_source_buffer_activation_has_bounded_fallback_and_cleans_up(case):
-    stage = (Path(__file__).parents[1] / 'src/moviestar/preview_native_stage.mjs').read_text().split('\n', 1)[1]
+    from tests.native_stage_harness import stage_script
+    stage = stage_script()
     script = r'''
 const vm=require('node:vm'),assert=require('node:assert/strict');
 const service=new EventTarget(),signal=new AbortController();let timeout,cleared=false;

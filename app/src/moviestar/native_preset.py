@@ -8,14 +8,8 @@ from copy import deepcopy
 
 def prepare_preset(spec, project, timeline, span, start, end, fail):
     from moviestar.cli import _preset_scene_render_plan_at
-    from moviestar.resolved import resolve_overlays
-    from moviestar.spec import parse_timecode_string
 
     scene = spec['composition'][span.scene_index]
-    if any(parse_timecode_string(o['from'], 'overlay.from') < end
-           and parse_timecode_string(o['to'], 'overlay.to') > start
-           for o in resolve_overlays(timeline, spec.get('overlays', [])).records):
-        fail('preset caption/text overlays are not implemented; use spatial captions or rendered mode')
     # Camera/pacing/moving-preset support needs its own fidelity acceptance.
     if any((m.get('scene_id') == scene.get('id') or m.get('scene') == scene['name'])
            and any(s.get('camera') or s.get('pacing') for s in m.get('slots', []))
