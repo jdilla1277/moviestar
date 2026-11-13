@@ -157,11 +157,12 @@ def _sharing_supported(capabilities: dict) -> bool:
 
 @click.group()
 def cloud():
-    """Use personal Cloud projects and private guides with this approved installation.
+    """Work with Cloud projects, account assets and private developer guides.
 
-    Ordinary local commands stay local. These commands create/read Cloud
-    metadata, rename projects, manage existing asset references and probe Cloud assets.
-    They do not select a local workspace, upload media, or render.
+    Use this approved installation to manage remote metadata, rename projects,
+    manage asset references, probe Cloud assets, read guides, or upload a private
+    original with 'cloud assets create'. Ordinary local commands stay local;
+    Cloud commands do not select a local workspace or render media.
     Connect the installation with 'moviestar account connect' first.
     """
 
