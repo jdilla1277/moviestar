@@ -13,7 +13,8 @@ from moviestar.cloud_creation_state import CreationBusy, CreationStateError, cre
 CONTRACT = "project-asset-references-v1"
 KINDS = {"video", "audio", "image", "transcript"}
 HINTS = {**service._HINTS,
-    "not_found": "This project, asset or reference is unavailable. Only owned account assets and projects are supported here.",
+    "not_found": "This project, asset or reference is unavailable to the connected account.",
+    "project_assets_not_shared": "This invitation includes project metadata only. Ask the owner for a new invitation that includes assets.",
     "asset_not_ready": "Complete asset validation before adding it to a project.",
     "reference_removed": "That attachment remains removed. Use a new key only to deliberately add it again.",
     "idempotency_conflict": "Retry this attachment's original asset/key, or use a new key for another attachment."}
@@ -88,13 +89,46 @@ def _list(command, project, limit, cursor):
             if asset is None or (project and (not isinstance(item.get("reference_id"), str) or not service._UUID.fullmatch(item["reference_id"]))):
                 valid = False
                 break
-            parsed.append({"reference_id": item["reference_id"], "asset": asset} if project else asset)
+            entry = {"reference_id": item["reference_id"], "asset": asset} if project else asset
+            if project and "download_path" in item:
+                expected = f"/api/v1/account/cloud/projects/{project.lower()}/asset-references/{item['reference_id']}/download"
+                if item["download_path"] != expected:
+                    valid = False
+                    break
+                entry["download_url"] = endpoint.removesuffix("/api/v1/account/cloud") + expected
+            parsed.append(entry)
     if not valid or len({item["reference_id"] if project else item["id"] for item in parsed}) != len(parsed):
         service._fail(command, "invalid_response", "The service returned incomplete asset metadata. Retry later.")
     click.echo(json.dumps({"contract_version": CONTRACT, **({"project_id": project.lower()} if project else {}), "items": parsed, "next_cursor": next_cursor}, indent=2))
 
 
 def register_asset_commands(cloud, projects):
+    @projects.command("share")
+    @click.argument("project_id")
+    def share_project(project_id):
+        """Open the website journey to invite viewers and manage project access.
+
+        Returns a browser link after checking ownership. Sends no invitation.
+        """
+        command = "cloud projects share"
+        _ids(command, project_id)
+        endpoint, credential = service._connection(command)
+        capabilities = service._capabilities(command, endpoint, credential)
+        sharing = capabilities.get("project_sharing")
+        if not isinstance(sharing, dict) or sharing.get("contract_version") != "recipient-projects-v1":
+            service._fail(command, "unsupported_operation", "Project sharing is unavailable on this service.")
+        status, body = service._request(f"{endpoint}/projects/{project_id.lower()}", credential)
+        if status != 200:
+            _fail(command, status, body)
+        project = service._project(body)
+        if project is None or project["id"].lower() != project_id.lower():
+            service._fail(command, "invalid_response", "Could not confirm the project's current ownership.")
+        if project.get("access", {}).get("role") != "owner":
+            service._fail(command, "permission_denied", "Viewers cannot invite others or manage project access.")
+        url = endpoint.removesuffix("/api/v1/account/cloud") + f"/account/projects?project={project_id.lower()}#project-sharing"
+        click.echo(json.dumps({"command": command, "status": "browser_required", "project_id": project_id.lower(), "url": url,
+            "hint": "Open this link while signed in to the same account. Choose Share project to invite a viewer, see access, or remove it. No invitation has been sent."}, indent=2))
+
     @cloud.group("assets")
     def assets():
         """Find existing ready account assets. No upload or local editing."""
@@ -114,7 +148,11 @@ def register_asset_commands(cloud, projects):
     @click.option("--limit", type=click.IntRange(1, 100), default=20, show_default=True)
     @click.option("--cursor")
     def project_assets(project_id, limit, cursor):
-        """List existing account-asset references in an owned PROJECT_ID."""
+        """List assets in an owned project or an asset-sharing viewer invitation.
+
+        Download URLs require the same account in a browser or authenticated
+        developer client. Every download checks current access again.
+        """
         _list("cloud projects assets", project_id, limit, cursor)
 
     @projects.command("add-asset")
