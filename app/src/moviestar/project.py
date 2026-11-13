@@ -495,6 +495,7 @@ def _build_source_entry(
     transcribe_windows: list[tuple[float, float]] | None = None,
     captions_provenance: dict | None = None,
     precomputed_transcript: dict | None = None,
+    precomputed_probe: dict | None = None,
 ) -> dict:
     """Probe, extract frames, transcribe one source. Returns the source
     entry dict for project.json. Used by create_workspace.
@@ -509,9 +510,13 @@ def _build_source_entry(
     is recorded in the transcript's ``captions`` block.
     ``precomputed_transcript`` reuses a cold-cache offline speech check
     completed by the CLI before creating or resetting the workspace.
+    ``precomputed_probe`` reuses metadata checked before a forced reset.
     """
     _log(f"  [{source_id}] Probing metadata...", quiet=quiet)
-    probe = run_ffprobe(abs_source)
+    probe = (
+        precomputed_probe if precomputed_probe is not None
+        else run_ffprobe(abs_source)
+    )
     fmt = probe.get("format", {})
     duration_seconds = float(fmt.get("duration", 0)) if fmt.get("duration") else 0.0
     interval = select_load_frame_interval(duration_seconds, interval)
@@ -556,6 +561,9 @@ def _build_source_entry(
         "frames_dir": FRAMES_DIR,
         "thumb_width": thumb_width,
     }
+
+    if "duration_probe" in fmt:
+        entry["duration_probe"] = fmt["duration_probe"]
 
     if not frames:
         entry["frame_extraction_skipped_reason"] = FRAME_EXTRACTION_SKIP_REASON_FLAG
@@ -635,6 +643,7 @@ def create_workspace(
     transcribe_windows: list[tuple[float, float]] | None = None,
     captions_provenance: list[dict | None] | None = None,
     precomputed_transcripts: dict[str, dict] | None = None,
+    source_probes: dict[str, dict] | None = None,
 ) -> dict:
     """Create or extend a multi-source moviestar/ workspace.
 
@@ -752,6 +761,7 @@ def create_workspace(
             transcribe_windows=transcribe_windows,
             captions_provenance=provenance,
             precomputed_transcript=(precomputed_transcripts or {}).get(source_id),
+            precomputed_probe=(source_probes or {}).get(abs_source),
         )
         sources.append(entry)
         new_sources.append(entry)

@@ -959,6 +959,99 @@ def build_ffprobe_command(video_path: str) -> list[str]:
     ]
 
 
+_DURATION_PACKET_LIMIT = 1_000_000
+_DURATION_PROBE_TIMEOUT = 60
+
+
+def _finite_number(value: object) -> float | None:
+    try:
+        number = float(value)
+    except (ValueError, TypeError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _recover_packet_duration(video_path: str, fmt: dict) -> None:
+    """Recover the seek-relative endpoint without decoding or assuming CFR.
+
+    A full demux is necessary for unindexed recorder WebM. Bound it by both
+    wall time and packet count, spool compact output to disk (not RAM), and
+    reject truncated scans rather than passing off a partial duration as exact.
+    """
+    cmd = [
+        "ffprobe", "-v", "error", "-read_intervals",
+        f"%+#{_DURATION_PACKET_LIMIT + 1}", "-show_packets",
+        "-show_entries", "packet=codec_type,stream_index,pts_time,duration_time",
+        "-of", "compact=p=0", video_path,
+    ]
+    recovery_hint = (
+        "Could not recover media duration. Remux the source into a seekable "
+        "file with duration metadata, then retry; the original is unchanged."
+    )
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as packets:
+        try:
+            result = subprocess.run(
+                cmd, stdout=packets, stderr=subprocess.PIPE, text=True,
+                timeout=_DURATION_PROBE_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"{recovery_hint} Packet scan timed out.") from exc
+        if result.returncode != 0 or result.stderr.strip():
+            raise RuntimeError(
+                f"{recovery_hint} {_failure_message('ffprobe', result)}"
+            )
+        packets.seek(0)
+        earliest = math.inf
+        latest_by_stream: dict[str, float] = {}
+        end_by_stream: dict[str, float] = {}
+        count = 0
+        for line in packets:
+            # Compact packet side-data can occupy separate/empty lines.
+            fields = dict(
+                item.split("=", 1) for item in line.strip().split("|")
+                if "=" in item
+            )
+            if "codec_type" not in fields:
+                continue
+            count += 1
+            if count > _DURATION_PACKET_LIMIT:
+                raise RuntimeError(f"{recovery_hint} Packet scan limit exceeded.")
+            if fields["codec_type"] not in {"audio", "video"}:
+                continue
+            pts = _finite_number(fields.get("pts_time"))
+            if pts is None:
+                raise RuntimeError(
+                    f"{recovery_hint} Missing packet presentation time."
+                )
+            stream = fields["stream_index"]
+            earliest = min(earliest, pts)
+            latest_by_stream[stream] = max(
+                latest_by_stream.get(stream, -math.inf), pts,
+            )
+            duration = _finite_number(fields.get("duration_time"))
+            if duration is not None and duration > 0:
+                end_by_stream[stream] = max(
+                    end_by_stream.get(stream, -math.inf), pts + duration,
+                )
+        if not latest_by_stream or any(
+            end_by_stream.get(stream, -math.inf) <= pts
+            for stream, pts in latest_by_stream.items()
+        ):
+            raise RuntimeError(f"{recovery_hint} Missing final packet duration.")
+        origin = _finite_number(fmt.get("start_time"))
+        if origin is None:
+            origin = earliest
+        endpoint = max(end_by_stream.values())
+        duration = endpoint - origin
+        if not math.isfinite(duration) or duration <= 0:
+            raise RuntimeError(f"{recovery_hint} Invalid packet extent.")
+        fmt["duration"] = str(duration)
+        fmt["duration_probe"] = {
+            "method": "packet_endpoints", "origin_seconds": origin,
+            "end_seconds": endpoint, "packet_count": count,
+        }
+
+
 def run_ffprobe(video_path: str) -> dict:
     """Run ffprobe and return the parsed JSON response.
 
@@ -976,7 +1069,15 @@ def run_ffprobe(video_path: str) -> dict:
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(_failure_message("ffprobe", result))
-    return json.loads(result.stdout)
+    data = json.loads(result.stdout)
+    fmt = data.setdefault("format", {})
+    duration = _finite_number(fmt.get("duration"))
+    if (duration is None or duration <= 0) and any(
+        stream.get("codec_type") in {"audio", "video"}
+        for stream in data.get("streams", [])
+    ):
+        _recover_packet_duration(video_path, fmt)
+    return data
 
 
 def build_last_video_packet_timestamp_command(

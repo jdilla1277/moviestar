@@ -2808,6 +2808,9 @@ def _emit_load_dry_run(
         "start_offset_seconds": start_offset_seconds,
     }
 
+    if "duration_probe" in fmt:
+        source_dict["duration_probe"] = fmt["duration_probe"]
+
     # Build the hint conditionally on whether --force would wipe.
     same_source = False
     if currently_loaded is not None:
@@ -2902,7 +2905,11 @@ def probe(video: str, loudness: bool, from_tc: str | None, to_tc: str | None) ->
     """Inspect a media file's metadata, and optionally audio loudness.
 
     Run this before 'load' to see what you're working with — no frames,
-    no transcript, just the file's structural info. Pass --loudness to
+    no transcript, just the file's structural info. If container duration
+    is absent or invalid, scan up to one million packets / 60 seconds for
+    presentation endpoints; duration_probe reports the recovery evidence.
+    Unknown endpoints fail rather than estimating duration from frame rate.
+    Pass --loudness to
     get machine-readable LUFS / peak metrics for the whole file or a
     --from/--to range.
     """
@@ -2931,6 +2938,9 @@ def probe(video: str, loudness: bool, from_tc: str | None, to_tc: str | None) ->
         "format": fmt.get("format_name", ""),
         "bitrate": int(fmt.get("bit_rate", 0)) if fmt.get("bit_rate") else 0,
     }
+
+    if "duration_probe" in fmt:
+        result["duration_probe"] = fmt["duration_probe"]
 
     video_stream = next(
         (s for s in data.get("streams", []) if s.get("codec_type") == "video"),
@@ -3456,6 +3466,17 @@ def load(
                         )
                     break
 
+    # Duration recovery can fail or hit its budget. Establish usable source
+    # metadata before --force discards the previous workspace, and reuse it
+    # below so recorder inputs are not scanned twice.
+    source_probes: dict[str, dict] = {}
+    if should_reset_workspace:
+        for abs_path in abs_paths:
+            try:
+                source_probes[abs_path] = run_ffprobe(abs_path)
+            except (FFmpegNotFoundError, RuntimeError, json.JSONDecodeError) as exc:
+                _error_exit("load", f"Could not probe {abs_path}: {exc}")
+
     # Fetch caption URLs last, so no earlier check wastes the network call,
     # and before the reset, so a missing track leaves the workspace alone.
     captions_provenance: list[dict | None] = [None] * len(abs_captions)
@@ -3510,6 +3531,7 @@ def load(
             transcribe_windows=transcribe_windows or None,
             captions_provenance=captions_provenance or None,
             precomputed_transcripts=precomputed_transcripts or None,
+            source_probes=source_probes or None,
         )
     except WorkspaceConflictError as exc:
         _error_exit("load", str(exc))
@@ -3564,6 +3586,8 @@ def load(
             "frames_extracted": source.get("frames_extracted"),
             "thumb_width": source.get("thumb_width", DEFAULT_THUMB_WIDTH),
         }
+        if "duration_probe" in source:
+            output_source["duration_probe"] = source["duration_probe"]
         if source.get("frame_extraction_skipped_reason"):
             output_source["frame_extraction_skipped_reason"] = source[
                 "frame_extraction_skipped_reason"
@@ -25196,6 +25220,8 @@ def status() -> None:
             "frames_extracted": source.get("frames_extracted"),
             "thumb_width": source.get("thumb_width", DEFAULT_THUMB_WIDTH),
         }
+        if "duration_probe" in source:
+            section["duration_probe"] = source["duration_probe"]
         if source.get("frame_extraction_skipped_reason"):
             section["frame_extraction_skipped_reason"] = source[
                 "frame_extraction_skipped_reason"

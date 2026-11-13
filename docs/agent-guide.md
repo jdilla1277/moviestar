@@ -195,3 +195,21 @@ result is pending or unknown. Local files are preserved.
 Unlisted links are forwardable and downloadable; email does not restrict access
 to its recipient. See [sharing and download](sharing.md) for availability, safe
 retries after partial success, pagination, revocation, and Preview origins.
+
+
+## Recorder files without duration metadata
+
+`probe` and `load` can recover missing or invalid container duration from audio
+and video packet presentation endpoints. Recovery preserves timestamp origins
+and gaps; it does not infer frame rate or continuous timing from a nominal rate.
+The optional `duration_probe` object records the method, origin, endpoint and
+packet count in probe/load/dry-run/status output and the stored source.
+
+Recovery demuxes without decoding and stops after 60 seconds or one million
+packets. Missing final packet timing, demux errors or an exceeded budget fail
+with remux guidance instead of a zero-length success or a guessed duration.
+Remux to a separate seekable file with duration metadata and retry; keep the
+original. A failed recovery during `load --force` preserves the existing project.
+Packet endpoints establish a metadata range, not full-decode or audiovisual
+quality approval. Existing finite positive container durations use the normal
+fast probe without this scan.
