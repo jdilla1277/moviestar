@@ -160,8 +160,8 @@ def cloud():
     """Use personal Cloud projects and private guides with this approved installation.
 
     Ordinary local commands stay local. These commands create/read Cloud
-    metadata, rename projects and manage existing asset references when supported; they do not
-    select a local workspace, upload media, or render.
+    metadata, rename projects, manage existing asset references and probe Cloud assets.
+    They do not select a local workspace, upload media, or render.
     Connect the installation with 'moviestar account connect' first.
     """
 
@@ -404,3 +404,7 @@ def show_docs(page: str, json_output: bool, markdown: bool):
         click.echo(body["markdown"], nl=False)
     else:
         click.echo(json.dumps({field: body[field] for field in ("page", "title", "markdown", "path")}, indent=2))
+
+
+from moviestar.cloud_probe import register_probe
+register_probe(cloud)
