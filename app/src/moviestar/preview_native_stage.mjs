@@ -94,7 +94,7 @@ async function checkReady(){
     // Prepare its pixels before publishing a cut scene, then return both
     // decoders to their first frames. No output clip or persistent cache.
     if(packet.cut_segment){
-      if(!await videoGroup.seek((packet.samples.length-1)/packet.fps)||disposed)return;
+      if(!await videoGroup.seek((packet.samples.length-1)/packet.fps,{presented:true})||disposed)return;
       for(const item of videos){
         const frame=document.createElement('canvas');frame.width=item.video.videoWidth;frame.height=item.video.videoHeight;
         frame.getContext('2d').drawImage(item.video,0,0);item.endFrame=frame;

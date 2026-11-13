@@ -109,3 +109,33 @@ if(!SHARED){assert.equal(meters[0].destination,destination);assert.equal(meters[
 '''
     result = subprocess.run(['node', '-e', f'const STAGE={json.dumps(stage)},SHARED={json.dumps(shared)},SILENT={json.dumps(silent_listener)},PREPARED={json.dumps(prepared)};\n'+script], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stdout+result.stderr
+
+
+@pytest.mark.skipif(not shutil.which('node'), reason='Node is required')
+def test_cut_preparation_copies_presented_destination_into_held_canvas():
+    stage=stage_script()
+    script=r'''
+const vm=require('node:vm'),assert=require('node:assert/strict');
+const context={window:{moviestarScene:{entries:[],applyMotion(){}}},
+ document:{createElement:()=>{const c={};c.getContext=()=>({drawImage:image=>{c.copied=image.pixel;},getImageData:()=>({data:new Uint8ClampedArray(128*17*4)})});return c;}},
+ location:{search:'?request=unit'},URLSearchParams,AbortController,performance:{now:()=>1},Date,
+ fetch:()=>new Promise(()=>{}),clearTimeout(){},setTimeout(){},requestAnimationFrame:fn=>fn(),console};
+vm.createContext(context);vm.runInContext(STAGE,context);
+vm.runInContext(`
+ video={currentTime:4,readyState:4,seeking:false,videoWidth:640,videoHeight:360,pixel:120};
+ videos.push({video,start:4,metadata:true,firstFrame:true,primary:true});
+ packet={fps:30,source_start:4,cut_segment:true,samples:Array(90).fill({nodes:[]})};
+ metadataReady=imageReady=true;
+ videoGroup={async seek(at,options){
+  // seeked alone can leave starting pixels behind. Only a presentation-
+  // checked seek supplies the destination that preparation may copy.
+  video.pixel=at>2?(options?.presented?209:120):120;return true;
+ }};
+`,context);
+(async()=>{await vm.runInContext('checkReady()',context);
+ assert.equal(vm.runInContext('videos[0].endFrame.copied',context),209,
+  'The actual preparation path waits for destination pixels before copying');
+})().catch(error=>{console.error(error);process.exitCode=1;});
+'''
+    result=subprocess.run(['node','-e','const STAGE='+json.dumps(stage)+';\n'+script],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stdout+result.stderr
