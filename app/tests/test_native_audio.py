@@ -58,11 +58,9 @@ def test_source_gain_without_extra_tracks_also_uses_canonical_audio(pip_project)
 
 
 @pytest.mark.parametrize('change,reason',[
-    ('source-fade','fades'),('track-fade','fades'),('loop','loop'),('ducking','ducking'),('second-track','one independent')])
+    ('loop','loop'),('ducking','ducking'),('second-track','one independent')])
 def test_first_audio_profile_rejects_uncovered_mix_features(pip_project,change,reason):
     spec,_,root=dialogue_project(pip_project)
-    if change=='source-fade':spec['audio_mix']['source_audio']['fade_in']=.2
-    if change=='track-fade':spec['audio_mix']['tracks'][0]['fade_in']=.2
     if change=='loop':spec['audio_mix']['tracks'][0]['loop']=True
     if change=='ducking':spec['audio_mix']['tracks'][0]['ducking']={'under':['source'],'preset':'speech'}
     if change=='second-track':

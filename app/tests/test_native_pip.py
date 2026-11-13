@@ -96,14 +96,10 @@ def test_preset_pip_uses_authoring_geometry_without_mutating_the_project(pip_pro
     assert inset['children'][0]['style']['width'] == f"{region['width']}px"
 
 
-@pytest.mark.parametrize('change', ['motion', 'mix'])
-def test_preset_pip_rejects_unimplemented_content_instead_of_dropping_it(pip_project, change):
+def test_preset_pip_rejects_unimplemented_content_instead_of_dropping_it(pip_project):
     spec, _, root = pip_project
     spec.pop('spatial'); spec['overlays'] = []
-    if change == 'motion':
-        spec['composition'][0]['layout']['geometry'] = {'inset': {'motion': {'preset': 'bounce'}}}
-    else:
-        spec['audio_mix']['source_audio']['fade_in'] = .2
+    spec['composition'][0]['layout']['geometry'] = {'inset': {'motion': {'preset': 'bounce'}}}
     save_spec(spec, cwd=root)
     with pytest.raises(NativePreviewUnsupported):
         compile_snapshot(read_snapshot(root, 0, 5))

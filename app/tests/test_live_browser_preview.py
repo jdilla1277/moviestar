@@ -70,7 +70,7 @@ def test_live_packet_keeps_canonical_motion_captions_and_source_offset(live_proj
     assert spec['spatial']['scenes']['scene']['layout']['children'][1]['content']['text'] == 'Original title'
 
 
-@pytest.mark.parametrize('mutation', ['extra_video', 'audio_mix', 'no_audio', 'speed', 'padding', 'media_children', 'inherited_fit', 'unknown_fps', 'low_rate'])
+@pytest.mark.parametrize('mutation', ['extra_video', 'no_audio', 'speed', 'padding', 'media_children', 'inherited_fit', 'unknown_fps', 'low_rate'])
 def test_live_packet_rejects_unimplemented_behavior(live_project, mutation):
     spec, project, root = live_project
     if mutation == 'extra_video':
@@ -79,8 +79,6 @@ def test_live_packet_rejects_unimplemented_behavior(live_project, mutation):
         spec['spatial']['scenes']['scene']['layout']['children'].append(extra)
         third = deepcopy(extra); third['instance_id'] = 'third'
         spec['spatial']['scenes']['scene']['layout']['children'].append(third)
-    elif mutation == 'audio_mix':
-        spec['audio_mix']['source_audio']['fade_in'] = .2
     elif mutation == 'no_audio':
         project['sources'][0]['audio_codec'] = None
         project['sources'][0]['has_audio'] = True  # A noncanonical flag cannot invent audio.

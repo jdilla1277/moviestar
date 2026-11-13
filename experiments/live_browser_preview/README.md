@@ -815,9 +815,46 @@ drops/stalls and audio/display plus program drift within 50 ms. The installed
 results and exact source/producer/wheel hashes are in [audio-results.json](audio-results.json).
 
 An edited mix prepares only bounded lossless stereo 48 kHz audio with export's
-layer graph and limiter. Source pictures stay native. Four actual-browser mix
+layer graph and limiter. Source pictures stay native. Six actual-browser mix
 cases also compare optional `audit_pcm=1` final-output samples against the prepared
 canonical mix, including muted tracks. Sample capture is opt-in diagnostic work,
 not an additional production recording feature. Private audio/logs stay local.
 Cold fresh-play startup drops also reproduce in the prior renderer and are
 tracked separately in [#199](https://github.com/jdilla1277/moviestar/issues/199).
+
+
+### Source and track edge fades
+
+```sh
+python experiments/live_browser_preview/audio_benchmark.py --scenario fades --out /tmp/native-fades-new
+python experiments/live_browser_preview/audio_benchmark.py --scenario fades --canvas 1080x1920 --out /tmp/native-fades-hd-new
+```
+
+This scenario times actual source fade-in/out commands, independent-track
+fade-in/out model edits and four individual undos at histories 0/20/50. It starts
+with the track already placed and requires every fade edit to reuse the same
+iframe and video decoders. It retains the same per-edit, playback and clock
+budgets as the gain scenario. Final playback reapplies the faded mix after the
+measured undo checks; that setup is untimed and identified separately.
+
+The native descriptor preserves full project duration and track placement, so a
+selected window in the middle of a fade does not restart its envelope. Export,
+loudness measurement and bounded native audio use the same per-sample linear
+fade filters. Separate analytic-waveform, full-export slice and actual-browser
+output checks cover fade timing and amplitude, including seeking into a fade.
+These are the existing layer-edge fades, not a new crossfade editing API.
+
+The first installed-wheel matrix is recorded in
+[fade-results.json](fade-results.json). It failed the unchanged latency gates:
+16 completed edits exceeded 3,000 ms and one later case timed out before its
+first edit became ready. All failures remain part of the evidence. This shared
+host was under heavy load, but that observation alone does not isolate the
+cause or establish a performance pass. Performance qualification and physical
+playback review for this slice remain pending.
+
+Sequential 1080×1920/history-50 gain controls on the same busy host retained a
+3,842 ms miss in the previous installed renderer, while the new renderer's gain
+control completed below budget. These diagnose a host-sensitive reference; they
+do not prove that the fade path has no regression and do not replace its failed
+matrix. The report includes both versions' source/producer hashes and observed
+load/swap conditions. Do not rerun to select passing samples or widen budgets.
