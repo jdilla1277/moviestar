@@ -411,3 +411,36 @@ Tools are `moviestar_list_assets`, `moviestar_list_project_assets`,
 `project_id` and `reference_id`. Agents generate and retain retry keys themselves.
 Listing returns metadata, not a download, analysis of contents, or a sharing
 grant. Reconnect and list by the same project ID to reopen its memberships.
+
+
+## Read private developer preview guides
+
+When the connected service enables developer documentation for your account:
+
+```sh
+moviestar cloud docs list
+moviestar cloud docs show quickstart
+moviestar cloud docs show asset-lifecycle --markdown
+```
+
+`list` returns page slugs and availability summaries. `show` returns structured
+JSON by default; `--markdown` writes the full page as Markdown. These commands
+use the same approved installation and service origin as your account connection.
+They do not need a personal API key, FFmpeg, or local media. The service checks
+current access and preview enrollment on each read; private guides are not
+bundled in the package or cached locally.
+
+The matching hosted MCP tool is `moviestar_developer_docs`. Omit `page` to list
+guides, or pass a returned slug to read one. Personal API clients can read the
+same index at `GET /api/v1/account/developer-docs` and each guide at
+`GET /api/v1/account/developer-docs/SLUG?format=markdown`, authenticated with a
+personal key on that service. Website readers can open the developer docs link
+from API key settings when enrolled and copy each page as Markdown.
+
+A 401 requires a current installation connection. A 404 may mean that the
+service has not deployed the docs or the account is not enrolled; ask your
+preview contact rather than replacing credentials. Content labels distinguish
+working journeys from pending rollouts and illustrative remote edit/inspect
+examples. Reading a guide does not enable the operations it describes. An older
+installed CLI may lack `cloud docs`; client release and website deployment are
+separate.

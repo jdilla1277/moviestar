@@ -156,7 +156,7 @@ def _sharing_supported(capabilities: dict) -> bool:
 
 @click.group()
 def cloud():
-    """Work explicitly with personal Cloud projects using this approved installation.
+    """Use personal Cloud projects and private guides with this approved installation.
 
     Ordinary local commands stay local. These commands create/read Cloud
     metadata and manage existing asset references when supported; they do not
@@ -302,3 +302,61 @@ def show_project(project_id: str):
 
 from moviestar.cloud_assets import register_asset_commands
 register_asset_commands(cloud, projects)
+
+
+@cloud.group("docs")
+def docs():
+    """Read private developer preview guides using this approved installation.
+
+    Requires preview enrollment for the connected account. Content is fetched
+    on every read; no preview guides or credentials are bundled or cached.
+    """
+
+
+def _docs_request(page: str | None = None) -> dict:
+    command = "cloud docs show" if page else "cloud docs list"
+    endpoint, credential = _connection(command)
+    origin = urlsplit(endpoint)
+    path = "/api/v1/account/developer-docs" + ("/" + page if page else "")
+    status, body = _request(f"{origin.scheme}://{origin.netloc}{path}", credential)
+    if status == 401:
+        _fail(command, "credential_invalid", _HINTS["credential_invalid"])
+    if status != 200:
+        _fail(command, "docs_unavailable",
+              "Developer preview docs are unavailable for this account or service. Check the connected account and ask your preview contact about enrollment.")
+    return body
+
+
+@docs.command("list")
+def list_docs():
+    """List all developer guide slugs available to the connected account."""
+    body = _docs_request()
+    pages = body.get("pages")
+    if (not isinstance(pages, list) or len(pages) > 100 or any(
+            not isinstance(page, dict)
+            or not isinstance(page.get("slug"), str)
+            or not re.fullmatch(r"[a-z-]{1,64}", page["slug"])
+            or any(not isinstance(page.get(field), str) or len(page[field]) > 1000
+                   for field in ("title", "description", "status", "group"))
+            for page in pages)):
+        _fail("cloud docs list", "invalid_response", "The service returned an incomplete docs index. Retry later.")
+    click.echo(json.dumps({"pages": [{field: page[field] for field in
+        ("slug", "title", "description", "status", "group")} for page in pages]}, indent=2))
+
+
+@docs.command("show")
+@click.argument("page")
+@click.option("--markdown", is_flag=True, help="Write this page as raw Markdown instead of a JSON object.")
+def show_docs(page: str, markdown: bool):
+    """Read PAGE from 'cloud docs list'; defaults to structured JSON."""
+    if not re.fullmatch(r"[a-z-]{1,64}", page):
+        _fail("cloud docs show", "invalid_request", "Use a page slug returned by 'moviestar cloud docs list'.")
+    body = _docs_request(page)
+    if (body.get("page") != page or not isinstance(body.get("title"), str)
+            or not isinstance(body.get("markdown"), str) or not body["markdown"]
+            or body.get("path") != "/account/developer-docs/" + page):
+        _fail("cloud docs show", "invalid_response", "The service did not return the requested guide. Retry later.")
+    if markdown:
+        click.echo(body["markdown"], nl=False)
+    else:
+        click.echo(json.dumps({field: body[field] for field in ("page", "title", "markdown", "path")}, indent=2))

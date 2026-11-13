@@ -7,6 +7,34 @@ Where the service enables personal Cloud projects, the same approved
 installation can explicitly create, list, and reopen project metadata. See
 [Personal Cloud projects](cloud-projects.md).
 
+## Connect through your browser
+
+For agent-assisted setup, use the default browser-assisted connection:
+
+```sh
+moviestar account status
+# If this installation is not already connected to the intended account:
+moviestar account connect human@example.com
+```
+
+`connect` returns `approval_pending` with a request ID and expiry. The account
+owner opens the Moviestar email, signs in or creates an account, and explicitly
+approves the requesting installation in their browser. Email links, passwords
+and verification codes stay with the owner. An existing account keeps its
+identity and handle; signing in alone does not approve the installation.
+
+After browser approval, the agent checks the existing request:
+
+```sh
+moviestar account status
+```
+
+Continue when it reports `connected` with the expected handle. While it reports
+`approval_pending`, finish browser approval and check status again rather than
+creating another request. If the request is expired or denied, start a new
+`connect` request. Keep the same Python environment for subsequent commands so
+the credential store sees a consistent runtime.
+
 ## Return to the website with an email link
 
 ```sh
@@ -59,6 +87,10 @@ and exits unsuccessfully. It never silently substitutes a browser-opening action
 for an email request.
 
 ## Terminal signup and sign-in
+
+Terminal-only setup is experimental and is not the recommended preview
+onboarding path for agents. Prefer the browser-assisted flow above. Its
+availability and additional authentication requirements depend on the service.
 
 When the service has enabled terminal setup:
 
