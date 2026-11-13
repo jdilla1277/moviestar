@@ -115,7 +115,7 @@ def _mock_probe(monkeypatch, tmp_path, packet_lines, *, duration=None, origin="5
     path = tmp_path / "source.webm"
     path.touch()
     calls = []
-    metadata = {"format": {"start_time": origin}, "streams": [
+    metadata = {"format": {"start_time": origin, "format_name": "matroska,webm"}, "streams": [
         {"codec_type": "video", "index": 0, "r_frame_rate": "1000/1"},
     ]}
     if duration is not None:
@@ -238,3 +238,16 @@ def test_failed_or_incomplete_demux_does_not_supply_a_duration(monkeypatch, tmp_
     monkeypatch.setattr(ffmpeg.subprocess, "run", failed)
     with pytest.raises(RuntimeError, match=stderr):
         run_ffprobe(str(path))
+
+
+def test_timeless_image_metadata_is_not_given_a_recorder_duration(tmp_path):
+    image = tmp_path / "still.png"
+    subprocess.run([
+        "ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=s=16x16",
+        "-frames:v", "1", "-threads", "1", str(image),
+    ], check=True)
+    raw = json.loads(subprocess.check_output([
+        "ffprobe", "-v", "error", "-show_format", "-show_streams",
+        "-of", "json", str(image),
+    ]))
+    assert run_ffprobe(str(image)) == raw

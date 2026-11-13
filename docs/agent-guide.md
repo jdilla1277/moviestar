@@ -199,7 +199,8 @@ retries after partial success, pagination, revocation, and Preview origins.
 
 ## Recorder files without duration metadata
 
-`probe` and `load` can recover missing or invalid container duration from audio
+For Matroska/WebM, `probe` and `load` recover missing or invalid container
+duration from audio
 and video packet presentation endpoints. Recovery preserves timestamp origins
 and gaps; it does not infer frame rate or continuous timing from a nominal rate.
 The optional `duration_probe` object records the method, origin, endpoint and
@@ -212,4 +213,5 @@ Remux to a separate seekable file with duration metadata and retry; keep the
 original. A failed recovery during `load --force` preserves the existing project.
 Packet endpoints establish a metadata range, not full-decode or audiovisual
 quality approval. Existing finite positive container durations use the normal
-fast probe without this scan.
+fast probe without this scan. Other formats, including timeless image metadata,
+keep their existing probe behavior.

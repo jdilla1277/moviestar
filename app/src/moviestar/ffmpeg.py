@@ -1076,7 +1076,10 @@ def run_ffprobe(video_path: str) -> dict:
     data = json.loads(result.stdout)
     fmt = data.setdefault("format", {})
     duration = _finite_number(fmt.get("duration"))
-    if (duration is None or duration <= 0) and any(
+    recorder_container = bool(
+        {"matroska", "webm"} & set(fmt.get("format_name", "").split(","))
+    )
+    if recorder_container and (duration is None or duration <= 0) and any(
         stream.get("codec_type") in {"audio", "video"}
         for stream in data.get("streams", [])
     ):

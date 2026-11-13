@@ -2905,7 +2905,7 @@ def probe(video: str, loudness: bool, from_tc: str | None, to_tc: str | None) ->
     """Inspect a media file's metadata, and optionally audio loudness.
 
     Run this before 'load' to see what you're working with — no frames,
-    no transcript, just the file's structural info. If container duration
+    no transcript, just the file's structural info. If Matroska/WebM duration
     is absent or invalid, scan up to one million packets / 60 seconds for
     presentation endpoints; duration_probe reports the recovery evidence.
     Unknown endpoints fail rather than estimating duration from frame rate.
