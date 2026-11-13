@@ -1,7 +1,7 @@
 // Caption-only revisions may reuse decoders only when every playback input,
 // source identity, layout sample, range and audio route is exactly unchanged.
 export function playbackKey(packet){
-  const {state_id,request_id,requested_at,caption_plane,...playback}=packet;
+  const {state_id,request_id,requested_at,caption_plane,audio_plane,prepared_audio,...playback}=packet;
   if(playback.segments)playback.segments=playback.segments.map(s=>({...s,packet:playbackKey(s.packet)}));
   return JSON.stringify(playback);
 }

@@ -2228,7 +2228,7 @@ class TestRenderSegmentsAudioFromInput:
         assert "[2:a]atrim=start=0:end=5" in graph
         assert "[3:a]atrim=start=0:end=10" in graph
         # The two af streams aconcat into [afout].
-        assert "[af0][af1]aconcat=n=2:v=0:a=1[afout]" in graph
+        assert "[af0][af1]concat=n=2:v=0:a=1[afout]" in graph
         # Output maps audio from [afout].
         assert "[afout]" in cmd
 

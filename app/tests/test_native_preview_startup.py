@@ -86,7 +86,8 @@ vm.runInContext(`
 @pytest.mark.skipif(not shutil.which('node'), reason='Node is required')
 @pytest.mark.parametrize('shared', [False, True])
 @pytest.mark.parametrize('silent_listener', [False, True])
-def test_audio_graph_uses_one_final_meter_and_only_real_streams(shared, silent_listener):
+@pytest.mark.parametrize('prepared', [False, True])
+def test_audio_graph_uses_one_final_meter_and_only_real_streams(shared, silent_listener, prepared):
     stage = stage_script()
     script = r'''
 const vm=require('node:vm'),assert=require('node:assert/strict');
@@ -98,13 +99,13 @@ const context={window:{moviestarScene:{entries:[],applyMotion(){}}},document:{cr
  location:{search:'?request=unit&segment=0'},URLSearchParams,AbortController,performance:{now:()=>1},Date,
  fetch:()=>new Promise(()=>{}),clearTimeout(){},setTimeout(){},requestAnimationFrame:fn=>fn(),AudioWorkletNode:Meter,console};
 vm.createContext(context);vm.runInContext(STAGE,context);
-context.testAudio=audio;context.testShared=SHARED?{destinations:[scene]}:null;context.silent=SILENT;
-vm.runInContext('audio=testAudio;shared=testShared;videos.push({video:{id:1},hasAudio:true,primary:true},{video:{id:2},hasAudio:!silent,primary:false});connectAudioGraph()',context);
+context.testAudio=audio;context.testShared=SHARED?{destinations:[scene]}:null;context.silent=SILENT;context.prepared=PREPARED;
+vm.runInContext('packet={prepared_audio:prepared};audio=testAudio;shared=testShared;videos.push({video:{id:1},hasAudio:true,primary:true},{video:{id:2},hasAudio:!silent,primary:false});connectAudioGraph()',context);
 assert.equal(sources.length,SILENT?1:2,'An empty audio source must not join the output graph');
-assert.deepEqual(gains.map(node=>node.gain.value),[1,0]);
+assert.deepEqual(gains.map(node=>node.gain.value),[PREPARED?0:1,0]);
 assert.equal(meters.length,SHARED?0:1,'Cut children feed the final parent meter without redundant worklets or timestamp queries');
 for(const gain of gains)assert.equal(gain.destination,SHARED?scene:meters[0]);
 if(!SHARED){assert.equal(meters[0].destination,destination);assert.equal(meters[0].options.channelCount,2);}
 '''
-    result = subprocess.run(['node', '-e', f'const STAGE={json.dumps(stage)},SHARED={json.dumps(shared)},SILENT={json.dumps(silent_listener)};\n'+script], capture_output=True, text=True, timeout=10)
+    result = subprocess.run(['node', '-e', f'const STAGE={json.dumps(stage)},SHARED={json.dumps(shared)},SILENT={json.dumps(silent_listener)},PREPARED={json.dumps(prepared)};\n'+script], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stdout+result.stderr

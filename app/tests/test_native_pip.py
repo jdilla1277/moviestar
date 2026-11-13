@@ -103,7 +103,7 @@ def test_preset_pip_rejects_unimplemented_content_instead_of_dropping_it(pip_pro
     if change == 'motion':
         spec['composition'][0]['layout']['geometry'] = {'inset': {'motion': {'preset': 'bounce'}}}
     else:
-        spec['audio_mix']['source_audio']['gain_db'] = -3
+        spec['audio_mix']['source_audio']['fade_in'] = .2
     save_spec(spec, cwd=root)
     with pytest.raises(NativePreviewUnsupported):
         compile_snapshot(read_snapshot(root, 0, 5))

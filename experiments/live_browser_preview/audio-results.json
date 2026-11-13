@@ -1,0 +1,974 @@
+{
+  "scope": "Generated five-second, three-span PiP, one placed dialogue track plus source gain/mute. Installed wheel; authored360x640 and1080x1920/1x. Playback uses canonical seek probes before Play, not cold-start acceptance.",
+  "limits": {
+    "every_edit_ms": 3000,
+    "audio_display_ms": 50,
+    "program_drift_ms": 50,
+    "playback_drops": 0,
+    "stalls": 0
+  },
+  "conditions": "Measured serially after local package and private web checks on an unreserved shared host. Adding/removing an audio-file dependency intentionally rebuilds the player; gain/mute edits must reuse decoders. Untimed dialogue setup after the timed undo-restoration check provides the audible final playback fixture.",
+  "environment": {
+    "python": "3.12.12 (main, Oct  9 2025, 11:07:00) [Clang 17.0.0 (clang-1700.4.4.1)]",
+    "chrome": "Google Chrome for Testing 156.0.8078.73",
+    "ffmpeg": "ffmpeg version 9.0.1 Copyright (c) 2000-2026 the FFmpeg developers",
+    "node": "v24.5.0",
+    "machine": "Apple M4",
+    "platform": "macOS-15.6-arm64-arm-64bit"
+  },
+  "cases": [
+    {
+      "canvas": [
+        360,
+        640
+      ],
+      "history": 0,
+      "edits": [
+        {
+          "name": "add-dialogue",
+          "ms": 884.438625,
+          "cli_ms": 138.33104200000002,
+          "reused_decoders": false
+        },
+        {
+          "name": "source-gain",
+          "ms": 857.6871249999999,
+          "cli_ms": 166.8549579999999,
+          "reused_decoders": true
+        },
+        {
+          "name": "unmute-source",
+          "ms": 813.5308749999999,
+          "cli_ms": 169.8705,
+          "reused_decoders": true
+        },
+        {
+          "name": "mute-source",
+          "ms": 831.9100410000001,
+          "cli_ms": 173.47833300000002,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-mute-source",
+          "ms": 699.2122920000002,
+          "cli_ms": 96.40262500000063,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-unmute-source",
+          "ms": 834.2922500000004,
+          "cli_ms": 98.71420900000066,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-source-gain",
+          "ms": 809.4279999999999,
+          "cli_ms": 97.43170800000007,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-add-dialogue",
+          "ms": 834.027959,
+          "cli_ms": 93.19350000000031,
+          "reused_decoders": false
+        }
+      ],
+      "max_edit_ms": 884.438625,
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 0
+      },
+      "program_drift_ms": -0.03418749999994475,
+      "max_audio_display_phase_ms": 3.4242846005757883,
+      "video_quality": [
+        {
+          "path": [
+            "review",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 31,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "review",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 31,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "middle",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "middle",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "return",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "return",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        }
+      ],
+      "stalls": 0,
+      "problems": [],
+      "chrome_flags": [
+        "--headless=new",
+        "--disable-features=OnBeginFrameThrottleVideo",
+        "--disable-gpu",
+        "--hide-scrollbars",
+        "--disable-background-networking",
+        "--disable-extensions",
+        "--no-first-run",
+        "--force-device-scale-factor=1",
+        "--remote-debugging-port=0",
+        "--user-data-dir=<owned-temporary-profile>",
+        "about:blank"
+      ]
+    },
+    {
+      "canvas": [
+        360,
+        640
+      ],
+      "history": 20,
+      "edits": [
+        {
+          "name": "add-dialogue",
+          "ms": 874.751541,
+          "cli_ms": 147.07166599999994,
+          "reused_decoders": false
+        },
+        {
+          "name": "source-gain",
+          "ms": 646.9475839999998,
+          "cli_ms": 180.51075000000014,
+          "reused_decoders": true
+        },
+        {
+          "name": "unmute-source",
+          "ms": 921.2502919999997,
+          "cli_ms": 180.99087499999996,
+          "reused_decoders": true
+        },
+        {
+          "name": "mute-source",
+          "ms": 820.3801669999998,
+          "cli_ms": 187.9338340000004,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-mute-source",
+          "ms": 627.965416,
+          "cli_ms": 108.27270799999951,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-unmute-source",
+          "ms": 827.1657920000007,
+          "cli_ms": 112.35708400000021,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-source-gain",
+          "ms": 803.6062089999996,
+          "cli_ms": 107.63245899999947,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-add-dialogue",
+          "ms": 833.2576250000002,
+          "cli_ms": 99.79279099999985,
+          "reused_decoders": false
+        }
+      ],
+      "max_edit_ms": 921.2502919999997,
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 20
+      },
+      "program_drift_ms": -0.23389453124994475,
+      "max_audio_display_phase_ms": 11.232333428700713,
+      "video_quality": [
+        {
+          "path": [
+            "review",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 31,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "review",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 31,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "middle",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "middle",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "return",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "return",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        }
+      ],
+      "stalls": 0,
+      "problems": [],
+      "chrome_flags": [
+        "--headless=new",
+        "--disable-features=OnBeginFrameThrottleVideo",
+        "--disable-gpu",
+        "--hide-scrollbars",
+        "--disable-background-networking",
+        "--disable-extensions",
+        "--no-first-run",
+        "--force-device-scale-factor=1",
+        "--remote-debugging-port=0",
+        "--user-data-dir=<owned-temporary-profile>",
+        "about:blank"
+      ]
+    },
+    {
+      "canvas": [
+        360,
+        640
+      ],
+      "history": 50,
+      "edits": [
+        {
+          "name": "add-dialogue",
+          "ms": 862.446208,
+          "cli_ms": 163.43604100000005,
+          "reused_decoders": false
+        },
+        {
+          "name": "source-gain",
+          "ms": 732.9874579999998,
+          "cli_ms": 197.60854099999983,
+          "reused_decoders": true
+        },
+        {
+          "name": "unmute-source",
+          "ms": 820.6882500000002,
+          "cli_ms": 202.90483399999994,
+          "reused_decoders": true
+        },
+        {
+          "name": "mute-source",
+          "ms": 841.9540830000001,
+          "cli_ms": 195.31712500000003,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-mute-source",
+          "ms": 803.310125,
+          "cli_ms": 118.19974999999977,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-unmute-source",
+          "ms": 623.4733749999996,
+          "cli_ms": 112.42912499999966,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-source-gain",
+          "ms": 619.4266670000006,
+          "cli_ms": 114.61141700000007,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-add-dialogue",
+          "ms": 888.2616660000003,
+          "cli_ms": 110.83604099999957,
+          "reused_decoders": false
+        }
+      ],
+      "max_edit_ms": 888.2616660000003,
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 46
+      },
+      "program_drift_ms": -0.13404101562494475,
+      "max_audio_display_phase_ms": 10.144333285649623,
+      "video_quality": [
+        {
+          "path": [
+            "review",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 31,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "review",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 31,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "middle",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "middle",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "return",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "return",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        }
+      ],
+      "stalls": 0,
+      "problems": [],
+      "chrome_flags": [
+        "--headless=new",
+        "--disable-features=OnBeginFrameThrottleVideo",
+        "--disable-gpu",
+        "--hide-scrollbars",
+        "--disable-background-networking",
+        "--disable-extensions",
+        "--no-first-run",
+        "--force-device-scale-factor=1",
+        "--remote-debugging-port=0",
+        "--user-data-dir=<owned-temporary-profile>",
+        "about:blank"
+      ]
+    },
+    {
+      "canvas": [
+        1080,
+        1920
+      ],
+      "history": 0,
+      "edits": [
+        {
+          "name": "add-dialogue",
+          "ms": 839.720542,
+          "cli_ms": 135.61808300000007,
+          "reused_decoders": false
+        },
+        {
+          "name": "source-gain",
+          "ms": 774.9217910000002,
+          "cli_ms": 160.23241600000006,
+          "reused_decoders": true
+        },
+        {
+          "name": "unmute-source",
+          "ms": 811.3394170000001,
+          "cli_ms": 176.12516700000015,
+          "reused_decoders": true
+        },
+        {
+          "name": "mute-source",
+          "ms": 812.5292499999996,
+          "cli_ms": 174.53399999999965,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-mute-source",
+          "ms": 833.9394159999993,
+          "cli_ms": 99.92858299999989,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-unmute-source",
+          "ms": 805.4141669999999,
+          "cli_ms": 98.71745800000008,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-source-gain",
+          "ms": 630.7634579999994,
+          "cli_ms": 93.3125,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-add-dialogue",
+          "ms": 786.5182919999997,
+          "cli_ms": 94.76245899999958,
+          "reused_decoders": false
+        }
+      ],
+      "max_edit_ms": 839.720542,
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 0
+      },
+      "program_drift_ms": -16.733894531249945,
+      "max_audio_display_phase_ms": 19.54123562939958,
+      "video_quality": [
+        {
+          "path": [
+            "review",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 30,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "review",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 30,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "middle",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "middle",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "return",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "return",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        }
+      ],
+      "stalls": 0,
+      "problems": [],
+      "chrome_flags": [
+        "--headless=new",
+        "--disable-features=OnBeginFrameThrottleVideo",
+        "--disable-gpu",
+        "--hide-scrollbars",
+        "--disable-background-networking",
+        "--disable-extensions",
+        "--no-first-run",
+        "--force-device-scale-factor=1",
+        "--remote-debugging-port=0",
+        "--user-data-dir=<owned-temporary-profile>",
+        "about:blank"
+      ]
+    },
+    {
+      "canvas": [
+        1080,
+        1920
+      ],
+      "history": 20,
+      "edits": [
+        {
+          "name": "add-dialogue",
+          "ms": 851.3702920000001,
+          "cli_ms": 148.04995899999994,
+          "reused_decoders": false
+        },
+        {
+          "name": "source-gain",
+          "ms": 659.584875,
+          "cli_ms": 173.92216700000017,
+          "reused_decoders": true
+        },
+        {
+          "name": "unmute-source",
+          "ms": 832.498458,
+          "cli_ms": 183.64416699999992,
+          "reused_decoders": true
+        },
+        {
+          "name": "mute-source",
+          "ms": 915.5093750000005,
+          "cli_ms": 179.39600000000019,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-mute-source",
+          "ms": 814.3577080000005,
+          "cli_ms": 106.21450000000004,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-unmute-source",
+          "ms": 824.0020000000004,
+          "cli_ms": 103.38725000000068,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-source-gain",
+          "ms": 812.3678749999999,
+          "cli_ms": 105.2440000000006,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-add-dialogue",
+          "ms": 779.8080419999997,
+          "cli_ms": 103.47883300000012,
+          "reused_decoders": false
+        }
+      ],
+      "max_edit_ms": 915.5093750000005,
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 20
+      },
+      "program_drift_ms": -0.23389453124994475,
+      "max_audio_display_phase_ms": 2.854520206133202,
+      "video_quality": [
+        {
+          "path": [
+            "review",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 31,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "review",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 31,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "middle",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "middle",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "return",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "return",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        }
+      ],
+      "stalls": 0,
+      "problems": [],
+      "chrome_flags": [
+        "--headless=new",
+        "--disable-features=OnBeginFrameThrottleVideo",
+        "--disable-gpu",
+        "--hide-scrollbars",
+        "--disable-background-networking",
+        "--disable-extensions",
+        "--no-first-run",
+        "--force-device-scale-factor=1",
+        "--remote-debugging-port=0",
+        "--user-data-dir=<owned-temporary-profile>",
+        "about:blank"
+      ]
+    },
+    {
+      "canvas": [
+        1080,
+        1920
+      ],
+      "history": 50,
+      "edits": [
+        {
+          "name": "add-dialogue",
+          "ms": 855.170709,
+          "cli_ms": 163.85304199999996,
+          "reused_decoders": false
+        },
+        {
+          "name": "source-gain",
+          "ms": 743.373625,
+          "cli_ms": 193.00487499999986,
+          "reused_decoders": true
+        },
+        {
+          "name": "unmute-source",
+          "ms": 843.5395829999998,
+          "cli_ms": 192.8862079999999,
+          "reused_decoders": true
+        },
+        {
+          "name": "mute-source",
+          "ms": 801.6511669999995,
+          "cli_ms": 198.51874999999973,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-mute-source",
+          "ms": 625.2582919999995,
+          "cli_ms": 113.45749999999953,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-unmute-source",
+          "ms": 629.1517079999994,
+          "cli_ms": 112.5972499999998,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-source-gain",
+          "ms": 600.904708,
+          "cli_ms": 114.45666700000038,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-add-dialogue",
+          "ms": 890.2727499999992,
+          "cli_ms": 112.53241699999944,
+          "reused_decoders": false
+        }
+      ],
+      "max_edit_ms": 890.2727499999992,
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 46
+      },
+      "program_drift_ms": -16.734138671874945,
+      "max_audio_display_phase_ms": 19.679146436691553,
+      "video_quality": [
+        {
+          "path": [
+            "review",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 30,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "review",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 30,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "middle",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "middle",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "return",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "return",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 61,
+          "dropped_frames": 0
+        }
+      ],
+      "stalls": 0,
+      "problems": [],
+      "chrome_flags": [
+        "--headless=new",
+        "--disable-features=OnBeginFrameThrottleVideo",
+        "--disable-gpu",
+        "--hide-scrollbars",
+        "--disable-background-networking",
+        "--disable-extensions",
+        "--no-first-run",
+        "--force-device-scale-factor=1",
+        "--remote-debugging-port=0",
+        "--user-data-dir=<owned-temporary-profile>",
+        "about:blank"
+      ]
+    }
+  ],
+  "producer_hashes": {
+    "audio.py": "88e703038e14dae4f2153b689f87a6276ebe6fca4792ab98d9c176430f9746f7",
+    "audio_benchmark.mjs": "f4aed83d20c76cb6238f5fedd1db43dd49d9408150901b3a5b6812c72461d110",
+    "audio_benchmark.py": "0aed8d2edec0b1a91787fe2cfcac9376196d902a9b0848d1938c314799e8e650",
+    "benchmark.mjs": "c830c36cdbe23266656e9e0b29abfe1ce7bc093a37fd37af496063ec031fc778",
+    "benchmark.py": "0347abc59df33a1628288bce87bddbb660c2f040426b84ab7eff3a9bdff86c1e",
+    "browser.mjs": "136b11fe43adeada3026f84d3798c81b4ff423b672881bf57a7db70b341709e6",
+    "caption_benchmark.mjs": "ee019488cfd0756eb94ba02909af3865b2342da18610d09c6c09b4e048ab7b26",
+    "caption_benchmark.py": "567092e442ff64f630d4f9a42cf36d2293dede378150ddfb5b035ea6ae5a038d",
+    "cue_clock.mjs": "358689d73b2ece05666ca1097cc1702ae0f7d0a00c850d9fe6ef69a5aaa20c9a",
+    "cut_benchmark.py": "76a99955570d7f22fbe6be1e589ebd1f4781d9a1ae7ae8db861923a791cc2f11",
+    "cuts.py": "54d1d3d8ca2b6a0d2fd42d0d6d92de5c9f3d2ca3e3e60e08c16d2cf9dc3b3d11",
+    "diagnostics.mjs": "4f26cc054b8e5320d92c6ecdbff87ab716eab1315d8d5abf7a1cfcbb578bbcb5",
+    "fixtures.py": "becd1072c5980378695b217ff84e19d86f81aa1532ae8676d91890b0a7c9bb85",
+    "history.py": "3272e0acbfcb0fe5bcbf67303b0fb546ce63a34ad12125ee4678511b8a02a612",
+    "history_benchmark.py": "1cd7adec8626170d17312291c8ccc79dfb8b5ff497f99240632abbf6c78b4901",
+    "pip.py": "2ee0888c5eea7e71ad927645d9950c11053ce5e2335b9400576a472c2240f14e",
+    "pip_benchmark.mjs": "72e9c76b4cad2bbae0ed4554b0b4cf527eafeb774a359beb8ba488587d9ebec6",
+    "pip_benchmark.py": "a0632460e265e5d45354cb5c75ed87fcaa12449f0e3e69638df90e4cf66b2669",
+    "presented_frames.mjs": "dfa4ec5278f07f87112e58cc4bfbdc7aebc9756b1c98f59be1a34533499fd7b1",
+    "real_benchmark.py": "e573fd17b9379cd5e09137fc55b32a4e75c4cb955d684dacd22308223efad327",
+    "scaling.py": "26051152829f1838649ab8347d0c9bf348da388dece429fe892144bb5bda76d0",
+    "serve.py": "d21dc5d0e564fd238d08fda9fc5ae1395f67277bd90e3024ba158c57238300a9"
+  },
+  "package_source_hashes": {
+    "app/src/moviestar/__init__.py": "4d6069e3615cfb759eff4a69169348d83d5dec81d5c376c2f34466db0d26504a",
+    "app/src/moviestar/__main__.py": "83555779bc550efd4cd1013ff0131956f4eea8bf5838a38019ee33f359cbb038",
+    "app/src/moviestar/account.py": "ac8e33c5f9a856435ace85e1a4eb9d681bed71f207607176992c8886d1dbccea",
+    "app/src/moviestar/activity.py": "eb764e61ac747d4e88a16c37c813131620c92f4ce30bf3446d99956a7c1c525c",
+    "app/src/moviestar/audio_surface.py": "71df8189805594ea2ad3d484bbe3c6c6a95471f77fe2e5460fb6f569f5af856d",
+    "app/src/moviestar/camera.py": "2b4dc252d57d743093d984cb0ac6a5a162056215b3a670820b908a80c521f5f5",
+    "app/src/moviestar/caption_import.py": "eb61ef59750129b47976017f56c920c615ab8acd2ce66e14e56580fc357218ef",
+    "app/src/moviestar/captions.py": "441ff58a85f7bf0a627c369a16074c1be9bbdf07d74898d7961fd29560e7b68e",
+    "app/src/moviestar/cli.py": "f55a4c2c72051ddcb849d470ca91c4e6e0d1cfbf4c3b45cba8fabe6a062d9c6d",
+    "app/src/moviestar/composition_mock.py": "d232ea91dd1f3b65c7b3435d2713da4c6bcf5eb50b8d8bf7ca81e225afb9cf82",
+    "app/src/moviestar/feedback.py": "ec51bbc56da56823721769b5d79f331b88d3f957b1ef6ec9e9d3d146c2161d3b",
+    "app/src/moviestar/ffmpeg.py": "f8a81bb2b7243f00290092a006a50e719335ad8488d9ed7ca5abe220376c6d26",
+    "app/src/moviestar/find.py": "0d2b06a64c80a0f6dd5b1a166364a610373c3e2d912d4bd1d8c1c6d05970f4b6",
+    "app/src/moviestar/fonts.py": "5f2134271761dca57965d079b37d69fed48e110ff4348df141921660e1644027",
+    "app/src/moviestar/json_identity.py": "9069690d6f0b624f462aeb8a984ebd1378fbd84fba0820541a8cda0bf3bfcc0c",
+    "app/src/moviestar/local_preview.py": "7bb6e7e0db97f28afe8bed8a0b0df90ae978b7a53355d67ce0287845c9ab8d67",
+    "app/src/moviestar/masks.py": "8438b14fbe411577230df941184d779b482f7240006f90c160d6beb1d8999fa1",
+    "app/src/moviestar/motion.py": "ed21f8d8b8b5835a3311a07d7588f8ce3fc15c172562a5700e08351d6c8d8119",
+    "app/src/moviestar/native_audio.py": "717bef0e590091ca9b5230658c0c95a072e489194fe93be6455943e170d1d4b2",
+    "app/src/moviestar/native_captions.py": "70f6d76299242b82d6d2c436877ed6326d270b904171d9f93fa451ee1eab6ab0",
+    "app/src/moviestar/native_preset.py": "7ee5bd99dbc140b1528d6b1a12afd767f113d7392b44e97919a13dd3de7cd851",
+    "app/src/moviestar/native_preview.py": "e1a153cac71f5a3e305ac11c965a9091eb1a2fc7dc1b778c597545a0517d4e02",
+    "app/src/moviestar/overlays.py": "8cbfa6ddc96d86a441abf05eaae4170785fadce3e51902af34a4cccedb231d51",
+    "app/src/moviestar/platforms.py": "9d47069428f5b1971b2c8adc242549fe2a7e368ecb0c219d265d1dad16d684be",
+    "app/src/moviestar/preview_native.mjs": "314f6a4eecd149657f910a962da8ec1c2be9c956d1ce76c69e46c0befc3951e4",
+    "app/src/moviestar/preview_native_audio.mjs": "2da78e61d55411d2abd3bd7ea927d7a8c91e23bf036da5eb08228b706c1a149d",
+    "app/src/moviestar/preview_native_buffer.mjs": "acd43432c3a40abe7ab638a599e70721ad57858b540da4dd7c569e9cd0737722",
+    "app/src/moviestar/preview_native_captions.mjs": "f32c09c00b80ab23ceec2a0d0b10054a06044f9ffba2414b6117ca2b08fd76d4",
+    "app/src/moviestar/preview_native_cut_meter.mjs": "e19161382c1443f3114734e690d182f98f9c832f10be362a630135a9c3aef3e5",
+    "app/src/moviestar/preview_native_cuts.mjs": "3c5e1ac3d481e52047824a601de74585eaaef0221b626d4e9af76cd37362cbd6",
+    "app/src/moviestar/preview_native_meter.mjs": "9d546fa96d6ce8a7b83589cfed7e3f8ab89284c75910a1ee81fe2ab927e71840",
+    "app/src/moviestar/preview_native_stage.mjs": "6257421097d1269472aab7652f8fc30b164ac0a9a89650837404b69c283e0468",
+    "app/src/moviestar/preview_native_videos.mjs": "e6421f6abe0a34e8ad7b3a4d938e4e5f00fde8b9d2fde05308dfc8a05247766a",
+    "app/src/moviestar/preview_native_worker.mjs": "3410f31905b13b31a70fdf45b9475d0cea52c7a13593cb678b65a710ed1f7a83",
+    "app/src/moviestar/preview_worker.py": "f45932fe6048e8602685b031c60fa733215a3952388e681879da75a5bb080db7",
+    "app/src/moviestar/project.py": "e5ed3cb9d8182360d4a564bb8a850ac2b4e728f75e7e0164bdc2bdd71fe58d40",
+    "app/src/moviestar/remote_captions.py": "2707cbcbcf516ba7fa1f4beb4927ce7e63a4afeacc2579eb01f829585e623558",
+    "app/src/moviestar/resolved.py": "0e33bdc8c72c68775eb11f588b2e71aac4980bfd546b75c2ded7c9afb517ed75",
+    "app/src/moviestar/sharing.py": "fde7c87d9e01c3cd9c6548ed80a1d78759c13f9f283514ef39d6c0a3ebe3c943",
+    "app/src/moviestar/spatial_browser.mjs": "0ae46ca5d343bcfc191935b316b9b9e921b2b8cafc44019864196c23759dce01",
+    "app/src/moviestar/spatial_browser_lifecycle.mjs": "658d220fa2f1bd937624ad3f2064d967f95c1179b05c039a2f20ed461775f2ef",
+    "app/src/moviestar/spatial_catalog.py": "1132c131a5c8c2bb925175e7b8c68dea67b85d3c91ce35312f2d1af0e8ca9fa9",
+    "app/src/moviestar/spatial_composite.py": "920b128dd4ced2ae0bab9c5d0e60edb337c69f1f61d8ac1724c95f67cc227ca1",
+    "app/src/moviestar/spatial_dom.mjs": "59054c107bc21c7493697b8d25b6bf3f884347fcdab8f701218d06453f2abdac",
+    "app/src/moviestar/spatial_edit.py": "1dd115452d415c4f3266b9d9eac55739431f7c29dee4397584810d9192a264a6",
+    "app/src/moviestar/spatial_format.py": "dcea57c2e2eb37e313b83d5f6fcf77312f8d65fcd89885c7bfc62e6a9d956a6b",
+    "app/src/moviestar/spatial_inspection.py": "e4db79164d6d95564a844f85197477aed59f0239c5dbd573fc6b1c0732f1fee5",
+    "app/src/moviestar/spatial_layout.py": "0ddcf669500b727a90575aec2fc411d5e869f365aa6dc951eda0f4e7904bdb8e",
+    "app/src/moviestar/spatial_model.py": "354ec181859918ca7bfa09ff9f6f0871a81018572f7e7467353a121c522de39a",
+    "app/src/moviestar/spatial_motion.py": "4ee7bee35583f3479b584b79b54193476c75e2d90dfd364dce2b5e355e042b05",
+    "app/src/moviestar/spatial_preset.py": "3e4c6df132c09920d3fc26ba24766f0af0a55b9c4b13ad47584a979796a84db7",
+    "app/src/moviestar/spatial_regions.py": "e08806b95517a613738b6061a2bd74c1b86b6be49acf846fb3333c0b590ec530",
+    "app/src/moviestar/spatial_render.py": "1acbbb05081e1d27efc111dab0017678004898588981bfce00e69b183d388893",
+    "app/src/moviestar/spatial_saved_layouts.py": "07a3bea01dd6d1fa77ccc5d3973dd69ed8a155e58a9e3fc91ab237fbcccc0d86",
+    "app/src/moviestar/spatial_session.py": "dbc2637a039ee7a32f98765e0649d32cb405ee2b7ca189de5574e2528006bbf9",
+    "app/src/moviestar/spatial_transition.py": "f0fb5728fc3409fd494f024ae4f1e06c2081026769060ba032e30329642c7c3c",
+    "app/src/moviestar/spatial_video.py": "965c27a11898d3ea407b4d8cbdcece7d896b2b7be2124421db625da9fef4274f",
+    "app/src/moviestar/spec.py": "5edb477e54e600d74c748a6277260441fac58cecf5c0e096667656985a4f6662",
+    "app/src/moviestar/subscribe.py": "a0c2bb146c39263f209abfea9b16fd030b8b4035d9244914f58d0bfeaac4468c",
+    "app/src/moviestar/timecodes.py": "37b2b686be6bd81322174908622cef437139ce9d013ac1b146cc11fc737aebdf",
+    "app/src/moviestar/transcribe.py": "6d35a82cedee63d69d36aa624d2d5c6d3016de8cc65a1b99870ca23c8fa4ac71",
+    "app/src/moviestar/transitions.py": "ab2425f6812626aae2d22b1fe7630a163feb1b7f21920700cea519530506dd15"
+  },
+  "wheel_sha256": "149cf5b3e4ec1473ad71166666048b5814a263aa8cd26715e05c44b9d9fa7f63",
+  "limitations": [
+    "Fresh-play startup drops are inherited and tracked in #199. Seek-before-Play reference results do not close it.",
+    "Fades, looping, ducking, multiple audible independent tracks, longer review and broader #154 stress acceptance remain outside this slice.",
+    "Private footage and human listening/lip-sync are separate acceptance.",
+    "Earlier exploratory snapshots reused a local output path; those overwritten attempts are not treated as retained acceptance evidence. Qualified six-case outputs and known failed benchmark/preflight series remain retained."
+  ],
+  "development_failures": [
+    "A source-unmuted playback phase of50.8758ms failed the50ms gate before picture startup waited for the prepared mix to reach the actual output clock.",
+    "The first benchmark incorrectly required decoder reuse when adding/removing a file dependency; its failed result is retained. Current results enforce reuse for gain/mute operations and retain full file-identity fencing.",
+    "A shared routed-audio helper used the invalid aconcat filter name; real FFmpeg preparation exposed it, and the actual concat filter is now used.",
+    "Per-quantum sample-array diagnostics produced a single-quantum output mismatch. PCM capture now writes to one preallocated bounded buffer and transfers it after playback; four actual-browser output comparisons pass the retained amplitude error threshold after at most one scheduled-sample alignment."
+  ]
+}

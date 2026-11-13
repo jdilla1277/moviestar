@@ -796,3 +796,28 @@ pixel contents of an unobserved frame. Negative controls reject actual missing
 or duplicate submissions, wrong pixels, bad baselines and a missing final frame.
 The earlier Linux barcode mismatch remains tracked in #189; omitted callbacks
 do not explain a mismatching pixel sample.
+
+### Independent audio reference
+
+```sh
+python experiments/live_browser_preview/audio_benchmark.py --out /tmp/native-audio-new
+python experiments/live_browser_preview/audio_benchmark.py --canvas 1080x1920 --out /tmp/native-audio-hd-new
+```
+
+These generated five-second, three-span PiP cases time existing `audio add`,
+source gain/mute/unmute and individual undo commands at histories 0/20/50.
+Gain/mute edits must keep their actual decoders; adding/removing a file dependency
+intentionally rebuilds under the full input fingerprint. After timed restoration,
+an untimed dialogue setup supplies audible playback. The established reference
+uses authored raster/1x and canonical seek probes before Play; it is not a cold
+startup claim. Every measured edit must finish below 3,000 ms, with zero playback
+drops/stalls and audio/display plus program drift within 50 ms. The installed
+results and exact source/producer/wheel hashes are in [audio-results.json](audio-results.json).
+
+An edited mix prepares only bounded lossless stereo 48 kHz audio with export's
+layer graph and limiter. Source pictures stay native. Four actual-browser mix
+cases also compare optional `audit_pcm=1` final-output samples against the prepared
+canonical mix, including muted tracks. Sample capture is opt-in diagnostic work,
+not an additional production recording feature. Private audio/logs stay local.
+Cold fresh-play startup drops also reproduce in the prior renderer and are
+tracked separately in [#199](https://github.com/jdilla1277/moviestar/issues/199).
