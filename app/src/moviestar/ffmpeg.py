@@ -1687,6 +1687,12 @@ def _preserve_frame_output(output_path: str):
             raise
     succeeded = False
     try:
+        if backup is not None:
+            # FFmpeg normally preserves permissions when truncating an existing
+            # output. Keep that property even though its old bytes are backed up.
+            fd = os.open(output_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            os.close(fd)
+            os.chmod(output_path, os.stat(backup).st_mode & 0o777)
         yield
         succeeded = True
     finally:

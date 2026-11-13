@@ -1,6 +1,8 @@
 """A tail screenshot must contain a real frame, never a stale/missing image."""
 
 import json
+import os
+import stat
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -194,9 +196,12 @@ def test_normal_seek_replaces_existing_output_and_cleans_backup(tail_video, tmp_
     path, _ = tail_video
     out = tmp_path / "proof.png"
     out.write_bytes(b"old proof")
+    out.chmod(0o600)
     command = extract_frame(str(path), 0.5, str(out))
     assert out.read_bytes().startswith(b"\x89PNG")
     assert str(out) in command
+    if os.name != "nt":
+        assert stat.S_IMODE(out.stat().st_mode) == 0o600
     assert not list(tmp_path.glob(".moviestar-frame-*"))
 
 
