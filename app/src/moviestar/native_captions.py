@@ -41,7 +41,7 @@ def compile_plane(spec, timeline, start, end, fail):
     states, frames, seen = [], [], {}
     for frame in range(round((end-start)*timeline.output_fps)):
         at = frame/timeline.output_fps
-        cues = []
+        cues, paint_events = [], []
         for plan in plans:
             active = None
             if plan.get('highlight'):
@@ -50,6 +50,9 @@ def compile_plane(spec, timeline, start, end, fail):
                     continue
                 # Overlapping rounded events are painted in canonical ASS order.
                 active = visible[-1]['word_index']
+                # All overlapping ASS events paint, including transient ones
+                # with the same final word. Preserve their order in the key.
+                paint_events.append((plan['id'], visible))
             elif not plan['enable_from'] <= at < plan['enable_to']:
                 continue
             cues.append({'id': plan['id'], 'track': plan['track'], 'text': plan['text'],
@@ -57,7 +60,7 @@ def compile_plane(spec, timeline, start, end, fail):
                 'highlight_color': plan['highlight']['color'] if plan.get('highlight') else None,
                 'font': {k: plan['font'][k] for k in ('family', 'weight')},
                 'estimated_bounds': plan['estimated_bounds'], 'style': plan['resolved_style']})
-        signature = json.dumps(cues, sort_keys=True)
+        signature = json.dumps([cues, paint_events], sort_keys=True)
         if signature not in seen:
             seen[signature] = len(states)
             states.append({'frame': frame, 'cues': cues})

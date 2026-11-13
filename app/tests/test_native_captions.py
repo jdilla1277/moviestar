@@ -158,6 +158,61 @@ def test_transparent_caption_pixels_match_canonical_export(highlight, tmp_path):
         assert (rgba[:, :, 3] == 0).any()
 
 
+
+def test_clipped_word_overlap_matches_export_before_and_after_rounding(pip_project, tmp_path):
+    import av
+    import numpy as np
+    from moviestar.native_captions import paint_plane
+    from moviestar.ffmpeg import build_highlight_ass, build_overlay_filter_parts, highlight_events
+    from moviestar.overlays import plan_overlays
+    from moviestar.resolved import resolve_project, resolve_overlays
+
+    spec, project, root = pip_project
+    spec.pop('spatial')
+    record = cue()
+    record['tokens'][0]['to'] = record['tokens'][1]['from'] = '0:00:00.501'
+    record['style']['resolved']['opacity'] = .8
+    spec['overlays'] = [record]
+    save_spec(spec, cwd=root)
+    packet, jobs = compile_snapshot(read_snapshot(root, .5, 2.5))
+    plane = packet['caption_plane']
+    job = jobs[plane['job']]
+    paths = paint_plane(job, tmp_path/'planes')
+
+    # The export planner clips the first word to .001 s. Canonical ASS extends
+    # its rounded zero-length event to .01 s, overlapping the next event only
+    # on review frame 0. Both frames' last active word is still the second word.
+    timeline = resolve_project(project, spec)
+    plans = plan_overlays(list(resolve_overlays(timeline, [record]).records), (640, 360), .5, 2.5)['plans']
+    assert [(e['from'], e['to']) for e in highlight_events(plans[0])] == [
+        ('0:00:00.00', '0:00:00.01'), ('0:00:00.00', '0:00:01.50')]
+    ass_path = tmp_path/'reference.ass'
+    ass_path.write_text(build_highlight_ass(plans, (640, 360)))
+    samples = [0, 1, 30, 45]
+    selected = '+'.join(f'eq(n\\,{frame})' for frame in samples)
+    parts = [f'[0:v]select={selected}[base]']
+    parts += build_overlay_filter_parts(plans, (640, 360), 2, input_label='base', output_label='out',
+        highlight_ass=(str(ass_path), str(Path(plans[0]['font']['path']).parent)))
+    result = subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i',
+        'color=c=0x305070:s=640x360:r=30:d=2,format=rgba', '-filter_complex', ';'.join(parts),
+        '-map', '[out]', '-fps_mode', 'vfr', '-frames:v', str(len(samples)),
+        '-f', 'rawvideo', '-pix_fmt', 'rgba', '-'], capture_output=True, check=True, timeout=10)
+    reference = np.frombuffer(result.stdout, dtype=np.uint8).reshape(len(samples), 360, 640, 4)
+    for index, frame in enumerate(samples):
+        path, rect = paths[plane['frames'][frame]]
+        with av.open(str(path)) as container:
+            crop = next(container.decode(video=0)).to_ndarray(format='rgba').astype(float)
+        rgba = np.zeros((360, 640, 4))
+        rgba[rect['y']:rect['y']+rect['height'], rect['x']:rect['x']+rect['width']] = crop
+        alpha = rgba[:, :, 3:4]/255
+        composed = np.rint(rgba[:, :, :3]*alpha + np.array([48, 80, 112])*(1-alpha))
+        error = abs(composed-reference[index, :, :, :3].astype(float))
+        assert error.max() <= 5, (frame, error.max(), int((error > 5).sum()))
+    assert plane['states'][plane['frames'][0]]['cues'] == plane['states'][plane['frames'][1]]['cues']
+    assert plane['frames'][0] != plane['frames'][1]
+    assert plane['frames'][1] == plane['frames'][30]
+
+
 def test_published_caption_assets_survive_worker_cleanup_and_pruning(pip_project, tmp_path, monkeypatch):
     from moviestar import local_preview
     from tests.test_native_preview import _fake_workers

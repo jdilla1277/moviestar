@@ -7,9 +7,9 @@
     "node": "v24.5.0",
     "machine": "Apple M4",
     "memory_bytes": 25769803776,
-    "platform": "macOS-15.6-arm64-arm-64bit-Mach-O"
+    "platform": "macOS-15.6-arm64-arm-64bit"
   },
-  "conditions": "Final benchmark runs serialized after local regression checks. Host not reserved. Every sample and prior failed attempt retained. Actual Chrome flags recorded per case; reference disables OnBeginFrameThrottleVideo.",
+  "conditions": "Review-fix installed-wheel runs serialized after the local regression preflight; host not reserved. Every sample and prior failure retained locally. Actual reference Chrome flags are recorded per case, with its temporary profile path redacted.",
   "limits": {
     "every_edit_ms": 3000,
     "audio_display_phase_ms": 50,
@@ -26,13 +26,13 @@
       ],
       "history": 0,
       "edits_and_undos": 8,
-      "max_edit_ms": 835.0275419999998,
-      "max_cli_ms": 145.26904100000002,
+      "max_edit_ms": 815.370625,
+      "max_cli_ms": 150.69299999999998,
       "every_edit_reused_decoders": true,
-      "max_audio_display_phase_ms": 26.873666666666395,
+      "max_audio_display_phase_ms": 18.273666618981224,
       "caption_playback": {
-        "observations": 147,
-        "max_apply_lateness_ms": 19.59999997615796,
+        "observations": 146,
+        "max_apply_lateness_ms": 17.399999952316648,
         "states": [
           0,
           1,
@@ -42,7 +42,9 @@
           5,
           6,
           7,
-          8
+          8,
+          9,
+          10
         ]
       },
       "video_quality": [
@@ -73,7 +75,20 @@
         "fresh_request": true,
         "history": 0
       },
-      "problems": []
+      "problems": [],
+      "chrome_flags": [
+        "--headless=new",
+        "--disable-features=OnBeginFrameThrottleVideo",
+        "--disable-gpu",
+        "--hide-scrollbars",
+        "--disable-background-networking",
+        "--disable-extensions",
+        "--no-first-run",
+        "--force-device-scale-factor=1",
+        "--remote-debugging-port=0",
+        "--user-data-dir=<owned-temporary-profile>",
+        "about:blank"
+      ]
     },
     {
       "canvas": [
@@ -82,12 +97,153 @@
       ],
       "history": 20,
       "edits_and_undos": 8,
-      "max_edit_ms": 826.0595410000001,
-      "max_cli_ms": 142.813666,
+      "max_edit_ms": 1763.153,
+      "max_cli_ms": 322.342709,
       "every_edit_reused_decoders": true,
-      "max_audio_display_phase_ms": 34.8776667143502,
+      "max_audio_display_phase_ms": 23.60400000000118,
+      "caption_playback": {
+        "observations": 137,
+        "max_apply_lateness_ms": 2.100000023841858,
+        "states": [
+          0,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      "video_quality": [
+        {
+          "path": [
+            "review",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 150,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "review",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 150,
+          "dropped_frames": 0
+        }
+      ],
+      "stalls": 0,
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 20
+      },
+      "problems": [],
+      "chrome_flags": [
+        "--headless=new",
+        "--disable-features=OnBeginFrameThrottleVideo",
+        "--disable-gpu",
+        "--hide-scrollbars",
+        "--disable-background-networking",
+        "--disable-extensions",
+        "--no-first-run",
+        "--force-device-scale-factor=1",
+        "--remote-debugging-port=0",
+        "--user-data-dir=<owned-temporary-profile>",
+        "about:blank"
+      ]
+    },
+    {
+      "canvas": [
+        360,
+        640
+      ],
+      "history": 50,
+      "edits_and_undos": 8,
+      "max_edit_ms": 894.4347090000001,
+      "max_cli_ms": 168.2976660000004,
+      "every_edit_reused_decoders": true,
+      "max_audio_display_phase_ms": 35.770666642825745,
       "caption_playback": {
         "observations": 146,
+        "max_apply_lateness_ms": 1.7999999523162842,
+        "states": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      "video_quality": [
+        {
+          "path": [
+            "review",
+            "slots",
+            "main",
+            "video"
+          ],
+          "total_frames": 150,
+          "dropped_frames": 0
+        },
+        {
+          "path": [
+            "review",
+            "slots",
+            "inset",
+            "video"
+          ],
+          "total_frames": 150,
+          "dropped_frames": 0
+        }
+      ],
+      "stalls": 0,
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 46
+      },
+      "problems": [],
+      "chrome_flags": [
+        "--headless=new",
+        "--disable-features=OnBeginFrameThrottleVideo",
+        "--disable-gpu",
+        "--hide-scrollbars",
+        "--disable-background-networking",
+        "--disable-extensions",
+        "--no-first-run",
+        "--force-device-scale-factor=1",
+        "--remote-debugging-port=0",
+        "--user-data-dir=<owned-temporary-profile>",
+        "about:blank"
+      ]
+    },
+    {
+      "canvas": [
+        1080,
+        1920
+      ],
+      "history": 0,
+      "edits_and_undos": 8,
+      "max_edit_ms": 1045.9995829999998,
+      "max_cli_ms": 144.50337500000023,
+      "every_edit_reused_decoders": true,
+      "max_audio_display_phase_ms": 37.54666666666708,
+      "caption_playback": {
+        "observations": 147,
         "max_apply_lateness_ms": 0,
         "states": [
           0,
@@ -98,119 +254,9 @@
           5,
           6,
           7,
-          8
-        ]
-      },
-      "video_quality": [
-        {
-          "path": [
-            "review",
-            "slots",
-            "main",
-            "video"
-          ],
-          "total_frames": 150,
-          "dropped_frames": 0
-        },
-        {
-          "path": [
-            "review",
-            "slots",
-            "inset",
-            "video"
-          ],
-          "total_frames": 150,
-          "dropped_frames": 0
-        }
-      ],
-      "stalls": 0,
-      "restored": {
-        "same_state": true,
-        "fresh_request": true,
-        "history": 20
-      },
-      "problems": []
-    },
-    {
-      "canvas": [
-        360,
-        640
-      ],
-      "history": 50,
-      "edits_and_undos": 8,
-      "max_edit_ms": 825.1046670000005,
-      "max_cli_ms": 152.530084,
-      "every_edit_reused_decoders": true,
-      "max_audio_display_phase_ms": 34.24166666666679,
-      "caption_playback": {
-        "observations": 146,
-        "max_apply_lateness_ms": 3.300000000000182,
-        "states": [
-          0,
-          1,
-          2,
-          3,
-          4,
-          5,
-          6,
-          7,
-          8
-        ]
-      },
-      "video_quality": [
-        {
-          "path": [
-            "review",
-            "slots",
-            "main",
-            "video"
-          ],
-          "total_frames": 150,
-          "dropped_frames": 0
-        },
-        {
-          "path": [
-            "review",
-            "slots",
-            "inset",
-            "video"
-          ],
-          "total_frames": 150,
-          "dropped_frames": 0
-        }
-      ],
-      "stalls": 0,
-      "restored": {
-        "same_state": true,
-        "fresh_request": true,
-        "history": 46
-      },
-      "problems": []
-    },
-    {
-      "canvas": [
-        1080,
-        1920
-      ],
-      "history": 0,
-      "edits_and_undos": 8,
-      "max_edit_ms": 813.2296249999999,
-      "max_cli_ms": 135.22620800000004,
-      "every_edit_reused_decoders": true,
-      "max_audio_display_phase_ms": 38.985999928472665,
-      "caption_playback": {
-        "observations": 143,
-        "max_apply_lateness_ms": 2.699999976158324,
-        "states": [
-          0,
-          1,
-          2,
-          3,
-          4,
-          5,
-          6,
-          7,
-          8
+          8,
+          9,
+          10
         ]
       },
       "video_quality": [
@@ -241,7 +287,20 @@
         "fresh_request": true,
         "history": 0
       },
-      "problems": []
+      "problems": [],
+      "chrome_flags": [
+        "--headless=new",
+        "--disable-features=OnBeginFrameThrottleVideo",
+        "--disable-gpu",
+        "--hide-scrollbars",
+        "--disable-background-networking",
+        "--disable-extensions",
+        "--no-first-run",
+        "--force-device-scale-factor=1",
+        "--remote-debugging-port=0",
+        "--user-data-dir=<owned-temporary-profile>",
+        "about:blank"
+      ]
     },
     {
       "canvas": [
@@ -250,23 +309,24 @@
       ],
       "history": 20,
       "edits_and_undos": 8,
-      "max_edit_ms": 831.1032080000004,
-      "max_cli_ms": 142.14204199999995,
+      "max_edit_ms": 1026.264333,
+      "max_cli_ms": 143.02424999999994,
       "every_edit_reused_decoders": true,
-      "max_audio_display_phase_ms": 41.07166669050912,
+      "max_audio_display_phase_ms": 19.276666666666642,
       "caption_playback": {
-        "observations": 148,
-        "max_apply_lateness_ms": 2.100000047683352,
+        "observations": 143,
+        "max_apply_lateness_ms": 17.899999999999636,
         "states": [
           0,
           2,
-          1,
           3,
           4,
           5,
           6,
           7,
-          8
+          8,
+          9,
+          10
         ]
       },
       "video_quality": [
@@ -297,7 +357,20 @@
         "fresh_request": true,
         "history": 20
       },
-      "problems": []
+      "problems": [],
+      "chrome_flags": [
+        "--headless=new",
+        "--disable-features=OnBeginFrameThrottleVideo",
+        "--disable-gpu",
+        "--hide-scrollbars",
+        "--disable-background-networking",
+        "--disable-extensions",
+        "--no-first-run",
+        "--force-device-scale-factor=1",
+        "--remote-debugging-port=0",
+        "--user-data-dir=<owned-temporary-profile>",
+        "about:blank"
+      ]
     },
     {
       "canvas": [
@@ -306,23 +379,24 @@
       ],
       "history": 50,
       "edits_and_undos": 8,
-      "max_edit_ms": 834.8727920000001,
-      "max_cli_ms": 150.16662499999984,
+      "max_edit_ms": 1027.4210839999998,
+      "max_cli_ms": 162.51724999999988,
       "every_edit_reused_decoders": true,
-      "max_audio_display_phase_ms": 28.24766671435009,
+      "max_audio_display_phase_ms": 18.784999999999854,
       "caption_playback": {
-        "observations": 144,
-        "max_apply_lateness_ms": 19.29999997615778,
+        "observations": 142,
+        "max_apply_lateness_ms": 18.600000000000364,
         "states": [
           0,
-          1,
           2,
           3,
           4,
           5,
           6,
           7,
-          8
+          8,
+          9,
+          10
         ]
       },
       "video_quality": [
@@ -353,7 +427,20 @@
         "fresh_request": true,
         "history": 46
       },
-      "problems": []
+      "problems": [],
+      "chrome_flags": [
+        "--headless=new",
+        "--disable-features=OnBeginFrameThrottleVideo",
+        "--disable-gpu",
+        "--hide-scrollbars",
+        "--disable-background-networking",
+        "--disable-extensions",
+        "--no-first-run",
+        "--force-device-scale-factor=1",
+        "--remote-debugging-port=0",
+        "--user-data-dir=<owned-temporary-profile>",
+        "about:blank"
+      ]
     }
   ],
   "producer_hashes": {
@@ -372,6 +459,7 @@
     "pip.py": "2ee0888c5eea7e71ad927645d9950c11053ce5e2335b9400576a472c2240f14e",
     "pip_benchmark.mjs": "72e9c76b4cad2bbae0ed4554b0b4cf527eafeb774a359beb8ba488587d9ebec6",
     "pip_benchmark.py": "a0632460e265e5d45354cb5c75ed87fcaa12449f0e3e69638df90e4cf66b2669",
+    "presented_frames.mjs": "dfa4ec5278f07f87112e58cc4bfbdc7aebc9756b1c98f59be1a34533499fd7b1",
     "real_benchmark.py": "e573fd17b9379cd5e09137fc55b32a4e75c4cb955d684dacd22308223efad327",
     "scaling.py": "26051152829f1838649ab8347d0c9bf348da388dece429fe892144bb5bda76d0",
     "serve.py": "d21dc5d0e564fd238d08fda9fc5ae1395f67277bd90e3024ba158c57238300a9"
@@ -394,7 +482,7 @@
     "app/src/moviestar/local_preview.py": "f390d026e015321065a64cb484bb7d45340f731e45f0203c619e2df4a64550eb",
     "app/src/moviestar/masks.py": "8438b14fbe411577230df941184d779b482f7240006f90c160d6beb1d8999fa1",
     "app/src/moviestar/motion.py": "ed21f8d8b8b5835a3311a07d7588f8ce3fc15c172562a5700e08351d6c8d8119",
-    "app/src/moviestar/native_captions.py": "62093be7afb274f3f9a2924f5728a67892264e9f360a5fb6b11e04e2c2025f23",
+    "app/src/moviestar/native_captions.py": "70f6d76299242b82d6d2c436877ed6326d270b904171d9f93fa451ee1eab6ab0",
     "app/src/moviestar/native_preset.py": "7ee5bd99dbc140b1528d6b1a12afd767f113d7392b44e97919a13dd3de7cd851",
     "app/src/moviestar/native_preview.py": "0969826d18b949e2dbdbc5dc006878c6925efd85f17b50b1a5974214dc7581f0",
     "app/src/moviestar/overlays.py": "8cbfa6ddc96d86a441abf05eaae4170785fadce3e51902af34a4cccedb231d51",
@@ -441,7 +529,9 @@
     "Direct transparent painting darkened edges and failed parity; replaced by two opaque mattes.",
     "Initial caption PNGs were removed by session cleanup/pruning; publication/expiration tests now protect them.",
     "Caption-only revisions unnecessarily recreated video players. Reuse now requires an unchanged playback/source fingerprint; each benchmark edit verifies actual decoder reuse.",
-    "An earlier Linux run failed one generated cut barcode assertion. Strict gates remain; mismatching frame details and CI playback artifacts are now retained."
+    "An earlier Linux run failed one generated cut barcode assertion. Strict gates remain; mismatching frame details and CI playback artifacts are now retained.",
+    "Review regression: a clipped word produced overlapping rounded ASS events. Deduplicating only the final active word retained double-painted pixels (maximum error 48). The key now retains the complete ordered active-event stack; pixel parity at the overlap, after it ends, later in the word and after the cue passes the unchanged budget of five."
   ],
-  "manual_playback": "Pending owner confirmation. Automated source/audio clocks do not establish physical lip-sync or transcript accuracy."
+  "manual_playback": "Pending owner confirmation. Automated source/audio clocks do not establish physical lip-sync or transcript accuracy.",
+  "wheel_sha256": "47f2c1438f577183471f32c17e7500e8c932ca3afc8d4022d1d1a6d1fc59e966"
 }

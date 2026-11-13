@@ -110,7 +110,10 @@ planes stream through one matte-pair buffer, are cropped, preloaded,
 request-scoped and pruned with history. Unit
 checks compare their composition with independent opaque export-filter output
 (maximum channel error 5), including outlines, opacity and plain background
-boxes. Preset highlighted captions and ordinary spatial live-caption text have
+boxes. A clipped-word regression compares the transient overlapping ASS paint
+stack and later frames after it ends; raster deduplication keeps the complete
+ordered active-event stack even when the final active word is unchanged.
+Preset highlighted captions and ordinary spatial live-caption text have
 separate canonical placement paths; this does not add highlighting to spatial
 caption elements. See [the installed profile](../../docs/local-preview.md).
 
