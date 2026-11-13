@@ -473,15 +473,23 @@ When the connected service enables developer documentation for your account:
 ```sh
 moviestar cloud docs list
 moviestar cloud docs show quickstart
-moviestar cloud docs show asset-lifecycle --markdown
+moviestar cloud docs show asset-lifecycle
+moviestar cloud docs show quickstart --json
 ```
 
-`list` returns page slugs and availability summaries. `show` returns structured
-JSON by default; `--markdown` writes the full page as Markdown. These commands
+`list` returns page slugs and availability summaries as JSON. `show` writes the
+full page as Markdown by default, ready for an agent to read or save to a file.
+Use `--json` for the page, title, Markdown and website path in a JSON object.
+The existing `--markdown` flag still works; combining it with `--json` is an
+error. Service errors remain structured JSON in either format. These commands
 use the same approved installation and service origin as your account connection.
 They do not need a personal API key, FFmpeg, or local media. The service checks
 current access and preview enrollment on each read; private guides are not
 bundled in the package or cached locally.
+
+Version 0.8.3 returns JSON by default and supports `--markdown`; the Markdown
+default and `--json` require a newer CLI or a source install containing this
+change.
 
 The matching hosted MCP tool is `moviestar_developer_docs`. Omit `page` to list
 guides, or pass a returned slug to read one. Personal API clients can read the

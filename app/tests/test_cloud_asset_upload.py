@@ -232,4 +232,7 @@ def test_assembled_asset_group_exposes_upload_and_catalog_without_contradictory_
     assert "No upload" not in result.output
     cloud = CliRunner().invoke(cli, ["cloud", "--help"])
     assert cloud.exit_code == 0
-    assert all(name in cloud.output for name in ("assets", "projects", "docs"))
+    assert all(name in cloud.output for name in ("assets", "projects", "docs", "probe"))
+    probe = CliRunner().invoke(cli, ["cloud", "probe", "--help"])
+    assert probe.exit_code == 0
+    assert "--job-id" in probe.output and "--idempotency-key" in probe.output

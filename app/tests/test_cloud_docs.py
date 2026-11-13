@@ -41,22 +41,29 @@ def service(tmp_path, monkeypatch):
 def invoke(*args):
     return CliRunner().invoke(cli, ["cloud", "docs", *args])
 
-def test_lists_and_reads_markdown_from_same_authenticated_service(service):
+def test_lists_json_and_reads_default_markdown_or_explicit_formats_from_same_service(service):
     state, profile = service; before = profile.read_bytes()
     result = invoke("list")
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["pages"] == PAGES
     result = invoke("show", "quickstart")
-    assert result.exit_code == 0 and json.loads(result.stdout)["markdown"].startswith("# Quickstart")
+    assert result.exit_code == 0 and result.stdout == "# Quickstart\n\nPrivate preview.\n"
+    result = invoke("show", "quickstart", "--json")
+    assert result.exit_code == 0 and json.loads(result.stdout) == {
+        "page": "quickstart", "title": "Quickstart",
+        "markdown": "# Quickstart\n\nPrivate preview.\n",
+        "path": "/account/developer-docs/quickstart",
+    }
     result = invoke("show", "quickstart", "--markdown")
     assert result.exit_code == 0 and result.stdout == "# Quickstart\n\nPrivate preview.\n"
-    assert [path for path, _ in state["calls"]] == ["/api/v1/account/developer-docs", "/api/v1/account/developer-docs/quickstart", "/api/v1/account/developer-docs/quickstart"]
+    assert [path for path, _ in state["calls"]] == ["/api/v1/account/developer-docs", "/api/v1/account/developer-docs/quickstart", "/api/v1/account/developer-docs/quickstart", "/api/v1/account/developer-docs/quickstart"]
     assert profile.read_bytes() == before
 
 @pytest.mark.parametrize("status,expected", [(401,"credential_invalid"),(404,"docs_unavailable"),(503,"docs_unavailable")])
-def test_denied_revoked_and_unavailable_never_echo_private_errors(service,status,expected):
+@pytest.mark.parametrize("format_args", [(), ("--json",), ("--markdown",)])
+def test_denied_revoked_and_unavailable_never_echo_private_errors(service,status,expected,format_args):
     service[0]["status"] = status
-    result = invoke("show", "quickstart")
+    result = invoke("show", "quickstart", *format_args)
     assert result.exit_code == 1 and json.loads(result.stdout)["status"] == expected
     assert TOKEN not in result.output
 
@@ -76,3 +83,11 @@ def test_rejects_malformed_content_and_requires_connection(service,monkeypatch,t
     count = len(service[0]["calls"])
     assert invoke("list").exit_code == 1
     assert len(service[0]["calls"]) == count
+
+
+@pytest.mark.parametrize("format_args", [("--json", "--markdown"), ("--markdown", "--json")])
+def test_rejects_conflicting_formats_before_contacting_service(service, format_args):
+    result = invoke("show", "quickstart", *format_args)
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["status"] == "invalid_request"
+    assert not service[0]["calls"]

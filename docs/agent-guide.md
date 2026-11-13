@@ -43,6 +43,12 @@ merges both streams, use `--quiet` on commands that support it. Prefer returned
 file paths over `--inline`; Base64 only helps integrations that convert it into
 an actual image content block.
 
+For enrolled developer guides, `moviestar cloud docs show PAGE` writes Markdown
+by default. Read it directly, or use `--json` when you need the page metadata
+and Markdown in a JSON object. `cloud docs list` and service errors remain JSON.
+See [developer preview guides](cloud-projects.md#read-private-developer-preview-guides)
+for version requirements.
+
 ## Time spaces
 
 Do not assume every timecode uses the same clock:

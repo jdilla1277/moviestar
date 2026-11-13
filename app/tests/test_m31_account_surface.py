@@ -183,8 +183,8 @@ def test_connect_failure_is_structured_and_keeps_retryable_private_state(
     assert stat.S_IMODE(state_path.stat().st_mode) == 0o600
 
 
-def test_connect_reports_private_state_write_failures_before_network(monkeypatch):
-    monkeypatch.setattr("moviestar.account._read_state", lambda: {})
+def test_connect_reports_private_state_write_failures_before_network(monkeypatch, tmp_path):
+    monkeypatch.setenv("MOVIESTAR_ACCOUNT_STATE", str(tmp_path / "account.json"))
     monkeypatch.setattr(
         "moviestar.account._write_state",
         lambda _state: (_ for _ in ()).throw(PermissionError("read-only config")),
