@@ -34,6 +34,7 @@ _HINTS = {
     "capacity_exceeded": "The service's active project allowance has been reached. This is separate from finished-video storage.",
     "invalid_request": "Check the title, project ID, pagination, and idempotency key in the command help.",
     "request_too_large": "Use a project title of at most 200 characters.",
+    "project_changed": "This project was renamed elsewhere. Read its current title with 'moviestar cloud projects show' and review the change before renaming again.",
 }
 
 
@@ -63,8 +64,8 @@ def _connection(command: str) -> tuple[str, str]:
     return f"{parsed.scheme}://{parsed.netloc}/api/v1/account/cloud", credential
 
 
-def _request(url: str, credential: str, *, payload=None, key=None) -> tuple[int, dict]:
-    request = Request(url, method="GET" if payload is None else "POST",
+def _request(url: str, credential: str, *, payload=None, key=None, method=None) -> tuple[int, dict]:
+    request = Request(url, method=method or ("GET" if payload is None else "POST"),
         data=None if payload is None else json.dumps(payload).encode("utf-8"),
         headers={"Authorization": f"Bearer {credential}", "x-moviestar-client": _CLIENT_MARKER,
                  "Accept": "application/json", **({"Content-Type": "application/json"} if payload is not None else {}),
@@ -77,6 +78,8 @@ def _request(url: str, credential: str, *, payload=None, key=None) -> tuple[int,
         with response:
             status, raw = response.status, response.read(1_048_577)
         if len(raw) > 1_048_576:
+            return status, {}
+        if status == 204:
             return status, {}
         body = json.loads(raw.decode("utf-8"))
         return status, body if isinstance(body, dict) else {}
@@ -111,7 +114,7 @@ def _capabilities(command: str, endpoint: str, credential: str) -> dict:
         _fail(command, "invalid_response", "The service returned incomplete Cloud capabilities. Retry later.")
     fields = ("contract_version", "operations", "scopes", "project_access", "limits", "source_uploads_enabled",
               "source_imports_enabled", "media_processing_enabled", "saved_edits_enabled", "transcript_imports_enabled",
-              "edit_formats", "source_formats", "transcript_formats", "retention", "project_access_scope", "project_sharing")
+              "edit_formats", "source_formats", "transcript_formats", "retention", "project_access_scope", "project_sharing", "project_assets")
     return {name: body[name] for name in fields if name in body}
 
 
@@ -154,11 +157,12 @@ def _sharing_supported(capabilities: dict) -> bool:
 
 @click.group()
 def cloud():
-    """Work with Cloud projects and account assets using this approved installation.
+    """Work with Cloud projects, account assets and private developer guides.
 
-    Ordinary local commands stay local. Cloud commands manage remote metadata;
-    'cloud assets create' uploads a private original. Neither selects a local
-    workspace or renders media.
+    Use this approved installation to manage remote metadata, rename projects,
+    manage asset references, read guides, or upload a private original with
+    'cloud assets create'. Ordinary local commands stay local; Cloud commands
+    do not select a local workspace or render media.
     Connect the installation with 'moviestar account connect' first.
     """
 
@@ -296,3 +300,105 @@ def show_project(project_id: str):
     if project is None or project["id"].lower() != project_id.lower():
         _fail(command, "invalid_response", "The service did not return the requested project. Retry later.")
     click.echo(json.dumps(project, indent=2))
+
+
+@projects.command("rename")
+@click.argument("project_id")
+@click.argument("title")
+@click.option("--expected-title", help="Exact title previously read; preserve it when retrying an uncertain rename. Otherwise read the current title first.")
+def rename_project(project_id: str, title: str, expected_title: str | None):
+    """Rename PROJECT_ID while keeping its ID, assets and access unchanged.
+
+    A conflicting title stops the change. After an uncertain reply, inspect the
+    project or retry with the SAME --expected-title; never blindly override a
+    newer title. This command does not select or rename a local project.
+    """
+    command = "cloud projects rename"
+    def valid(value):
+        return isinstance(value, str) and 1 <= len(value) <= 200 and value == value.strip() and not re.search(r"[\x00-\x1f\x7f]", value)
+    if not _UUID.fullmatch(project_id) or not valid(title) or (expected_title is not None and not valid(expected_title)):
+        _fail(command, "invalid_request", "Use a project UUID and a trimmed title of 1–200 characters without control characters.")
+    endpoint, credential = _connection(command)
+    _require(command, _capabilities(command, endpoint, credential), "projects:rename")
+    path = endpoint + "/projects/" + project_id.lower()
+    if expected_title is None:
+        status, body = _request(path, credential)
+        if status != 200:
+            _failure(command, status, body)
+        project = _project(body)
+        if project is None or project["id"].lower() != project_id.lower():
+            _fail(command, "invalid_response", "Could not read the requested project's current title.")
+        if project.get("access", {}).get("role") == "viewer":
+            _fail(command, "project_read_only", "Viewer access does not permit renaming this project.")
+        expected_title = project["title"]
+    fields = {"project_id": project_id.lower(), "title": title, "expected_title": expected_title}
+    status, body = _request(path, credential, method="PATCH", payload={"title": title, "expected_title": expected_title})
+    if status != 200 and 400 <= status < 500:
+        _failure(command, status, body, rename_outcome="rejected", **fields)
+    project = _project(body.get("project"))
+    if (status != 200 or body.get("status") != "renamed" or type(body.get("changed")) is not bool or project is None
+            or project["id"].lower() != project_id.lower() or project["title"] != title or project.get("access") != {"role": "owner"}):
+        _fail(command, "rename_unconfirmed", "The rename may have succeeded. Inspect the project, or retry with the exact returned expected_title using --expected-title. No automatic retry was sent.", rename_outcome="unknown", **fields)
+    click.echo(json.dumps({"command": command, "status": "renamed", "changed": body["changed"], "project": project}, indent=2))
+
+
+from moviestar.cloud_assets import register_asset_commands
+register_asset_commands(cloud, projects)
+
+
+@cloud.group("docs")
+def docs():
+    """Read private developer preview guides using this approved installation.
+
+    Requires preview enrollment for the connected account. Content is fetched
+    on every read; no preview guides or credentials are bundled or cached.
+    """
+
+
+def _docs_request(page: str | None = None) -> dict:
+    command = "cloud docs show" if page else "cloud docs list"
+    endpoint, credential = _connection(command)
+    origin = urlsplit(endpoint)
+    path = "/api/v1/account/developer-docs" + ("/" + page if page else "")
+    status, body = _request(f"{origin.scheme}://{origin.netloc}{path}", credential)
+    if status == 401:
+        _fail(command, "credential_invalid", _HINTS["credential_invalid"])
+    if status != 200:
+        _fail(command, "docs_unavailable",
+              "Developer preview docs are unavailable for this account or service. Check the connected account and ask your preview contact about enrollment.")
+    return body
+
+
+@docs.command("list")
+def list_docs():
+    """List all developer guide slugs available to the connected account."""
+    body = _docs_request()
+    pages = body.get("pages")
+    if (not isinstance(pages, list) or len(pages) > 100 or any(
+            not isinstance(page, dict)
+            or not isinstance(page.get("slug"), str)
+            or not re.fullmatch(r"[a-z-]{1,64}", page["slug"])
+            or any(not isinstance(page.get(field), str) or len(page[field]) > 1000
+                   for field in ("title", "description", "status", "group"))
+            for page in pages)):
+        _fail("cloud docs list", "invalid_response", "The service returned an incomplete docs index. Retry later.")
+    click.echo(json.dumps({"pages": [{field: page[field] for field in
+        ("slug", "title", "description", "status", "group")} for page in pages]}, indent=2))
+
+
+@docs.command("show")
+@click.argument("page")
+@click.option("--markdown", is_flag=True, help="Write this page as raw Markdown instead of a JSON object.")
+def show_docs(page: str, markdown: bool):
+    """Read PAGE from 'cloud docs list'; defaults to structured JSON."""
+    if not re.fullmatch(r"[a-z-]{1,64}", page):
+        _fail("cloud docs show", "invalid_request", "Use a page slug returned by 'moviestar cloud docs list'.")
+    body = _docs_request(page)
+    if (body.get("page") != page or not isinstance(body.get("title"), str)
+            or not isinstance(body.get("markdown"), str) or not body["markdown"]
+            or body.get("path") != "/account/developer-docs/" + page):
+        _fail("cloud docs show", "invalid_response", "The service did not return the requested guide. Retry later.")
+    if markdown:
+        click.echo(body["markdown"], nl=False)
+    else:
+        click.echo(json.dumps({field: body[field] for field in ("page", "title", "markdown", "path")}, indent=2))
