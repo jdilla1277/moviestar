@@ -858,3 +858,28 @@ control completed below budget. These diagnose a host-sensitive reference; they
 do not prove that the fade path has no regression and do not replace its failed
 matrix. The report includes both versions' source/producer hashes and observed
 load/swap conditions. Do not rerun to select passing samples or widen budgets.
+
+
+### Fade-duration rounding regression and fresh reference
+
+Source/track fade durations accepted within the existing millisecond tolerance
+remain renderable when a frame-aligned layer duration is not an exact number of
+milliseconds. An overlong fade-out uses a nonnegative `afade` range and scales
+its initial amplitude to preserve the intended `(duration - t) / fade` curve;
+validation and saved intent are unchanged. Boundary tests exercise real FFmpeg
+at 31/30 seconds with fades rounded below/above that duration, including fade-in,
+a selected window, a full export slice and an independent analytic envelope.
+
+The corrected build's complete fresh matrix is in
+[fade-rounding-results.json](fade-rounding-results.json). All 48 edits completed
+and all six playback/undo cases passed their quality/clock checks, but 13 edits
+still missed 3,000 ms. This matrix remains failed. The earlier failed matrix is
+retained separately; neither is replaced by selecting passing cases.
+
+The `native-audio-performance` workflow runs the same generated fade scenario
+on separate Linux runners at both authored rasters and all three history depths.
+It installs a fresh wheel, verifies its source hashes, retains runtime/producer
+identity and all generated evidence on success or failure, and fails on any
+unchanged driver gate. There is no acceptance rerun or `continue-on-error`.
+Runner results are a separate environment reference and do not prove the cause
+of shared-Mac failures or physical playback acceptance.

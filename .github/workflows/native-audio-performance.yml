@@ -1,0 +1,94 @@
+name: native-audio-performance
+
+on:
+  pull_request:
+    paths:
+      - 'app/src/moviestar/**'
+      - 'app/tests/test_native_audio*'
+      - 'app/tests/test_native_pip_browser.py'
+      - 'experiments/live_browser_preview/**'
+      - '.github/workflows/native-audio-performance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audio-reference:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        canvas: ['360x640', '1080x1920']
+    env:
+      MOVIESTAR_CHROME_NO_SANDBOX: '1'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: app/pyproject.toml
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.5.0'
+      - name: Install FFmpeg and pinned headless shell
+        env:
+          CHROME_FOR_TESTING_VERSION: '156.0.8078.73'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          curl --fail --location --silent --show-error \
+            "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_FOR_TESTING_VERSION}/linux64/chrome-headless-shell-linux64.zip" \
+            --output "$RUNNER_TEMP/chrome.zip"
+          unzip -q "$RUNNER_TEMP/chrome.zip" -d "$RUNNER_TEMP/chrome"
+          echo "MOVIESTAR_CHROME_PATH=$RUNNER_TEMP/chrome/chrome-headless-shell-linux64/chrome-headless-shell" >> "$GITHUB_ENV"
+      - name: Install a fresh wheel and verify its source
+        run: |
+          python -m pip install build
+          python -m build --wheel --outdir "$RUNNER_TEMP/native-wheel" app
+          python -m venv "$RUNNER_TEMP/native-env"
+          "$RUNNER_TEMP/native-env/bin/pip" install "$RUNNER_TEMP"/native-wheel/*.whl
+          "$RUNNER_TEMP/native-env/bin/python" - <<'PY'
+          from hashlib import sha256
+          from importlib.metadata import distributions
+          import json, os, platform, subprocess, sys
+          from pathlib import Path
+          import moviestar
+          installed = Path(moviestar.__file__).parent
+          sources = Path('app/src/moviestar')
+          hashes = {}
+          for source in sorted(sources.iterdir()):
+              if source.suffix not in ('.py', '.mjs'):
+                  continue
+              digest = sha256(source.read_bytes()).hexdigest()
+              assert sha256((installed/source.name).read_bytes()).hexdigest() == digest, source.name
+              hashes[str(source)] = digest
+          wheel, = (Path(os.environ['RUNNER_TEMP'])/'native-wheel').glob('*.whl')
+          evidence = Path(os.environ['RUNNER_TEMP'])/'native-audio-evidence'
+          evidence.mkdir()
+          (evidence/'runtime.json').write_text(json.dumps({
+              'source_hashes': hashes, 'wheel_sha256': sha256(wheel.read_bytes()).hexdigest(),
+              'python': sys.version, 'platform': platform.platform(), 'cpu_count': os.cpu_count(),
+              'cpu_info': Path('/proc/cpuinfo').read_text(),
+              'chrome': subprocess.check_output([os.environ['MOVIESTAR_CHROME_PATH'], '--version'], text=True).strip(),
+              'ffmpeg': subprocess.check_output(['ffmpeg', '-version'], text=True).splitlines()[0],
+              'node': subprocess.check_output(['node', '--version'], text=True).strip(),
+              'dependencies': {d.metadata['Name']: d.version for d in distributions()},
+          }, indent=2))
+          PY
+      - name: Measure actual fades and undo at histories 0/20/50
+        run: |
+          "$RUNNER_TEMP/native-env/bin/python" experiments/live_browser_preview/audio_benchmark.py \
+            --scenario fades --canvas '${{ matrix.canvas }}' \
+            --out "$RUNNER_TEMP/native-audio-evidence/matrix"
+      # These fixtures are generated. Keep the first result on success or failure;
+      # there is no acceptance rerun and no relaxed deadline in this workflow.
+      - name: Retain generated benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: native-audio-fades-${{ matrix.canvas }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-audio-evidence
+          if-no-files-found: warn
+          retention-days: 7
