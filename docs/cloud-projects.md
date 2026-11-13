@@ -568,3 +568,58 @@ access through another project. Downloaded copies and transfers already started
 cannot be recalled. Account-wide asset discovery remains owner-only; sharing a
 project does not expose the owner's other originals. Editor/resharing rights
 and attaching another person's assets remain separate work.
+
+## Download project originals directly
+
+On a service supporting `project-download-v1`, download every currently ready
+asset in an owned project or an accepted asset-viewer project without a browser:
+
+```sh
+moviestar cloud projects download PROJECT_ID --out ./highlights-originals
+```
+
+The destination must be a **new folder** with an existing parent. This command
+uses your approved CLI installation credential, follows every manifest page,
+and streams the files with no browser clicks. It never overwrites existing
+paths or follows redirects carrying credentials. It needs no FFmpeg or optional
+transcription dependencies.
+
+`cloud-project.json` records the Cloud project ID/title, original asset and
+reference IDs, original filenames, safe relative local paths, sizes and computed
+SHA-256 hashes. Originals live under `assets/REFERENCE_ID/`; identical or unsafe
+filenames cannot escape the destination or overwrite one another. The hashes
+record the bytes saved locally; they are not a server-supplied checksum.
+
+Only ready account originals are included. This does not export legacy project
+sources, Cloud edits, render results, history or invitations, and it does not
+initialize a local editing workspace. Use the downloaded paths with local
+`moviestar load` and editing commands afterward; downloading itself never loads
+or processes media. Images, audio and caption files remain available as original
+files for the local commands that support those formats.
+
+If any file is inaccessible, truncated or invalid, the command returns
+`download_incomplete`. `.incomplete.json` and any completed or `.part` files stay
+in that folder for inspection. An incomplete download has no completed
+`cloud-project.json`. Check access and retry into a new folder; automatic resume
+and overwrite are not supported. Downloads and pagination check current access;
+revocation or reference removal may interrupt the operation. This is a collection
+of originals observed during the download, not an atomic snapshot while someone
+else adds/removes assets. Already downloaded copies cannot be recalled.
+
+API clients can page through
+`GET /api/v1/account/cloud/projects/PROJECT_ID/download-manifest?limit=100`,
+following `next_cursor` until null. Authenticate with the same account's personal
+key or approved installation. Each item contains `reference_id`, `asset_id`,
+`filename`, `kind`, `content_type`, `size_bytes` and a **same-origin**
+`download_path`; GET that exact path with your credential. Never send credentials
+to another host or put them into a URL.
+
+Hosted MCP exposes `moviestar_prepare_project_download` with `project_id`,
+optional `limit` and the unchanged `cursor` from the previous page. It returns
+the same manifest and `transfer_status: "not_started"`. Preparing a manifest
+does not save files. A developer MCP client with an authenticated file-transfer
+capability can fetch the originals into its own environment; clients without
+that capability need a signed-in browser download or the CLI. Automatic file
+import into ChatGPT and saving onto the user's computer are not established by
+this tool and need separate host-specific acceptance. Never paste a credential
+into chat. Older services may return unavailable for the manifest route.
