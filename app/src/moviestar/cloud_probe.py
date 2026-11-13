@@ -13,7 +13,7 @@ def _media(raw):
     if not isinstance(raw, dict) or set(raw) != {'duration', 'file_size_bytes', 'format', 'bitrate', 'video', 'audio'}:
         return None
     def number(value, minimum=0):
-        return type(value) in (int, float) and math.isfinite(value) and minimum <= value <= 2**53 - 1
+        return type(value) in (int, float) and minimum <= value <= 2**53 - 1 and math.isfinite(value)
     duration = raw['duration']
     if (not isinstance(duration, dict) or set(duration) != {'seconds', 'text'}
             or not number(duration['seconds']) or not isinstance(duration['text'], str)

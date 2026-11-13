@@ -120,3 +120,12 @@ def test_untrusted_error_and_result_never_echo_private_details(monkeypatch, tmp_
     monkeypatch.setattr(module, '_request', lambda *a, **k: (200, {'job': {**job('succeeded'), 'result': poisoned}}))
     result, body = invoke()
     assert body['status'] == 'invalid_response' and '/private/user' not in result.output
+
+
+def test_oversized_json_integer_is_a_structured_invalid_response(monkeypatch, tmp_path):
+    setup(monkeypatch, tmp_path)
+    malformed = {**RESULT, 'bitrate': 10**1000}
+    monkeypatch.setattr(module, '_request', lambda *a, **k: (200, {'job': {**job('succeeded'), 'result': malformed}}))
+    result, body = invoke()
+    assert result.exit_code == 1
+    assert body['status'] == 'invalid_response' and body['idempotency_key']
