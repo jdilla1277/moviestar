@@ -129,3 +129,52 @@ def test_oversized_json_integer_is_a_structured_invalid_response(monkeypatch, tm
     result, body = invoke()
     assert result.exit_code == 1
     assert body['status'] == 'invalid_response' and body['idempotency_key']
+
+LOUDNESS = {'integrated_lufs': -18.2, 'true_peak_dbtp': -3.1, 'lra_lu': 1.2,
+            'threshold_lufs': -28.2, 'target_offset_lu': 0.1,
+            'normalization_target': {'integrated_lufs': -14, 'true_peak_dbtp': -1.5, 'lra_lu': 11},
+            'range': {'from': {'seconds': 1, 'text': '0:00:01.000'},
+                      'to': {'seconds': 2, 'text': '0:00:02.000'},
+                      'duration': {'seconds': 1, 'text': '0:00:01.000'}}}
+
+def test_remote_loudness_uses_same_job_contract_and_source_time_range(monkeypatch, tmp_path):
+    setup(monkeypatch, tmp_path)
+    calls = []
+    measured = {**RESULT, 'loudness': LOUDNESS}
+    def request(url, credential, **kwargs):
+        calls.append(kwargs)
+        return 200, {'job': {**job('succeeded'), 'result': measured}}
+    monkeypatch.setattr(module, '_request', request)
+    result, body = invoke('--loudness', '--from', '00:01', '--to', '2')
+    assert result.exit_code == 0
+    assert calls[0]['payload'] == {'loudness': True, 'from_seconds': 1.0, 'to_seconds': 2.0}
+    assert body['job']['result']['loudness'] == LOUDNESS
+
+def test_loudness_retries_do_not_inherit_plain_probe_request_keys(monkeypatch, tmp_path):
+    setup(monkeypatch, tmp_path)
+    calls = []
+    def request(url, credential, **kwargs):
+        calls.append(kwargs)
+        return 0, {}
+    monkeypatch.setattr(module, '_request', request)
+    invoke()
+    invoke('--loudness')
+    invoke('--loudness')
+    invoke()
+    assert len(calls) == 4
+    assert calls[0]['key'] == calls[3]['key']
+    assert calls[1]['key'] == calls[2]['key'] != calls[0]['key']
+
+def test_loudness_range_validation_happens_before_network(monkeypatch, tmp_path):
+    setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(module, '_request', lambda *a, **k: (_ for _ in ()).throw(AssertionError('must not send')))
+    for args in [('--from', '1'), ('--loudness', '--from', 'NaN'), ('--loudness', '--from', '3', '--to', '2')]:
+        result, body = invoke(*args)
+        assert result.exit_code == 1 and body['status'] == 'invalid_request'
+
+def test_unmeasurable_loudness_is_null_and_reopens_without_compute(monkeypatch, tmp_path):
+    setup(monkeypatch, tmp_path)
+    measured = {**RESULT, 'loudness': {**LOUDNESS, 'integrated_lufs': None, 'true_peak_dbtp': None}}
+    monkeypatch.setattr(module, '_request', lambda *a, **k: (200, {'job': {**job('succeeded'), 'result': measured}}))
+    result, body = invoke('--job-id', JOB)
+    assert result.exit_code == 0 and body['job']['result']['loudness']['integrated_lufs'] is None
