@@ -170,6 +170,8 @@ def test_missing_origin_uses_earliest_packet_including_negative_audio(monkeypatc
     "codec_type=video|stream_index=0|pts_time=0|duration_time=0.04\n"
     "codec_type=video|stream_index=0|pts_time=1|duration_time=N/A\n",
     "codec_type=video|stream_index=0|pts_time=5|duration_time=nan\n",
+    "codec_type=video|stream_index=0|pts_time=5|duration_time=3\n"
+    "codec_type=video|stream_index=0|pts_time=6|duration_time=N/A\n",
 ])
 def test_unknown_endpoints_fail_instead_of_guessing(monkeypatch, tmp_path, packets):
     path, _ = _mock_probe(monkeypatch, tmp_path, packets)

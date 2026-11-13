@@ -1004,6 +1004,7 @@ def _recover_packet_duration(video_path: str, fmt: dict) -> None:
         earliest = math.inf
         latest_by_stream: dict[str, float] = {}
         end_by_stream: dict[str, float] = {}
+        last_timed_pts: dict[str, float] = {}
         count = 0
         for line in packets:
             # Compact packet side-data can occupy separate/empty lines.
@@ -1030,11 +1031,14 @@ def _recover_packet_duration(video_path: str, fmt: dict) -> None:
             )
             duration = _finite_number(fields.get("duration_time"))
             if duration is not None and duration > 0:
+                last_timed_pts[stream] = max(
+                    last_timed_pts.get(stream, -math.inf), pts,
+                )
                 end_by_stream[stream] = max(
                     end_by_stream.get(stream, -math.inf), pts + duration,
                 )
         if not latest_by_stream or any(
-            end_by_stream.get(stream, -math.inf) <= pts
+            last_timed_pts.get(stream, -math.inf) < pts
             for stream, pts in latest_by_stream.items()
         ):
             raise RuntimeError(f"{recovery_hint} Missing final packet duration.")
