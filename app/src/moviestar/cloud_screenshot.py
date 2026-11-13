@@ -1,7 +1,6 @@
 """Durable Cloud asset screenshots; local screenshot stays account-free."""
 import json
 import math
-import os
 from pathlib import Path
 from urllib.request import Request, build_opener
 from urllib.error import HTTPError, URLError
