@@ -1,0 +1,753 @@
+{
+  "status": "passed bounded generated-data Linux CI reference; human playback pending",
+  "code_head": "ae73f93",
+  "run_url": "https://github.com/jdilla1277/moviestar/actions/runs/43415641459",
+  "scenario": "fades",
+  "fixture": "generated five-second three-span PiP; authored raster at 1x; canonical seek probes before Play",
+  "gates": {
+    "every_edit_ms_lt": 3000,
+    "readiness_deadline_ms": 10000,
+    "dropped_frames": 0,
+    "stalls": 0,
+    "max_clock_error_ms": 50
+  },
+  "runtimes": {
+    "native-audio-fades-1080x1920-1": {
+      "source_hashes": {
+        "app/src/moviestar/__init__.py": "4d6069e3615cfb759eff4a69169348d83d5dec81d5c376c2f34466db0d26504a",
+        "app/src/moviestar/__main__.py": "83555779bc550efd4cd1013ff0131956f4eea8bf5838a38019ee33f359cbb038",
+        "app/src/moviestar/account.py": "ac8e33c5f9a856435ace85e1a4eb9d681bed71f207607176992c8886d1dbccea",
+        "app/src/moviestar/activity.py": "eb764e61ac747d4e88a16c37c813131620c92f4ce30bf3446d99956a7c1c525c",
+        "app/src/moviestar/audio_surface.py": "71df8189805594ea2ad3d484bbe3c6c6a95471f77fe2e5460fb6f569f5af856d",
+        "app/src/moviestar/camera.py": "2b4dc252d57d743093d984cb0ac6a5a162056215b3a670820b908a80c521f5f5",
+        "app/src/moviestar/caption_import.py": "eb61ef59750129b47976017f56c920c615ab8acd2ce66e14e56580fc357218ef",
+        "app/src/moviestar/captions.py": "441ff58a85f7bf0a627c369a16074c1be9bbdf07d74898d7961fd29560e7b68e",
+        "app/src/moviestar/cli.py": "fc18a745d972e25c85defc5ea3dbcbd3a13fdbbcd9c2dcbc86dc7778e9bb8c5c",
+        "app/src/moviestar/composition_mock.py": "d232ea91dd1f3b65c7b3435d2713da4c6bcf5eb50b8d8bf7ca81e225afb9cf82",
+        "app/src/moviestar/feedback.py": "ec51bbc56da56823721769b5d79f331b88d3f957b1ef6ec9e9d3d146c2161d3b",
+        "app/src/moviestar/ffmpeg.py": "61e7e7f30badfe8ba6177b71cd32940a5767c20f8d92cf68bc84fecb3025d6a0",
+        "app/src/moviestar/find.py": "0d2b06a64c80a0f6dd5b1a166364a610373c3e2d912d4bd1d8c1c6d05970f4b6",
+        "app/src/moviestar/fonts.py": "5f2134271761dca57965d079b37d69fed48e110ff4348df141921660e1644027",
+        "app/src/moviestar/json_identity.py": "9069690d6f0b624f462aeb8a984ebd1378fbd84fba0820541a8cda0bf3bfcc0c",
+        "app/src/moviestar/local_preview.py": "7bb6e7e0db97f28afe8bed8a0b0df90ae978b7a53355d67ce0287845c9ab8d67",
+        "app/src/moviestar/masks.py": "8438b14fbe411577230df941184d779b482f7240006f90c160d6beb1d8999fa1",
+        "app/src/moviestar/motion.py": "ed21f8d8b8b5835a3311a07d7588f8ce3fc15c172562a5700e08351d6c8d8119",
+        "app/src/moviestar/native_audio.py": "ddd8f98bf919c368acb4cf53be038ac47db48b3012842905ee0b71aae224625b",
+        "app/src/moviestar/native_captions.py": "70f6d76299242b82d6d2c436877ed6326d270b904171d9f93fa451ee1eab6ab0",
+        "app/src/moviestar/native_preset.py": "7ee5bd99dbc140b1528d6b1a12afd767f113d7392b44e97919a13dd3de7cd851",
+        "app/src/moviestar/native_preview.py": "e1a153cac71f5a3e305ac11c965a9091eb1a2fc7dc1b778c597545a0517d4e02",
+        "app/src/moviestar/overlays.py": "8cbfa6ddc96d86a441abf05eaae4170785fadce3e51902af34a4cccedb231d51",
+        "app/src/moviestar/platforms.py": "9d47069428f5b1971b2c8adc242549fe2a7e368ecb0c219d265d1dad16d684be",
+        "app/src/moviestar/preview_native.mjs": "314f6a4eecd149657f910a962da8ec1c2be9c956d1ce76c69e46c0befc3951e4",
+        "app/src/moviestar/preview_native_audio.mjs": "a291fa187996ced47c6c3193494475a27faed69d1d62f409808b5c28abdb84ef",
+        "app/src/moviestar/preview_native_buffer.mjs": "acd43432c3a40abe7ab638a599e70721ad57858b540da4dd7c569e9cd0737722",
+        "app/src/moviestar/preview_native_captions.mjs": "f32c09c00b80ab23ceec2a0d0b10054a06044f9ffba2414b6117ca2b08fd76d4",
+        "app/src/moviestar/preview_native_cut_meter.mjs": "e19161382c1443f3114734e690d182f98f9c832f10be362a630135a9c3aef3e5",
+        "app/src/moviestar/preview_native_cuts.mjs": "3c5e1ac3d481e52047824a601de74585eaaef0221b626d4e9af76cd37362cbd6",
+        "app/src/moviestar/preview_native_meter.mjs": "9d546fa96d6ce8a7b83589cfed7e3f8ab89284c75910a1ee81fe2ab927e71840",
+        "app/src/moviestar/preview_native_stage.mjs": "16c17c860f2b4de985723aaa7c90ed0ef00d995fb0e618699ce1004eac9fadf8",
+        "app/src/moviestar/preview_native_videos.mjs": "791b6eebf85bb2e1118ad5e12923fc3082903c349b03dd54f65fa539d058f062",
+        "app/src/moviestar/preview_native_worker.mjs": "3410f31905b13b31a70fdf45b9475d0cea52c7a13593cb678b65a710ed1f7a83",
+        "app/src/moviestar/preview_worker.py": "f45932fe6048e8602685b031c60fa733215a3952388e681879da75a5bb080db7",
+        "app/src/moviestar/project.py": "e5ed3cb9d8182360d4a564bb8a850ac2b4e728f75e7e0164bdc2bdd71fe58d40",
+        "app/src/moviestar/remote_captions.py": "2707cbcbcf516ba7fa1f4beb4927ce7e63a4afeacc2579eb01f829585e623558",
+        "app/src/moviestar/resolved.py": "0e33bdc8c72c68775eb11f588b2e71aac4980bfd546b75c2ded7c9afb517ed75",
+        "app/src/moviestar/sharing.py": "fde7c87d9e01c3cd9c6548ed80a1d78759c13f9f283514ef39d6c0a3ebe3c943",
+        "app/src/moviestar/spatial_browser.mjs": "0ae46ca5d343bcfc191935b316b9b9e921b2b8cafc44019864196c23759dce01",
+        "app/src/moviestar/spatial_browser_lifecycle.mjs": "658d220fa2f1bd937624ad3f2064d967f95c1179b05c039a2f20ed461775f2ef",
+        "app/src/moviestar/spatial_catalog.py": "1132c131a5c8c2bb925175e7b8c68dea67b85d3c91ce35312f2d1af0e8ca9fa9",
+        "app/src/moviestar/spatial_composite.py": "920b128dd4ced2ae0bab9c5d0e60edb337c69f1f61d8ac1724c95f67cc227ca1",
+        "app/src/moviestar/spatial_dom.mjs": "59054c107bc21c7493697b8d25b6bf3f884347fcdab8f701218d06453f2abdac",
+        "app/src/moviestar/spatial_edit.py": "1dd115452d415c4f3266b9d9eac55739431f7c29dee4397584810d9192a264a6",
+        "app/src/moviestar/spatial_format.py": "dcea57c2e2eb37e313b83d5f6fcf77312f8d65fcd89885c7bfc62e6a9d956a6b",
+        "app/src/moviestar/spatial_inspection.py": "e4db79164d6d95564a844f85197477aed59f0239c5dbd573fc6b1c0732f1fee5",
+        "app/src/moviestar/spatial_layout.py": "0ddcf669500b727a90575aec2fc411d5e869f365aa6dc951eda0f4e7904bdb8e",
+        "app/src/moviestar/spatial_model.py": "354ec181859918ca7bfa09ff9f6f0871a81018572f7e7467353a121c522de39a",
+        "app/src/moviestar/spatial_motion.py": "4ee7bee35583f3479b584b79b54193476c75e2d90dfd364dce2b5e355e042b05",
+        "app/src/moviestar/spatial_preset.py": "3e4c6df132c09920d3fc26ba24766f0af0a55b9c4b13ad47584a979796a84db7",
+        "app/src/moviestar/spatial_regions.py": "e08806b95517a613738b6061a2bd74c1b86b6be49acf846fb3333c0b590ec530",
+        "app/src/moviestar/spatial_render.py": "1acbbb05081e1d27efc111dab0017678004898588981bfce00e69b183d388893",
+        "app/src/moviestar/spatial_saved_layouts.py": "07a3bea01dd6d1fa77ccc5d3973dd69ed8a155e58a9e3fc91ab237fbcccc0d86",
+        "app/src/moviestar/spatial_session.py": "dbc2637a039ee7a32f98765e0649d32cb405ee2b7ca189de5574e2528006bbf9",
+        "app/src/moviestar/spatial_transition.py": "f0fb5728fc3409fd494f024ae4f1e06c2081026769060ba032e30329642c7c3c",
+        "app/src/moviestar/spatial_video.py": "965c27a11898d3ea407b4d8cbdcece7d896b2b7be2124421db625da9fef4274f",
+        "app/src/moviestar/spec.py": "5edb477e54e600d74c748a6277260441fac58cecf5c0e096667656985a4f6662",
+        "app/src/moviestar/subscribe.py": "a0c2bb146c39263f209abfea9b16fd030b8b4035d9244914f58d0bfeaac4468c",
+        "app/src/moviestar/timecodes.py": "37b2b686be6bd81322174908622cef437139ce9d013ac1b146cc11fc737aebdf",
+        "app/src/moviestar/transcribe.py": "6d35a82cedee63d69d36aa624d2d5c6d3016de8cc65a1b99870ca23c8fa4ac71",
+        "app/src/moviestar/transitions.py": "ab2425f6812626aae2d22b1fe7630a163feb1b7f21920700cea519530506dd15"
+      },
+      "wheel_sha256": "c8d2c403ec7db884e205309ff8475e4ddbcd7d07281202f1a55ce19b94c574db",
+      "python": "3.12.16 (main, Oct 26 2026, 02:48:44) [GCC 15.2.0]",
+      "platform": "Linux-7.0.0-1019-azure-x86_64-with-glibc2.43",
+      "cpu_count": 4,
+      "chrome": "Google Chrome for Testing 156.0.8078.73",
+      "ffmpeg": "ffmpeg version 8.0.1-3ubuntu2 Copyright (c) 2000-2025 the FFmpeg developers",
+      "node": "v24.5.0",
+      "dependencies": {
+        "truststore": "0.10.5",
+        "packaging": "26.3",
+        "fsspec": "2026.9.0",
+        "pip": "25.0.1",
+        "faster-whisper": "1.2.1",
+        "cryptography": "50.0.2",
+        "jaraco.functools": "4.6.0",
+        "PyYAML": "6.0.3",
+        "moviestar": "0.7.0",
+        "keyring": "25.7.0",
+        "httpcore2": "2.16.0",
+        "idna": "3.20",
+        "httpx2": "2.16.0",
+        "jeepney": "0.9.0",
+        "typing_extensions": "4.16.0",
+        "click": "8.5.1",
+        "tokenizers": "0.23.3",
+        "anyio": "4.16.0",
+        "onnxruntime": "1.32.0",
+        "ctranslate2": "4.9.0",
+        "huggingface_hub": "2.4.0",
+        "RapidFuzz": "3.14.6",
+        "jaraco.context": "6.1.2",
+        "more-itertools": "11.2.1",
+        "hf-xet": "1.8.0",
+        "av": "18.1.0",
+        "tqdm": "4.70.1",
+        "jaraco.classes": "3.4.0",
+        "SecretStorage": "3.5.0",
+        "numpy": "2.5.4",
+        "h11": "0.16.0",
+        "flatbuffers": "25.12.19",
+        "filelock": "4.2.10",
+        "cffi": "2.1.1",
+        "pycparser": "3.12",
+        "protobuf": "7.36.2"
+      },
+      "cpu_model": "Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz"
+    },
+    "native-audio-fades-360x640-1": {
+      "source_hashes": {
+        "app/src/moviestar/__init__.py": "4d6069e3615cfb759eff4a69169348d83d5dec81d5c376c2f34466db0d26504a",
+        "app/src/moviestar/__main__.py": "83555779bc550efd4cd1013ff0131956f4eea8bf5838a38019ee33f359cbb038",
+        "app/src/moviestar/account.py": "ac8e33c5f9a856435ace85e1a4eb9d681bed71f207607176992c8886d1dbccea",
+        "app/src/moviestar/activity.py": "eb764e61ac747d4e88a16c37c813131620c92f4ce30bf3446d99956a7c1c525c",
+        "app/src/moviestar/audio_surface.py": "71df8189805594ea2ad3d484bbe3c6c6a95471f77fe2e5460fb6f569f5af856d",
+        "app/src/moviestar/camera.py": "2b4dc252d57d743093d984cb0ac6a5a162056215b3a670820b908a80c521f5f5",
+        "app/src/moviestar/caption_import.py": "eb61ef59750129b47976017f56c920c615ab8acd2ce66e14e56580fc357218ef",
+        "app/src/moviestar/captions.py": "441ff58a85f7bf0a627c369a16074c1be9bbdf07d74898d7961fd29560e7b68e",
+        "app/src/moviestar/cli.py": "fc18a745d972e25c85defc5ea3dbcbd3a13fdbbcd9c2dcbc86dc7778e9bb8c5c",
+        "app/src/moviestar/composition_mock.py": "d232ea91dd1f3b65c7b3435d2713da4c6bcf5eb50b8d8bf7ca81e225afb9cf82",
+        "app/src/moviestar/feedback.py": "ec51bbc56da56823721769b5d79f331b88d3f957b1ef6ec9e9d3d146c2161d3b",
+        "app/src/moviestar/ffmpeg.py": "61e7e7f30badfe8ba6177b71cd32940a5767c20f8d92cf68bc84fecb3025d6a0",
+        "app/src/moviestar/find.py": "0d2b06a64c80a0f6dd5b1a166364a610373c3e2d912d4bd1d8c1c6d05970f4b6",
+        "app/src/moviestar/fonts.py": "5f2134271761dca57965d079b37d69fed48e110ff4348df141921660e1644027",
+        "app/src/moviestar/json_identity.py": "9069690d6f0b624f462aeb8a984ebd1378fbd84fba0820541a8cda0bf3bfcc0c",
+        "app/src/moviestar/local_preview.py": "7bb6e7e0db97f28afe8bed8a0b0df90ae978b7a53355d67ce0287845c9ab8d67",
+        "app/src/moviestar/masks.py": "8438b14fbe411577230df941184d779b482f7240006f90c160d6beb1d8999fa1",
+        "app/src/moviestar/motion.py": "ed21f8d8b8b5835a3311a07d7588f8ce3fc15c172562a5700e08351d6c8d8119",
+        "app/src/moviestar/native_audio.py": "ddd8f98bf919c368acb4cf53be038ac47db48b3012842905ee0b71aae224625b",
+        "app/src/moviestar/native_captions.py": "70f6d76299242b82d6d2c436877ed6326d270b904171d9f93fa451ee1eab6ab0",
+        "app/src/moviestar/native_preset.py": "7ee5bd99dbc140b1528d6b1a12afd767f113d7392b44e97919a13dd3de7cd851",
+        "app/src/moviestar/native_preview.py": "e1a153cac71f5a3e305ac11c965a9091eb1a2fc7dc1b778c597545a0517d4e02",
+        "app/src/moviestar/overlays.py": "8cbfa6ddc96d86a441abf05eaae4170785fadce3e51902af34a4cccedb231d51",
+        "app/src/moviestar/platforms.py": "9d47069428f5b1971b2c8adc242549fe2a7e368ecb0c219d265d1dad16d684be",
+        "app/src/moviestar/preview_native.mjs": "314f6a4eecd149657f910a962da8ec1c2be9c956d1ce76c69e46c0befc3951e4",
+        "app/src/moviestar/preview_native_audio.mjs": "a291fa187996ced47c6c3193494475a27faed69d1d62f409808b5c28abdb84ef",
+        "app/src/moviestar/preview_native_buffer.mjs": "acd43432c3a40abe7ab638a599e70721ad57858b540da4dd7c569e9cd0737722",
+        "app/src/moviestar/preview_native_captions.mjs": "f32c09c00b80ab23ceec2a0d0b10054a06044f9ffba2414b6117ca2b08fd76d4",
+        "app/src/moviestar/preview_native_cut_meter.mjs": "e19161382c1443f3114734e690d182f98f9c832f10be362a630135a9c3aef3e5",
+        "app/src/moviestar/preview_native_cuts.mjs": "3c5e1ac3d481e52047824a601de74585eaaef0221b626d4e9af76cd37362cbd6",
+        "app/src/moviestar/preview_native_meter.mjs": "9d546fa96d6ce8a7b83589cfed7e3f8ab89284c75910a1ee81fe2ab927e71840",
+        "app/src/moviestar/preview_native_stage.mjs": "16c17c860f2b4de985723aaa7c90ed0ef00d995fb0e618699ce1004eac9fadf8",
+        "app/src/moviestar/preview_native_videos.mjs": "791b6eebf85bb2e1118ad5e12923fc3082903c349b03dd54f65fa539d058f062",
+        "app/src/moviestar/preview_native_worker.mjs": "3410f31905b13b31a70fdf45b9475d0cea52c7a13593cb678b65a710ed1f7a83",
+        "app/src/moviestar/preview_worker.py": "f45932fe6048e8602685b031c60fa733215a3952388e681879da75a5bb080db7",
+        "app/src/moviestar/project.py": "e5ed3cb9d8182360d4a564bb8a850ac2b4e728f75e7e0164bdc2bdd71fe58d40",
+        "app/src/moviestar/remote_captions.py": "2707cbcbcf516ba7fa1f4beb4927ce7e63a4afeacc2579eb01f829585e623558",
+        "app/src/moviestar/resolved.py": "0e33bdc8c72c68775eb11f588b2e71aac4980bfd546b75c2ded7c9afb517ed75",
+        "app/src/moviestar/sharing.py": "fde7c87d9e01c3cd9c6548ed80a1d78759c13f9f283514ef39d6c0a3ebe3c943",
+        "app/src/moviestar/spatial_browser.mjs": "0ae46ca5d343bcfc191935b316b9b9e921b2b8cafc44019864196c23759dce01",
+        "app/src/moviestar/spatial_browser_lifecycle.mjs": "658d220fa2f1bd937624ad3f2064d967f95c1179b05c039a2f20ed461775f2ef",
+        "app/src/moviestar/spatial_catalog.py": "1132c131a5c8c2bb925175e7b8c68dea67b85d3c91ce35312f2d1af0e8ca9fa9",
+        "app/src/moviestar/spatial_composite.py": "920b128dd4ced2ae0bab9c5d0e60edb337c69f1f61d8ac1724c95f67cc227ca1",
+        "app/src/moviestar/spatial_dom.mjs": "59054c107bc21c7493697b8d25b6bf3f884347fcdab8f701218d06453f2abdac",
+        "app/src/moviestar/spatial_edit.py": "1dd115452d415c4f3266b9d9eac55739431f7c29dee4397584810d9192a264a6",
+        "app/src/moviestar/spatial_format.py": "dcea57c2e2eb37e313b83d5f6fcf77312f8d65fcd89885c7bfc62e6a9d956a6b",
+        "app/src/moviestar/spatial_inspection.py": "e4db79164d6d95564a844f85197477aed59f0239c5dbd573fc6b1c0732f1fee5",
+        "app/src/moviestar/spatial_layout.py": "0ddcf669500b727a90575aec2fc411d5e869f365aa6dc951eda0f4e7904bdb8e",
+        "app/src/moviestar/spatial_model.py": "354ec181859918ca7bfa09ff9f6f0871a81018572f7e7467353a121c522de39a",
+        "app/src/moviestar/spatial_motion.py": "4ee7bee35583f3479b584b79b54193476c75e2d90dfd364dce2b5e355e042b05",
+        "app/src/moviestar/spatial_preset.py": "3e4c6df132c09920d3fc26ba24766f0af0a55b9c4b13ad47584a979796a84db7",
+        "app/src/moviestar/spatial_regions.py": "e08806b95517a613738b6061a2bd74c1b86b6be49acf846fb3333c0b590ec530",
+        "app/src/moviestar/spatial_render.py": "1acbbb05081e1d27efc111dab0017678004898588981bfce00e69b183d388893",
+        "app/src/moviestar/spatial_saved_layouts.py": "07a3bea01dd6d1fa77ccc5d3973dd69ed8a155e58a9e3fc91ab237fbcccc0d86",
+        "app/src/moviestar/spatial_session.py": "dbc2637a039ee7a32f98765e0649d32cb405ee2b7ca189de5574e2528006bbf9",
+        "app/src/moviestar/spatial_transition.py": "f0fb5728fc3409fd494f024ae4f1e06c2081026769060ba032e30329642c7c3c",
+        "app/src/moviestar/spatial_video.py": "965c27a11898d3ea407b4d8cbdcece7d896b2b7be2124421db625da9fef4274f",
+        "app/src/moviestar/spec.py": "5edb477e54e600d74c748a6277260441fac58cecf5c0e096667656985a4f6662",
+        "app/src/moviestar/subscribe.py": "a0c2bb146c39263f209abfea9b16fd030b8b4035d9244914f58d0bfeaac4468c",
+        "app/src/moviestar/timecodes.py": "37b2b686be6bd81322174908622cef437139ce9d013ac1b146cc11fc737aebdf",
+        "app/src/moviestar/transcribe.py": "6d35a82cedee63d69d36aa624d2d5c6d3016de8cc65a1b99870ca23c8fa4ac71",
+        "app/src/moviestar/transitions.py": "ab2425f6812626aae2d22b1fe7630a163feb1b7f21920700cea519530506dd15"
+      },
+      "wheel_sha256": "acc0ca31908e890b675339065484e2a9ad04785eabdf5aefa23d2c8cc18eecc5",
+      "python": "3.12.16 (main, Oct 26 2026, 02:48:44) [GCC 15.2.0]",
+      "platform": "Linux-7.0.0-1016-aws-x86_64-with-glibc2.43",
+      "cpu_count": 4,
+      "chrome": "Google Chrome for Testing 156.0.8078.73",
+      "ffmpeg": "ffmpeg version 8.0.1-3ubuntu2 Copyright (c) 2000-2025 the FFmpeg developers",
+      "node": "v24.5.0",
+      "dependencies": {
+        "pip": "25.0.1",
+        "protobuf": "7.36.2",
+        "SecretStorage": "3.5.0",
+        "click": "8.5.1",
+        "flatbuffers": "25.12.19",
+        "moviestar": "0.7.0",
+        "numpy": "2.5.4",
+        "httpcore2": "2.16.0",
+        "av": "18.1.0",
+        "typing_extensions": "4.16.0",
+        "PyYAML": "6.0.3",
+        "h11": "0.16.0",
+        "faster-whisper": "1.2.1",
+        "packaging": "26.3",
+        "pycparser": "3.12",
+        "tokenizers": "0.23.3",
+        "RapidFuzz": "3.14.6",
+        "jaraco.functools": "4.6.0",
+        "idna": "3.20",
+        "onnxruntime": "1.32.0",
+        "huggingface_hub": "2.4.0",
+        "jeepney": "0.9.0",
+        "cffi": "2.1.1",
+        "truststore": "0.10.5",
+        "ctranslate2": "4.9.0",
+        "anyio": "4.16.0",
+        "fsspec": "2026.9.0",
+        "keyring": "25.7.0",
+        "hf-xet": "1.8.0",
+        "cryptography": "50.0.2",
+        "filelock": "4.2.10",
+        "more-itertools": "11.2.1",
+        "jaraco.context": "6.1.2",
+        "jaraco.classes": "3.4.0",
+        "httpx2": "2.16.0",
+        "tqdm": "4.70.1"
+      },
+      "cpu_model": "Intel(R) Xeon(R) 6975P-C"
+    }
+  },
+  "producer_hashes": {
+    "audio.py": "88e703038e14dae4f2153b689f87a6276ebe6fca4792ab98d9c176430f9746f7",
+    "audio_benchmark.mjs": "092676ff5f1f5205d1387d0661d69268b843f8773ee28192bee1747b5bfc165a",
+    "audio_benchmark.py": "4589cce44428fa1072958931dd424c4c6b2f5d1a12a330ad37b731b65cb639e2",
+    "benchmark.mjs": "c830c36cdbe23266656e9e0b29abfe1ce7bc093a37fd37af496063ec031fc778",
+    "benchmark.py": "0347abc59df33a1628288bce87bddbb660c2f040426b84ab7eff3a9bdff86c1e",
+    "browser.mjs": "136b11fe43adeada3026f84d3798c81b4ff423b672881bf57a7db70b341709e6",
+    "caption_benchmark.mjs": "ee019488cfd0756eb94ba02909af3865b2342da18610d09c6c09b4e048ab7b26",
+    "caption_benchmark.py": "567092e442ff64f630d4f9a42cf36d2293dede378150ddfb5b035ea6ae5a038d",
+    "cue_clock.mjs": "358689d73b2ece05666ca1097cc1702ae0f7d0a00c850d9fe6ef69a5aaa20c9a",
+    "cut_benchmark.py": "76a99955570d7f22fbe6be1e589ebd1f4781d9a1ae7ae8db861923a791cc2f11",
+    "cuts.py": "54d1d3d8ca2b6a0d2fd42d0d6d92de5c9f3d2ca3e3e60e08c16d2cf9dc3b3d11",
+    "diagnostics.mjs": "4f26cc054b8e5320d92c6ecdbff87ab716eab1315d8d5abf7a1cfcbb578bbcb5",
+    "fixtures.py": "becd1072c5980378695b217ff84e19d86f81aa1532ae8676d91890b0a7c9bb85",
+    "history.py": "3272e0acbfcb0fe5bcbf67303b0fb546ce63a34ad12125ee4678511b8a02a612",
+    "history_benchmark.py": "1cd7adec8626170d17312291c8ccc79dfb8b5ff497f99240632abbf6c78b4901",
+    "pip.py": "2ee0888c5eea7e71ad927645d9950c11053ce5e2335b9400576a472c2240f14e",
+    "pip_benchmark.mjs": "72e9c76b4cad2bbae0ed4554b0b4cf527eafeb774a359beb8ba488587d9ebec6",
+    "pip_benchmark.py": "a0632460e265e5d45354cb5c75ed87fcaa12449f0e3e69638df90e4cf66b2669",
+    "presented_frames.mjs": "dfa4ec5278f07f87112e58cc4bfbdc7aebc9756b1c98f59be1a34533499fd7b1",
+    "real_benchmark.py": "e573fd17b9379cd5e09137fc55b32a4e75c4cb955d684dacd22308223efad327",
+    "scaling.py": "26051152829f1838649ab8347d0c9bf348da388dece429fe892144bb5bda76d0",
+    "serve.py": "d21dc5d0e564fd238d08fda9fc5ae1395f67277bd90e3024ba158c57238300a9"
+  },
+  "cases": [
+    {
+      "canvas": [
+        1080,
+        1920
+      ],
+      "initial_history": 0,
+      "edits": [
+        {
+          "name": "source-fade-in",
+          "ms": 1017.8423710000002,
+          "cli_ms": 239.19077400000015,
+          "reused_decoders": true
+        },
+        {
+          "name": "source-fade-out",
+          "ms": 916.9130089999999,
+          "cli_ms": 237.5209450000002,
+          "reused_decoders": true
+        },
+        {
+          "name": "track-fade-in",
+          "ms": 1020.324466,
+          "cli_ms": 202.38391500000034,
+          "reused_decoders": true
+        },
+        {
+          "name": "track-fade-out",
+          "ms": 1054.1805139999997,
+          "cli_ms": 202.94587599999977,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-track-fade-out",
+          "ms": 1030.851342,
+          "cli_ms": 165.98667699999987,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-track-fade-in",
+          "ms": 921.2991719999991,
+          "cli_ms": 164.7287269999997,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-source-fade-out",
+          "ms": 814.0916039999993,
+          "cli_ms": 163.69729299999926,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-source-fade-in",
+          "ms": 1043.7927469999995,
+          "cli_ms": 163.76266899999973,
+          "reused_decoders": true
+        }
+      ],
+      "max_edit_ms": 1054.1805139999997,
+      "problems": [],
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 0
+      },
+      "browser_exception_count": 0,
+      "playback": {
+        "finished": true,
+        "stalls": 0,
+        "video_drops": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_cue_phase_ms": 45.98193098957381,
+        "cue_problems": [],
+        "program_drift_ms": 33.266349609375055
+      }
+    },
+    {
+      "canvas": [
+        1080,
+        1920
+      ],
+      "initial_history": 20,
+      "edits": [
+        {
+          "name": "source-fade-in",
+          "ms": 1225.734305,
+          "cli_ms": 363.06247299999995,
+          "reused_decoders": true
+        },
+        {
+          "name": "source-fade-out",
+          "ms": 1132.6390809999998,
+          "cli_ms": 264.21082899999965,
+          "reused_decoders": true
+        },
+        {
+          "name": "track-fade-in",
+          "ms": 1023.7634889999995,
+          "cli_ms": 234.56623999999965,
+          "reused_decoders": true
+        },
+        {
+          "name": "track-fade-out",
+          "ms": 1032.370715,
+          "cli_ms": 226.2133249999997,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-track-fade-out",
+          "ms": 1018.7059439999994,
+          "cli_ms": 182.23420899999928,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-track-fade-in",
+          "ms": 1020.956475,
+          "cli_ms": 185.55262500000026,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-source-fade-out",
+          "ms": 924.413235,
+          "cli_ms": 184.8277939999998,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-source-fade-in",
+          "ms": 1052.1566190000012,
+          "cli_ms": 180.53781900000104,
+          "reused_decoders": true
+        }
+      ],
+      "max_edit_ms": 1225.734305,
+      "problems": [],
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 20
+      },
+      "browser_exception_count": 0,
+      "playback": {
+        "finished": true,
+        "stalls": 0,
+        "video_drops": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_cue_phase_ms": 45.98335351562491,
+        "cue_problems": [],
+        "program_drift_ms": 33.565910156250055
+      }
+    },
+    {
+      "canvas": [
+        1080,
+        1920
+      ],
+      "initial_history": 50,
+      "edits": [
+        {
+          "name": "source-fade-in",
+          "ms": 1063.349079,
+          "cli_ms": 298.210419,
+          "reused_decoders": true
+        },
+        {
+          "name": "source-fade-out",
+          "ms": 1210.7120300000001,
+          "cli_ms": 301.19216400000005,
+          "reused_decoders": true
+        },
+        {
+          "name": "track-fade-in",
+          "ms": 929.5300090000001,
+          "cli_ms": 260.22858799999995,
+          "reused_decoders": true
+        },
+        {
+          "name": "track-fade-out",
+          "ms": 1041.236852,
+          "cli_ms": 257.9450489999999,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-track-fade-out",
+          "ms": 1032.8367939999998,
+          "cli_ms": 204.08844599999975,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-track-fade-in",
+          "ms": 1022.8635919999997,
+          "cli_ms": 208.60178199999973,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-source-fade-out",
+          "ms": 1023.8560940000007,
+          "cli_ms": 199.08703700000024,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-source-fade-in",
+          "ms": 1023.5441900000005,
+          "cli_ms": 206.56844699999965,
+          "reused_decoders": true
+        }
+      ],
+      "max_edit_ms": 1210.7120300000001,
+      "problems": [],
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 46
+      },
+      "browser_exception_count": 0,
+      "playback": {
+        "finished": true,
+        "stalls": 0,
+        "video_drops": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_cue_phase_ms": 23.968569010410647,
+        "cue_problems": [],
+        "program_drift_ms": 16.566154296875055
+      }
+    },
+    {
+      "canvas": [
+        360,
+        640
+      ],
+      "initial_history": 0,
+      "edits": [
+        {
+          "name": "source-fade-in",
+          "ms": 694.1203329999994,
+          "cli_ms": 181.42082899999969,
+          "reused_decoders": true
+        },
+        {
+          "name": "source-fade-out",
+          "ms": 806.6728650000005,
+          "cli_ms": 175.92651700000079,
+          "reused_decoders": true
+        },
+        {
+          "name": "track-fade-in",
+          "ms": 605.0631909999993,
+          "cli_ms": 146.63320199999998,
+          "reused_decoders": true
+        },
+        {
+          "name": "track-fade-out",
+          "ms": 819.5273289999996,
+          "cli_ms": 152.34176899999966,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-track-fade-out",
+          "ms": 608.4650540000002,
+          "cli_ms": 122.16184700000031,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-track-fade-in",
+          "ms": 811.3770690000001,
+          "cli_ms": 136.4278890000005,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-source-fade-out",
+          "ms": 625.5811939999994,
+          "cli_ms": 122.3531039999998,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-source-fade-in",
+          "ms": 813.5080460000008,
+          "cli_ms": 119.32259000000158,
+          "reused_decoders": true
+        }
+      ],
+      "max_edit_ms": 819.5273289999996,
+      "problems": [],
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 0
+      },
+      "browser_exception_count": 0,
+      "playback": {
+        "finished": true,
+        "stalls": 0,
+        "video_drops": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_cue_phase_ms": 10.300410807268236,
+        "cue_problems": [],
+        "program_drift_ms": -0.5339433593749447
+      }
+    },
+    {
+      "canvas": [
+        360,
+        640
+      ],
+      "initial_history": 20,
+      "edits": [
+        {
+          "name": "source-fade-in",
+          "ms": 878.0207760000001,
+          "cli_ms": 196.68502000000012,
+          "reused_decoders": true
+        },
+        {
+          "name": "source-fade-out",
+          "ms": 800.5041660000002,
+          "cli_ms": 188.16896700000007,
+          "reused_decoders": true
+        },
+        {
+          "name": "track-fade-in",
+          "ms": 721.7071940000001,
+          "cli_ms": 166.8005760000001,
+          "reused_decoders": true
+        },
+        {
+          "name": "track-fade-out",
+          "ms": 619.8691010000002,
+          "cli_ms": 164.95591300000024,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-track-fade-out",
+          "ms": 598.5185249999995,
+          "cli_ms": 134.64139999999998,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-track-fade-in",
+          "ms": 608.6626759999999,
+          "cli_ms": 134.20471799999996,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-source-fade-out",
+          "ms": 614.0591359999999,
+          "cli_ms": 133.36355399999957,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-source-fade-in",
+          "ms": 612.4966469999999,
+          "cli_ms": 134.77208100000007,
+          "reused_decoders": true
+        }
+      ],
+      "max_edit_ms": 878.0207760000001,
+      "problems": [],
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 20
+      },
+      "browser_exception_count": 0,
+      "playback": {
+        "finished": true,
+        "stalls": 0,
+        "video_drops": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_cue_phase_ms": 26.053186848970654,
+        "cue_problems": [],
+        "program_drift_ms": 16.565666015625055
+      }
+    },
+    {
+      "canvas": [
+        360,
+        640
+      ],
+      "initial_history": 50,
+      "edits": [
+        {
+          "name": "source-fade-in",
+          "ms": 766.0062369999999,
+          "cli_ms": 225.92071900000008,
+          "reused_decoders": true
+        },
+        {
+          "name": "source-fade-out",
+          "ms": 802.3125210000001,
+          "cli_ms": 218.1823670000001,
+          "reused_decoders": true
+        },
+        {
+          "name": "track-fade-in",
+          "ms": 813.8383009999998,
+          "cli_ms": 185.96619599999985,
+          "reused_decoders": true
+        },
+        {
+          "name": "track-fade-out",
+          "ms": 804.986085,
+          "cli_ms": 189.41626700000006,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-track-fade-out",
+          "ms": 801.6767200000004,
+          "cli_ms": 147.3253679999998,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-track-fade-in",
+          "ms": 626.4898600000006,
+          "cli_ms": 151.72964500000035,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-source-fade-out",
+          "ms": 807.8132719999994,
+          "cli_ms": 149.481272,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-source-fade-in",
+          "ms": 814.231444,
+          "cli_ms": 147.43742100000054,
+          "reused_decoders": true
+        }
+      ],
+      "max_edit_ms": 814.231444,
+      "problems": [],
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 46
+      },
+      "browser_exception_count": 0,
+      "playback": {
+        "finished": true,
+        "stalls": 0,
+        "video_drops": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_cue_phase_ms": 42.8877154948259,
+        "cue_problems": [],
+        "program_drift_ms": -0.13404101562494475
+      }
+    }
+  ],
+  "notes": [
+    "All 48 actual CLI edits/undos passed the existing gates. Maximum edit latency 1225.735 ms (rounded up).",
+    "Installed runtime source hashes for both independent runner wheels match all 62 current Python/JavaScript files. Raw generated evidence is retained as workflow artifacts.",
+    "This separate CI environment does not establish why the Mac references failed or repair those retained failures. Both fade-results.json and fade-rounding-results.json remain failed.",
+    "No deadlines, source quality, FPS or fidelity gates were relaxed; no acceptance rerun replaced a failure.",
+    "Cold-start playback, broader codecs/projects and human physical fade listening/lip-sync remain separate acceptance."
+  ]
+}

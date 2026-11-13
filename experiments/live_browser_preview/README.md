@@ -860,6 +860,17 @@ matrix. The report includes both versions' source/producer hashes and observed
 load/swap conditions. Do not rerun to select passing samples or widen budgets.
 
 
+The first dedicated Linux CI reference passed both rasters and histories
+0/20/50: **48/48 actual fade/undo edits**, maximum **1,225.735 ms**, all six
+undo/playback cases within the existing zero-drop/stall and 50 ms clock limits.
+[fade-ci-results.json](fade-ci-results.json) records verified installed-wheel
+runtime hashes, producer identity and per-case measurements, linked to the
+[run and generated artifacts](https://github.com/jdilla1277/moviestar/actions/runs/43415641459).
+This is a four-CPU Linux/FFmpeg 8.0.1/Chrome 156 reference, not a causal explanation
+of the retained Mac failures or a physical listening pass. Neither failed Mac
+matrix was removed or relabeled. General/cold-start acceptance remains separate.
+
+
 ### Fade-duration rounding regression and fresh reference
 
 Source/track fade durations accepted within the existing millisecond tolerance
