@@ -1,6 +1,6 @@
 {
   "name": "moviestar",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "Plan, execute, and verify deterministic video edits with the Moviestar CLI.",
   "author": {
     "name": "James Dillard",
