@@ -80,7 +80,7 @@ function load(item){
       }
     }
     if(pending!==candidate||!allowed(item))return;
-    frame.src=base+'stage?request='+item.request_id+(new URLSearchParams(location.search).has('audit')?'&audit=1':'');$('stage').append(frame);
+    frame.src=base+'stage?request='+item.request_id+(new URLSearchParams(location.search).has('audit')?'&audit=1':'')+(new URLSearchParams(location.search).has('audit_pcm')?'&audit_pcm=1':'');$('stage').append(frame);
   })().catch(finishError);
 }
 function update(){

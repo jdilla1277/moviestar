@@ -1,9 +1,14 @@
 // Passthrough mix meter. Per-quantum diagnostics are opt-in, local benchmark data.
 class CutOutputMeter extends AudioWorkletProcessor {
   constructor(options){
-    super();this.audit=options.processorOptions?.audit===true;this.active=false;this.blocks=[];
+    super();this.audit=options.processorOptions?.audit===true;this.capturePcm=options.processorOptions?.capturePcm===true;this.active=false;this.blocks=[];this.capacity=11*48000;this.pcm=null;this.pcmFrames=0;this.captureActive=false;
     this.port.onmessage=({data})=>{
+      if(data.kind==='capture'&&this.capturePcm){this.pcm=new Float32Array(this.capacity*2);this.pcmFrames=0;this.captureActive=true;return;}
       if(data.kind!=='flush')return;
+      if(this.captureActive&&this.pcm){
+        this.port.postMessage({kind:'pcm',start_context_time:this.pcmStart,sample_rate:sampleRate,frames:this.pcmFrames,capacity:this.capacity,data:this.pcm.buffer},[this.pcm.buffer]);
+        this.pcm=null;this.captureActive=false;
+      }
       this.flush();this.port.postMessage({kind:'flushed',id:data.id});
     };
   }
@@ -25,6 +30,11 @@ class CutOutputMeter extends AudioWorkletProcessor {
       // The synthetic fixture's right channel is a continuous pilot tone.
       const samples=output[1]??output[0];let energy=0;
       if(samples)for(const value of samples)energy+=value*value;
+      if(this.captureActive&&this.pcm&&this.pcmFrames+left.length<=this.capacity){
+        if(!this.pcmFrames)this.pcmStart=currentFrame/sampleRate;
+        this.pcm.set(output[0],this.pcmFrames);this.pcm.set(output[1]??output[0],this.capacity+this.pcmFrames);
+        this.pcmFrames+=left.length;
+      }
       this.blocks.push({kind:'block',context_time:currentFrame/sampleRate,rms:samples?Math.sqrt(energy/samples.length):0,
         duration:samples?samples.length/sampleRate:0});
       // Preserve every quantum but avoid hundreds of main-thread IPC tasks.

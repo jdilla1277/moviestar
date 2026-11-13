@@ -339,6 +339,8 @@ class PreviewSession:
                 if item.get("media"):
                     packet = json.loads(Path(item["media"]).read_text())
                     referenced.update(media["asset"] for media in packet["media"])
+                    if packet.get('audio_plane'):
+                        referenced.add(packet['audio_plane']['asset'])
                     children = [s['packet'] for s in packet['segments']] if 'segments' in packet else [packet]
                     for child in children:
                         referenced.update(state['asset'] for state in child.get('caption_plane', {}).get('states', []))
@@ -349,7 +351,7 @@ class PreviewSession:
             for value in expired:
                 directory = Path(value['path']).parent
                 if (directory.parent.parent == self.directory
-                        and re.fullmatch(r'captions-[a-f0-9]{24}', directory.name)
+                        and re.fullmatch(r'(?:captions|audio)-[a-f0-9]{24}', directory.name)
                         and not any(Path(a['path']).parent == directory for a in self.assets.values())):
                     import shutil
                     shutil.rmtree(directory, ignore_errors=True)
@@ -435,7 +437,7 @@ class _Handler(BaseHTTPRequestHandler):
         elif self.server.mode == "native" and route in {
                 "preview_native.mjs", "preview_native_stage.mjs", "preview_native_meter.mjs", "spatial_dom.mjs",
                 "preview_native_worker.mjs", "preview_native_buffer.mjs", "preview_native_cuts.mjs",
-                "preview_native_cut_meter.mjs", "preview_native_videos.mjs", "preview_native_captions.mjs"}:
+                "preview_native_cut_meter.mjs", "preview_native_videos.mjs", "preview_native_captions.mjs", "preview_native_audio.mjs"}:
             self._reply(200, files("moviestar").joinpath(route).read_bytes(), "text/javascript")
         elif self.server.mode == "native" and route == "stage":
             self._reply(200, b'<!doctype html><html><head><meta charset="utf-8"></head><body><script type="module" src="preview_native_stage.mjs"></script></body></html>', "text/html; charset=utf-8")

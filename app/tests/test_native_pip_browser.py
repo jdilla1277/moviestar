@@ -15,17 +15,22 @@ import numpy as np
 from moviestar.spatial_layout import browser_available, _chrome_path
 
 
-@pytest.mark.skipif(not browser_available(), reason='Chrome and Node required')
-@pytest.mark.parametrize('spatial,cuts,silent_listener,omit_end_callbacks,pixel_audit', [
-    (False, False, False, False, True), (True, False, False, False, True),
-    (False, True, False, False, True), (True, True, False, False, True),
-    (False, False, True, False, True), (False, True, False, True, True),
-    (True, False, False, False, False), (False, True, False, False, False)])
-def test_actual_pip_prepares_both_videos_and_keeps_clocks_and_routing(tmp_path, spatial, cuts, silent_listener, omit_end_callbacks, pixel_audit):
+def _exercise_pip(tmp_path, spatial, cuts, silent_listener, omit_end_callbacks, pixel_audit, *, independent_audio=False, unmute_source=False, mute_dialogue=False):
     repo = Path(__file__).parents[2]; root = tmp_path/'project'
     subprocess.run([sys.executable, str(repo/'experiments/live_browser_preview/pip.py'), '--out', str(root),
         *(['--spatial'] if spatial else []), *(['--cuts'] if cuts else []),
         *(['--silent-listener'] if silent_listener else [])], check=True, capture_output=True, text=True, timeout=40)
+    if independent_audio:
+        subprocess.run([sys.executable,str(repo/'experiments/live_browser_preview/audio.py'),'--out',str(root),'--existing'],check=True,capture_output=True,timeout=30)
+        if unmute_source:
+            subprocess.run([sys.executable,'-m','moviestar.cli','audio','source','--workspace',str(root),'--unmute','--gain-db','-6'],check=True,capture_output=True,timeout=30)
+    if independent_audio:
+        from moviestar.spec import load_spec
+        from moviestar.audio_surface import editable_audio_document
+        document=editable_audio_document(load_spec(root)['audio_mix'])
+        document['audio_mix']['tracks'][0].update(gain_db=-9,muted=mute_dialogue)
+        mix_path=root/'edited-mix.json';mix_path.write_text(json.dumps(document))
+        subprocess.run([sys.executable,'-m','moviestar.cli','audio','set',str(mix_path),'--workspace',str(root)],check=True,capture_output=True,timeout=30)
     chrome = os.environ.get('MOVIESTAR_CHROME_PATH') or str(_chrome_path())
     with (tmp_path/'server.log').open('w') as log:
         server = subprocess.Popen([sys.executable, '-m', 'moviestar.cli', 'preview', '--workspace', str(root),
@@ -65,7 +70,7 @@ try{
    });
   };
  `});
- await b.send('Page.navigate',{url:URL+(PIXEL_AUDIT?'?audit=1':'')});
+ await b.send('Page.navigate',{url:URL+(PIXEL_AUDIT?'?audit=1':'')+(INDEPENDENT?'&audit_pcm=1':'')});
  await b.wait('window.movieStarPreview?.is_current',20000);
  // Use the authored 360x640 raster at 1x for software-headless playback.
  await b.evaluate(`(async()=>{const s=document.getElementById('stage'),style=document.createElement('style');style.textContent='#stage{max-width:none!important;width:'+(360+s.offsetWidth-s.clientWidth)+'px!important}';document.head.append(style);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));})()`);
@@ -78,8 +83,9 @@ try{
   const s=await b.evaluate(`(async()=>{const api=window.movieStarPreview.stage;await api.seek(${at});return api.snapshot();})()`);
   assert.equal(s.videos.length,2);
   assert.deepEqual(s.videos.map(v=>v.audio_connected),SILENT_LISTENER?[true,false]:[true,true],'Only actual audio streams join the shared output graph');
-  assert.equal(s.videos.filter(v=>v.audio_gain===1).length,1);
-  assert.equal(s.videos.filter(v=>v.audio_gain===0).length,1);
+  assert.equal(s.videos.filter(v=>v.audio_gain===1).length,INDEPENDENT?0:1);
+  assert.equal(s.videos.filter(v=>v.audio_gain===0).length,INDEPENDENT?2:1);
+  if(INDEPENDENT){assert.equal(s.audio.prepared,true);assert.equal(s.audio.tracks[0].id,'dialogue');}
   assert.deepEqual(s.videos.map(v=>v.source.number),CUTS&&at>=1&&at<3?[(2+at)*30,(1+at)*30]:[(1+at)*30,(2+at)*30]);
   assert.ok(s.videos.every(v=>v.ready_state>=2&&!v.seeking&&v.paused));
  }
@@ -94,6 +100,11 @@ try{
  await checkRaster();
  const m=await b.evaluate('window.movieStarPreview.stage.metrics');
  await writeFile(OUT+'/playback.json',JSON.stringify(m,null,2));
+ if(INDEPENDENT){
+  const asset=await b.evaluate('window.movieStarPreview.stage.packet.audio_plane.asset');
+  await writeFile(OUT+'/audio-reference.wav',Buffer.from(await(await fetch(URL+'assets/'+asset)).arrayBuffer()));
+ }
+
  await writeFile(OUT+'/media-events.json',JSON.stringify(mediaEvents,null,2));
  assert.equal(m.error,null);assert.equal(m.stalls,0);
  if(OMIT_END_CALLBACKS){
@@ -115,7 +126,7 @@ try{
  assert.ok(qualities.every(q=>q.dropped_frames===0),'Neither decoder drops frames: '+JSON.stringify(mediaEvents));
  if(!CUTS)assert.ok(qualities.every(q=>q.total_frames>=140),'Both decoders continue through the complete clip');
  if(PIXEL_AUDIT){
- const cueClock=measureCueClock(m,{fps:30,sourceStart:1,count:5,quality:qualities});
+ const cueClock=TRACK_MUTED?{problems:m.beeps.length?['Muted dialogue produced audio cues']:[]}:measureCueClock(m,{fps:30,sourceStart:1,count:5,quality:qualities});
  await writeFile(OUT+'/cue-clock.json',JSON.stringify(cueClock,null,2));
  assert.deepEqual(cueClock.problems,[],'Selected voice follows the presented-frame clock within 50ms');
  const paths=[...new Set(videoFrames.map(f=>JSON.stringify(f.path)))];assert.equal(paths.length,CUTS?6:2);
@@ -136,6 +147,7 @@ try{
  assert.deepEqual(final.videos.map(v=>v.source.number),[179,209],'Both final frames are held');
  await b.click('#restart');await b.click('#play');await b.click('#pause');
  const paused=await b.evaluate('window.movieStarPreview.stage.snapshot()');assert.ok(paused.videos.every(v=>v.paused));
+ if(INDEPENDENT){assert.equal(paused.audio.playing,false);await b.evaluate('new Promise(resolve=>setTimeout(resolve,100))');assert.equal(await b.evaluate('window.movieStarPreview.stage.snapshot().audio.playing'),false,'Pause cancels pending audio startup');}
  // Capture after timing: CDP screenshots can perturb headless frame scheduling.
  await b.evaluate('window.movieStarPreview.stage.seek(0)');
  await checkRaster();
@@ -145,7 +157,7 @@ try{
  await checkRaster();
 }finally{await b.close();}
 '''
-            values = {'HELPER': (repo/'experiments/live_browser_preview/browser.mjs').as_uri(), 'CHROME': chrome,
+            values = {'TRACK_MUTED':mute_dialogue,'INDEPENDENT':independent_audio,'HELPER': (repo/'experiments/live_browser_preview/browser.mjs').as_uri(), 'CHROME': chrome,
                       'OUT': str(tmp_path/'browser'), 'URL': ready['url'], 'CUTS': cuts,
                       'CUE_HELPER': (repo/'experiments/live_browser_preview/cue_clock.mjs').as_uri(),
                       'OMIT_END_CALLBACKS': omit_end_callbacks, 'PIXEL_AUDIT': pixel_audit, 'SILENT_LISTENER': silent_listener, 'TRACE': os.environ.get('MOVIESTAR_NATIVE_TRACE') == '1'}
@@ -191,3 +203,43 @@ try{
             try: server.wait(timeout=9)
             except subprocess.TimeoutExpired: server.kill(); server.wait()
             server.stdout.close()
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node required')
+@pytest.mark.parametrize('spatial,cuts,silent_listener,omit_end_callbacks,pixel_audit', [
+    (False, False, False, False, True), (True, False, False, False, True),
+    (False, True, False, False, True), (True, True, False, False, True),
+    (False, False, True, False, True), (False, True, False, True, True),
+    (True, False, False, False, False), (False, True, False, False, False)])
+def test_actual_pip_prepares_both_videos_and_keeps_clocks_and_routing(tmp_path, spatial, cuts, silent_listener, omit_end_callbacks, pixel_audit):
+    return _exercise_pip(tmp_path,spatial,cuts,silent_listener,omit_end_callbacks,pixel_audit)
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node required')
+@pytest.mark.parametrize('cuts,unmute,muted', [(False,False,False),(True,False,False),(True,True,False),(True,False,True)])
+def test_independent_audio_matches_actual_output_across_picture_cuts(tmp_path,cuts,unmute,muted):
+    _exercise_pip(tmp_path,False,cuts,False,False,True,independent_audio=True,unmute_source=unmute,mute_dialogue=muted)
+    import io
+    m=json.loads((tmp_path/'browser/playback.json').read_text());a=m['prepared_audio']
+    with av.open(str(tmp_path/'browser/audio-reference.wav')) as container:
+        resampler=av.AudioResampler(format='fltp',layout='stereo',rate=48000)
+        expected=np.concatenate([f.to_ndarray() for src in container.decode(audio=0) for f in resampler.resample(src)],axis=1)
+    capture=m['audio_pcm'];pcm=np.asarray(capture['samples'])
+    index=round((capture['start_context_time']-a['started_context_time']+a['started_offset'])*48000)
+    # Device scheduling quantizes clock timestamps to a sample frame.
+    candidates=[]
+    for shift in (-1,0,1):
+        begin=index+shift;left=max(0,-begin)
+        # Native end/Pause is explicitly approximate, unlike export trim.
+        # Compare the stable playing interval; one output quantum brackets
+        # the stop request. Internal camera cuts remain fully compared.
+        stop=round((m['pause_context_time']-capture['start_context_time'])*48000)
+        right=min(pcm.shape[1],expected.shape[1]-begin,stop-128)
+        candidates.append((pcm[:,left:right]-expected[:,begin+left:begin+right]).ravel())
+    error=min(candidates,key=lambda e:np.sqrt(np.mean(e*e)))
+    assert len(error)>4.8*48000*2
+    assert abs(error).max()<1e-5, (abs(error).max(),np.sqrt(np.mean(error*error)))
+    end=round((m['pause_context_time']-a['started_context_time']+a['started_offset'])*48000)
+    assert abs(min(end,expected.shape[1])-expected.shape[1])<=.05*48000
+    tail=round((m['pause_context_time']-capture['start_context_time'])*48000)+128
+    if tail<pcm.shape[1]:assert abs(pcm[:,tail:]).max()<1e-7

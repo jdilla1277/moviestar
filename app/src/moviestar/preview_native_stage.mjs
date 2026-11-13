@@ -5,7 +5,7 @@ let resolveReady,rejectReady,packet,video,audio,meter,frameCallback,stopTimer,cu
 const controller=new AbortController(),audit=new URLSearchParams(location.search).has('audit');
 const pendingSeeks=new Set();
 let lastIndex=-1, playing=false, readyDone=false, metadataReady=false, imageReady=false,finishing=false,playGeneration=0;
-let videoGroup;
+let videoGroup,reviewAudio,outputMixer;
 let playbackIdentity;
 let captionLayer,captionImages=[],captionState=-1;
 const videos=[];
@@ -94,11 +94,13 @@ async function checkReady(){
     // Prepare its pixels before publishing a cut scene, then return both
     // decoders to their first frames. No output clip or persistent cache.
     if(packet.cut_segment){
-      if(!await videoGroup.seek((packet.samples.length-1)/packet.fps)||disposed)return;
+      if(!await videoGroup.seek((packet.samples.length-1)/packet.fps,{presented:true})||disposed)return;
       for(const item of videos){
         const frame=document.createElement('canvas');frame.width=item.video.videoWidth;frame.height=item.video.videoHeight;
         frame.getContext('2d').drawImage(item.video,0,0);item.endFrame=frame;
       }
+      if(!await videoGroup.seek(1/packet.fps)||disposed)return;
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
       if(!await videoGroup.seek(0)||disposed)return;
     }
     apply(0);
@@ -155,11 +157,14 @@ async function finishScene(){
   // before that control work, while retaining the raw post-settle counters.
   videos.forEach(item=>recordVideoQuality(item,'before-finish'));
   recordQuality();
-  finishing=true;const attempt=playGeneration;playing=false;videoGroup?.pause();video.pause();
+  finishing=true;const attempt=playGeneration;
+  if(playing&&outputMixer)metrics.pause_context_time=audio.currentTime;
+  reviewAudio?.pause();playing=false;videoGroup?.pause();video.pause();
   metrics.paused_quality=quality();
   try{
     if(videos.length>1)await seekTo((packet.samples.length-1)/packet.fps);
     if(disposed||attempt!==playGeneration)return;
+    await outputMixer?.drain();if(disposed||attempt!==playGeneration)return;
     metrics.settled_quality=quality();metrics.end_time=video.currentTime;metrics.finished=true;
   }finally{finishing=false;}
 }
@@ -188,30 +193,33 @@ function connectAudioGraph(){
   // routing in ordinary gains instead of redundant always-running worklets.
   let destination=shared?.destinations[Number(new URLSearchParams(location.search).get('segment'))];
   if(!shared){
-    meter=new AudioWorkletNode(audio,'cue-meter',{channelCount:2,channelCountMode:'explicit',
-      channelInterpretation:'speakers',outputChannelCount:[2]});
-    meter.connect(audio.destination);destination=meter;
-    meter.port.onmessage=event=>{
-      if(!playing)return;
-      const stamp=audio.getOutputTimestamp();
-      metrics.beeps.push({context_time:event.data.context_time,
-        display_time:stamp.performanceTime+(event.data.context_time-stamp.contextTime)*1000,
-        timestamp_available:stamp.performanceTime>0&&stamp.contextTime>0,rms:event.data.rms});
-    };
+    if(outputMixer){meter=outputMixer.node;destination=meter;}
+    else{
+      meter=new AudioWorkletNode(audio,'cue-meter',{channelCount:2,channelCountMode:'explicit',
+        channelInterpretation:'speakers',outputChannelCount:[2]});
+      meter.connect(audio.destination);destination=meter;
+      meter.port.onmessage=event=>{
+        if(!playing)return;
+        const stamp=audio.getOutputTimestamp();
+        metrics.beeps.push({context_time:event.data.context_time,
+          display_time:stamp.performanceTime+(event.data.context_time-stamp.contextTime)*1000,
+          timestamp_available:stamp.performanceTime>0&&stamp.contextTime>0,rms:event.data.rms});
+      };
+    }
   }
+
   for(const item of videos){
     // Both media pipelines use the same audio output clock. Silence the
     // listener in the graph: element.muted would select a different video
     // scheduling path and require startup priming at every scene handoff.
     const gain=audio.createGain();
     gain.channelCount=2;gain.channelCountMode='explicit';gain.channelInterpretation='speakers';
-    gain.gain.value=item.primary?1:0;
+    gain.gain.value=item.primary&&!packet.prepared_audio?1:0;
     // A silent video has no audio pipeline to join to this output clock.
     // Keep its picture on group transport without creating an empty source.
     if(item.hasAudio){const node=audio.createMediaElementSource(item.video);node.connect(gain);item.audioSource=node;}
     gain.connect(destination);item.audioGain=gain;
   }
-
 }
 async function initialize(){
   const params=new URLSearchParams(location.search),request=params.get('request');
@@ -301,12 +309,23 @@ async function initialize(){
   if(packet.cut_segment&&!shared)throw Error('Native cut audio context is unavailable');
   // Use the export audio rate for multiple media clocks, rather than a
   // device-preferred rate that can vary across playback hosts.
-  audio=shared?.audio??new AudioContext(videos.length>1?{sampleRate:48000}:{});
+  audio=shared?.audio??new AudioContext(videos.length>1||packet.audio_plane?{sampleRate:48000}:{});
   metrics.audio_device={latency_hint:'interactive',sample_rate:audio.sampleRate,base_latency:audio.baseLatency,output_latency:audio.outputLatency};
   if(!audio.audioWorklet||typeof audio.getOutputTimestamp!=='function')throw Error('Native preview needs the browser audio output clock; use --mode rendered.');
-  if(!shared)await audio.audioWorklet.addModule('preview_native_meter.mjs');
+  if(!shared){
+    if(packet.audio_plane){
+      const {createMixedOutput}=await import('./preview_native_audio.mjs');
+      outputMixer=await createMixedOutput(audio,metrics,controller.signal,{audit,
+        capturePcm:new URLSearchParams(location.search).has('audit_pcm')});
+    }else await audio.audioWorklet.addModule('preview_native_meter.mjs');
+  }
   if(disposed){if(!shared)await audio.close();return;}
   connectAudioGraph();
+  if(!shared){
+    const {createPreparedAudio}=await import('./preview_native_audio.mjs');if(disposed)return;
+    reviewAudio=createPreparedAudio(audio,meter,controller.signal,packet.range.to-packet.range.from);
+    const prepared=await reviewAudio.prepare(packet.audio_plane,controller.signal);prepared.commit();
+  }
   if(metadataReady&&Math.abs(video.currentTime-packet.source_start)>1e-6)video.currentTime=packet.source_start;
   await Promise.all(images);imageReady=true;checkReady();
 }
@@ -317,7 +336,7 @@ async function seekTo(at){
   const local=Math.max(0,Math.min((packet.samples.length-1)/packet.fps,Math.round(at*packet.fps)/packet.fps));
   if(videoGroup){
     if(!await videoGroup.seek(local)||disposed)return false;
-    clearFrozenFrame();apply(local);
+    clearFrozenFrame();apply(local);reviewAudio?.seek(local);
     await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
     return true;
   }
@@ -352,9 +371,13 @@ window.moviestarLiveStage={ready,metrics,
   get error(){return metrics.error;},
   async prepareCaptionUpdate(next,signal){
     await ready;signal?.throwIfAborted();
-    if(disposed||metrics.error||playbackIdentity!==playbackKey(next))return null;
+    if(disposed||metrics.error||playbackIdentity!==playbackKey(next)
+        ||(next.audio_plane&&!cuts&&audio.sampleRate!==48000))return null;
     const transaction=cuts?await cuts.prepareCaptionUpdate(next,signal):await prepareCaptionImages(next.caption_plane,signal);
     if(!transaction)return null;
+    let audioTransaction;
+    try{audioTransaction=await reviewAudio?.prepare(next.audio_plane,signal);}
+    catch(error){(cuts?transaction.cancel:transaction.dispose)();throw error;}
     let committed=false;
     return{
       commit:()=>{
@@ -365,12 +388,14 @@ window.moviestarLiveStage={ready,metrics,
           captionLayer?.remove();captionLayer=null;captionImages=transaction.images;
           if(next.caption_plane){captionLayer=document.createElement('div');captionLayer.style.cssText='position:absolute;inset:0;pointer-events:none';window.moviestarScene.scene.append(captionLayer);}
         }
+        audioTransaction?.commit();reviewAudio?.seek(window.moviestarLiveStage.time);
+        for(const item of videos)item.audioGain.gain.value=item.primary&&!next.prepared_audio?1:0;
         playbackIdentity=playbackKey(next);packet=next;committed=true;lastIndex=-1;captionState=-1;
         if(!cuts)apply(window.moviestarLiveStage.time);
         Object.assign(metrics,{frames:[],flashes:[],beeps:[],video_frames:[],cuts:[],segments_shown:[],audio_blocks:[],stalls:0,finished:false,prepared_at:Date.now()});
-        for(const key of ['quality','video_quality','play_context_time','pause_context_time','first_presented_at','finished_at','end_result_time'])delete metrics[key];
+        for(const key of ['quality','video_quality','play_context_time','pause_context_time','first_presented_at','finished_at','end_result_time','prepared_audio','audio_pcm'])delete metrics[key];
       },
-      cancel:()=>{if(!committed)(cuts?transaction.cancel:transaction.dispose)();}
+      cancel:()=>{if(!committed){(cuts?transaction.cancel:transaction.dispose)();audioTransaction?.cancel();}}
     };
   },
   async settleEnd(){
@@ -385,7 +410,7 @@ window.moviestarLiveStage={ready,metrics,
       if(!packet.cut_segment&&(metrics.finished||this.time>=(packet.samples.length-1)/packet.fps-1e-6))await seekTo(0);
       if(!active())return;
       metrics.frames=[];metrics.flashes=[];metrics.beeps=[];metrics.video_frames=[];metrics.waiting_events=[];metrics.quality_events=[];metrics.stalls=0;metrics.finished=false;metrics.previous_white=false;delete metrics.first_presented_at;
-      metrics.play_at=Date.now();
+      metrics.play_at=Date.now();metrics.play_context_time=audio.currentTime;delete metrics.pause_context_time;metrics.audio_blocks=[];
       await audio.resume();
       if(!active())return;
       // resume() may precede output-device startup. Pause/restart/revision
@@ -400,14 +425,17 @@ window.moviestarLiveStage={ready,metrics,
       metrics.device_ready_at=Date.now();if(packet.cut_segment&&packet.samples.length===1){freezeLastFrame();videos.filter(item=>!item.primary).forEach(freezeFollower);}
       for(const item of videos){item.beforePlay=item.video.getVideoPlaybackQuality();delete item.reportedDrops;}
       metrics.initial_presented=videos.map(item=>({path:item.path,media_time:item.video.currentTime,...item.frame,quality:{totalVideoFrames:item.beforePlay.totalVideoFrames,droppedVideoFrames:item.beforePlay.droppedVideoFrames}}));playing=true;
+      if(reviewAudio?.snapshot().prepared)await reviewAudio.play(this.time);if(!active())return;
+      if(reviewAudio)metrics.prepared_audio=reviewAudio.snapshot();
       if(videoGroup)await videoGroup.play();else await video.play();
     }catch(error){if(active()){fail(error);throw error;}}
   },
-  pause(){if(cuts){cuts.pause();return;}if(playing&&videos.length){videos.forEach(item=>recordVideoQuality(item,'before-pause'));recordQuality();}++playGeneration;playing=false;clearTimeout(stopTimer);stopTimer=null;videoGroup?.pause();video?.pause();},
+  pause(){if(cuts){cuts.pause();return;}if(playing&&outputMixer)metrics.pause_context_time=audio.currentTime;reviewAudio?.pause();if(playing&&videos.length){videos.forEach(item=>recordVideoQuality(item,'before-pause'));recordQuality();}++playGeneration;playing=false;clearTimeout(stopTimer);stopTimer=null;videoGroup?.pause();video?.pause();},
   async seek(at){if(cuts)return cuts.seek(at);this.pause();try{if(await seekTo(at))metrics.finished=false;}catch(error){fail(error);throw error;}},
   snapshot(){
     if(cuts)return cuts.snapshot();
     return {request_id:packet.request_id,state_id:packet.state_id,time:this.time,source:sourceFrame(),
+      audio:reviewAudio?.snapshot(),
       captions:packet.caption_plane?.states[captionState]?.cues??[],
       videos:videos.map(item=>({path:item.path,asset:item.video.currentSrc.match(/\/assets\/([a-f0-9]{24})(?:[?#]|$)/)?.[1]??null,audio_gain:item.audioGain?.gain.value,audio_connected:Boolean(item.audioSource),source:sourceFrame(item),media_time:item.video.currentTime,paused:item.video.paused,seeking:item.video.seeking,ready_state:item.video.readyState})),
       boxes:window.moviestarScene.entries.map(({node,element})=>{
@@ -417,7 +445,7 @@ window.moviestarLiveStage={ready,metrics,
       })};
   },
   dispose(){
-    if(disposed)return;this.pause();disposed=true;cuts?.dispose();for(const cancel of pendingSeeks)cancel();controller.abort();
+    if(disposed)return;this.pause();disposed=true;cuts?.dispose();reviewAudio?.dispose();outputMixer?.dispose();for(const cancel of pendingSeeks)cancel();controller.abort();
     if(frameCallback)video?.cancelVideoFrameCallback(frameCallback);
     for(const item of videos)if(item.callback)item.video.cancelVideoFrameCallback(item.callback);
     if(videoGroup)videoGroup.dispose();else if(videos.length){for(const item of videos){item.video.removeAttribute('src');item.video.load();}}else if(video){video.removeAttribute('src');video.load();}clearTimeout(stopTimer);

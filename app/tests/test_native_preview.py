@@ -31,7 +31,7 @@ def test_native_mode_uses_the_existing_project_session_lock(live_project, monkey
 
 def test_unsupported_native_mode_fails_before_writing_or_opening_a_port(live_project,monkeypatch):
     spec,_,root=live_project;monkeypatch.chdir(root)
-    spec['audio_mix']['source_audio']['gain_db']=-3;save_spec(spec,cwd=root)
+    spec['audio_mix']['source_audio']['fade_in']=.2;save_spec(spec,cwd=root)
     monkeypatch.setattr(local_preview,'_serve_session',lambda *a,**k:pytest.fail('unsupported native must not start a server or fallback render'))
     before=sorted(str(p.relative_to(root)) for p in root.rglob('*'))
     result=CliRunner().invoke(cli,['preview','--mode','native','--from','0','--to','5','--no-open'])
@@ -185,11 +185,11 @@ def test_real_native_cli_recovers_after_unsupported_edit_and_cleans_up(loaded_na
         assert ready['profile']['name']=='native' and ready['profile']['width']==640
         initial=wait_for(ready['url'],lambda state:state['is_current'])
         original=initial['displayed']['request_id']
-        spec['audio_mix']['source_audio']['gain_db']=-3;save_spec(spec,cwd=root)
+        spec['audio_mix']['source_audio']['fade_in']=.2;save_spec(spec,cwd=root)
         failed=wait_for(ready['url'],lambda state:state['latest']['status']=='failed')
         assert failed['displayed']['request_id']==original and not failed['is_current']
         assert '--mode rendered' in failed['latest']['error']
-        spec['audio_mix']['source_audio']['gain_db']=0.0;save_spec(spec,cwd=root)
+        spec['audio_mix']['source_audio']['fade_in']=0.0;save_spec(spec,cwd=root)
         restored=wait_for(ready['url'],lambda state:state['is_current'] and state['displayed']['request_id']!=original)
         assert restored['displayed']['state_id']==initial['displayed']['state_id']
     finally:

@@ -296,6 +296,7 @@ def _build_mix_layer_graph(
     source_audio_available: bool,
     window_start: float = 0.0,
     window_duration: float | None = None,
+    bounded_inputs: bool = False,
 ) -> dict:
     """Build the shared per-layer half of the audio mix filtergraph.
 
@@ -331,6 +332,7 @@ def _build_mix_layer_graph(
 
     window_end = window_start + window_duration
     track_inputs: list[str] = []
+    track_windows: list[dict] = []
     filter_parts: list[str] = []
     raw_labels: dict[str, str] = {}
     active_tracks: dict[str, dict] = {}
@@ -392,9 +394,19 @@ def _build_mix_layer_graph(
         if track.get("loop", False):
             loop_samples = max(1, round(selected_duration * AUDIO_MIX_SAMPLE_RATE))
             chain += f",aloop=loop=-1:size={loop_samples}"
+        if bounded_inputs:
+            if track.get('loop', False):
+                raise ValueError('bounded audio inputs do not support looping')
+            track_windows.append({'start': source_from + placed_offset, 'duration': overlap_duration})
+            # Input seeks already select this exact source interval. Keep the
+            # same layer offsets, placement and gain/fade expressions below.
+            chain = f"[{input_index}:a]{normalize}"
+            local_trim_start = 0.0
+        else:
+            local_trim_start = placed_offset
         chain += (
-            f",atrim=start={_audio_number(placed_offset)}:"
-            f"end={_audio_number(placed_offset + overlap_duration)},"
+            f",atrim=start={_audio_number(local_trim_start)}:"
+            f"end={_audio_number(local_trim_start + overlap_duration)},"
             "asetpts=PTS-STARTPTS,"
             + _audio_volume_filter(
                 gain_db=float(track.get("gain_db", 0.0)),
@@ -493,6 +505,7 @@ def _build_mix_layer_graph(
 
     return {
         "track_inputs": track_inputs,
+        "track_windows": track_windows,
         "filter_parts": filter_parts,
         "layer_order": layer_order,
         "mix_labels": {
@@ -502,6 +515,51 @@ def _build_mix_layer_graph(
         "coverage": coverage,
         "window": (window_start, window_duration),
     }
+
+
+def _finish_mix_graph(graph: dict) -> tuple[list[str], str]:
+    """The canonical sum/limiter for export and bounded native audio."""
+    if not graph['mix_labels']:
+        return [f"anullsrc=r={AUDIO_MIX_SAMPLE_RATE}:cl=stereo,atrim=duration={_audio_number(graph['window'][1])}[amix_limited]"], 'amix_limited'
+    filter_parts = list(graph["filter_parts"])
+    mix_labels = [
+        graph["mix_labels"][layer_id] for layer_id in graph["layer_order"]
+    ]
+    if len(mix_labels) == 1:
+        mixed_label = mix_labels[0]
+    else:
+        mixed_label = "amix_out"
+        filter_parts.append(
+            f"{''.join(f'[{label}]' for label in mix_labels)}"
+            f"amix=inputs={len(mix_labels)}:duration=longest:normalize=0"
+            f"[{mixed_label}]"
+        )
+    limited_label = "amix_limited"
+    filter_parts.append(
+        f"[{mixed_label}]alimiter="
+        f"limit={_audio_number(AUDIO_MIX_LIMITER_LIMIT)}:"
+        f"attack={_audio_number(AUDIO_MIX_LIMITER_ATTACK_MS)}:"
+        f"release={_audio_number(AUDIO_MIX_LIMITER_RELEASE_MS)}:"
+        f"level=false:latency=true[{limited_label}]"
+    )
+    return filter_parts, limited_label
+
+
+def build_mix_audio_window_command(
+    source_audio_path: str, output_path: str, audio_mix: dict, result_duration: float,
+    *, source_audio_available: bool, window_start: float, window_duration: float,
+) -> list[str]:
+    """Lossless bounded audio only, using export's placement, gain and limiter."""
+    graph = _build_mix_layer_graph(audio_mix, result_duration,
+        source_audio_available=source_audio_available, window_start=window_start,
+        window_duration=window_duration, bounded_inputs=True)
+    cmd = ['ffmpeg', '-y', '-v', 'error', '-nostdin', '-filter_complex_threads', '1', '-i', source_audio_path]
+    for path, window in zip(graph['track_inputs'], graph['track_windows']):
+        cmd += ['-ss', _audio_number(window['start']), '-t', _audio_number(window['duration']), '-i', path]
+    parts, label = _finish_mix_graph(graph)
+    return cmd + ['-filter_complex', ';'.join(parts), '-map', f'[{label}]', '-vn',
+        '-c:a', 'pcm_f32le', '-ar', str(AUDIO_MIX_SAMPLE_RATE), '-ac', '2',
+        '-t', _audio_number(window_duration), '-map_metadata', '-1', output_path]
 
 
 def build_mix_audio_command(
@@ -543,27 +601,7 @@ def build_mix_audio_command(
             output_path,
         ]
 
-    filter_parts = list(graph["filter_parts"])
-    mix_labels = [
-        graph["mix_labels"][layer_id] for layer_id in graph["layer_order"]
-    ]
-    if len(mix_labels) == 1:
-        mixed_label = mix_labels[0]
-    else:
-        mixed_label = "amix_out"
-        filter_parts.append(
-            f"{''.join(f'[{label}]' for label in mix_labels)}"
-            f"amix=inputs={len(mix_labels)}:duration=longest:normalize=0"
-            f"[{mixed_label}]"
-        )
-    limited_label = "amix_limited"
-    filter_parts.append(
-        f"[{mixed_label}]alimiter="
-        f"limit={_audio_number(AUDIO_MIX_LIMITER_LIMIT)}:"
-        f"attack={_audio_number(AUDIO_MIX_LIMITER_ATTACK_MS)}:"
-        f"release={_audio_number(AUDIO_MIX_LIMITER_RELEASE_MS)}:"
-        f"level=false:latency=true[{limited_label}]"
-    )
+    filter_parts, limited_label = _finish_mix_graph(graph)
     cmd += [
         "-filter_complex", ";".join(filter_parts),
         "-map", "0:v:0",
@@ -3031,6 +3069,7 @@ def _audio_from_filter_parts(
     start_index: int,
     audio_from_input: tuple[str, list[tuple[float, float]]] | None,
     audio_speed: float = 1.0,
+    audio_format: str | None = None,
 ) -> tuple[list[str], str | None]:
     if audio_from_input is None:
         return [], None
@@ -3054,13 +3093,15 @@ def _audio_from_filter_parts(
                 factors.append(remaining)
             retime = "," + ",".join(f"atempo={factor}" for factor in factors)
         parts.append(
-            f"[{start_index + j}:a]atrim=start=0:end={duration},"
+            f"[{start_index + j}:a]"
+            + (audio_format + "," if audio_format else "")
+            + f"atrim=start=0:end={duration},"
             f"asetpts=PTS-STARTPTS{retime}[{label}]"
         )
         labels.append(f"[{label}]")
     if len(labels) == 1:
         return parts, labels[0]
-    parts.append(f"{''.join(labels)}aconcat=n={len(labels)}:v=0:a=1[afout]")
+    parts.append(f"{''.join(labels)}concat=n={len(labels)}:v=0:a=1[afout]")
     return parts, "[afout]"
 
 
@@ -3711,7 +3752,7 @@ def build_render_segments_command(
             audio_out_label = af_streams[0].strip("[]")
         else:
             filter_parts.append(
-                f"{''.join(af_streams)}aconcat=n={len(af_streams)}:v=0:a=1[afout]"
+                f"{''.join(af_streams)}concat=n={len(af_streams)}:v=0:a=1[afout]"
             )
             audio_out_label = "afout"
     else:

@@ -1,5 +1,5 @@
 // Native hard cuts: bounded prepared scenes, one shared running audio context.
-export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,cleanup=()=>{},drain=async()=>{}}){
+export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,cleanup=()=>{},drain=async()=>{},reviewAudio=null}){
   let index=0,playing=false,disposed=false,generation=0,seekGeneration=0,pendingSeek,timer,handoffTimer;
   const duration=packet.range.to-packet.range.from;
   const length=i=>packet.segments[i].packet.range.to-packet.segments[i].packet.range.from;
@@ -99,11 +99,14 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
       Object.assign(metrics,{frames:[],flashes:[],beeps:[],cuts:[],segments_shown:[],audio_blocks:[],stalls:0,finished:false,previous_white:false,play_at:Date.now(),play_context_time:audio.currentTime});
       delete metrics.first_presented_at;delete metrics.pause_context_time;reveal(index);
       try{
+        if(reviewAudio?.snapshot().prepared)await reviewAudio.play(api.time);
+        if(disposed||!playing||attempt!==generation)return;
+        if(reviewAudio)metrics.prepared_audio=reviewAudio.snapshot();
         await stages[index].api.play();
         if(!disposed&&playing&&attempt===generation)arm(attempt);
       }catch(error){if(attempt===generation){fail(error);throw error;}}
     },
-    pause(){if(playing)metrics.pause_context_time=audio.currentTime;generation++;playing=false;clearTimeout(timer);clearTimeout(handoffTimer);stages.forEach(s=>s.api.pause());outputs(-1);},
+    pause(){reviewAudio?.pause();if(playing)metrics.pause_context_time=audio.currentTime;generation++;playing=false;clearTimeout(timer);clearTimeout(handoffTimer);stages.forEach(s=>s.api.pause());outputs(-1);},
     async seek(at){
       api.pause();if(disposed)return;
       const attempt=++seekGeneration,target=Math.max(0,Math.min(duration-1/packet.fps,Math.round(at*packet.fps)/packet.fps));
@@ -112,15 +115,16 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
       // seek or disposal can prevent this destination from being committed.
       const operation=Promise.all(stages.map((stage,i)=>stage.api.seek(i===selected?target-packet.segments[i].offset:0))).then(()=>{
         if(disposed||attempt!==seekGeneration)return;
-        index=selected;metrics.finished=false;reveal(index);
+        index=selected;metrics.finished=false;reviewAudio?.seek(target);reveal(index);
       });
       pendingSeek=operation;
       try{await operation;}
       catch(error){if(!disposed&&attempt===seekGeneration)fail(error);throw error;}
       finally{if(pendingSeek===operation)pendingSeek=null;}
     },
-    snapshot(){return{...stages[index].api.snapshot(),time:api.time,segment:index};},
+    snapshot(){return{...stages[index].api.snapshot(),time:api.time,segment:index,audio:reviewAudio?.snapshot()};},
     async prepareCaptionUpdate(next,signal){
+      if(next.audio_plane&&audio.sampleRate!==48000)return null;
       const results=await Promise.allSettled(stages.map((stage,i)=>stage.api.prepareCaptionUpdate({
         ...next.segments[i].packet,request_id:next.request_id,requested_at:next.requested_at,cut_segment:true},signal)));
       if(results.some(r=>r.status==='rejected'||!r.value)){
@@ -128,7 +132,10 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
         const failure=results.find(r=>r.status==='rejected');if(failure)throw failure.reason;
         return null;
       }
-      return{commit(){for(const r of results)r.value.commit();},cancel(){for(const r of results)r.value.cancel();}};
+      let audioTransaction;
+      try{audioTransaction=await reviewAudio?.prepare(next.audio_plane,signal);}
+      catch(error){for(const r of results)r.value.cancel();throw error;}
+      return{commit(){for(const r of results)r.value.commit();audioTransaction?.commit();reviewAudio?.seek(api.time);},cancel(){for(const r of results)r.value.cancel();audioTransaction?.cancel();}};
     },
     dispose(){if(disposed)return;api.pause();disposed=true;cleanup();},
     get playing(){return playing;},
@@ -139,12 +146,11 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
 
 export async function mountCuts(packet,signal,metrics){
   const multipleVideos=packet.segments.some(segment=>segment.packet.media.filter(item=>item.kind==='video').length>1);
-  const stages=[],audio=new AudioContext(multipleVideos?{sampleRate:48000}:{}),frames=[];
-  let delegate,output,closed=false,flushId=0;const drains=new Map();
+  const stages=[],audio=new AudioContext(multipleVideos||packet.audio_plane?{sampleRate:48000}:{}),frames=[];
+  let delegate,output,reviewAudio,outputMixer,closed=false;
   const cleanup=()=>{
     if(closed)return;closed=true;
-    for(const {reject,timer} of drains.values()){clearTimeout(timer);reject(Error('Superseded'));}drains.clear();
-    output?.disconnect();output?.port.close();
+    reviewAudio?.dispose();outputMixer?.dispose();
     for(const frame of frames){frame.contentWindow?.moviestarLiveStage?.dispose();frame.remove();}
     if(window.moviestarCutShared?.audio===audio)delete window.moviestarCutShared;
     if(audio.state!=='closed')audio.close().catch(()=>{});
@@ -156,33 +162,13 @@ export async function mountCuts(packet,signal,metrics){
   signal.addEventListener('abort',abort,{once:true});
   try{
     signal.throwIfAborted();
-    await Promise.race([audio.audioWorklet.addModule('preview_native_cut_meter.mjs'),aborted]);
-    signal.throwIfAborted();
     const audit=new URLSearchParams(location.search).has('audit');
-    // Let the browser downmix speakers (including center-channel dialogue)
-    // before the stereo processor; selecting channels 0/1 would discard it.
-    output=new AudioWorkletNode(audio,'cut-output-meter',{channelCount:2,channelCountMode:'explicit',
-      channelInterpretation:'speakers',outputChannelCount:[2],processorOptions:{audit}});
-    output.connect(audio.destination);
-    const drain=()=>new Promise((resolve,reject)=>{
-      const id=++flushId,timer=setTimeout(()=>{drains.delete(id);reject(Error('Audio diagnostics did not drain'));},1000);
-      drains.set(id,{resolve,reject,timer});output.port.postMessage({kind:'flush',id});
-    });
-    output.port.onmessage=({data})=>{
-      if(data.kind==='flushed'){
-        const waiting=drains.get(data.id);if(waiting){clearTimeout(waiting.timer);drains.delete(data.id);waiting.resolve();}return;
-      }
-      for(const item of data.kind==='blocks'?data.blocks:[data]){
-        // Delayed batches retain quanta produced before Pause. A new Play's
-        // timestamp filters old data without dropping its own partial batch.
-        if(!Number.isFinite(metrics.play_context_time)||item.context_time<metrics.play_context_time-1e-6
-            ||item.context_time>=(metrics.pause_context_time??Infinity))continue;
-        if(item.kind==='block'){metrics.audio_blocks.push(item);continue;}
-        const stamp=audio.getOutputTimestamp();
-        metrics.beeps.push({...item,display_time:stamp.performanceTime+(item.context_time-stamp.contextTime)*1000,
-          timestamp_available:stamp.performanceTime>0&&stamp.contextTime>0});
-      }
-    };
+    const capturePcm=new URLSearchParams(location.search).has('audit_pcm');
+    const {createPreparedAudio,createMixedOutput}=await import('./preview_native_audio.mjs');signal.throwIfAborted();
+    outputMixer=await createMixedOutput(audio,metrics,signal,{audit,capturePcm});output=outputMixer.node;
+    const drain=()=>outputMixer.drain();
+    reviewAudio=createPreparedAudio(audio,output,signal,packet.range.to-packet.range.from);
+    const prepared=await reviewAudio.prepare(packet.audio_plane,signal);prepared.commit();
     const destinations=packet.segments.map(()=>{const gain=audio.createGain();gain.gain.value=0;gain.connect(output);return gain;});
     window.moviestarCutShared={audio,destinations};
     document.documentElement.style.cssText='margin:0;width:100%;height:100%';
@@ -202,11 +188,11 @@ export async function mountCuts(packet,signal,metrics){
           stages[i]={api,frame,gain:destinations[i]};resolve();
         }catch(error){reject(error);}
       },{once:true});
-      frame.src='stage?request='+encodeURIComponent(packet.request_id)+'&segment='+i+(audit?'&audit=1':'');
+      frame.src='stage?request='+encodeURIComponent(packet.request_id)+'&segment='+i+(audit?'&audit=1':'')+(capturePcm?'&audit_pcm=1':'');
       document.body.append(frame);
     }));
     await Promise.race([Promise.all(loaded),aborted]);signal.throwIfAborted();
-    delegate=createCutPlayback({packet,stages,audio,metrics,audit,cleanup,drain,show:active=>frames.forEach((frame,i)=>frame.style.opacity=i===active?'1':'0')});
+    delegate=createCutPlayback({packet,stages,audio,metrics,audit,cleanup,drain,reviewAudio,show:active=>frames.forEach((frame,i)=>frame.style.opacity=i===active?'1':'0')});
     return delegate;
   }catch(error){cleanup();throw error;}
 }

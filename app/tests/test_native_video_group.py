@@ -86,3 +86,43 @@ clock.video.paused=false;assert.throws(()=>group.synchronize(clock),/lost synchr
 '''
     result = subprocess.run(['node', '--input-type=module', '-e', f'const MODULE={json.dumps(module)};\n'+script], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stdout+result.stderr
+
+
+@pytest.mark.skipif(not shutil.which('node'), reason='Node required')
+@pytest.mark.parametrize('cancel', [False, True])
+@pytest.mark.parametrize('source_offset', [0, .02])
+def test_prepared_frame_seek_waits_for_destination_pixels_not_only_seeked(cancel, source_offset):
+    module = (Path(__file__).parents[1]/'src/moviestar/preview_native_videos.mjs').as_uri()
+    script = r'''
+import assert from 'node:assert/strict';
+const {createVideoGroup}=await import(MODULE);
+let callback,visible=120,nextId=0;
+const video={currentTime:4,playbackRate:1,paused:true,listeners:new Map(),
+ pause(){},removeAttribute(){},load(){},
+ addEventListener(k,f){this.listeners.set(k,f);},removeEventListener(k){this.listeners.delete(k);},
+ requestVideoFrameCallback(fn){callback=fn;return ++nextId;},cancelVideoFrameCallback(){callback=null;}};
+const group=createVideoGroup([{video,start:4+SOURCE_OFFSET,end:7+SOURCE_OFFSET,fps:30}]);
+let settled=false;
+const pending=group.seek(89/30,{presented:true}).then(ok=>{settled=true;return ok;});
+// A seeked event can precede the destination's presentation. Copying a held
+// canvas here would preserve the starting barcode 120 instead of frame 209.
+video.listeners.get('seeked')();await new Promise(r=>setImmediate(r));
+assert.equal(settled,false,'Preparing held pixels must wait beyond seeked');
+callback(0,{mediaTime:4});await new Promise(r=>setImmediate(r));
+assert.equal(settled,false,'A stale presentation is not the requested frame');
+callback(0,{mediaTime:7});await new Promise(r=>setImmediate(r));
+assert.equal(settled,false,'A future neighboring frame is not the seek frame');
+callback(0,{mediaTime:208/30});await new Promise(r=>setImmediate(r));
+assert.equal(settled,false,'The preceding neighboring frame is not the seek frame');
+if(CANCEL){group.dispose();assert.equal(await pending,false);assert.equal(callback,null);}
+else{
+ visible=209;callback(0,{mediaTime:209/30});
+ assert.equal(await pending,true);const heldPixels=visible;
+ assert.equal(heldPixels,209,'The saved final canvas uses destination pixels');
+ assert.equal(callback,null,'The owned readiness callback is released');group.dispose();
+}
+assert.equal(video.listeners.size,0);
+'''
+    prefix=f'const MODULE={json.dumps(module)},CANCEL={json.dumps(cancel)},SOURCE_OFFSET={json.dumps(source_offset)};\n'
+    result=subprocess.run(['node','--input-type=module','-e',prefix+script],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stdout+result.stderr

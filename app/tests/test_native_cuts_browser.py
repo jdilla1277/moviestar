@@ -18,14 +18,19 @@ def test_actual_native_cuts_keep_source_frames_and_audio_continuity(tmp_path,off
     root=tmp_path/'project'
     subprocess.run([sys.executable,str(repo/'experiments/live_browser_preview/cuts.py'),'--out',str(root),'--offsets',*(str(x) for x in offsets)],check=True,capture_output=True,text=True,timeout=40)
     if surround:
-        # Put the dialogue/cues only in the center channel. A stereo bus must
-        # use the browser's speaker downmix rather than dropping channels 2+.
+        # Put the original cue signal in FC and original pilot in FR before
+        # the final AAC encode. Re-encoding the already-lossy stereo mix can
+        # notch its first cue into two threshold onsets after center downmix.
+        # A stereo bus must still downmix speakers, not drop channels 2+.
         from moviestar.spec import load_spec, save_spec
         spec=load_spec(root); replacement=root/'surround.mp4'
-        subprocess.run(['ffmpeg','-v','error','-y','-i',str(root/'source-b.mp4'),'-filter_complex',
-            '[0:a]pan=5.1|FL=0*c0|FR=c1|FC=c0|LFE=0*c0|BL=0*c0|BR=0*c0[a]',
+        subprocess.run(['ffmpeg','-v','error','-y','-i',str(root/'source-b.mp4'),'-i',str(root/'cues.mp4'),
+            '-f','lavfi','-i','sine=frequency=440:sample_rate=48000:duration=8','-filter_complex',
+            '[1:a][2:a]amerge=inputs=2[signals];[signals]pan=5.1|FL=0*c0|FR=c1|FC=c0|LFE=0*c0|BL=0*c0|BR=0*c0[a]',
             '-map','0:v','-map','[a]','-c:v','copy','-c:a','aac','-movflags','+faststart',str(replacement)],check=True,timeout=30)
         replacement.replace(root/'source-b.mp4')
+        from tests.native_cue_reference import assert_surround_cue_reference
+        assert_surround_cue_reference(root/'source-b.mp4')
         subprocess.run([sys.executable,'-m','moviestar.cli','load',str(root/'source-a.mp4'),str(root/'source-b.mp4'),
             '--as','camera','--as','other','--force','--no-frames','--no-transcribe'],cwd=root,check=True,capture_output=True,text=True,timeout=30)
         save_spec(spec,cwd=root)

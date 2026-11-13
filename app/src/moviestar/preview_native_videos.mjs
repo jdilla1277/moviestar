@@ -33,24 +33,37 @@ export function createVideoGroup(entries){
         if(Math.abs(item.video.playbackRate-rate)>1e-6)item.video.playbackRate=rate;
       }
     },
-    async seek(at){
+    async seek(at,{presented=false}={}){
       api.pause();const attempt=++seekGeneration;
       for(const cancel of cancels)cancel();
       if(disposed)return false;
-      const operation=Promise.all(entries.map(({video,start})=>{
-        const target=start+at;
+      const operation=Promise.all(entries.map(({video,start,fps})=>{
+        const target=start+at,seekTarget=target+1e-5;
         if(!video.seeking&&Math.abs(video.currentTime-target)<1e-6)return true;
         return new Promise((resolve,reject)=>{
-          let settled=false,timer;
+          let settled=false,timer,frameCallback,seeked=false,frameReady=!presented;
           const finish=(value,error)=>{
             if(settled)return;settled=true;clearTimeout(timer);cancels.delete(cancel);
             video.removeEventListener('seeked',done);video.removeEventListener('error',errorDone);
+            if(frameCallback!==undefined)video.cancelVideoFrameCallback(frameCallback);
             error?reject(error):resolve(value);
           };
-          const cancel=()=>finish(false),done=()=>finish(true),errorDone=()=>finish(false,Error('Native source seek failed'));
+          const cancel=()=>finish(false),done=()=>{seeked=true;if(frameReady)finish(true);},errorDone=()=>finish(false,Error('Native source seek failed'));
+          const onFrame=(now,frame)=>{
+            if(settled)return;
+            // Source trims can begin between frame timestamps. Wait for
+            // the frame containing the actual seek time, not its neighbor.
+            const delta=seekTarget-frame.mediaTime;
+            if(delta>=-1e-6&&delta<1/fps-1e-6){
+              frameReady=true;if(seeked)finish(true);
+            }else frameCallback=video.requestVideoFrameCallback(onFrame);
+          };
           cancels.add(cancel);video.addEventListener('seeked',done);video.addEventListener('error',errorDone);
           timer=setTimeout(()=>finish(false,Error('Native seek timed out')),5000);
-          video.currentTime=target+1e-5;
+          // seeked updates the media clock before the compositor necessarily
+          // supplies destination pixels. Held cut canvases need both signals.
+          if(presented)frameCallback=video.requestVideoFrameCallback(onFrame);
+          video.currentTime=seekTarget;
         });
       })).then(values=>!disposed&&attempt===seekGeneration&&values.every(Boolean));
       pendingSeek=operation;
