@@ -26,61 +26,61 @@
       "edits": [
         {
           "name": "add-dialogue",
-          "ms": 834.75225,
-          "cli_ms": 136.67429199999992,
+          "ms": 835.8868749999999,
+          "cli_ms": 131.04408399999988,
           "reused_decoders": false
         },
         {
           "name": "source-gain",
-          "ms": 656.7765419999998,
-          "cli_ms": 161.4634169999997,
+          "ms": 657.8820409999998,
+          "cli_ms": 166.51816600000006,
           "reused_decoders": true
         },
         {
           "name": "unmute-source",
-          "ms": 807.200625,
-          "cli_ms": 161.7004579999998,
+          "ms": 613.302459,
+          "cli_ms": 170.7194999999997,
           "reused_decoders": true
         },
         {
           "name": "mute-source",
-          "ms": 831.3918749999998,
-          "cli_ms": 174.89924999999994,
+          "ms": 720.3207910000001,
+          "cli_ms": 169.25512500000013,
           "reused_decoders": true
         },
         {
           "name": "undo-mute-source",
-          "ms": 611.1307499999994,
-          "cli_ms": 94.2715419999995,
+          "ms": 838.0249169999997,
+          "cli_ms": 98.73808299999973,
           "reused_decoders": true
         },
         {
           "name": "undo-unmute-source",
-          "ms": 606.723583,
-          "cli_ms": 93.25545800000054,
+          "ms": 814.7445829999997,
+          "cli_ms": 100.19808300000022,
           "reused_decoders": true
         },
         {
           "name": "undo-source-gain",
-          "ms": 743.8432499999999,
-          "cli_ms": 92.34900000000016,
+          "ms": 628.2120830000003,
+          "cli_ms": 96.79958299999998,
           "reused_decoders": true
         },
         {
           "name": "undo-add-dialogue",
-          "ms": 980.8766670000005,
-          "cli_ms": 97.84212500000012,
+          "ms": 791.2649160000001,
+          "cli_ms": 101.26833299999998,
           "reused_decoders": false
         }
       ],
-      "max_edit_ms": 980.8766670000005,
+      "max_edit_ms": 838.0249169999997,
       "restored": {
         "same_state": true,
         "fresh_request": true,
         "history": 0
       },
-      "program_drift_ms": -0.13404101562494475,
-      "max_audio_display_phase_ms": 12.830382089932755,
+      "program_drift_ms": -0.13379687499994475,
+      "max_audio_display_phase_ms": 4.494382232983753,
       "video_quality": [
         {
           "path": [
@@ -168,61 +168,61 @@
       "edits": [
         {
           "name": "add-dialogue",
-          "ms": 868.592167,
-          "cli_ms": 148.54733399999986,
+          "ms": 871.3320419999998,
+          "cli_ms": 143.4409589999998,
           "reused_decoders": false
         },
         {
           "name": "source-gain",
-          "ms": 839.4095419999999,
-          "cli_ms": 176.29695900000024,
+          "ms": 826.9028330000001,
+          "cli_ms": 176.35024999999996,
           "reused_decoders": true
         },
         {
           "name": "unmute-source",
-          "ms": 923.5617090000001,
-          "cli_ms": 178.22079200000007,
+          "ms": 623.4596660000002,
+          "cli_ms": 177.48975000000019,
           "reused_decoders": true
         },
         {
           "name": "mute-source",
-          "ms": 808.9858330000002,
-          "cli_ms": 181.6591659999999,
+          "ms": 736.2290419999999,
+          "cli_ms": 178.8935419999998,
           "reused_decoders": true
         },
         {
           "name": "undo-mute-source",
-          "ms": 627.7200000000003,
-          "cli_ms": 104.32216599999992,
+          "ms": 807.353333,
+          "cli_ms": 110.23362499999985,
           "reused_decoders": true
         },
         {
           "name": "undo-unmute-source",
-          "ms": 598.4740410000004,
-          "cli_ms": 104.8550409999998,
+          "ms": 818.9046250000001,
+          "cli_ms": 104.56566699999985,
           "reused_decoders": true
         },
         {
           "name": "undo-source-gain",
-          "ms": 629.3683330000003,
-          "cli_ms": 104.57408300000043,
+          "ms": 624.2299169999997,
+          "cli_ms": 106.60737499999959,
           "reused_decoders": true
         },
         {
           "name": "undo-add-dialogue",
-          "ms": 779.2206249999999,
-          "cli_ms": 98.55674999999974,
+          "ms": 769.8865839999999,
+          "cli_ms": 106.07970900000055,
           "reused_decoders": false
         }
       ],
-      "max_edit_ms": 923.5617090000001,
+      "max_edit_ms": 871.3320419999998,
       "restored": {
         "same_state": true,
         "fresh_request": true,
         "history": 20
       },
-      "program_drift_ms": -16.734138671874945,
-      "max_audio_display_phase_ms": 19.529333381017068,
+      "program_drift_ms": -16.733894531249945,
+      "max_audio_display_phase_ms": 11.26176432291686,
       "video_quality": [
         {
           "path": [
@@ -231,7 +231,7 @@
             "main",
             "video"
           ],
-          "total_frames": 30,
+          "total_frames": 31,
           "dropped_frames": 0
         },
         {
@@ -241,7 +241,7 @@
             "inset",
             "video"
           ],
-          "total_frames": 30,
+          "total_frames": 31,
           "dropped_frames": 0
         },
         {
@@ -310,61 +310,61 @@
       "edits": [
         {
           "name": "add-dialogue",
-          "ms": 870.964416,
-          "cli_ms": 162.4392909999999,
+          "ms": 960.7688330000001,
+          "cli_ms": 169.69587500000011,
           "reused_decoders": false
         },
         {
           "name": "source-gain",
-          "ms": 753.7280000000001,
-          "cli_ms": 190.96775000000025,
+          "ms": 842.7214999999999,
+          "cli_ms": 193.73754200000008,
           "reused_decoders": true
         },
         {
           "name": "unmute-source",
-          "ms": 825.9608749999998,
-          "cli_ms": 201.10154199999988,
+          "ms": 801.9126249999999,
+          "cli_ms": 200.9588749999998,
           "reused_decoders": true
         },
         {
           "name": "mute-source",
-          "ms": 818.2187910000002,
-          "cli_ms": 198.83762500000012,
+          "ms": 835.2309169999999,
+          "cli_ms": 193.74149999999963,
           "reused_decoders": true
         },
         {
           "name": "undo-mute-source",
-          "ms": 802.8795840000002,
-          "cli_ms": 116.28220899999997,
+          "ms": 625.5602500000005,
+          "cli_ms": 115.55783299999985,
           "reused_decoders": true
         },
         {
           "name": "undo-unmute-source",
-          "ms": 622.2766250000004,
-          "cli_ms": 112.04154200000085,
+          "ms": 594.4981250000001,
+          "cli_ms": 113.78804200000013,
           "reused_decoders": true
         },
         {
           "name": "undo-source-gain",
-          "ms": 628.0165829999996,
-          "cli_ms": 111.62533299999996,
+          "ms": 617.3467919999994,
+          "cli_ms": 113.8364590000001,
           "reused_decoders": true
         },
         {
           "name": "undo-add-dialogue",
-          "ms": 895.6693329999998,
-          "cli_ms": 115.59745800000019,
+          "ms": 802.766584,
+          "cli_ms": 112.30716699999994,
           "reused_decoders": false
         }
       ],
-      "max_edit_ms": 895.6693329999998,
+      "max_edit_ms": 960.7688330000001,
       "restored": {
         "same_state": true,
         "fresh_request": true,
         "history": 46
       },
-      "program_drift_ms": -0.23389453124994475,
-      "max_audio_display_phase_ms": 0.8341380685169497,
+      "program_drift_ms": -16.933845703124945,
+      "max_audio_display_phase_ms": 7.456520229974558,
       "video_quality": [
         {
           "path": [
@@ -452,61 +452,61 @@
       "edits": [
         {
           "name": "add-dialogue",
-          "ms": 871.251625,
-          "cli_ms": 136.44491699999992,
+          "ms": 976.897458,
+          "cli_ms": 134.70766700000001,
           "reused_decoders": false
         },
         {
           "name": "source-gain",
-          "ms": 759.8112079999999,
-          "cli_ms": 164.29004099999997,
+          "ms": 824.6822090000001,
+          "cli_ms": 162.26887499999975,
           "reused_decoders": true
         },
         {
           "name": "unmute-source",
-          "ms": 808.5774590000001,
-          "cli_ms": 177.46945899999992,
+          "ms": 829.3501250000004,
+          "cli_ms": 171.04645800000026,
           "reused_decoders": true
         },
         {
           "name": "mute-source",
-          "ms": 825.3947080000003,
-          "cli_ms": 176.1881659999999,
+          "ms": 820.0837079999997,
+          "cli_ms": 161.64804099999992,
           "reused_decoders": true
         },
         {
           "name": "undo-mute-source",
-          "ms": 821.43325,
-          "cli_ms": 100.96312499999931,
+          "ms": 637.6848329999993,
+          "cli_ms": 103.3877079999993,
           "reused_decoders": true
         },
         {
           "name": "undo-unmute-source",
-          "ms": 825.5424160000002,
-          "cli_ms": 104.25916599999982,
+          "ms": 605.2593749999996,
+          "cli_ms": 86.37958299999991,
           "reused_decoders": true
         },
         {
           "name": "undo-source-gain",
-          "ms": 599.123458,
-          "cli_ms": 88.27720800000043,
+          "ms": 604.4794579999998,
+          "cli_ms": 94.30195800000001,
           "reused_decoders": true
         },
         {
           "name": "undo-add-dialogue",
-          "ms": 878.601208,
-          "cli_ms": 94.35895800000071,
+          "ms": 805.9961670000002,
+          "cli_ms": 98.27500000000055,
           "reused_decoders": false
         }
       ],
-      "max_edit_ms": 878.601208,
+      "max_edit_ms": 976.897458,
       "restored": {
         "same_state": true,
         "fresh_request": true,
         "history": 0
       },
       "program_drift_ms": -0.13404101562494475,
-      "max_audio_display_phase_ms": 1.8373822091421061,
+      "max_audio_display_phase_ms": 5.627333285649911,
       "video_quality": [
         {
           "path": [
@@ -594,61 +594,61 @@
       "edits": [
         {
           "name": "add-dialogue",
-          "ms": 851.6481249999999,
-          "cli_ms": 146.62662499999988,
+          "ms": 853.8911250000001,
+          "cli_ms": 146.51175000000012,
           "reused_decoders": false
         },
         {
           "name": "source-gain",
-          "ms": 853.681542,
-          "cli_ms": 175.09500000000003,
+          "ms": 650.2840000000001,
+          "cli_ms": 173.5987090000001,
           "reused_decoders": true
         },
         {
           "name": "unmute-source",
-          "ms": 828.7285000000002,
-          "cli_ms": 185.08495799999992,
+          "ms": 932.078583,
+          "cli_ms": 175.82333299999982,
           "reused_decoders": true
         },
         {
           "name": "mute-source",
-          "ms": 821.4962500000001,
-          "cli_ms": 182.0550000000003,
+          "ms": 824.5935,
+          "cli_ms": 185.2516660000001,
           "reused_decoders": true
         },
         {
           "name": "undo-mute-source",
-          "ms": 604.5921669999998,
-          "cli_ms": 101.72170800000004,
+          "ms": 816.8166249999995,
+          "cli_ms": 107.16679199999999,
           "reused_decoders": true
         },
         {
           "name": "undo-unmute-source",
-          "ms": 730.4734579999995,
-          "cli_ms": 100.09312499999942,
+          "ms": 609.1907500000007,
+          "cli_ms": 103.50125000000025,
           "reused_decoders": true
         },
         {
           "name": "undo-source-gain",
-          "ms": 804.9497499999998,
-          "cli_ms": 105.8422499999997,
+          "ms": 620.9207080000006,
+          "cli_ms": 103.75883300000078,
           "reused_decoders": true
         },
         {
           "name": "undo-add-dialogue",
-          "ms": 1020.3878750000003,
-          "cli_ms": 101.97487499999988,
+          "ms": 810.573292,
+          "cli_ms": 101.76683300000059,
           "reused_decoders": false
         }
       ],
-      "max_edit_ms": 1020.3878750000003,
+      "max_edit_ms": 932.078583,
       "restored": {
         "same_state": true,
         "fresh_request": true,
         "history": 20
       },
-      "program_drift_ms": -16.833992187499945,
-      "max_audio_display_phase_ms": 7.597853515625047,
+      "program_drift_ms": -16.633796874999945,
+      "max_audio_display_phase_ms": 5.5575201346082395,
       "video_quality": [
         {
           "path": [
@@ -736,61 +736,61 @@
       "edits": [
         {
           "name": "add-dialogue",
-          "ms": 977.6195839999999,
-          "cli_ms": 162.058584,
+          "ms": 864.40275,
+          "cli_ms": 158.92554199999995,
           "reused_decoders": false
         },
         {
           "name": "source-gain",
-          "ms": 833.5706659999998,
-          "cli_ms": 187.936958,
+          "ms": 752.7016250000001,
+          "cli_ms": 186.55666699999983,
           "reused_decoders": true
         },
         {
           "name": "unmute-source",
-          "ms": 827.3755410000003,
-          "cli_ms": 199.3737500000002,
+          "ms": 826.5674169999998,
+          "cli_ms": 198.7652089999997,
           "reused_decoders": true
         },
         {
           "name": "mute-source",
-          "ms": 814.0023749999996,
-          "cli_ms": 194.71349999999984,
+          "ms": 813.2457499999996,
+          "cli_ms": 201.9848750000001,
           "reused_decoders": true
         },
         {
           "name": "undo-mute-source",
-          "ms": 605.7966670000005,
-          "cli_ms": 112.47591699999975,
+          "ms": 809.4222080000009,
+          "cli_ms": 116.31062500000007,
           "reused_decoders": true
         },
         {
           "name": "undo-unmute-source",
-          "ms": 628.9753329999994,
-          "cli_ms": 111.6109579999993,
+          "ms": 622.9202920000007,
+          "cli_ms": 111.43825000000015,
           "reused_decoders": true
         },
         {
           "name": "undo-source-gain",
-          "ms": 620.771084,
-          "cli_ms": 113.81087500000012,
+          "ms": 604.2508330000001,
+          "cli_ms": 111.40504200000032,
           "reused_decoders": true
         },
         {
           "name": "undo-add-dialogue",
-          "ms": 1130.8835,
-          "cli_ms": 109.80362500000047,
+          "ms": 910.7630830000007,
+          "cli_ms": 107.48675000000003,
           "reused_decoders": false
         }
       ],
-      "max_edit_ms": 1130.8835,
+      "max_edit_ms": 910.7630830000007,
       "restored": {
         "same_state": true,
         "fresh_request": true,
         "history": 46
       },
-      "program_drift_ms": -16.734138671874945,
-      "max_audio_display_phase_ms": 18.307097703933778,
+      "program_drift_ms": -16.833992187499945,
+      "max_audio_display_phase_ms": 10.17466666666678,
       "video_quality": [
         {
           "path": [
@@ -799,7 +799,7 @@
             "main",
             "video"
           ],
-          "total_frames": 30,
+          "total_frames": 31,
           "dropped_frames": 0
         },
         {
@@ -809,7 +809,7 @@
             "inset",
             "video"
           ],
-          "total_frames": 30,
+          "total_frames": 31,
           "dropped_frames": 0
         },
         {
@@ -927,7 +927,7 @@
     "app/src/moviestar/preview_native_cuts.mjs": "3c5e1ac3d481e52047824a601de74585eaaef0221b626d4e9af76cd37362cbd6",
     "app/src/moviestar/preview_native_meter.mjs": "9d546fa96d6ce8a7b83589cfed7e3f8ab89284c75910a1ee81fe2ab927e71840",
     "app/src/moviestar/preview_native_stage.mjs": "16c17c860f2b4de985723aaa7c90ed0ef00d995fb0e618699ce1004eac9fadf8",
-    "app/src/moviestar/preview_native_videos.mjs": "6fd669d2276a4b5d3fb715769223e578752976a10f3c992e71ac9e09b770a8d8",
+    "app/src/moviestar/preview_native_videos.mjs": "791b6eebf85bb2e1118ad5e12923fc3082903c349b03dd54f65fa539d058f062",
     "app/src/moviestar/preview_native_worker.mjs": "3410f31905b13b31a70fdf45b9475d0cea52c7a13593cb678b65a710ed1f7a83",
     "app/src/moviestar/preview_worker.py": "f45932fe6048e8602685b031c60fa733215a3952388e681879da75a5bb080db7",
     "app/src/moviestar/project.py": "e5ed3cb9d8182360d4a564bb8a850ac2b4e728f75e7e0164bdc2bdd71fe58d40",
@@ -958,7 +958,7 @@
     "app/src/moviestar/transcribe.py": "6d35a82cedee63d69d36aa624d2d5c6d3016de8cc65a1b99870ca23c8fa4ac71",
     "app/src/moviestar/transitions.py": "ab2425f6812626aae2d22b1fe7630a163feb1b7f21920700cea519530506dd15"
   },
-  "wheel_sha256": "3db26a135f952b5e9fe36b455945a2964ba7b7b8fe2e968f7beaecba995c33a1",
+  "wheel_sha256": "ca2a6938d5561e9b497c195238145c710a35bc7570f0450e41184f15d9537af4",
   "limitations": [
     "Fresh-play startup drops are inherited and tracked in #199. Seek-before-Play reference results do not close it.",
     "Fades, looping, ducking, multiple audible independent tracks, longer review and broader #154 stress acceptance remain outside this slice.",
@@ -970,6 +970,7 @@
     "The first benchmark incorrectly required decoder reuse when adding/removing a file dependency; its failed result is retained. Current results enforce reuse for gain/mute operations and retain full file-identity fencing.",
     "A shared routed-audio helper used the invalid aconcat filter name; real FFmpeg preparation exposed it, and the actual concat filter is now used.",
     "Per-quantum sample-array diagnostics produced a single-quantum output mismatch. PCM capture now writes to one preallocated bounded buffer and transfers it after playback; four actual-browser output comparisons pass the retained amplitude error threshold after at most one scheduled-sample alignment.",
-    "The first full Linux run failed one older strict-cut case: its final held canvas contained source-start barcode120 at a callback for frame209. A controlled seeked-before-presentation negative test reproduces stale held-frame capture. Cut preparation now awaits the destination presentation as well as seeked; strict pixel/submission, drop/stall and50ms gates remain unchanged. Current-head full CI must qualify this correction; the earlier failed run is retained under#189."
+    "The first full Linux run failed one older strict-cut case: its final held canvas contained source-start barcode120 at a callback for frame209. A controlled seeked-before-presentation negative test reproduces stale held-frame capture. Cut preparation now awaits the destination presentation as well as seeked; strict pixel/submission, drop/stall and50ms gates remain unchanged. Current-head full CI must qualify this correction; the earlier failed run is retained under#189.",
+    "The first presentation guard matched the nearest timestamp; a0.02s source-offset negative control exposed a timeout for a valid containing frame and acceptance of a future neighbor. The guard now requires the frame interval containing the actual seek position. Preceding/future neighbors and cancellation are explicitly tested; existing strict playback pixel/submission and timing gates are unchanged."
   ]
 }

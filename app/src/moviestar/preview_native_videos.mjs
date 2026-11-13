@@ -38,7 +38,7 @@ export function createVideoGroup(entries){
       for(const cancel of cancels)cancel();
       if(disposed)return false;
       const operation=Promise.all(entries.map(({video,start,fps})=>{
-        const target=start+at;
+        const target=start+at,seekTarget=target+1e-5;
         if(!video.seeking&&Math.abs(video.currentTime-target)<1e-6)return true;
         return new Promise((resolve,reject)=>{
           let settled=false,timer,frameCallback,seeked=false,frameReady=!presented;
@@ -51,7 +51,10 @@ export function createVideoGroup(entries){
           const cancel=()=>finish(false),done=()=>{seeked=true;if(frameReady)finish(true);},errorDone=()=>finish(false,Error('Native source seek failed'));
           const onFrame=(now,frame)=>{
             if(settled)return;
-            if(Math.abs(frame.mediaTime-target)<1/(2*fps)+1e-6){
+            // Source trims can begin between frame timestamps. Wait for
+            // the frame containing the actual seek time, not its neighbor.
+            const delta=seekTarget-frame.mediaTime;
+            if(delta>=-1e-6&&delta<1/fps-1e-6){
               frameReady=true;if(seeked)finish(true);
             }else frameCallback=video.requestVideoFrameCallback(onFrame);
           };
@@ -60,7 +63,7 @@ export function createVideoGroup(entries){
           // seeked updates the media clock before the compositor necessarily
           // supplies destination pixels. Held cut canvases need both signals.
           if(presented)frameCallback=video.requestVideoFrameCallback(onFrame);
-          video.currentTime=target+1e-5;
+          video.currentTime=seekTarget;
         });
       })).then(values=>!disposed&&attempt===seekGeneration&&values.every(Boolean));
       pendingSeek=operation;
