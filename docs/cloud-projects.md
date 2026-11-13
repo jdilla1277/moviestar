@@ -131,8 +131,9 @@ moviestar cloud projects show PROJECT_ID
 Call both lists to find all accessible projects. Owned items report
 `access.role: "owner"`; shared items report `access.role: "viewer"` and
 `shared_by`. Opening a shared ID uses the same `show` command and rechecks
-current access. Viewer invitations currently permit project metadata only;
-they do not grant access to assets, edits, rendering, downloads or resharing.
+current access. New whole-project viewer invitations include current and future
+ready project assets and original downloads. Legacy invitations retain their
+metadata-only scope. Neither grants editing or resharing rights.
 
 The service must advertise the `recipient-projects-v1` sharing contract in
 `cloud capabilities`. An older or sharing-disabled service returns an explicit
@@ -396,10 +397,13 @@ preserves account originals.
 
 All three list commands support `--limit` and `--cursor`. Follow `next_cursor`
 unchanged until null. Account asset pages return ready originals; project asset
-pages return `{reference_id, asset}` entries. Legacy project-source uploads and
-assets owned by other people are not supported in this initial catalog. An
-accepted viewer project invitation does not grant asset access or membership
-changes. Unsupported services fail clearly before sending a mutation.
+pages return `{reference_id, asset}` entries, with authenticated download links
+on updated services. Legacy project-source uploads and account-wide discovery
+of other people’s assets remain unsupported. A whole-project viewer invitation
+grants read/download access to its current and future asset references, but never
+membership changes. Older metadata-only invitations retain their original rights
+until the owner removes and replaces them. Unsupported services fail clearly
+before sending a mutation.
 
 `add-asset` generates and saves a retry key before sending. Rerun the same command
 after a lost response, or provide the original `--idempotency-key`. Its retry
@@ -411,8 +415,8 @@ the project's assets before repairing retry files beside your account profile.
 
 In the website, open an owned project, choose **Add existing assets**, select a
 ready original, and reopen the other project to add it there too. **Remove from
-project** removes only that membership. The account picker is separate from
-**Earlier project uploads**, which remain under their existing source contract.
+project** removes only that membership. Legacy project uploads remain under
+their existing source contract; this catalog does not migrate or copy them.
 
 ### HTTP reference operations
 
@@ -505,3 +509,62 @@ working journeys from pending rollouts and illustrative remote edit/inspect
 examples. Reading a guide does not enable the operations it describes. An older
 installed CLI may lack `cloud docs`; client release and website deployment are
 separate.
+
+## Share a project with a viewer
+
+When the service enables project sharing, use the website to invite someone,
+see who has access, and revoke access. From the CLI:
+
+```sh
+moviestar cloud projects share PROJECT_ID
+```
+
+Open the returned URL while signed in to the same account and choose **Share
+project**. This command checks current ownership and returns a browser handoff;
+it does not send an invitation. Native invitation mutations using CLI or API
+bearers are not supported in this slice. API developers can use the same
+service's `/account/projects?project=PROJECT_ID#project-sharing` website journey.
+In hosted MCP, ask to open the project and use its owner `sharing_url`.
+
+The recipient opens the invitation email, signs in with the invited email and
+explicitly accepts viewer access. New invitations include downloads of current
+and future ready assets in that project. The seven-day deadline is for accepting
+the invitation; accepted access lasts until revoked or the project ends. Older
+metadata-only invitations stay metadata-only; remove and invite again to
+include assets. The owner can distinguish these scopes in the access list.
+
+Recipients can reopen the same ID through each supported surface:
+
+```sh
+moviestar cloud projects list --shared
+moviestar cloud projects show PROJECT_ID
+moviestar cloud projects assets PROJECT_ID
+```
+
+Each asset entry can include `download_url` on an updated service. Open it in a
+browser signed in to the recipient account, or GET it using that account's
+personal API key or approved CLI installation proof. Keep credentials out of
+URLs and do not send them to another origin. Older services may omit download
+links. The HTTP route is:
+
+```sh
+curl --fail-with-body \
+  https://trymoviestar.com/api/v1/account/cloud/projects/PROJECT_ID/asset-references/REFERENCE_ID/download \
+  -H "Authorization: Bearer $MOVIESTAR_API_KEY" \
+  --output image.png
+```
+
+Use the service-returned reference ID and the original filename you want to
+save. Downloads stream the original bytes and support Range/HEAD. MCP's
+`moviestar_list_project_assets` provides the same authenticated download links;
+they are browser handoffs, not public storage links or embedded credentials.
+
+Viewer access never permits renaming, adding/removing references, deleting
+originals or inviting others. Reads and downloads recheck the account, grant,
+project and active reference. Removing a reference makes its saved URL stop
+working; another membership has its own ID and access check. Revoking project
+access ends new downloads through that project without affecting independent
+access through another project. Downloaded copies and transfers already started
+cannot be recalled. Account-wide asset discovery remains owner-only; sharing a
+project does not expose the owner's other originals. Editor/resharing rights
+and attaching another person's assets remain separate work.
