@@ -505,3 +505,47 @@ working journeys from pending rollouts and illustrative remote edit/inspect
 examples. Reading a guide does not enable the operations it describes. An older
 installed CLI may lack `cloud docs`; client release and website deployment are
 separate.
+
+## Delete a Cloud project
+
+On a service advertising `projects:delete`, review its project ID and explicitly
+confirm deletion:
+
+```sh
+moviestar cloud projects show PROJECT_ID
+moviestar cloud projects delete PROJECT_ID --confirm
+```
+
+Only the owner can delete. The project disappears from owned/shared lists and
+saved project links stop working. Accepted invitations are revoked. Account-owned
+original assets and references in other projects remain intact; local files are
+unchanged. This is not an asset-deletion or project-download command.
+
+The JSON result has `status: "deleted"`, the same `project_id`,
+`original_assets_preserved: true`, and `deletion: {id, state}`. Project access
+ends immediately, while legacy project-media cleanup can be `pending`,
+`running`, `succeeded` or `failed`. Do not interpret the receipt as immediate
+storage release or cancellation of transfers already started.
+
+After a lost reply, repeat the **same project ID** with `--confirm`; the owner
+gets the same durable cleanup receipt even though ordinary project reads now
+return unavailable. Every retry still checks the current credential, account
+and consent. A missing/foreign project is never treated as successful deletion.
+Do not automatically create another project to replace a deleted one.
+
+The HTTP equivalent uses the same environment's personal key:
+
+```sh
+curl --fail-with-body -X DELETE \
+  https://trymoviestar.com/api/v1/account/cloud/projects/PROJECT_ID \
+  -H "Authorization: Bearer $MOVIESTAR_API_KEY" \
+  -H 'Content-Type: application/json' \
+  --data '{"confirm_project_id":"PROJECT_ID"}'
+```
+
+Replace both placeholders with the exact same project UUID. Success returns
+HTTP 202 with the receipt above. Hosted MCP exposes `moviestar_delete_project`
+with `project_id` and an exactly matching `confirm_project_id`. Use it only for
+the user's explicit deletion request, retain the same IDs after uncertainty,
+and report cleanup state separately. Web deletion controls are not part of
+this slice.
