@@ -223,3 +223,13 @@ def test_format_size_limit_is_checked_without_reading_or_reserving(service, tmp_
     result, body = invoke(file)
     assert result.exit_code == 1 and body["status"] == "invalid_size"
     assert not service[0]["calls"]
+
+
+def test_assembled_asset_group_exposes_upload_and_catalog_without_contradictory_help():
+    result = CliRunner().invoke(cli, ["cloud", "assets", "--help"])
+    assert result.exit_code == 0
+    assert "create" in result.output and "list" in result.output
+    assert "No upload" not in result.output
+    cloud = CliRunner().invoke(cli, ["cloud", "--help"])
+    assert cloud.exit_code == 0
+    assert all(name in cloud.output for name in ("assets", "projects", "docs"))

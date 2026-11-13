@@ -187,4 +187,5 @@ def register_asset_upload(cloud: click.Group):
     if assets is None:
         assets = click.Group("assets", help="Work with account-owned assets on the connected service.")
         cloud.add_command(assets)
+    assets.help = "Upload private originals or find ready account assets on the connected service."
     assets.add_command(create_asset)

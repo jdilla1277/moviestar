@@ -184,6 +184,7 @@ def test_connect_failure_is_structured_and_keeps_retryable_private_state(
 
 
 def test_connect_reports_private_state_write_failures_before_network(monkeypatch):
+    monkeypatch.setattr("moviestar.account._read_state", lambda: {})
     monkeypatch.setattr(
         "moviestar.account._write_state",
         lambda _state: (_ for _ in ()).throw(PermissionError("read-only config")),
