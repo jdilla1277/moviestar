@@ -894,3 +894,39 @@ identity and all generated evidence on success or failure, and fails on any
 unchanged driver gate. There is no acceptance rerun or `continue-on-error`.
 Runner results are a separate environment reference and do not prove the cause
 of shared-Mac failures or physical playback acceptance.
+### Two independently placed audio tracks
+
+```sh
+python experiments/live_browser_preview/audio_benchmark.py --scenario two-tracks --out /tmp/native-two-tracks-new
+python experiments/live_browser_preview/audio_benchmark.py --scenario two-tracks --canvas 1080x1920 --out /tmp/native-two-tracks-hd-new
+```
+
+The scenario starts with dialogue, then times adding a second music layer,
+changing its gain, muting/unmuting it and four individual undos at histories
+0/20/50. The second layer has its own source offset, result-time placement and
+edge fades. The generated right-channel tone is distinguishable from dialogue
+and leaves the left-channel flash/beep oracle unchanged. Only adding/removing
+the file dependency may rebuild decoders; the other edits must reuse them.
+Final playback reapplies the two-track mix after the timed undo checks.
+
+The native profile permits at most two audible independent tracks intersecting
+the selected window, alongside routed source audio. Muted/out-of-window tracks
+do not consume that audio-layer limit. More tracks, looping and ducking still
+fail explicitly; the canonical model and export have not acquired new limits.
+Independent analytic stereo sums and full-export slices check both placed
+layers, and actual-browser output checks cover source audio on/off, a muted bed,
+fades, seeking and camera cuts. Clip/window/clock/quality budgets are unchanged.
+The fade results above measure the earlier one-independent-track build and do
+not qualify the two-track build.
+
+
+The [initial two-track matrix](two-track-initial-results.json) preserves all
+48 completed edits (maximum 2,590 ms) and one failed playback case: at
+360×640/history-20, both final-span videos dropped three frames. No edit missed
+3,000 ms; playback quality still failed. That historical wheel predates the
+parent's fade-rounding correction; its exact hashes remain attached, rather
+than being presented as current-head qualification. The current CI workflow
+runs both fade and two-track scenarios at both rasters and all three histories
+with unchanged gates and complete generated artifacts. The rounding fix is not
+claimed to repair the dropped frames. Physical two-track playback remains a
+separate pending check.

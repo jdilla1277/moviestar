@@ -42,7 +42,7 @@ def expected(root):
 
 
 def run_case(folder, depth, chrome, canvas=(360, 640), *, scenario='gain'):
-    folder.mkdir(); root = folder/'project'; prepare(root, canvas,with_track=scenario=='fades')
+    folder.mkdir(); root = folder/'project'; prepare(root, canvas,with_track=scenario in ('fades','two-tracks'))
     spec = load_spec(root); spec['revisions'] = []
     for index in range(depth):
         after = deepcopy(spec); after['composition'][0]['name'] = f'History {index}'
@@ -66,6 +66,20 @@ def run_case(folder, depth, chrome, canvas=(360, 640), *, scenario='gain'):
             ('source-fade-out',['audio','source','--fade-out','.2']),
             ('track-fade-in',['audio','set',str(root/'track-fade-in.json')]),
             ('track-fade-out',['audio','set',str(root/'track-fade-out.json')])]
+    if scenario=='two-tracks':
+        from audio import add_bed
+        from moviestar.audio_surface import editable_audio_document
+        add_bed(root,with_track=False)
+        model=deepcopy(spec['audio_mix'])
+        model['tracks'].append({'id':'bed','kind':'music','path':str(root/'bed.wav'),
+            'at':'0:00:00.500','source_from':'0:00:00.250','source_to':'0:00:04.250',
+            'gain_db':-12,'muted':False,'loop':False,'fade_in':.2,'fade_out':.2,'ducking':None})
+        steps=[('add-bed',['audio','add',str(root/'bed.wav'),'--as','bed','--kind','music',
+            '--at','.5','--from','.25','--to','4.25','--gain-db','-12','--fade-in','.2','--fade-out','.2'])]
+        for name,values in [('bed-gain',{'gain_db':-18}),('bed-mute',{'muted':True}),('bed-unmute',{'muted':False})]:
+            model['tracks'][1].update(values)
+            path=root/(name+'.json');path.write_text(json.dumps(editable_audio_document(model)))
+            steps.append((name,['audio','set',str(path)]))
     initial = expected(root); actions = []
     for name, args in steps + [('undo-'+name, ['undo']) for name, _ in reversed(steps)]:
         output = command(root, args)
@@ -79,7 +93,7 @@ def run_case(folder, depth, chrome, canvas=(360, 640), *, scenario='gain'):
             'ffmpeg': subprocess.check_output(['ffmpeg', '-version'], text=True).splitlines()[0]},
         'package_source_hashes': {str(p.relative_to(HERE.parents[1])): sha256(p.read_bytes()).hexdigest()
             for p in sorted((HERE.parents[1]/'app/src/moviestar').iterdir()) if p.suffix in ('.py', '.mjs')}}
-    if scenario=='fades':
+    if scenario in ('fades','two-tracks'):
         case['playback_args']=steps[-1][1]
         case['playback_expected']=actions[3]['expected']
     (folder/'case.json').write_text(json.dumps(case, indent=2))
@@ -107,7 +121,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--canvas', choices=('360x640', '1080x1920'), default='360x640')
-    parser.add_argument('--scenario', choices=('gain','fades'), default='gain')
+    parser.add_argument('--scenario', choices=('gain','fades','two-tracks'), default='gain')
     parser.add_argument('--history', type=int, choices=(0, 20, 50), action='append',
         help='Run only these history depths (default: all three).')
     args = parser.parse_args(); out = args.out.resolve()

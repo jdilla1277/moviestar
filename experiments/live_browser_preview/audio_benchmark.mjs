@@ -43,7 +43,7 @@ try{
     result.edits.push({name:action.name,ms:attempt.trace.measurement_ms,cli_ms:attempt.trace.cli_completion_ms,
       request_id:attempt.preview.current.request_id,state_id:attempt.preview.current.state_id,
       reused_decoders:await browser.evaluate('document.querySelector("iframe:not(.pending)")===window.captionReferenceFrame')});
-    if(!['add-dialogue','undo-add-dialogue'].includes(action.name)&&!result.edits.at(-1).reused_decoders)result.problems.push(`${label} rebuilt unchanged decoders`);
+    if(!['add-dialogue','undo-add-dialogue','add-bed','undo-add-bed'].includes(action.name)&&!result.edits.at(-1).reused_decoders)result.problems.push(`${label} rebuilt unchanged decoders`);
     if(attempt.trace.measurement_ms>=3000)result.problems.push(`${label} exceeds 3000ms`);
     await persist();
   }
