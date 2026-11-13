@@ -38,6 +38,10 @@ time-mapping, rendering, and structured verification data.
 - Treat stdout as structured JSON. Read paths and ranges from response fields;
   progress narration is on stderr. Use `--quiet` only when a harness combines
   both streams and requires pure JSON.
+- Developer guides from `cloud docs show PAGE` use Markdown by default; read
+  them directly. Use `--json` for page metadata and Markdown in a JSON object.
+  `cloud docs list` and service errors remain JSON. Version 0.8.3 instead needs
+  `--markdown` for raw pages; use command help to check installed options.
 - Preview expensive or replacing operations with `--dry-run`. Review resolved
   ranges, durations, warnings, output paths, and FFmpeg plans before applying.
 - Remember the clocks: `trim` is result-time, `find` reports both source and

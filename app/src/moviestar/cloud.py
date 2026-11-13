@@ -387,9 +387,12 @@ def list_docs():
 
 @docs.command("show")
 @click.argument("page")
-@click.option("--markdown", is_flag=True, help="Write this page as raw Markdown instead of a JSON object.")
-def show_docs(page: str, markdown: bool):
-    """Read PAGE from 'cloud docs list'; defaults to structured JSON."""
+@click.option("--json", "json_output", is_flag=True, help="Write the page and its metadata as structured JSON.")
+@click.option("--markdown", is_flag=True, help="Write this page as raw Markdown (the default).")
+def show_docs(page: str, json_output: bool, markdown: bool):
+    """Read PAGE from 'cloud docs list'; defaults to Markdown."""
+    if json_output and markdown:
+        _fail("cloud docs show", "invalid_request", "Use either --json or --markdown, not both.")
     if not re.fullmatch(r"[a-z-]{1,64}", page):
         _fail("cloud docs show", "invalid_request", "Use a page slug returned by 'moviestar cloud docs list'.")
     body = _docs_request(page)
@@ -397,7 +400,7 @@ def show_docs(page: str, markdown: bool):
             or not isinstance(body.get("markdown"), str) or not body["markdown"]
             or body.get("path") != "/account/developer-docs/" + page):
         _fail("cloud docs show", "invalid_response", "The service did not return the requested guide. Retry later.")
-    if markdown:
+    if not json_output:
         click.echo(body["markdown"], nl=False)
     else:
         click.echo(json.dumps({field: body[field] for field in ("page", "title", "markdown", "path")}, indent=2))

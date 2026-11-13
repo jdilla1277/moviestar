@@ -1209,7 +1209,8 @@ def cli() -> None:
     Account and Cloud metadata commands need neither FFmpeg nor Whisper.
 
     Load a video, browse its contents, make edits, and export the result.
-    All output is structured JSON on stdout; progress goes to stderr.
+    Command results are structured JSON on stdout; cloud docs show prints
+    Markdown by default (use --json for JSON). Progress goes to stderr.
     Capturing both streams together (2>&1)? Pass --quiet (or set
     MOVIESTAR_QUIET=1) on load / retranscribe / export so the merged
     stream stays pure JSON.
