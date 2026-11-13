@@ -1605,6 +1605,100 @@ def build_extract_frame_command(
     return cmd
 
 
+class FrameNotProducedError(RuntimeError):
+    """A successful encoder invocation did not deliver a usable frame."""
+
+
+_FRAME_PROBE_PACKET_LIMIT = 10_000
+_FRAME_PROBE_TIMEOUT = 30
+
+
+def _preceding_frame_seek(video_path: str, at_seconds: float) -> float:
+    """Find a decoded presentation timestamp, not a nominal-FPS estimate.
+
+    Only used after an empty seek. Start at the preceding keyframe and reject
+    incomplete scans so a packet budget cannot masquerade as the last frame.
+    ffprobe uses absolute PTS; FFmpeg input seeks use time relative to start.
+    """
+    try:
+        metadata = run_ffprobe(video_path)
+    except (RuntimeError, OSError, json.JSONDecodeError) as exc:
+        raise FrameNotProducedError(f"Could not read frame-recovery timing: {exc}") from exc
+    fmt = metadata.get("format", {})
+    try:
+        origin = float(fmt["start_time"])
+        duration = float(fmt["duration"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise FrameNotProducedError("Source timing is unavailable for frame recovery.") from exc
+    if not all(math.isfinite(value) for value in (origin, duration, at_seconds)):
+        raise FrameNotProducedError("Source timing is invalid for frame recovery.")
+    if not 0 <= at_seconds < duration:
+        raise FrameNotProducedError("The requested frame is outside the source duration.")
+    target = origin + at_seconds
+    command = [
+        "ffprobe", "-v", "error", "-select_streams", "v:0",
+        "-read_intervals", f"{_audio_number(target)}%+#{_FRAME_PROBE_PACKET_LIMIT + 1}",
+        "-show_frames", "-count_packets", "-show_entries",
+        "frame=best_effort_timestamp_time:stream=nb_read_packets", "-of", "json",
+        video_path,
+    ]
+    try:
+        result = subprocess.run(
+            command, capture_output=True, text=True, timeout=_FRAME_PROBE_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise FrameNotProducedError("Frame recovery exceeded its 30-second scan budget.") from exc
+    if result.returncode != 0 or result.stderr.strip():
+        raise FrameNotProducedError(_failure_message("ffprobe", result))
+    try:
+        data = json.loads(result.stdout)
+        count = int(data["streams"][0]["nb_read_packets"])
+        if not 0 < count <= _FRAME_PROBE_PACKET_LIMIT:
+            raise FrameNotProducedError("Frame recovery exceeded its packet scan budget.")
+        timestamps = [
+            float(frame["best_effort_timestamp_time"]) for frame in data["frames"]
+        ]
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        raise FrameNotProducedError("No complete frame-timing evidence was available.") from exc
+    if not timestamps or not all(math.isfinite(pts) for pts in timestamps):
+        raise FrameNotProducedError("Decoded frame timing was incomplete or invalid.")
+    eligible = [pts for pts in timestamps if origin <= pts <= target]
+    if not eligible:
+        raise FrameNotProducedError("No preceding displayed frame was found.")
+    seek = max(eligible) - origin
+    if seek >= at_seconds:
+        raise FrameNotProducedError("The requested frame could not be produced.")
+    return seek
+
+
+@contextmanager
+def _preserve_frame_output(output_path: str):
+    """Keep an old proof out of empty-output detection; restore it on failure."""
+    backup = None
+    if os.path.isfile(output_path):
+        fd, backup = tempfile.mkstemp(
+            prefix=".moviestar-frame-", dir=os.path.dirname(os.path.abspath(output_path)),
+        )
+        os.close(fd)
+        try:
+            os.replace(output_path, backup)
+        except OSError:
+            os.remove(backup)
+            raise
+    succeeded = False
+    try:
+        yield
+        succeeded = True
+    finally:
+        if not succeeded and os.path.isfile(output_path):
+            os.remove(output_path)
+        if backup is not None:
+            if succeeded:
+                os.remove(backup)
+            else:
+                os.replace(backup, output_path)
+
+
 def extract_frame(
     video_path: str,
     at_seconds: float,
@@ -1635,10 +1729,21 @@ def extract_frame(
         overlay_plans=overlay_plans, overlay_canvas=overlay_canvas,
         highlight_ass=highlight_ass,
     )
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0 or _has_bitmap_glyph_error(result.stderr):
-        raise RuntimeError(_failure_message("ffmpeg", result, overlay_plans=overlay_plans))
-    return cmd
+    with _preserve_frame_output(output_path):
+        for attempt in range(2):
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0 or _has_bitmap_glyph_error(result.stderr):
+                raise RuntimeError(_failure_message("ffmpeg", result, overlay_plans=overlay_plans))
+            if os.path.isfile(output_path) and os.path.getsize(output_path) > 0:
+                return cmd
+            if attempt == 0:
+                seek = _preceding_frame_seek(video_path, at_seconds)
+                cmd = build_extract_frame_command(
+                    video_path, seek, output_path, quality,
+                    overlay_plans=overlay_plans, overlay_canvas=overlay_canvas,
+                    highlight_ass=highlight_ass,
+                )
+        raise FrameNotProducedError(f"FFmpeg produced no frame at {at_seconds}s.")
 
 
 def build_platform_preview_command(
