@@ -32,7 +32,7 @@ burn in captions, mix audio, and render a finished video with FFmpeg.
 ## You direct. Your agent edits.
 
 You say what you want. Your agent makes the edit by running `moviestar`
-commands, and Moviestar answers each command with structured JSON the agent can
+commands, and Moviestar answers editing commands with structured JSON the agent can
 read, verify, and act on.
 
 | | |

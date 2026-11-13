@@ -2,7 +2,7 @@
 
 **Video editing CLI for AI agents.** Give your coding agent the ability to edit video.
 
-Your agent loads one or many videos, fuzzy-searches the transcript, composes and shapes a timeline across multiple cameras, animates per-scene camera and layout motion, retimes footage, mixes source audio with voiceover and music, burns in captions with spoken-word highlighting, and renders with FFmpeg — or extracts any number of standalone clips in one pass. All output is structured JSON. Source files are never modified — edits are described in a declarative spec and applied at render time.
+Your agent loads one or many videos, fuzzy-searches the transcript, composes and shapes a timeline across multiple cameras, animates per-scene camera and layout motion, retimes footage, mixes source audio with voiceover and music, burns in captions with spoken-word highlighting, and renders with FFmpeg — or extracts any number of standalone clips in one pass. Editing commands return structured JSON. Source files are never modified — edits are described in a declarative spec and applied at render time.
 
 ## Quick start
 
@@ -116,7 +116,7 @@ Run `moviestar --help` for the full command list.
 
 Video editing tools are built for humans with GUIs. Agents don't have hands on a timeline or eyes on a canvas. moviestar is the hands; the agent is the brain.
 
-- **Verbose by default.** Every command returns rich structured JSON on stdout — agents can discard what they don't need, but can't invent data the CLI didn't provide. Progress narration goes to stderr; if you capture both streams together (`2>&1`), pass `--quiet` (or set `MOVIESTAR_QUIET=1`) on `load` / `retranscribe` / `export` so the merged stream stays pure JSON.
+- **Verbose by default.** Editing commands return rich structured JSON on stdout — agents can discard what they don't need, but can't invent data the CLI didn't provide. Developer guides from `cloud docs show PAGE` use Markdown by default; pass `--json` for the page and its metadata as JSON. Progress narration goes to stderr; if you capture both streams together (`2>&1`), pass `--quiet` (or set `MOVIESTAR_QUIET=1`) on `load` / `retranscribe` / `export` so the merged stream stays pure JSON.
 - **Deterministic.** Same input + same parameters = same output. No randomness, no hidden model calls.
 - **Result-time semantics.** A second trim narrows the current result, not the original source. `find` matches resolve to both source-time and result-time so screenshots and exports compose cleanly.
 - **Multi-source native.** Load many cameras into one workspace, compose a timeline across them, and route audio per-composition — the same structured CLI the single-source flow uses.
