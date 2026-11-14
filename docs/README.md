@@ -45,6 +45,7 @@ The CLI's built-in help is the authoritative command reference. Run
 - [Account assets](account-assets.md) — upload private video, audio, image and
   caption/transcript originals with your approved CLI installation.
 - [Cloud asset storyboards](cloud-storyboard.md) — labeled contact sheets and durable private image retrieval.
+- [Cloud visual activity](cloud-activity.md) — measure visual change and reopen timestamped evidence across API, CLI and hosted MCP.
 - [Cloud asset inspection](cloud-probe.md) — probe remote media metadata and recover durable jobs.
 - [Personal Cloud projects](cloud-projects.md) — explicitly create, list, and reopen owned projects through an approved installation.
 

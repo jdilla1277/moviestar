@@ -90,7 +90,7 @@ class Creation:
 
 @contextmanager
 def creation_request(endpoint: str, credential: str, title: str, explicit_key: str | None, *, recovery_directory: str = "cloud-project-requests"):
-    if recovery_directory not in ("cloud-project-requests", "cloud-probe-requests"):
+    if recovery_directory not in ("cloud-project-requests", "cloud-probe-requests", "cloud-activity-requests"):
         raise CreationStateError("Invalid recovery directory")
     # A new installation credential cannot inherit another account's pending
     # request. Neither the credential nor its hash is stored in the record.
