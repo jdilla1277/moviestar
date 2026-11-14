@@ -630,8 +630,12 @@ transcription dependencies.
 
 `cloud-project.json` records the Cloud project ID/title, original asset and
 reference IDs, original filenames, safe relative local paths, sizes and computed
-SHA-256 hashes. Originals live under `assets/REFERENCE_ID/`; identical or unsafe
-filenames cannot escape the destination or overwrite one another. The hashes
+SHA-256 hashes. Originals are listed together under `assets/` using their original filenames
+where safe, including spaces and Unicode. Duplicate or case-colliding names get
+a numeric suffix such as `image (2).png`; existing distinct filenames are
+reserved before suffixes are assigned. Unsafe path components are sanitized,
+and files cannot escape the destination or overwrite one another. Reference IDs
+and original filenames stay in the manifest rather than directory names. The hashes
 record the bytes saved locally; they are not a server-supplied checksum.
 
 Only ready account originals are included. This does not export legacy project

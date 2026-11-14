@@ -4,6 +4,7 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from click.testing import CliRunner
@@ -11,7 +12,7 @@ from moviestar import cloud as service
 
 PROJECT = '00000000-0000-4000-8000-000000000001'
 OWNER = '00000000-0000-4000-8000-000000000002'
-REFS = ['00000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000004']
+REFS = ['00000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000004', '00000000-0000-4000-8000-000000000005']
 DATA = b'original bytes\x00\xff'
 TOKEN = 'mvs_' + 'a' * 43
 
@@ -25,15 +26,15 @@ def remote(monkeypatch):
         def do_GET(self):
             state['requests'].append((self.path, self.headers.get('Authorization'), self.headers.get('x-moviestar-client')))
             if '/download-manifest' in self.path:
-                index = 1 if 'cursor=' in self.path else 0
-                entry = {'reference_id': REFS[index], 'asset_id': OWNER, 'filename': '../../same.png',
+                index = int(parse_qs(urlsplit(self.path).query).get('cursor', ['0'])[0])
+                entry = {'reference_id': REFS[index], 'asset_id': OWNER, 'filename': state.get('filenames', ['../../same.png', '../../same.png'])[index],
                          'kind': 'image', 'content_type': 'image/png', 'size_bytes': len(DATA),
                          'download_path': f'/api/v1/account/cloud/projects/{PROJECT}/asset-references/{REFS[index]}/download'}
                 if state['mode'] == 'foreign_path':
                     entry['download_path'] = 'https://attacker.invalid/steal'
                 body = json.dumps({'contract_version': 'project-download-v1',
                     'project': {'id': PROJECT, 'owner_id': OWNER, 'title': 'Test', 'state': 'active', 'current_revision': None, 'access': {'role': 'viewer'}},
-                    'items': [entry], 'next_cursor': 'bmV4dA' if state['pages'] == 2 and index == 0 else None}).encode()
+                    'items': [entry], 'next_cursor': str(index + 1) if index + 1 < state['pages'] else None}).encode()
                 self.send_response(200); self.send_header('Content-Type', 'application/json'); self.end_headers(); self.wfile.write(body)
                 return
             mode = state['mode']
@@ -212,3 +213,25 @@ def test_manifest_publication_never_overwrites_a_path_created_during_transfer(re
     assert json.loads(result.output)['status'] == 'download_incomplete'
     assert (target / 'cloud-project.json').read_text() == 'preserve concurrent file'
     assert (target / '.incomplete.json').exists()
+
+
+@pytest.mark.parametrize('names,expected', [
+    (['image.png', 'h264.mp4'], ['image.png', 'h264.mp4']),
+    (['My clip #1.png', 'Café.png'], ['My clip #1.png', 'Café.png']),
+    (['same.png', 'same.png'], ['same.png', 'same (2).png']),
+    (['same.png', 'SAME.PNG'], ['same.png', 'SAME (2).PNG']),
+    (['report.png', 'report.png', 'report (2).png'], ['report.png', 'report (3).png', 'report (2).png']),
+    (['Café.png', 'Cafe\u0301.png'], ['Café.png', 'Café (2).png']),
+    (['../same.png', r'..\same.png'], ['same.png', 'same (2).png']),
+    (['report.png.part', 'report.png'], ['report.png.part', 'report.png']),
+])
+def test_downloads_into_one_asset_folder_with_readable_collision_safe_names(remote, tmp_path, names, expected):
+    remote.update(pages=len(names), filenames=names)
+    target = tmp_path / 'flat'
+    result = invoke(target)
+    assert result.exit_code == 0, result.output
+    manifest = json.loads((target / 'cloud-project.json').read_text())
+    assert [item['filename'] for item in manifest['items']] == names
+    assert [item['local_path'] for item in manifest['items']] == ['assets/' + name for name in expected]
+    assert sorted(p.name for p in (target / 'assets').iterdir()) == sorted(expected)
+    assert all((target / 'assets' / name).read_bytes() == DATA for name in expected)

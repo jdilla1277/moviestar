@@ -5,6 +5,8 @@ import hashlib
 import json
 import os
 import re
+import tempfile
+import unicodedata
 from http.client import HTTPException
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -80,7 +82,11 @@ def _manifest(endpoint, credential, project_id):
 def _filename(name):
     # Never use a remote path, header filename, device name or hidden basename.
     basename = re.split(r'[/\\]', name)[-1]
-    basename = re.sub(r'[^A-Za-z0-9._-]', '_', basename).strip(' .')[:120]
+    basename = unicodedata.normalize('NFC', basename)
+    basename = re.sub(r'[\x00-\x1f\x7f<>:"|?*]', '_', basename).strip(' .')
+    while len(basename.encode('utf-8')) > 180:
+        basename = basename[:-1]
+    basename = basename.rstrip(' .')
     if not basename or basename in ('.', '..') or basename.startswith('.'):
         basename = 'asset'
     if basename.split('.')[0].upper() in {'CON', 'PRN', 'AUX', 'NUL', *(f'COM{i}' for i in range(1, 10)), *(f'LPT{i}' for i in range(1, 10))}:
@@ -88,12 +94,32 @@ def _filename(name):
     return basename
 
 
+def _download_filenames(items):
+    names = [_filename(item['filename']) for item in items]
+    reserved = {name.casefold() for name in names}
+    used, counters, result = set(), {}, []
+    for name in names:
+        candidate = name
+        key = name.casefold()
+        if key in used:
+            number = counters.get(key, 2)
+            stem, extension = os.path.splitext(name)
+            while True:
+                candidate = f'{stem} ({number}){extension}'
+                number += 1
+                if candidate.casefold() not in used and candidate.casefold() not in reserved:
+                    break
+            counters[key] = number
+        used.add(candidate.casefold())
+        result.append(candidate)
+    return result
+
+
 def _transfer(origin, credential, item, destination):
     request = Request(origin + item['download_path'], headers={
         'Authorization': 'Bearer ' + credential, 'x-moviestar-client': _CLIENT_MARKER,
         'Accept': item['content_type'], 'Accept-Encoding': 'identity',
     })
-    part = destination.with_name(destination.name + '.part')
     digest, size = hashlib.sha256(), 0
     with build_opener(_NoRedirectHandler()).open(request, timeout=60) as response:
         if (response.status != 200 or response.headers.get_content_type() != item['content_type'].split(';')[0].strip().lower()
@@ -102,7 +128,9 @@ def _transfer(origin, credential, item, destination):
         length = response.headers.get('Content-Length')
         if length is not None and (not length.isdecimal() or int(length) != item['size_bytes']):
             raise ValueError('invalid_download')
-        with part.open('xb') as output:
+        with tempfile.NamedTemporaryFile(mode='wb', dir=destination.parent,
+                prefix='.moviestar-', suffix='.part', delete=False) as output:
+            part = Path(output.name)
             while chunk := response.read(65536):
                 size += len(chunk)
                 if size > item['size_bytes']:
@@ -149,10 +177,11 @@ def register_project_download(projects):
             incomplete = destination / '.incomplete.json'
             with incomplete.open('x') as output:
                 json.dump({'contract_version': CONTRACT, 'status': 'incomplete', 'project_id': project_id}, output)
-            for item in items:
-                relative = Path('assets') / item['reference_id'].lower() / _filename(item['filename'])
+            if items:
+                (destination / 'assets').mkdir()
+            for item, filename in zip(items, _download_filenames(items)):
+                relative = Path('assets') / filename
                 path = destination / relative
-                path.parent.mkdir(parents=True, exist_ok=False)
                 digest = _transfer(endpoint.removesuffix('/api/v1/account/cloud'), credential, item, path)
                 completed.append({**{name: value for name, value in item.items() if name != 'download_path'}, 'local_path': relative.as_posix(), 'sha256': digest})
             manifest_part = destination / '.cloud-project.json.part'
