@@ -40,7 +40,11 @@ A request must produce 2–5000 samples. The result contains `settings`,
 difference and the changed-pixel ratio. Frame states distinguish held VFR
 frames from newly decoded frames whose pixels are unchanged. Both the `source`
 and `result` sample clocks refer to the asset file; `range.clock` is `asset`.
-Timecode evidence and the default duration retain the local detector's millisecond precision. The first video stream must be usable video; attached cover art is rejected rather than treated as moving footage.
+Timecode evidence and the default duration retain the local detector's
+millisecond precision. Validation, timestamps and decoded pixels all use the
+first video stream, even if another track is marked default. The first video
+stream must be usable video; attached cover art is rejected rather than treated
+as moving footage.
 
 Visual change is a heuristic. It does not determine editorial importance,
 speech, or semantic meaning. Ranges are candidates to inspect further. Silent

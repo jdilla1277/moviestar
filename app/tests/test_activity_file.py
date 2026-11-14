@@ -61,3 +61,26 @@ def test_cover_art_is_not_a_usable_first_video_stream(monkeypatch):
     monkeypatch.setattr('moviestar.activity_file.run_ffprobe', lambda _: {'format':{'duration':'2'},'streams':[{'codec_type':'video','width':160,'height':120,'disposition':{'attached_pic':1}},{'codec_type':'video','width':160,'height':120}]})
     with pytest.raises(ActivityError,match='no_video'):
         analyze_file_activity('unused',{})
+
+
+def test_multitrack_defaults_cannot_change_activity_stream(tmp_path, loaded_project):
+    first_default=tmp_path/'first-default.mp4'
+    second_default=tmp_path/'second-default.mp4'
+    # Different content, dimensions and frame clocks. Changing dispositions
+    # must never change which pixels correspond to the first-track timestamps.
+    subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=red:size=160x120:rate=10:duration=2',
+        '-f','lavfi','-i','testsrc2=size=320x240:rate=5:duration=2','-map','0:v','-map','1:v',
+        '-c:v','libx264','-preset','ultrafast','-disposition:v:0','default','-disposition:v:1','0',str(first_default)],check=True)
+    subprocess.run(['ffmpeg','-v','error','-i',str(first_default),'-map','0:v:0','-map','0:v:1','-c','copy',
+        '-disposition:v:0','0','-disposition:v:1','default',str(second_default)],check=True)
+    baseline=analyze_file_activity(str(first_default),{'interval_seconds':0.5})
+    actual=analyze_file_activity(str(second_default),{'interval_seconds':0.5})
+    assert actual['summary']['active_duration_seconds']==0
+    assert actual['analysis_dimensions']=={'width':160,'height':120}
+    assert [s['decoded_frame']['source_time']['seconds'] for s in actual['samples']]==[0,0.5,1,1.5]
+    for name in ('samples','active_ranges','idle_ranges','no_new_frame_ranges','summary'):
+        assert actual[name]==baseline[name]
+    loaded_project(str(second_default),frames=False)
+    local=CliRunner().invoke(cli,['activity','--interval','0.5'])
+    assert local.exit_code==0,local.output
+    assert json.loads(local.stdout)['samples']==actual['samples']
