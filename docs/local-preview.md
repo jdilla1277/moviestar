@@ -327,6 +327,26 @@ samples for the synthetic benchmark. Normal viewing avoids per-frame source
 canvas readback. The audio worklet passes through the sound sent to the output;
 clock estimates still require a physical flash/beep check for acceptance.
 
+To measure native preparation, start the foreground session with
+`MOVIESTAR_PREVIEW_TIMING=1`. Each completed request in the read-only `state`
+endpoint then includes `preparation_timing`: snapshot/validation, queue/dispatch,
+worker startup, module imports, descriptor compilation, audio preparation, each
+caption paint, descriptor publication, and worker exit/supervisor publication.
+Intervals use one host monotonic clock; `started_at` anchors them to epoch
+milliseconds for comparison with command and browser traces. `elapsed_ms` equals
+the sum of phase durations plus explicitly reported `unattributed_ms`.
+`generation_started_ms` identifies the portion corresponding to the existing
+`generation_ms`; it excludes earlier snapshot preparation.
+
+The timings are off by default, contain only numeric intervals and fixed phase
+names, and follow the existing eight-request retention limit. Failed workers
+retain incomplete timings; unavailable diagnostics are labeled explicitly and
+do not reject an otherwise valid preview. No timing creates a new version or
+changes validation, quality, playback clocks or readiness deadlines. Worker
+publication is not browser visibility: use the command trace and viewer's
+request/version readiness event to measure the complete feedback loop. A new
+worker is launched for every request; a repeat edit is not a warm Python process.
+
 In native mode, the local `state` endpoint also reports `native_video_delivery`:
 successful validated HEAD requests, video GET requests, active GETs and completed
 body bytes written to sockets. The byte count excludes headers and any partial

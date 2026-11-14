@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {startCommand, observeEdit} from '../diagnostics.mjs';
+import {startCommand, observeEdit, previewProbeExpression} from '../diagnostics.mjs';
 
 async function fixture(t){
   const out=await mkdtemp(join(tmpdir(),'moviestar-diagnostics-'));
@@ -145,4 +145,17 @@ test('completed-edit duration stays valid when the wall clock moves backwards',a
     assert.ok(result.trace.measurement_ms>=result.trace.command.duration_ms);
     assert.ok(result.trace.cli_completion_ms>=80);
   }finally{Date.now=dateNow;}
+});
+
+
+test('retains preparation phases with request identities in the browser probe',()=>{
+  const timing={elapsed_ms:100,unattributed_ms:2,phases:[{name:'audio_prepare',duration_ms:30}]};
+  const current={request_id:'fresh',state_id:'sha256:edit',preparation_timing:timing,root:'/private/project'};
+  const window={moviestarLive:{current,is_current:true,state:{latest:current},events:[]}};
+  const document={getElementById:()=>null,querySelectorAll:()=>[]};
+  const probe=Function('window','document','return '+previewProbeExpression(''))(window,document);
+  assert.deepEqual(probe.current.preparation_timing,timing);
+  assert.equal(probe.requests[0].request_id,'fresh');
+  assert.deepEqual(probe.requests[0].preparation_timing,timing);
+  assert.equal('root' in probe.current,false);
 });

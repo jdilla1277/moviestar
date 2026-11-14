@@ -170,7 +170,7 @@ export async function observeEdit({start,prepare=async()=>{},probe,serverProbe,s
 // epoch timestamps; missing stages stay missing rather than being inferred.
 export function previewProbeExpression(title){
   return `(()=>{const live=window.moviestarLive,s=live?.state;
-    const item=x=>x?Object.fromEntries(['request_id','state_id','status','requested_at','started_at','finished_at','generation_ms','error'].filter(k=>x[k]!==undefined).map(k=>[k,x[k]])):null;
+    const item=x=>x?Object.fromEntries(['request_id','state_id','status','requested_at','started_at','finished_at','generation_ms','error','preparation_timing'].filter(k=>x[k]!==undefined).map(k=>[k,x[k]])):null;
     let expected=false,snapshot_error=null;
     try{expected=Boolean(live?.stage?.snapshot().boxes.some(box=>box.kind==='text'&&box.text===${JSON.stringify(title)}));}catch(e){snapshot_error=String(e);}
     return {current:item(live?.current),is_current:live?.is_current===true,expected_text_visible:expected,snapshot_error,

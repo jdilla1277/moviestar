@@ -25,6 +25,7 @@ import time
 from urllib.parse import parse_qs, urlsplit
 
 from moviestar.json_identity import canonical_json
+from moviestar.preview_timing import PreparationTiming, phase, start_timing, published_timing
 
 POLL_SECONDS = .2
 CANCEL_SECONDS = 6.0
@@ -100,8 +101,13 @@ class PreviewQueue:
             def public(request):
                 if request is None:
                     return None
-                return {key: deepcopy(value) for key, value in request.items()
-                        if key not in {"media", "spec", "project", "root", "input_identity"}}
+                result = {key: deepcopy(value) for key, value in request.items()
+                          if key not in {"media", "spec", "project", "root", "input_identity"}}
+                # Only the validated completed diagnostic is public. Internal
+                # monotonic origins travel to the child in request.json.
+                if 'origin_perf' in result.get('preparation_timing', {}):
+                    result.pop('preparation_timing')
+                return result
             return {"latest": public(self.latest), "active": public(self.active),
                     "pending": public(self.pending), "displayed": public(self.displayed),
                     "is_current": self.displayed is not None and self.displayed is self.latest,
@@ -228,7 +234,9 @@ class PreviewSession:
             directory = get_project_dir(self.root)
             documents = [directory / SPEC_FILE, directory / PROJECT_FILE]
             before = _file_stamps(documents)
-            snapshot = _profile_snapshot(read_snapshot(self.root, self.start, self.end), self.mode)
+            timing = start_timing() if self.mode == 'native' else None
+            with phase(timing,'snapshot_validation'):
+                snapshot = _profile_snapshot(read_snapshot(self.root, self.start, self.end), self.mode)
             if "spec" in snapshot and "project" in snapshot:
                 paths = _input_paths(self.root, snapshot["spec"], snapshot["project"])
                 after = _file_stamps([*documents, *paths])
@@ -239,6 +247,8 @@ class PreviewSession:
             identity = canonical_json(snapshot)
             if identity != self.identity:
                 self.identity = identity
+                if timing is not None:
+                    snapshot['preparation_timing'] = timing.document
                 self.queue.submit(snapshot)
         except (ValueError, OSError, RuntimeError, ResolvedProjectError) as exc:
             self.watched_stamps = None
@@ -286,6 +296,14 @@ class PreviewSession:
                         assets = json.loads((folder / "assets.json").read_text())
                     except (ValueError, OSError) as exc:
                         error = f"Native preview assets unavailable: {exc}"
+                if 'preparation_timing' in self.active:
+                    try:
+                        self.queue.requests[request_id]['preparation_timing'] = published_timing(
+                            json.loads((folder/'timing.json').read_text()))
+                    except (ValueError,OSError,TypeError,KeyError):
+                        # Missing/corrupt evidence is explicit; never turn a
+                        # diagnostic parsing problem into a playback failure.
+                        self.queue.requests[request_id]['preparation_timing'] = {'unavailable':True}
                 published = self.queue.finish(request_id, media=str(media) if media.exists() else None, error=error)
                 if published:
                     self.assets.update(assets)
@@ -309,6 +327,13 @@ class PreviewSession:
             self.prune_assets()
         request = self.queue.take()
         if request is not None:
+            if 'preparation_timing' in request:
+                timing=PreparationTiming(request['preparation_timing'])
+                timing.document['generation_started_perf']=time.perf_counter()
+                phase_end=timing.document['origin_perf']+timing.document['phases'][-1]['end_ms']/1000
+                timing.add('queue_dispatch',phase_end,time.perf_counter())
+                timing.document['worker_started_perf']=time.perf_counter()
+                request['preparation_timing']=timing.document
             folder = self.directory / request["request_id"]
             folder.mkdir()
             (folder / "request.json").write_text(json.dumps(request))
@@ -323,6 +348,9 @@ class PreviewSession:
                     env={**os.environ, "TMPDIR": str(temporary)})
             except OSError as exc:
                 self.log.close()
+                if 'preparation_timing' in request:
+                    with self.queue.lock:
+                        self.queue.requests[request['request_id']]['preparation_timing'] = {'unavailable':True}
                 self.queue.finish(request["request_id"], error=str(exc))
                 self.active = None
                 import shutil
