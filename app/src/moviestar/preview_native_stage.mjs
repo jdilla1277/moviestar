@@ -425,7 +425,7 @@ window.moviestarLiveStage={ready,metrics,
       metrics.device_ready_at=Date.now();if(packet.cut_segment&&packet.samples.length===1){freezeLastFrame();videos.filter(item=>!item.primary).forEach(freezeFollower);}
       for(const item of videos){item.beforePlay=item.video.getVideoPlaybackQuality();delete item.reportedDrops;}
       metrics.initial_presented=videos.map(item=>({path:item.path,media_time:item.video.currentTime,...item.frame,quality:{totalVideoFrames:item.beforePlay.totalVideoFrames,droppedVideoFrames:item.beforePlay.droppedVideoFrames}}));playing=true;
-      if(reviewAudio?.snapshot().prepared)await reviewAudio.play(this.time);if(!active())return;
+      if(reviewAudio?.snapshot().prepared)await reviewAudio.play(this.time,{pictureLead:1/(2*packet.fps)});if(!active())return;
       if(reviewAudio)metrics.prepared_audio=reviewAudio.snapshot();
       if(videoGroup)await videoGroup.play();else await video.play();
     }catch(error){if(active()){fail(error);throw error;}}

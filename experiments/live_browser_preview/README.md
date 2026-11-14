@@ -955,3 +955,39 @@ frame rate, phase calculations or acceptance gates. A passing rerun does not
 explain or erase the retained failure. Further work must correlate raw mapping,
 startup and in-span presentation scheduling before qualifying this profile;
 physical two-track listening/lip-sync remains pending.
+
+### Prepared-audio transport alignment (#215)
+
+The prepared mix now owns cut boundaries through its audible output clock.
+Incoming pictures start hidden half a source-frame before their absolute result
+boundary, then become visible on that boundary. An early/late outgoing media
+clock or end callback cannot accumulate timing error into the next scene.
+Initial picture launch likewise reserves a half-frame for presentation latency,
+rather than waiting until audio is audible before requesting picture startup.
+Audio starts at its original sample/offset and remains continuous; video rates,
+source quality and authored timing are unchanged. Legacy embedded-audio cuts
+keep their prior path.
+
+Deterministic regressions cover a late outgoing clock, early end callbacks,
+hidden preroll, reveal on the master clock, Pause during handoff, rewinding a
+canceled preroll before resuming, unavailable output clocks, and startup at
+24/30/60 fps. Browser waveform, zero-drop/stall, frame, seek/restart/replacement
+and 50 ms checks remain strict. Prior failed matrices are retained; a passing
+rerun alone is not the explanation for this change.
+
+Actual-browser sample capture also exposed a startup timestamp quirk: the
+worklet reported the same frame twice, then recovered by jumping two quanta.
+The captured PCM matched the reference byte-for-byte, but its recorded start
+was one quantum early. Capture-only timestamps now use a monotonic rendered
+sample cursor; raw stamps and adjustment sizes remain in audit blocks. No
+samples are inserted/removed, and forward gaps are not filled. A regression
+replays the captured repeated/recovered stamp sequence with distinct known
+sample blocks. **Beep timestamps, phase calculations and the 50 ms gate are
+unchanged**; this cannot turn the retained phase failure into a pass.
+
+Picture-rate feedback and source-pipeline isolation were investigated and
+rejected after browser quality checks failed. The final patch does neither;
+those prototype patches and failures remain in the originating workspace.
+Complete generated fade/two-track matrices and physical playback remain the
+qualification steps for this candidate, rather than a general long-timeline
+acceptance claim.

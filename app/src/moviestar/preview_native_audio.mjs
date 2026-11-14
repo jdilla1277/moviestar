@@ -26,7 +26,7 @@ export function createPreparedAudio(context,destination,signal,duration){
         cancel(){if(!settled){prepared=null;settled=true;}}
       };
     },
-    async play(at){
+    async play(at,{pictureLead=0}={}){
       api.pause();if(!buffer||disposed)return;
       const attempt=generation,active=()=>!disposed&&!signal?.aborted&&attempt===generation;
       await context.resume();if(!active())return;
@@ -42,13 +42,21 @@ export function createPreparedAudio(context,destination,signal,duration){
       destination.port?.postMessage({kind:'capture'});
       startedAt=context.currentTime;lastStart={context_time:startedAt,offset};
       source.start(startedAt,offset);
-      // Media-element pictures can advance before queued Web Audio reaches
-      // the device. Start picture transport on this actual output-clock edge.
-      while(context.getOutputTimestamp().contextTime+1/context.sampleRate<startedAt){
+      // Starting HTML media also incurs presentation latency. Reserve one
+      // half-frame interval before the audible edge for picture launch;
+      // neither the audio samples nor picture playback rate are changed.
+      const lead=Math.max(0,Math.min(1/24,pictureLead));
+      while(context.getOutputTimestamp().contextTime+lead+1/context.sampleRate<startedAt){
         if(!active())return;
         if(performance.now()>deadline)throw Error('Prepared audio did not reach the output clock');
         await new Promise(resolve=>setTimeout(resolve,1));
       }
+    },
+    outputTimeAt(displayEpoch){
+      if(!source||!lastStart||disposed)return null;
+      const stamp=context.getOutputTimestamp();
+      if(!(stamp.contextTime>0&&stamp.performanceTime>0))return null;
+      return offset+stamp.contextTime+(displayEpoch-performance.timeOrigin-stamp.performanceTime)/1000-startedAt;
     },
     pause(){
       ++generation;

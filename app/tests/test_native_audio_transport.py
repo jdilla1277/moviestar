@@ -1,6 +1,9 @@
 """Prepared audio must never leak a superseded or cancelled playback attempt."""
 from pathlib import Path
+import json
 import subprocess
+
+import pytest
 
 
 def test_native_audio_buffer_transport_and_atomic_replacement():
@@ -18,7 +21,8 @@ const controller=new AbortController(),transport=createPreparedAudio(context,{},
 const plane=id=>({asset:String(id),duration:5,sample_rate:48000,channels:2,source_audio:{muted:true},tracks:[]});
 (await transport.prepare(plane(1),controller.signal)).commit();
 await transport.play(1.5);assert.deepEqual(starts[0],{args:[2,1.5],buffer:1});
-transport.pause();assert.equal(stops.length,1);assert.equal(transport.snapshot().playing,false);
+assert.ok(Math.abs(transport.outputTimeAt(performance.timeOrigin+501)-2)<1e-6);
+transport.pause();assert.equal(transport.outputTimeAt(performance.timeOrigin+501),null);assert.equal(stops.length,1);assert.equal(transport.snapshot().playing,false);
 // Delayed resume cannot start after Pause, seek or disposal.
 resumed=new Promise(resolve=>gate=resolve);const late=transport.play(0);transport.pause();gate();await late;
 assert.equal(starts.length,1);
@@ -56,4 +60,28 @@ const pending=output.drain();output.node.port.onmessage({data:{kind:'flushed',id
 const cancelled=output.drain();controller.abort();await assert.rejects(cancelled,/Superseded/);
 '''.replace('MODULE',repr(module))
     result=subprocess.run(['node','--input-type=module','-e',script],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stdout+result.stderr
+
+
+@pytest.mark.parametrize('fps', [24,30,60])
+def test_picture_launch_reserves_half_source_frame_before_audible_output(fps):
+    module=(Path(__file__).parents[1]/'src/moviestar/preview_native_audio.mjs').as_uri()
+    script=r'''
+import assert from 'node:assert/strict';
+const {createPreparedAudio}=await import(MODULE);
+let output=2,started,stops=0;
+const context={sampleRate:48000,currentTime:2.04,resume:async()=>{},
+ getOutputTimestamp(){output+=.001;return{contextTime:output,performanceTime:1};},
+ decodeAudioData:async()=>({numberOfChannels:2,sampleRate:48000,duration:5}),
+ createBufferSource:()=>({connect(){},disconnect(){},start(at,offset){started={at,offset};},stop(){stops++;}})};
+globalThis.fetch=async()=>({ok:true,arrayBuffer:async()=>new ArrayBuffer(1)});
+const transport=createPreparedAudio(context,{},new AbortController().signal);
+(await transport.prepare({asset:'test',duration:5,sample_rate:48000,channels:2})).commit();
+await transport.play(1.5,{pictureLead:1/(2*FPS)});
+assert.deepEqual(started,{at:2.04,offset:1.5},'Keep every authored sample and its offset');
+assert.ok(output<started.at,'Launch pictures before the audible edge, not a frame late');
+assert.ok(output+1/(2*FPS)>=2.04-1/48000,'Do not launch earlier than the single-frame allowance');
+transport.pause();assert.equal(stops,1);
+'''
+    result=subprocess.run(['node','--input-type=module','-e','const MODULE='+json.dumps(module)+';const FPS='+str(fps)+';'+script],capture_output=True,text=True,timeout=10)
     assert result.returncode==0,result.stdout+result.stderr
