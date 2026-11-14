@@ -416,6 +416,9 @@ register_project_delete(projects)
 from moviestar.cloud_screenshot import register_screenshot_commands
 register_screenshot_commands(cloud)
 
+from moviestar.cloud_project_download import register_project_download
+register_project_download(projects)
+
 from moviestar.cloud_storyboard import register_storyboard_commands
 register_storyboard_commands(cloud)
 
