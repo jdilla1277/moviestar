@@ -253,3 +253,14 @@ def test_oversized_candidate_is_not_copied(tmp_path,monkeypatch):
     assert reuse.copy_candidate(record,destination,1) is None
     assert not destination.exists()
     assert Path(record['files'][0]['path']).is_file()
+
+
+def test_unreadable_candidate_is_dropped_without_stopping_session(tmp_path,monkeypatch):
+    from moviestar.native_caption_reuse import CaptionCandidates
+    record=candidate(tmp_path,1);catalog=CaptionCandidates();catalog.accept({'a'*64:record},tmp_path)
+    old=Path.is_file
+    def inaccessible(path):
+        if str(path)==record['files'][0]['path']:raise PermissionError('retained folder became unreadable')
+        return old(path)
+    monkeypatch.setattr(Path,'is_file',inaccessible)
+    assert catalog.snapshot()=={}

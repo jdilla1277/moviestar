@@ -158,7 +158,10 @@ class CaptionCandidates:
     def __init__(self):self.entries={}
 
     def prune(self):
-        self.entries={k:v for k,v in self.entries.items()if all(Path(f['path']).is_file()for f in v['files'])}
+        def available(record):
+            try:return all(Path(f['path']).is_file()for f in record['files'])
+            except (OSError,ValueError,TypeError,KeyError):return False
+        self.entries={k:v for k,v in self.entries.items()if available(v)}
 
     def snapshot(self):
         self.prune()
