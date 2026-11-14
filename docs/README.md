@@ -44,7 +44,10 @@ The CLI's built-in help is the authoritative command reference. Run
 - [Personal API keys and remote MCP](api-keys.md) — create a key on the website and authenticate a developer-controlled MCP client.
 - [Account assets](account-assets.md) — upload private video, audio, image and
   caption/transcript originals with your approved CLI installation.
+- [Cloud asset storyboards](cloud-storyboard.md) — labeled contact sheets and durable private image retrieval.
 - [Cloud asset inspection](cloud-probe.md) — probe remote media metadata and recover durable jobs.
 - [Personal Cloud projects](cloud-projects.md) — explicitly create, list, and reopen owned projects through an approved installation.
 
 - [Sharing and download](sharing.md) — private uploads, unlisted handoffs, retries, link management, and recipient downloads.
+
+- [Cloud watch excerpts](cloud-watch.md) — request private bounded video/audio, reopen durable jobs, and retrieve through the CLI.
