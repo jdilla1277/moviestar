@@ -13,14 +13,14 @@ import assert from 'node:assert/strict';
 const {createPreparedAudio}=await import(MODULE);
 const starts=[],stops=[];let resumed=Promise.resolve(),gate;
 const context={sampleRate:48000,currentTime:2,
- resume:()=>resumed,getOutputTimestamp:()=>({contextTime:2,performanceTime:1}),
+ resume:()=>resumed,getOutputTimestamp:()=>({contextTime:2.05,performanceTime:1}),
  decodeAudioData:async bytes=>({numberOfChannels:2,sampleRate:48000,duration:5,id:new Uint8Array(bytes)[0]}),
  createBufferSource:()=>({connect(){},disconnect(){},start(...args){starts.push({args,buffer:this.buffer.id});},stop(){stops.push(true);}})};
 globalThis.fetch=async(url,{signal})=>({ok:true,arrayBuffer:async()=>Uint8Array.of(Number(url.split('/').at(-1))).buffer});
 const controller=new AbortController(),transport=createPreparedAudio(context,{},controller.signal);
 const plane=id=>({asset:String(id),duration:5,sample_rate:48000,channels:2,source_audio:{muted:true},tracks:[]});
 (await transport.prepare(plane(1),controller.signal)).commit();
-await transport.play(1.5);assert.deepEqual(starts[0],{args:[2,1.5],buffer:1});
+await transport.play(1.5);assert.deepEqual(starts[0],{args:[2.05,1.5],buffer:1});
 assert.ok(Math.abs(transport.outputTimeAt(performance.timeOrigin+501)-2)<1e-6);
 transport.pause();assert.equal(transport.outputTimeAt(performance.timeOrigin+501),null);assert.equal(stops.length,1);assert.equal(transport.snapshot().playing,false);
 // Delayed resume cannot start after Pause, seek or disposal.
@@ -78,10 +78,37 @@ globalThis.fetch=async()=>({ok:true,arrayBuffer:async()=>new ArrayBuffer(1)});
 const transport=createPreparedAudio(context,{},new AbortController().signal);
 (await transport.prepare({asset:'test',duration:5,sample_rate:48000,channels:2})).commit();
 await transport.play(1.5,{pictureLead:1/(2*FPS)});
-assert.deepEqual(started,{at:2.04,offset:1.5},'Keep every authored sample and its offset');
+assert.deepEqual(started,{at:2.09,offset:1.5},'Keep every authored sample and its offset');
 assert.ok(output<started.at,'Launch pictures before the audible edge, not a frame late');
-assert.ok(output+1/(2*FPS)>=2.04-1/48000,'Do not launch earlier than the single-frame allowance');
+assert.ok(output+1/(2*FPS)>=started.at-1/48000,'Do not launch earlier than the single-frame allowance');
 transport.pause();assert.equal(stops,1);
 '''
     result=subprocess.run(['node','--input-type=module','-e','const MODULE='+json.dumps(module)+';const FPS='+str(fps)+';'+script],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stdout+result.stderr
+
+
+def test_audio_start_survives_render_quantum_advancing_during_main_thread_setup():
+    module=(Path(__file__).parents[1]/'src/moviestar/preview_native_audio.mjs').as_uri()
+    script=r'''
+import assert from 'node:assert/strict';
+const {createPreparedAudio}=await import(MODULE);
+let output=2,requested,actual,clock=2;
+const context={sampleRate:48000,get currentTime(){return clock;},resume:async()=>{},
+ getOutputTimestamp(){output+=.002;return{contextTime:output,performanceTime:1};},
+ decodeAudioData:async()=>({numberOfChannels:2,sampleRate:48000,duration:5}),
+ createBufferSource:()=>({connect(){},disconnect(){},start(at,offset){
+   // The audio rendering thread can advance while the main thread posts start.
+   clock+=128/48000;requested=at;actual=Math.max(at,clock);
+   assert.equal(offset,1.5);
+ },stop(){}})};
+globalThis.fetch=async()=>({ok:true,arrayBuffer:async()=>new ArrayBuffer(1)});
+const transport=createPreparedAudio(context,{},new AbortController().signal);
+(await transport.prepare({asset:'test',duration:5,sample_rate:48000,channels:2})).commit();
+await transport.play(1.5,{pictureLead:1/60});
+assert.equal(actual,requested,'The recorded start must be the actual scheduled start');
+assert.equal(transport.snapshot().started_context_time,actual);
+assert.ok(requested>clock,'Reserve time for the start command to reach the audio thread');
+transport.dispose();
+'''.replace('MODULE',repr(module))
+    result=subprocess.run(['node','--input-type=module','-e',script],capture_output=True,text=True,timeout=10)
     assert result.returncode==0,result.stdout+result.stderr

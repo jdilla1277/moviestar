@@ -40,7 +40,10 @@ export function createPreparedAudio(context,destination,signal,duration){
       source=context.createBufferSource();source.buffer=buffer;source.connect(destination);
       const playing=source;source.onended=()=>{if(source===playing){source.disconnect();source=null;offset=buffer.duration;}};
       destination.port?.postMessage({kind:'capture'});
-      startedAt=context.currentTime;lastStart={context_time:startedAt,offset};
+      // Schedule ahead of the rendering thread: starting at currentTime can
+      // reach it one quantum late, while the master clock records the earlier
+      // requested time. Keep the authored offset; allow 50 ms for dispatch.
+      startedAt=context.currentTime+.05;lastStart={context_time:startedAt,offset};
       source.start(startedAt,offset);
       // Starting HTML media also incurs presentation latency. Reserve one
       // half-frame interval before the audible edge for picture launch;
