@@ -97,7 +97,10 @@ def register_skim_commands(cloud):
         try:
             with creation_request(url,credential,json.dumps(options,sort_keys=True,separators=(',',':')),idempotency_key) as pending:
                 pending.save()
-                status,body=service._request(url,credential,payload=options,key=pending.key)
+                # Keep the canonical null end in retry state/response validation,
+                # but the API represents an open end by an omitted field.
+                payload={name:value for name,value in options.items() if value is not None}
+                status,body=service._request(url,credential,payload=payload,key=pending.key)
                 _check(status,body,idempotency_key=pending.key)
                 job=_job(body,asset_id,options=options)
                 if body.get('idempotency_key')!=pending.key:

@@ -97,3 +97,24 @@ def test_skim_show_empty_index_writes_manifest_without_fabricating_images(monkey
  assert r.exit_code==0,r.output
  assert json.loads(r.output)['images']==[]
  assert list(out.iterdir())==[out/'skim.json']
+
+
+def test_default_skim_omits_null_wire_end_but_replays_canonical_options(monkeypatch,tmp_path):
+ monkeypatch.setenv('MOVIESTAR_ACCOUNT_STATE',str(tmp_path/'account.json'))
+ monkeypatch.setattr(cloud,'_connection',lambda _:('https://service.invalid/api/v1/account/cloud','synthetic'))
+ calls=[]
+ from moviestar.cloud_creation_state import creation_request
+ canonical={'from_ms':0,'to_ms':None,'count':10}
+ with creation_request(f'https://service.invalid/api/v1/assets/{A}/skim','synthetic',json.dumps(canonical,sort_keys=True,separators=(',',':')),None) as pending:
+  pending.save();original_key=pending.key
+ def request(url,credential,**kwargs):
+  calls.append(kwargs)
+  assert kwargs['payload']=={'from_ms':0,'count':10}
+  if len(calls)==1:return 0,{}
+  return 202,{'job':{'id':J,'asset_id':A,'state':'queued','options':{'from_ms':0,'to_ms':None,'count':10}},'idempotency_key':kwargs['key']}
+ monkeypatch.setattr(cloud,'_request',request)
+ first=CliRunner().invoke(cli,['cloud','skim',A]);assert first.exit_code==1
+ second=CliRunner().invoke(cli,['cloud','skim',A]);assert second.exit_code==0,second.output
+ assert calls[0]['key']==calls[1]['key']
+ assert calls[0]['key']==original_key
+ assert json.loads(second.output)['job']['options']['to_ms'] is None
