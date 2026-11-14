@@ -274,19 +274,29 @@ def _audio_volume_filter(
     layer_offset: float,
 ) -> str:
     """Build gain + edge fades against a layer's full result-time range."""
-    factors = [_audio_number(10 ** (float(gain_db) / 20.0))]
-    if fade_in > 0:
-        factors.append(
-            "min(1,max(0,(t+"
-            f"{_audio_number(layer_offset)})/{_audio_number(fade_in)}))"
-        )
-    if fade_out > 0:
-        factors.append(
-            "min(1,max(0,("
-            f"{_audio_number(layer_duration)}-(t+{_audio_number(layer_offset)}))"
-            f"/{_audio_number(fade_out)}))"
-        )
-    return f"volume='{'*'.join(factors)}':eval=frame"
+    gain = f"volume='{_audio_number(10 ** (float(gain_db) / 20.0))}':eval=frame"
+    if not fade_in and not fade_out:
+        return gain
+    # afade applies the linear curve per sample in C, without a per-sample
+    # expression interpreter across an hour-long export. Shift only the
+    # envelope clock so a bounded window keeps its full layer position.
+    parts = [gain]
+    if layer_offset:
+        parts.append(f"asetpts=PTS+{_audio_number(layer_offset)}/TB")
+    if fade_in:
+        parts.append(f"afade=t=in:st=0:d={_audio_number(fade_in)}:curve=tri")
+    if fade_out:
+        # Validation tolerates a millisecond of timecode rounding. Preserve
+        # (duration - t) / fade_out when the accepted fade exceeds duration:
+        # shorten afade's nonnegative range and scale its initial amplitude.
+        # Merely clamping st to zero would change the authored envelope.
+        if fade_out > layer_duration:
+            parts.append(f"volume='{_audio_number(layer_duration/fade_out)}':eval=frame")
+        fade_duration = min(fade_out, layer_duration)
+        parts.append(f"afade=t=out:st={_audio_number(layer_duration-fade_duration)}:d={_audio_number(fade_duration)}:curve=tri")
+    if layer_offset:
+        parts.append("asetpts=PTS-STARTPTS")
+    return ','.join(parts)
 
 
 def _build_mix_layer_graph(
@@ -415,7 +425,7 @@ def _build_mix_layer_graph(
                 layer_duration=placed_duration,
                 layer_offset=placed_offset,
             )
-            + f",adelay={local_delay_ms}:all=1,apad,"
+            + f",adelay={local_delay_ms}:all=1,asetpts=N/SR/TB,apad,"
             f"atrim=duration={_audio_number(window_duration)}[{label}]"
         )
         filter_parts.append(chain)

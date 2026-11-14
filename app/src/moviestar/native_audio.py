@@ -17,8 +17,6 @@ def compile_audio(snapshot, timeline, start, end, fail):
             base_dir=root,probe_audio=_audio_probe_file)
     except ValueError as exc:
         fail(str(exc))
-    if mix['source_audio']['fade_in'] or mix['source_audio']['fade_out']:
-        fail('source audio fades are not implemented in native review')
     selected=[]
     for track in mix['tracks']:
         left=max(start,track['placed_range']['from']['seconds'])
@@ -26,9 +24,10 @@ def compile_audio(snapshot, timeline, start, end, fail):
         if right<=left:continue
         if track['loop']:fail('audio looping is not implemented in native review')
         if track['ducking']:fail('audio ducking is not implemented in native review')
-        if track['fade_in'] or track['fade_out']:fail('audio track fades are not implemented in native review')
         source=track['source_range']['from']['seconds']+left-track['placed_range']['from']['seconds']
         selected.append({'id':track['id'],'kind':track['kind'],'gain_db':track['gain_db'],'muted':track['muted'],
+            'fade_in':track['fade_in'],'fade_out':track['fade_out'],
+            'placed_range':{'from':track['placed_range']['from']['seconds'],'to':track['placed_range']['to']['seconds']},
             'result_range':{'from':left,'to':right},'source_range':{'from':source,'to':source+right-left}})
     if sum(not t['muted'] for t in selected)>1:
         fail('native review supports one independent audio track in the selected window')
@@ -52,7 +51,7 @@ def compile_audio(snapshot, timeline, start, end, fail):
         'result_duration':timeline.duration_s,'window_start':start}
     identity=sha256(json.dumps(job,sort_keys=True).encode()).hexdigest()[:24]
     plane={'job':identity,'duration':end-start,'sample_rate':AUDIO_MIX_SAMPLE_RATE,'channels':2,
-        'source_audio':mix['source_audio'],'tracks':selected,
+        'result_duration':timeline.duration_s,'source_audio':mix['source_audio'],'tracks':selected,
         'source_ranges':[{k:v for k,v in p.items() if k!='path'} for p in pieces]}
     return plane,(identity,job)
 

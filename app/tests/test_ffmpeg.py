@@ -196,7 +196,7 @@ class TestMixAudio:
         )
 
         graph = command[command.index("-filter_complex") + 1]
-        assert graph.index("volume=") < graph.index("sidechaincompress=")
+        assert graph.index("afade=") < graph.index("sidechaincompress=")
         assert (
             "sidechaincompress=threshold=0.031623:ratio=8:attack=20:release=250"
             in graph

@@ -1153,9 +1153,9 @@ def preview(from_tc, to_tc, port, open_browser, mode):
     Caption changes and undo update the viewer without encoding a preview
     movie. Live caption recipes stay live. Spatial caption elements currently
     support plain text; use preset overlays for spoken-word highlighting.
-    One independently placed audio track and source/track gain or mute are
+    One independently placed audio track and source/track gain, mute and fades are
     supported through a bounded, lossless audio-only mix beneath native video.
-    Audio continues through camera cuts. Fades, looping, ducking and rotated
+    Audio continues through camera cuts. Looping, ducking and rotated
     preset text still require rendered mode.
     Unsupported native projects fail explicitly; retry with --mode rendered.
     No account, upload, or cloud render is required. The URL works on this

@@ -815,9 +815,82 @@ drops/stalls and audio/display plus program drift within 50 ms. The installed
 results and exact source/producer/wheel hashes are in [audio-results.json](audio-results.json).
 
 An edited mix prepares only bounded lossless stereo 48 kHz audio with export's
-layer graph and limiter. Source pictures stay native. Four actual-browser mix
+layer graph and limiter. Source pictures stay native. Six actual-browser mix
 cases also compare optional `audit_pcm=1` final-output samples against the prepared
 canonical mix, including muted tracks. Sample capture is opt-in diagnostic work,
 not an additional production recording feature. Private audio/logs stay local.
 Cold fresh-play startup drops also reproduce in the prior renderer and are
 tracked separately in [#199](https://github.com/jdilla1277/moviestar/issues/199).
+
+
+### Source and track edge fades
+
+```sh
+python experiments/live_browser_preview/audio_benchmark.py --scenario fades --out /tmp/native-fades-new
+python experiments/live_browser_preview/audio_benchmark.py --scenario fades --canvas 1080x1920 --out /tmp/native-fades-hd-new
+```
+
+This scenario times actual source fade-in/out commands, independent-track
+fade-in/out model edits and four individual undos at histories 0/20/50. It starts
+with the track already placed and requires every fade edit to reuse the same
+iframe and video decoders. It retains the same per-edit, playback and clock
+budgets as the gain scenario. Final playback reapplies the faded mix after the
+measured undo checks; that setup is untimed and identified separately.
+
+The native descriptor preserves full project duration and track placement, so a
+selected window in the middle of a fade does not restart its envelope. Export,
+loudness measurement and bounded native audio use the same per-sample linear
+fade filters. Separate analytic-waveform, full-export slice and actual-browser
+output checks cover fade timing and amplitude, including seeking into a fade.
+These are the existing layer-edge fades, not a new crossfade editing API.
+
+The first installed-wheel matrix is recorded in
+[fade-results.json](fade-results.json). It failed the unchanged latency gates:
+16 completed edits exceeded 3,000 ms and one later case timed out before its
+first edit became ready. All failures remain part of the evidence. This shared
+host was under heavy load, but that observation alone does not isolate the
+cause or establish a performance pass. Performance qualification and physical
+playback review for this slice remain pending.
+
+Sequential 1080×1920/history-50 gain controls on the same busy host retained a
+3,842 ms miss in the previous installed renderer, while the new renderer's gain
+control completed below budget. These diagnose a host-sensitive reference; they
+do not prove that the fade path has no regression and do not replace its failed
+matrix. The report includes both versions' source/producer hashes and observed
+load/swap conditions. Do not rerun to select passing samples or widen budgets.
+
+
+The first dedicated Linux CI reference passed both rasters and histories
+0/20/50: **48/48 actual fade/undo edits**, maximum **1,225.735 ms**, all six
+undo/playback cases within the existing zero-drop/stall and 50 ms clock limits.
+[fade-ci-results.json](fade-ci-results.json) records verified installed-wheel
+runtime hashes, producer identity and per-case measurements, linked to the
+[run and generated artifacts](https://github.com/jdilla1277/moviestar/actions/runs/43415641459).
+This is a four-CPU Linux/FFmpeg 8.0.1/Chrome 156 reference, not a causal explanation
+of the retained Mac failures or a physical listening pass. Neither failed Mac
+matrix was removed or relabeled. General/cold-start acceptance remains separate.
+
+
+### Fade-duration rounding regression and fresh reference
+
+Source/track fade durations accepted within the existing millisecond tolerance
+remain renderable when a frame-aligned layer duration is not an exact number of
+milliseconds. An overlong fade-out uses a nonnegative `afade` range and scales
+its initial amplitude to preserve the intended `(duration - t) / fade` curve;
+validation and saved intent are unchanged. Boundary tests exercise real FFmpeg
+at 31/30 seconds with fades rounded below/above that duration, including fade-in,
+a selected window, a full export slice and an independent analytic envelope.
+
+The corrected build's complete fresh matrix is in
+[fade-rounding-results.json](fade-rounding-results.json). All 48 edits completed
+and all six playback/undo cases passed their quality/clock checks, but 13 edits
+still missed 3,000 ms. This matrix remains failed. The earlier failed matrix is
+retained separately; neither is replaced by selecting passing cases.
+
+The `native-audio-performance` workflow runs the same generated fade scenario
+on separate Linux runners at both authored rasters and all three history depths.
+It installs a fresh wheel, verifies its source hashes, retains runtime/producer
+identity and all generated evidence on success or failure, and fails on any
+unchanged driver gate. There is no acceptance rerun or `continue-on-error`.
+Runner results are a separate environment reference and do not prove the cause
+of shared-Mac failures or physical playback acceptance.

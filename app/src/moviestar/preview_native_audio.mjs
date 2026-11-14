@@ -60,7 +60,7 @@ export function createPreparedAudio(context,destination,signal,duration){
       duration:buffer?.duration,sample_rate:buffer?.sampleRate,channels:buffer?.numberOfChannels,
       time:source?Math.min(buffer.duration,offset+Math.max(0,context.currentTime-startedAt)):offset,
       started_context_time:lastStart?.context_time,started_offset:lastStart?.offset,
-      source_audio:plane?.source_audio,tracks:plane?.tracks,source_ranges:plane?.source_ranges};},
+      result_duration:plane?.result_duration,source_audio:plane?.source_audio,tracks:plane?.tracks,source_ranges:plane?.source_ranges};},
     dispose(){if(disposed)return;api.pause();disposed=true;buffer=null;plane=null;signal?.removeEventListener('abort',abort);}
   };
   const abort=()=>api.dispose();signal?.addEventListener('abort',abort,{once:true});

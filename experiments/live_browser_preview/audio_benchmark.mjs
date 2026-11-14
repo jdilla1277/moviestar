@@ -51,13 +51,15 @@ try{
   const saved=JSON.parse(await readFile(join(root,'moviestar/spec.json'),'utf8'));
   result.restored={same_state:initial.state_id===final.state_id,fresh_request:initial.request_id!==final.request_id,history:saved.revisions.length};
   if(!result.restored.same_state||!result.restored.fresh_request||saved.revisions.length!==Math.min(fixture.initial_history+4,50)-4)
-    result.problems.push('Undo did not restore original captions with expected FIFO history');
+    result.problems.push('Undo did not restore original mix with expected FIFO history');
   // Restore an audible dialogue track after the timed undo/restoration check.
   const prior=await browser.evaluate('window.moviestarLive.current.request_id');
   const {spawnSync}=await import('node:child_process');
-  const setup=spawnSync(python,['-m','moviestar.cli','audio','add',join(root,'dialogue.wav'),'--as','dialogue','--kind','voiceover','--from','1','--to','6'],{cwd:root,encoding:'utf8'});
+  const setupArgs=fixture.playback_args??['audio','add',join(root,'dialogue.wav'),'--as','dialogue','--kind','voiceover','--from','1','--to','6'];
+  const setup=spawnSync(python,['-m','moviestar.cli',...setupArgs],{cwd:root,encoding:'utf8'});
   if(setup.status!==0)throw Error(setup.stdout+setup.stderr);
   await browser.wait(`window.moviestarLive.is_current&&window.moviestarLive.current.request_id!==${JSON.stringify(prior)}`,10000);
+  if(fixture.playback_expected)await browser.wait(`(${probe(fixture.playback_expected)}).expected_text_visible`,5000);
   for(const at of [0,1,2,3,4,0])await browser.evaluate('window.moviestarLive.stage.seek('+at+')');
   await browser.click('#play');
   await browser.wait('window.moviestarLive.stage.metrics.finished||window.moviestarLive.stage.error',12000);

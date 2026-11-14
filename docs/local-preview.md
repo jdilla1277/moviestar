@@ -126,8 +126,8 @@ one scene, overlapping any transition, or needing more than two visible videos
 at once are rejected. Transitions elsewhere in the
 project do not block an otherwise supported window. The chosen sources must have
 no source edit operations. Edits on unrelated sources and unplaced live caption tracks do not block
-this window. One independent audio track and source/track gain or mute are
-supported as described below. Audio fades, looping, ducking, multiple audible
+this window. One independent audio track and source/track gain, mute and edge fades are
+supported as described below. Looping, ducking, multiple audible
 independent tracks and held/speed-changed media remain unsupported in this profile. Ordinary unit-speed spans after
 a hold elsewhere in the scene can be reviewed with their original scene clock.
 Other codecs, VFR, HDR/color parity and general large-project behavior have not
@@ -209,8 +209,8 @@ frame, fonts, images and canonical layout before it becomes current.
 
 Native review can play one independently placed audio track alongside routed
 source audio. Use the existing `audio add`, `audio source`, `audio dump` /
-`audio set` and `undo` commands. Source/track gain and mute, selected source
-ranges and result-time placement retain their export meaning. Fades, looping,
+`audio set` and `undo` commands. Source/track gain, mute and edge fades, selected source
+ranges and result-time placement retain their export meaning. Looping,
 ducking and more than one audible independent track in the selected window
 remain unsupported and fail explicitly.
 
@@ -218,13 +218,17 @@ An edited mix prepares only the selected window as lossless stereo 48 kHz PCM,
 using the canonical export layer graph and limiter. Pictures still play from
 their original files; no preview movie is encoded. One audio buffer continues
 through picture cuts. Play/Pause, seeking, restart and replacement stop or
-replace that buffer; superseded preparations cannot become current. Gain/mute
+replace that buffer; superseded preparations cannot become current. Gain/mute/fade
 edits can replace the prepared mix over unchanged video players. Adding/removing
 an audio-file dependency rebuilds the player because its input fingerprint
 changes. Source-file changes still invalidate reuse.
 
-The browser snapshot includes the prepared mix's source/track gain and mute,
-resolved source/result ranges and current audio asset. Generated audio assets
+The browser snapshot includes the prepared mix's source/track gain, mute and fade intent,
+resolved source/result ranges, original track placement and full result duration,
+and current audio asset. Fades use sample-time envelopes shared with export and
+loudness reports; seeking into a fade retains its project/track position. Rendering
+no longer steps fade gain at decoder packet boundaries. The original linear
+curves and authoring fields are unchanged. Generated audio assets
 are request-owned and expire with session history. The ten-second/three-span
 profile and existing approximate clip-end limits still apply. Reference playback
 checks use the authored raster and seek-before-Play workload; fresh playback

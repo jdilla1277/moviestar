@@ -15,7 +15,7 @@ import numpy as np
 from moviestar.spatial_layout import browser_available, _chrome_path
 
 
-def _exercise_pip(tmp_path, spatial, cuts, silent_listener, omit_end_callbacks, pixel_audit, *, independent_audio=False, unmute_source=False, mute_dialogue=False):
+def _exercise_pip(tmp_path, spatial, cuts, silent_listener, omit_end_callbacks, pixel_audit, *, independent_audio=False, unmute_source=False, mute_dialogue=False, fades=False):
     repo = Path(__file__).parents[2]; root = tmp_path/'project'
     subprocess.run([sys.executable, str(repo/'experiments/live_browser_preview/pip.py'), '--out', str(root),
         *(['--spatial'] if spatial else []), *(['--cuts'] if cuts else []),
@@ -29,6 +29,9 @@ def _exercise_pip(tmp_path, spatial, cuts, silent_listener, omit_end_callbacks, 
         from moviestar.audio_surface import editable_audio_document
         document=editable_audio_document(load_spec(root)['audio_mix'])
         document['audio_mix']['tracks'][0].update(gain_db=-9,muted=mute_dialogue)
+        if fades:
+            document['audio_mix']['tracks'][0].update(fade_in=.2,fade_out=.2)
+            document['audio_mix']['source_audio'].update(fade_in=.2,fade_out=.2)
         mix_path=root/'edited-mix.json';mix_path.write_text(json.dumps(document))
         subprocess.run([sys.executable,'-m','moviestar.cli','audio','set',str(mix_path),'--workspace',str(root)],check=True,capture_output=True,timeout=30)
     chrome = os.environ.get('MOVIESTAR_CHROME_PATH') or str(_chrome_path())
@@ -143,6 +146,15 @@ try{
   assert.equal(m.beeps.length,5,'Normal playback still produces all audio cues');
   assert.ok(m.frames.length>=20,'Normal playback keeps presenting source frames');
  }
+ if(FADES){
+  const fadeAt=await b.evaluate('(async()=>{const api=window.movieStarPreview.stage;await api.seek(.1);return api.time;})()');
+  assert.ok(Math.abs(fadeAt-.1)<1/30,'Seek lands within the existing frame tolerance');await b.click('#play');
+  await b.wait('window.movieStarPreview.stage.time>.35',3000);await b.click('#pause');
+  const seeked=await b.evaluate('window.movieStarPreview.stage.snapshot()');
+  assert.ok(Math.abs(seeked.audio.started_offset-fadeAt)<1e-6,'Seek inside fade preserves its position');
+  assert.equal(seeked.audio.playing,false);
+  await b.evaluate('window.movieStarPreview.stage.seek(5-1/30)');
+ }
  const final=await b.evaluate('window.movieStarPreview.stage.snapshot()');
  assert.deepEqual(final.videos.map(v=>v.source.number),[179,209],'Both final frames are held');
  await b.click('#restart');await b.click('#play');await b.click('#pause');
@@ -157,7 +169,7 @@ try{
  await checkRaster();
 }finally{await b.close();}
 '''
-            values = {'TRACK_MUTED':mute_dialogue,'INDEPENDENT':independent_audio,'HELPER': (repo/'experiments/live_browser_preview/browser.mjs').as_uri(), 'CHROME': chrome,
+            values = {'FADES':fades,'TRACK_MUTED':mute_dialogue,'INDEPENDENT':independent_audio,'HELPER': (repo/'experiments/live_browser_preview/browser.mjs').as_uri(), 'CHROME': chrome,
                       'OUT': str(tmp_path/'browser'), 'URL': ready['url'], 'CUTS': cuts,
                       'CUE_HELPER': (repo/'experiments/live_browser_preview/cue_clock.mjs').as_uri(),
                       'OMIT_END_CALLBACKS': omit_end_callbacks, 'PIXEL_AUDIT': pixel_audit, 'SILENT_LISTENER': silent_listener, 'TRACE': os.environ.get('MOVIESTAR_NATIVE_TRACE') == '1'}
@@ -216,9 +228,9 @@ def test_actual_pip_prepares_both_videos_and_keeps_clocks_and_routing(tmp_path, 
 
 
 @pytest.mark.skipif(not browser_available(), reason='Chrome and Node required')
-@pytest.mark.parametrize('cuts,unmute,muted', [(False,False,False),(True,False,False),(True,True,False),(True,False,True)])
-def test_independent_audio_matches_actual_output_across_picture_cuts(tmp_path,cuts,unmute,muted):
-    _exercise_pip(tmp_path,False,cuts,False,False,True,independent_audio=True,unmute_source=unmute,mute_dialogue=muted)
+@pytest.mark.parametrize('cuts,unmute,muted,fades', [(False,False,False,False),(True,False,False,False),(True,True,False,False),(True,False,True,False),(True,False,False,True),(True,True,False,True)])
+def test_independent_audio_matches_actual_output_across_picture_cuts(tmp_path,cuts,unmute,muted,fades):
+    _exercise_pip(tmp_path,False,cuts,False,False,True,independent_audio=True,unmute_source=unmute,mute_dialogue=muted,fades=fades)
     import io
     m=json.loads((tmp_path/'browser/playback.json').read_text());a=m['prepared_audio']
     with av.open(str(tmp_path/'browser/audio-reference.wav')) as container:
