@@ -117,6 +117,8 @@ def build_activity_decode_command(
 ) -> list[str]:
     """Build a raw-grayscale decode that preserves held VFR frames.
 
+    Explicitly select the first video stream, matching the timestamp probe
+    and source metadata even when a different track is marked default.
     Seeking starts at the last decoded frame at/before the requested sample.
     ``fps`` then carries that frame across a VFR timestamp void. Starting the
     fps grid at ``sample_offset_seconds`` makes the first raw frame correspond
@@ -130,6 +132,7 @@ def build_activity_decode_command(
         "ffmpeg", "-v", "error",
         "-ss", _number(seek_seconds),
         "-i", video_path,
+        "-map", "0:v:0",
         "-vf", f"{fps_filter},scale={width}:{height}:flags=area,format=gray",
         "-frames:v", str(frame_count),
         "-f", "rawvideo", "-pix_fmt", "gray", "-",

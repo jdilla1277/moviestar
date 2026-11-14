@@ -64,7 +64,7 @@ def _connection(command: str) -> tuple[str, str]:
     return f"{parsed.scheme}://{parsed.netloc}/api/v1/account/cloud", credential
 
 
-def _request(url: str, credential: str, *, payload=None, key=None, method=None) -> tuple[int, dict]:
+def _request(url: str, credential: str, *, payload=None, key=None, method=None, max_response_bytes=1_048_576) -> tuple[int, dict]:
     request = Request(url, method=method or ("GET" if payload is None else "POST"),
         data=None if payload is None else json.dumps(payload).encode("utf-8"),
         headers={"Authorization": f"Bearer {credential}", "x-moviestar-client": _CLIENT_MARKER,
@@ -76,8 +76,8 @@ def _request(url: str, credential: str, *, payload=None, key=None, method=None) 
         except HTTPError as failure:
             response = failure
         with response:
-            status, raw = response.status, response.read(1_048_577)
-        if len(raw) > 1_048_576:
+            status, raw = response.status, response.read(max_response_bytes+1)
+        if len(raw) > max_response_bytes:
             return status, {}
         if status == 204:
             return status, {}
@@ -114,7 +114,7 @@ def _capabilities(command: str, endpoint: str, credential: str) -> dict:
         _fail(command, "invalid_response", "The service returned incomplete Cloud capabilities. Retry later.")
     fields = ("contract_version", "operations", "scopes", "project_access", "limits", "source_uploads_enabled",
               "source_imports_enabled", "media_processing_enabled", "saved_edits_enabled", "transcript_imports_enabled",
-              "edit_formats", "source_formats", "transcript_formats", "retention", "project_access_scope", "project_sharing", "project_assets")
+              "edit_formats", "source_formats", "transcript_formats", "retention", "project_access_scope", "project_sharing", "project_assets", "asset_activity")
     return {name: body[name] for name in fields if name in body}
 
 
@@ -421,3 +421,5 @@ register_storyboard_commands(cloud)
 
 from moviestar.cloud_skim import register_skim_commands
 register_skim_commands(cloud)
+from moviestar.cloud_activity import register_activity
+register_activity(cloud)
