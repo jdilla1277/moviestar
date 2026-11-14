@@ -991,3 +991,14 @@ those prototype patches and failures remain in the originating workspace.
 Complete generated fade/two-track matrices and physical playback remain the
 qualification steps for this candidate, rather than a general long-timeline
 acceptance claim.
+
+
+The first complete master-clock CI reference passed **96/96 edits**, all twelve
+fade/two-track cases at both rasters and histories 0/20/50. Maximum edit latency
+was **1,401.553 ms**, maximum absolute cue phase **21.593 ms**, and program drift
+**33.167 ms**, with zero reported drops/stalls. Exact wheel/runtime/producer
+identities and per-case evidence are in
+[two-track-master-clock-results.json](two-track-master-clock-results.json), linked
+to [the generated run/artifacts](https://github.com/jdilla1277/moviestar/actions/runs/43586302786).
+This qualifies that bounded matrix; full correctness CI and physical listening
+remain separate. The earlier failed references stay retained unchanged.
