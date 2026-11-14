@@ -1,0 +1,287 @@
+{
+  "status": "failed; not accepted",
+  "head": "996c45a69bf2224f66ead230ac26223a9530feac",
+  "performance_run": "https://github.com/jdilla1277/moviestar/actions/runs/43588716193",
+  "correctness_run": "https://github.com/jdilla1277/moviestar/actions/runs/43588716207",
+  "failure": "An unintended copy of primary callback readback code entered the secondary observe(now,frame) callback, referencing undefined metadata and sampling the primary video.",
+  "correctness_result": "11 failed, 6 passed in the native PiP gate; secondary frame audits stopped prematurely.",
+  "cases": [
+    {
+      "artifact": "native-audio-fades-1080x1920-1",
+      "history": "history-0",
+      "completed_edits": 8,
+      "max_edit_ms": 1041.7066370000002,
+      "problems": [
+        "Uncaught browser exception"
+      ],
+      "exceptions": [
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        }
+      ]
+    },
+    {
+      "artifact": "native-audio-fades-1080x1920-1",
+      "history": "history-20",
+      "completed_edits": 8,
+      "max_edit_ms": 1132.0850300000002,
+      "problems": [
+        "Uncaught browser exception"
+      ],
+      "exceptions": [
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        }
+      ]
+    },
+    {
+      "artifact": "native-audio-fades-1080x1920-1",
+      "history": "history-50",
+      "completed_edits": 8,
+      "max_edit_ms": 1118.4094519999999,
+      "problems": [
+        "Uncaught browser exception"
+      ],
+      "exceptions": [
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        }
+      ]
+    },
+    {
+      "artifact": "native-audio-fades-360x640-1",
+      "history": "history-0",
+      "completed_edits": 8,
+      "max_edit_ms": 1043.5590439999996,
+      "problems": [
+        "Uncaught browser exception"
+      ],
+      "exceptions": [
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        }
+      ]
+    },
+    {
+      "artifact": "native-audio-fades-360x640-1",
+      "history": "history-20",
+      "completed_edits": 8,
+      "max_edit_ms": 1216.9666499999998,
+      "problems": [
+        "Uncaught browser exception"
+      ],
+      "exceptions": [
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        }
+      ]
+    },
+    {
+      "artifact": "native-audio-fades-360x640-1",
+      "history": "history-50",
+      "completed_edits": 8,
+      "max_edit_ms": 1137.432606,
+      "problems": [
+        "Uncaught browser exception"
+      ],
+      "exceptions": [
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        }
+      ]
+    },
+    {
+      "artifact": "native-audio-two-tracks-1080x1920-1",
+      "history": "history-0",
+      "completed_edits": 8,
+      "max_edit_ms": 1448.78204,
+      "problems": [
+        "Uncaught browser exception"
+      ],
+      "exceptions": [
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        }
+      ]
+    },
+    {
+      "artifact": "native-audio-two-tracks-1080x1920-1",
+      "history": "history-20",
+      "completed_edits": 8,
+      "max_edit_ms": 1462.77926,
+      "problems": [
+        "Uncaught browser exception"
+      ],
+      "exceptions": [
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        }
+      ]
+    },
+    {
+      "artifact": "native-audio-two-tracks-1080x1920-1",
+      "history": "history-50",
+      "completed_edits": 8,
+      "max_edit_ms": 1582.6334999999997,
+      "problems": [
+        "Uncaught browser exception"
+      ],
+      "exceptions": [
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        }
+      ]
+    },
+    {
+      "artifact": "native-audio-two-tracks-360x640-1",
+      "history": "history-0",
+      "completed_edits": 8,
+      "max_edit_ms": 1380.697366,
+      "problems": [
+        "Uncaught browser exception"
+      ],
+      "exceptions": [
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        }
+      ]
+    },
+    {
+      "artifact": "native-audio-two-tracks-360x640-1",
+      "history": "history-20",
+      "completed_edits": 8,
+      "max_edit_ms": 1548.3990019999999,
+      "problems": [
+        "Uncaught browser exception"
+      ],
+      "exceptions": [
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        }
+      ]
+    },
+    {
+      "artifact": "native-audio-two-tracks-360x640-1",
+      "history": "history-50",
+      "completed_edits": 8,
+      "max_edit_ms": 1388.3708889999998,
+      "problems": [
+        "Uncaught browser exception"
+      ],
+      "exceptions": [
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        },
+        {
+          "function": "observe",
+          "description": "ReferenceError: metadata is not defined"
+        }
+      ]
+    }
+  ],
+  "repair": "Remove the stray code only from the secondary callback. Execute that real callback in four cut/non-cut and audit/non-audit configurations; require its own frame/image, callback rescheduling and readiness checks. Preserve the primary early-readback guard and all existing gates."
+}

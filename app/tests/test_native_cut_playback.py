@@ -183,3 +183,66 @@ assert.equal(messages.at(-1).kind,'flushed');assert.equal(messages.at(-1).id,9,'
 '''
     result = subprocess.run(['node', '-e', 'const SOURCE='+json.dumps(module)+';\n'+script], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stdout+result.stderr
+
+
+@pytest.mark.parametrize('action', ['play','pause','resume','clock_lost'])
+def test_prepared_cut_prerolls_hidden_picture_then_reveals_on_audible_clock(action):
+    module=(Path(__file__).parents[1]/'src/moviestar/preview_native_cuts.mjs').as_uri()
+    script=r'''
+import assert from 'node:assert/strict';
+const {createCutPlayback}=await import(MODULE);
+let at=0,nextId=0;const timers=new Map(),shown=[];
+globalThis.setTimeout=(fn,ms)=>{const id=++nextId;timers.set(id,{fn,due:at+ms/1000});return id;};
+globalThis.clearTimeout=id=>timers.delete(id);
+const flush=()=>new Promise(r=>setImmediate(r));
+async function tick(time){at=time;for(const [id,t]of [...timers])if(t.due<=at+1e-8){timers.delete(id);t.fn();}await flush();}
+const metrics={},packet={range:{from:30,to:36},fps:30,segments:[0,3].map(offset=>({offset,packet:{range:{from:30+offset,to:33+offset}}}))};
+const stages=packet.segments.map((s,i)=>({gain:{gain:{cancelScheduledValues(){},setValueAtTime(){}}},api:{
+ time:0,plays:0,packet:{source_start:10+i},metrics:{},pause(){},async play(){this.plays++;},async seek(time){this.time=time;},snapshot(){return{};}
+}}));
+const reviewAudio={snapshot:()=>({prepared:true}),async play(){},pause(){},outputTimeAt:()=>at};
+const api=createCutPlayback({packet,stages,audio:{currentTime:100,sampleRate:48000,state:'running'},metrics,show:i=>shown.push(i),reviewAudio});
+await api.play();
+// Neither an early end callback nor a late outgoing local clock drives the cut.
+await stages[0].api.onSegmentEnd(0);assert.equal(stages[1].api.plays,0);
+stages[0].api.time=2.94;
+await tick(3-1/60);assert.equal(stages[1].api.plays,1,'Start incoming pipeline one half-frame before the audible cut');
+assert.equal(shown.at(-1),0,'Incoming preroll must remain hidden');
+if(ACTION==='pause'||ACTION==='resume'){stages[1].api.time=.01;api.pause();}
+if(ACTION==='resume'){await api.play();assert.equal(stages[1].api.time,0,'Canceled preroll must rewind before audio resumes');}
+if(ACTION==='clock_lost')reviewAudio.outputTimeAt=()=>NaN;
+await tick(3);const reveal=ACTION==='play'||ACTION==='resume';
+assert.equal(shown.at(-1),reveal?1:0,'Reveal only on a valid current output clock');
+assert.equal(api.snapshot().segment,reveal?1:0);
+if(ACTION==='clock_lost')assert.match(metrics.error,/clock/);api.dispose();
+'''
+    result=subprocess.run(['node','--input-type=module','-e','const MODULE='+json.dumps(module)+';const ACTION='+json.dumps(action)+';'+script],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stdout+result.stderr
+
+
+def test_pcm_capture_clock_retains_a_repeated_render_stamp_without_shifting_samples():
+    source=(Path(__file__).parents[1]/'src/moviestar/preview_native_cut_meter.mjs').read_text()
+    script=r'''
+import assert from 'node:assert/strict';import vm from 'node:vm';
+let Processor,messages=[];class Base{constructor(){this.port={postMessage:m=>messages.push(m)};}}
+const scope={AudioWorkletProcessor:Base,currentFrame:0,sampleRate:48000,registerProcessor:(name,klass)=>Processor=klass};
+vm.runInNewContext(SOURCE,scope);
+const meter=new Processor({processorOptions:{audit:true,capturePcm:true}}),out=[new Float32Array(128),new Float32Array(128)];
+meter.process([[new Float32Array(128),new Float32Array(128)]],[out]);
+meter.port.onmessage({data:{kind:'capture'}});
+// Captured Chrome trace repeats a quantum stamp, then recovers at frame 256.
+// PCM itself remains an uninterrupted sequence of distinct rendered samples.
+for(const [frame,value]of [[0,.1],[256,.2]]){
+ scope.currentFrame=frame;const data=new Float32Array(128).fill(value);meter.process([[data,data]],[out]);
+}
+meter.port.onmessage({data:{kind:'flush',id:1}});
+const pcm=messages.find(m=>m.kind==='pcm'),data=new Float32Array(pcm.data);
+assert.equal(pcm.start_context_time,128/48000,'Start time follows rendered sample count through the repeated stamp');
+assert.equal(pcm.frames,256);assert.equal(data[0],Math.fround(.1));assert.equal(data[128],Math.fround(.2));
+const blocks=messages.filter(m=>m.kind==='blocks').flatMap(m=>m.blocks);
+assert.equal(blocks[1].reported_context_time,0,'Retain the raw browser stamp');
+assert.equal(blocks[1].clock_adjustment_frames,128,'Expose the correction rather than hiding it');
+assert.equal(blocks[2].clock_adjustment_frames,0,'Do not carry a synthetic offset after recovery');
+'''
+    result=subprocess.run(['node','--input-type=module','-e','const SOURCE='+json.dumps(source)+';'+script],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stdout+result.stderr

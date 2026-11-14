@@ -58,14 +58,11 @@ def test_source_gain_without_extra_tracks_also_uses_canonical_audio(pip_project)
 
 
 @pytest.mark.parametrize('change,reason',[
-    ('loop','loop'),('ducking','ducking'),('second-track','one independent')])
+    ('loop','loop'),('ducking','ducking')])
 def test_first_audio_profile_rejects_uncovered_mix_features(pip_project,change,reason):
     spec,_,root=dialogue_project(pip_project)
     if change=='loop':spec['audio_mix']['tracks'][0]['loop']=True
     if change=='ducking':spec['audio_mix']['tracks'][0]['ducking']={'under':['source'],'preset':'speech'}
-    if change=='second-track':
-        second=deepcopy(spec['audio_mix']['tracks'][0]);second['id']='other'
-        spec['audio_mix']['tracks'].append(second)
     save_spec(spec,cwd=root)
     with pytest.raises(NativePreviewUnsupported,match=reason):
         compile_snapshot(read_snapshot(root,0,5))

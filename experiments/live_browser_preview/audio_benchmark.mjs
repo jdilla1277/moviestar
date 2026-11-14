@@ -3,6 +3,7 @@ import {join} from 'node:path';
 import {Browser} from './browser.mjs';
 import {startCommand,observeEdit,previewProbeExpression} from './diagnostics.mjs';
 import {measureCueClock} from './cue_clock.mjs';
+import {describeAudioClocks} from './audio_clock_report.mjs';
 const [url,root,out,python,chrome]=process.argv.slice(2),fixture=JSON.parse(await readFile(join(out,'case.json'),'utf8'));
 const result={edits:[],edit_attempts:[],problems:[],browser_exceptions:[]};
 const persist=()=>writeFile(join(out,'browser-report.json'),JSON.stringify(result,null,2));
@@ -43,7 +44,7 @@ try{
     result.edits.push({name:action.name,ms:attempt.trace.measurement_ms,cli_ms:attempt.trace.cli_completion_ms,
       request_id:attempt.preview.current.request_id,state_id:attempt.preview.current.state_id,
       reused_decoders:await browser.evaluate('document.querySelector("iframe:not(.pending)")===window.captionReferenceFrame')});
-    if(!['add-dialogue','undo-add-dialogue'].includes(action.name)&&!result.edits.at(-1).reused_decoders)result.problems.push(`${label} rebuilt unchanged decoders`);
+    if(!['add-dialogue','undo-add-dialogue','add-bed','undo-add-bed'].includes(action.name)&&!result.edits.at(-1).reused_decoders)result.problems.push(`${label} rebuilt unchanged decoders`);
     if(attempt.trace.measurement_ms>=3000)result.problems.push(`${label} exceeds 3000ms`);
     await persist();
   }
@@ -66,6 +67,7 @@ try{
   result.playback=await browser.evaluate('window.moviestarLive.stage.metrics');
   result.playback.video_quality=await browser.evaluate(`[...document.querySelector('iframe:not(.pending)').contentDocument.querySelectorAll('iframe')].flatMap(f=>f.contentWindow.moviestarLiveStage.metrics.video_quality??[])`);
   if(result.playback.error||result.playback.stalls||result.playback.video_quality.some(q=>q.dropped_frames))result.problems.push('Audio playback failed/stalled/dropped');
+  result.clock_diagnostics=describeAudioClocks(result.playback);
   result.cue_clock=measureCueClock(result.playback,{fps:30,sourceStart:1,count:5});result.problems.push(...result.cue_clock.problems);
   const first=result.playback.frames[0],last=result.playback.frames.at(-1);
   result.program_drift_ms=last.display_epoch-last.result_time*1000-first.display_epoch+first.result_time*1000;

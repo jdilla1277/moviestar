@@ -165,6 +165,8 @@ jobs:
             ${{ runner.temp }}/full-suite/test_actual_native_cuts_keep_*/browser/*.json
             ${{ runner.temp }}/native-pip/test_independent_audio_*/browser/*.json
             ${{ runner.temp }}/native-pip/test_independent_audio_*/browser/*.wav
+            ${{ runner.temp }}/native-pip/test_two_tracks_*/browser/*.json
+            ${{ runner.temp }}/native-pip/test_two_tracks_*/browser/*.wav
           if-no-files-found: ignore
           retention-days: 7
 

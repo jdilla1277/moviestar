@@ -15,7 +15,7 @@ import numpy as np
 from moviestar.spatial_layout import browser_available, _chrome_path
 
 
-def _exercise_pip(tmp_path, spatial, cuts, silent_listener, omit_end_callbacks, pixel_audit, *, independent_audio=False, unmute_source=False, mute_dialogue=False, fades=False):
+def _exercise_pip(tmp_path, spatial, cuts, silent_listener, omit_end_callbacks, pixel_audit, *, independent_audio=False, unmute_source=False, mute_dialogue=False, fades=False, two_tracks=False, mute_bed=False):
     repo = Path(__file__).parents[2]; root = tmp_path/'project'
     subprocess.run([sys.executable, str(repo/'experiments/live_browser_preview/pip.py'), '--out', str(root),
         *(['--spatial'] if spatial else []), *(['--cuts'] if cuts else []),
@@ -24,6 +24,9 @@ def _exercise_pip(tmp_path, spatial, cuts, silent_listener, omit_end_callbacks, 
         subprocess.run([sys.executable,str(repo/'experiments/live_browser_preview/audio.py'),'--out',str(root),'--existing'],check=True,capture_output=True,timeout=30)
         if unmute_source:
             subprocess.run([sys.executable,'-m','moviestar.cli','audio','source','--workspace',str(root),'--unmute','--gain-db','-6'],check=True,capture_output=True,timeout=30)
+    if two_tracks:
+        subprocess.run([sys.executable,str(repo/'experiments/live_browser_preview/audio.py'),
+            '--out',str(root),'--add-bed'],check=True,capture_output=True,timeout=30)
     if independent_audio:
         from moviestar.spec import load_spec
         from moviestar.audio_surface import editable_audio_document
@@ -32,6 +35,7 @@ def _exercise_pip(tmp_path, spatial, cuts, silent_listener, omit_end_callbacks, 
         if fades:
             document['audio_mix']['tracks'][0].update(fade_in=.2,fade_out=.2)
             document['audio_mix']['source_audio'].update(fade_in=.2,fade_out=.2)
+        if two_tracks:document['audio_mix']['tracks'][1]['muted']=mute_bed
         mix_path=root/'edited-mix.json';mix_path.write_text(json.dumps(document))
         subprocess.run([sys.executable,'-m','moviestar.cli','audio','set',str(mix_path),'--workspace',str(root)],check=True,capture_output=True,timeout=30)
     chrome = os.environ.get('MOVIESTAR_CHROME_PATH') or str(_chrome_path())
@@ -231,7 +235,10 @@ def test_actual_pip_prepares_both_videos_and_keeps_clocks_and_routing(tmp_path, 
 @pytest.mark.parametrize('cuts,unmute,muted,fades', [(False,False,False,False),(True,False,False,False),(True,True,False,False),(True,False,True,False),(True,False,False,True),(True,True,False,True)])
 def test_independent_audio_matches_actual_output_across_picture_cuts(tmp_path,cuts,unmute,muted,fades):
     _exercise_pip(tmp_path,False,cuts,False,False,True,independent_audio=True,unmute_source=unmute,mute_dialogue=muted,fades=fades)
-    import io
+    _assert_prepared_audio_matches_output(tmp_path)
+
+
+def _assert_prepared_audio_matches_output(tmp_path):
     m=json.loads((tmp_path/'browser/playback.json').read_text());a=m['prepared_audio']
     with av.open(str(tmp_path/'browser/audio-reference.wav')) as container:
         resampler=av.AudioResampler(format='fltp',layout='stereo',rate=48000)
@@ -255,3 +262,15 @@ def test_independent_audio_matches_actual_output_across_picture_cuts(tmp_path,cu
     assert abs(min(end,expected.shape[1])-expected.shape[1])<=.05*48000
     tail=round((m['pause_context_time']-capture['start_context_time'])*48000)+128
     if tail<pcm.shape[1]:assert abs(pcm[:,tail:]).max()<1e-7
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node required')
+@pytest.mark.parametrize('unmute,mute_bed', [(False,False),(True,False),(False,True)])
+def test_two_tracks_match_output_across_picture_cuts(tmp_path,unmute,mute_bed):
+    _exercise_pip(tmp_path,False,True,False,False,True,independent_audio=True,
+        unmute_source=unmute,fades=True,two_tracks=True,mute_bed=mute_bed)
+    _assert_prepared_audio_matches_output(tmp_path)
+    prepared=json.loads((tmp_path/'browser/playback.json').read_text())['prepared_audio']
+    assert [t['id'] for t in prepared['tracks']]==['dialogue','bed']
+    assert prepared['tracks'][1]['muted']==mute_bed
+    assert prepared['tracks'][1]['placed_range']=={'from':.5,'to':4.5}

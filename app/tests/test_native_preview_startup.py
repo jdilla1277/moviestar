@@ -139,3 +139,47 @@ vm.runInContext(`
 '''
     result=subprocess.run(['node','-e','const STAGE='+json.dumps(stage)+';\n'+script],capture_output=True,text=True,timeout=10)
     assert result.returncode==0,result.stdout+result.stderr
+
+
+def test_audit_copies_callback_pixels_before_dom_work_can_advance_the_video_image():
+    stage=stage_script()
+    script=r'''
+const vm=require('node:vm'),assert=require('node:assert/strict');let copied=0;
+const pixels={drawImage(image,sx){if(sx===0)copied=image.pixel;},getImageData(){const data=new Uint8ClampedArray(128*17*4);for(let bit=0;bit<8;bit++)data[(8*128+bit*16+8)*4]=copied&(1<<bit)?255:0;return{data};}};
+const context={window:{moviestarScene:{entries:[],applyMotion(){context.testVideo.pixel=32;}}},document:{createElement:()=>({getContext:()=>pixels})},
+ location:{search:'?audit=1'},URLSearchParams,AbortController,performance:{now:()=>1,timeOrigin:0},Date,
+ fetch:()=>new Promise(()=>{}),clearTimeout(){},setTimeout(){},requestAnimationFrame:fn=>fn(),console};
+vm.createContext(context);vm.runInContext(STAGE,context);
+context.testVideo={pixel:31,currentTime:1.033333,paused:false,videoWidth:640,videoHeight:360,requestVideoFrameCallback(){return 1;},getVideoPlaybackQuality(){return{totalVideoFrames:2,droppedVideoFrames:0};}};
+vm.runInContext(`video=testVideo;playing=true;readyDone=true;packet={fps:30,source_start:1,source_end:6,samples:Array(150).fill({nodes:[]})};
+ videos.push({video,primary:true,path:['main'],beforePlay:{totalVideoFrames:0,droppedVideoFrames:0}});
+ onFrame(1,{mediaTime:1.033333,expectedDisplayTime:1,presentedFrames:2});`,context);
+const frame=context.window.moviestarLiveStage.metrics.frames[0];
+assert.equal(context.testVideo.pixel,32,'The live image can advance during motion/layout work');
+assert.equal(frame.media_time,1.033333);assert.equal(frame.number,31,'Retain the callback image, not a later DOM readback');
+assert.equal(vm.runInContext('sourceFrame().number',context),32,'Independent late read observes the changed image');
+'''
+    result=subprocess.run(['node','-e','const STAGE='+json.dumps(stage)+';'+script],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stdout+result.stderr
+
+
+@pytest.mark.parametrize('cut', [False,True])
+@pytest.mark.parametrize('audit_enabled', [False,True])
+def test_secondary_video_callback_uses_its_own_frame_and_image(cut,audit_enabled):
+    source=stage_script()
+    body=source.split('const observe=(now,frame)=>{',1)[1].split('\n      };',1)[0]
+    script=r'''
+const vm=require('node:vm'),assert=require('node:assert/strict');let scheduled=0,checks=0;
+const context={disposed:false,playing:true,audit:AUDIT,video:{paused:false},packet:{cut_segment:CUT,fps:30},
+ item:{path:['inset'],end:5},metrics:{},media:{requestVideoFrameCallback(){scheduled++;return scheduled;}},
+ sourceFrame(which){assert.equal(which,context.item,'The listener must sample its own image, not the primary video');return{number:61};},
+ recordVideoQuality(){},freezeFollower(){throw Error('This is not the final frame');},checkReady(){checks++;}};
+vm.runInNewContext('const observe=(now,frame)=>{'+BODY+'};observe(0,{mediaTime:2.033333,expectedDisplayTime:20,presentedFrames:2});',context);
+assert.equal(context.item.firstFrame,true);assert.equal(context.item.frame.media_time,2.033333);
+assert.equal(scheduled,1);assert.equal(checks,1);
+if(AUDIT){assert.equal(context.metrics.video_frames.length,1);assert.equal(context.metrics.video_frames[0].number,61);}
+else assert.equal(context.metrics.video_frames,undefined);
+'''
+    prefix='const BODY='+json.dumps(body)+',CUT='+json.dumps(cut)+',AUDIT='+json.dumps(audit_enabled)+';'
+    result=subprocess.run(['node','-e',prefix+script],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stdout+result.stderr

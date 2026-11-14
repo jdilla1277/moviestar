@@ -20,6 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         canvas: ['360x640', '1080x1920']
+        scenario: ['fades', 'two-tracks']
     env:
       MOVIESTAR_CHROME_NO_SANDBOX: '1'
     steps:
@@ -77,10 +78,10 @@ jobs:
               'dependencies': {d.metadata['Name']: d.version for d in distributions()},
           }, indent=2))
           PY
-      - name: Measure actual fades and undo at histories 0/20/50
+      - name: Measure existing audio edits and undo at histories 0/20/50
         run: |
           "$RUNNER_TEMP/native-env/bin/python" experiments/live_browser_preview/audio_benchmark.py \
-            --scenario fades --canvas '${{ matrix.canvas }}' \
+            --scenario '${{ matrix.scenario }}' --canvas '${{ matrix.canvas }}' \
             --out "$RUNNER_TEMP/native-audio-evidence/matrix"
       # These fixtures are generated. Keep the first result on success or failure;
       # there is no acceptance rerun and no relaxed deadline in this workflow.
@@ -88,7 +89,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: native-audio-fades-${{ matrix.canvas }}-${{ github.run_attempt }}
+          name: native-audio-${{ matrix.scenario }}-${{ matrix.canvas }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/native-audio-evidence
           if-no-files-found: warn
           retention-days: 7

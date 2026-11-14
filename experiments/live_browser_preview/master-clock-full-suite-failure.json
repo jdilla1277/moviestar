@@ -1,0 +1,29 @@
+{
+  "status": "failed full-suite frame-identity check; retained separately from passing sync matrix",
+  "code_head": "6c1bba9e0adab0872204edd6a25191e656daafe2",
+  "run_url": "https://github.com/jdilla1277/moviestar/actions/runs/43586302688",
+  "test": "tests/test_native_cuts_browser.py::test_actual_native_cuts_keep_source_frames_and_audio_continuity[offsets2-True]",
+  "main_suite": {
+    "passed": 3564,
+    "skipped": 9,
+    "failed": 1
+  },
+  "separate_pip_cases_passed": 17,
+  "bad_sample": {
+    "segment": 0,
+    "media_time": 1.033333,
+    "expected_barcode": 31,
+    "sampled_barcode": 32,
+    "display_time": 596.199951171875,
+    "callback_time": 549.1000000000931,
+    "current_time": 1.042356,
+    "frozen": false
+  },
+  "notes": [
+    "Matches the class of unresolved callback/readback mismatch tracked in #189; this is not a timing-matrix failure.",
+    "The legacy source-audio path does not use the new prepared-audio cut scheduler. Causation of this physical/readback observation is not established.",
+    "Audit previously read live pixels after motion/DOM updates. A negative-control harness advances the live image during that work and reproduces a mismatching late sample.",
+    "Readback is now performed at callback entry, with the existing held-final-frame path preserved. Every observation is still checked exactly; no tolerance, sample count or gate was relaxed.",
+    "This reduces an avoidable readback window; it does not claim proof of all historical Linux mismatches or close #189. Subsequent complete CI remains required."
+  ]
+}

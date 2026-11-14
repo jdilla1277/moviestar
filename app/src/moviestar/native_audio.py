@@ -9,6 +9,9 @@ from moviestar.ffmpeg import (_audio_from_filter_parts, build_mix_audio_window_c
     AUDIO_MIX_SAMPLE_RATE, AUDIO_MIX_CHANNEL_LAYOUT, AUDIO_MIX_SAMPLE_FORMAT)
 
 
+MAX_AUDIBLE_TRACKS = 2
+
+
 def compile_audio(snapshot, timeline, start, end, fail):
     from moviestar.cli import _audio_probe_file
     root=Path(snapshot['root']);spec=snapshot['spec']
@@ -29,8 +32,8 @@ def compile_audio(snapshot, timeline, start, end, fail):
             'fade_in':track['fade_in'],'fade_out':track['fade_out'],
             'placed_range':{'from':track['placed_range']['from']['seconds'],'to':track['placed_range']['to']['seconds']},
             'result_range':{'from':left,'to':right},'source_range':{'from':source,'to':source+right-left}})
-    if sum(not t['muted'] for t in selected)>1:
-        fail('native review supports one independent audio track in the selected window')
+    if sum(not t['muted'] for t in selected)>MAX_AUDIBLE_TRACKS:
+        fail('native review supports at most two independent audible tracks in the selected window')
     metadata={s['id']:s for s in snapshot['project']['sources']}
     paths={s['id']:(root/s['path']).resolve() for s in spec['sources']}
     pieces=[]
