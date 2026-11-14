@@ -57,6 +57,7 @@ from moviestar.ffmpeg import (
     AUDIO_MIX_SAMPLE_RATE,
     FFmpegCapabilityError,
     FFmpegNotFoundError,
+    FrameNotProducedError,
     build_extract_clip_command,
     build_extract_frame_command,
     build_render_segments_command,
@@ -7101,6 +7102,13 @@ def screenshot(
     branch on a single key rather than sniffing for the presence of
     ``result_timecode``.
 
+    Raw-file and flat-project timecodes are half-open: use a time earlier
+    than the source/result endpoint. If a final seek produces no image,
+    retry the last decoded displayed frame using bounded timing evidence.
+    Requested timecodes and overlay timing stay at the requested instant;
+    ffmpeg_command reports the seek used to produce the actual image.
+    Unavailable frames fail with a structured recovery hint.
+
     Outputs JPEG by default. When --out is omitted, the file is
     written to screenshot_<seconds>s.jpg in the current directory.
     Pass --out foo.png if you need a lossless PNG.
@@ -7126,6 +7134,9 @@ def screenshot(
         at_seconds = parse_timecode(timecode)
     except ValueError as exc:
         _error_exit("screenshot", str(exc))
+
+    if not math.isfinite(at_seconds) or at_seconds < 0:
+        _error_exit("screenshot", "Timecode must be finite and nonnegative.")
 
     if video is not None and file_path is not None:
         _error_exit(
@@ -7170,10 +7181,10 @@ def _screenshot_file_mode(
 
     fmt = probe_data.get("format", {})
     duration = float(fmt.get("duration", 0)) if fmt.get("duration") else 0.0
-    if duration and at_seconds > duration:
+    if duration and at_seconds >= duration:
         _error_exit(
             "screenshot",
-            f"Timecode {at_seconds}s is beyond source duration {duration}s",
+            f"Timecode {at_seconds}s is at or beyond source duration {duration}s",
         )
 
     video_stream = next(
@@ -7229,12 +7240,25 @@ def _screenshot_file_mode(
 
     try:
         ffmpeg_cmd = extract_frame(abs_source, at_seconds, abs_output)
+    except FrameNotProducedError as exc:
+        _error_exit_with_hint(
+            "screenshot", str(exc),
+            "Try an earlier --at timecode or inspect the source with 'moviestar probe'. "
+            "No screenshot was produced; any prior output was preserved.",
+            reason="frame_unavailable",
+        )
     except FFmpegNotFoundError as exc:
         _error_exit("screenshot", str(exc))
     except FileNotFoundError as exc:
         _error_exit("screenshot", str(exc))
     except RuntimeError as exc:
         _error_exit("screenshot", str(exc))
+    except OSError as exc:
+        _error_exit_with_hint(
+            "screenshot", f"Could not write screenshot: {exc}",
+            "Check that the output directory and existing output are writable, "
+            "then retry with --out pointing to an image file.",
+        )
 
     _render_platform_preview_in_place("screenshot", platform_preview)
     width, height = _probe_output_dimensions(abs_output)
@@ -7309,15 +7333,11 @@ def _screenshot_in_project(
     timeline = resolve_source(spec, source_id, source_duration)
     effective = timeline.effective_duration
 
-    # Strict bounds for screenshot: a single-point timecode "1.5s into a
-    # 1s timeline" is unambiguously beyond — no epsilon needed (unlike
-    # trim's range bounds, which allow a small slack to forgive float
-    # comparisons against the effective end). A tiny tolerance covers
-    # float-arithmetic noise when the user types the exact end second.
-    if at_seconds < 0 or at_seconds > effective + 0.001:
+    # A flat timeline is half-open: there is no frame at its endpoint.
+    if at_seconds < 0 or at_seconds >= effective:
         _error_exit(
             "screenshot",
-            f"Timecode {at_seconds}s exceeds result duration of {effective}s",
+            f"Timecode {at_seconds}s is at or beyond result duration of {effective}s",
         )
 
     # Walk segments so result-time past a cut seam maps to the right
@@ -7398,12 +7418,25 @@ def _screenshot_in_project(
         ffmpeg_cmd = extract_frame(abs_source, source_seconds, abs_output, **frame_options)
     except FFmpegCapabilityError as exc:
         _ffmpeg_capability_error_exit("screenshot", exc)
+    except FrameNotProducedError as exc:
+        _error_exit_with_hint(
+            "screenshot", str(exc),
+            "Try an earlier --at timecode or inspect the source with 'moviestar probe'. "
+            "No screenshot was produced; any prior output was preserved.",
+            reason="frame_unavailable",
+        )
     except FFmpegNotFoundError as exc:
         _error_exit("screenshot", str(exc))
     except FileNotFoundError as exc:
         _error_exit("screenshot", str(exc))
     except RuntimeError as exc:
         _error_exit("screenshot", str(exc))
+    except OSError as exc:
+        _error_exit_with_hint(
+            "screenshot", f"Could not write screenshot: {exc}",
+            "Check that the output directory and existing output are writable, "
+            "then retry with --out pointing to an image file.",
+        )
 
     _render_platform_preview_in_place("screenshot", platform_preview)
     width, height = _probe_output_dimensions(abs_output)
