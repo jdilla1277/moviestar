@@ -1,0 +1,1234 @@
+{
+  "status": "failed; not qualified by a subsequent rerun",
+  "code_head": "110a50ced56bb2668869d7e31afd4470e68ba50e",
+  "run_url": "https://github.com/jdilla1277/moviestar/actions/runs/43416629292",
+  "runtimes": {
+    "native-audio-two-tracks-1080x1920-1": {
+      "source_hashes": {
+        "app/src/moviestar/__init__.py": "4d6069e3615cfb759eff4a69169348d83d5dec81d5c376c2f34466db0d26504a",
+        "app/src/moviestar/__main__.py": "83555779bc550efd4cd1013ff0131956f4eea8bf5838a38019ee33f359cbb038",
+        "app/src/moviestar/account.py": "ac8e33c5f9a856435ace85e1a4eb9d681bed71f207607176992c8886d1dbccea",
+        "app/src/moviestar/activity.py": "eb764e61ac747d4e88a16c37c813131620c92f4ce30bf3446d99956a7c1c525c",
+        "app/src/moviestar/audio_surface.py": "71df8189805594ea2ad3d484bbe3c6c6a95471f77fe2e5460fb6f569f5af856d",
+        "app/src/moviestar/camera.py": "2b4dc252d57d743093d984cb0ac6a5a162056215b3a670820b908a80c521f5f5",
+        "app/src/moviestar/caption_import.py": "eb61ef59750129b47976017f56c920c615ab8acd2ce66e14e56580fc357218ef",
+        "app/src/moviestar/captions.py": "441ff58a85f7bf0a627c369a16074c1be9bbdf07d74898d7961fd29560e7b68e",
+        "app/src/moviestar/cli.py": "9df077ec13a9b11f5f4f0c64e51c2eefe1d9c091cdb3ad17ce4742f777abf1d9",
+        "app/src/moviestar/composition_mock.py": "d232ea91dd1f3b65c7b3435d2713da4c6bcf5eb50b8d8bf7ca81e225afb9cf82",
+        "app/src/moviestar/feedback.py": "ec51bbc56da56823721769b5d79f331b88d3f957b1ef6ec9e9d3d146c2161d3b",
+        "app/src/moviestar/ffmpeg.py": "61e7e7f30badfe8ba6177b71cd32940a5767c20f8d92cf68bc84fecb3025d6a0",
+        "app/src/moviestar/find.py": "0d2b06a64c80a0f6dd5b1a166364a610373c3e2d912d4bd1d8c1c6d05970f4b6",
+        "app/src/moviestar/fonts.py": "5f2134271761dca57965d079b37d69fed48e110ff4348df141921660e1644027",
+        "app/src/moviestar/json_identity.py": "9069690d6f0b624f462aeb8a984ebd1378fbd84fba0820541a8cda0bf3bfcc0c",
+        "app/src/moviestar/local_preview.py": "7bb6e7e0db97f28afe8bed8a0b0df90ae978b7a53355d67ce0287845c9ab8d67",
+        "app/src/moviestar/masks.py": "8438b14fbe411577230df941184d779b482f7240006f90c160d6beb1d8999fa1",
+        "app/src/moviestar/motion.py": "ed21f8d8b8b5835a3311a07d7588f8ce3fc15c172562a5700e08351d6c8d8119",
+        "app/src/moviestar/native_audio.py": "ecb4d270310a2d1449f86f76621bbce4db393316f53784b2c8458f948c94bad0",
+        "app/src/moviestar/native_captions.py": "70f6d76299242b82d6d2c436877ed6326d270b904171d9f93fa451ee1eab6ab0",
+        "app/src/moviestar/native_preset.py": "7ee5bd99dbc140b1528d6b1a12afd767f113d7392b44e97919a13dd3de7cd851",
+        "app/src/moviestar/native_preview.py": "0df5d2d5d89e2f2b996b98998d5425b64ab4b4f1feca9b1cdabf4b52170aaf60",
+        "app/src/moviestar/overlays.py": "8cbfa6ddc96d86a441abf05eaae4170785fadce3e51902af34a4cccedb231d51",
+        "app/src/moviestar/platforms.py": "9d47069428f5b1971b2c8adc242549fe2a7e368ecb0c219d265d1dad16d684be",
+        "app/src/moviestar/preview_native.mjs": "314f6a4eecd149657f910a962da8ec1c2be9c956d1ce76c69e46c0befc3951e4",
+        "app/src/moviestar/preview_native_audio.mjs": "a291fa187996ced47c6c3193494475a27faed69d1d62f409808b5c28abdb84ef",
+        "app/src/moviestar/preview_native_buffer.mjs": "acd43432c3a40abe7ab638a599e70721ad57858b540da4dd7c569e9cd0737722",
+        "app/src/moviestar/preview_native_captions.mjs": "f32c09c00b80ab23ceec2a0d0b10054a06044f9ffba2414b6117ca2b08fd76d4",
+        "app/src/moviestar/preview_native_cut_meter.mjs": "e19161382c1443f3114734e690d182f98f9c832f10be362a630135a9c3aef3e5",
+        "app/src/moviestar/preview_native_cuts.mjs": "3c5e1ac3d481e52047824a601de74585eaaef0221b626d4e9af76cd37362cbd6",
+        "app/src/moviestar/preview_native_meter.mjs": "9d546fa96d6ce8a7b83589cfed7e3f8ab89284c75910a1ee81fe2ab927e71840",
+        "app/src/moviestar/preview_native_stage.mjs": "16c17c860f2b4de985723aaa7c90ed0ef00d995fb0e618699ce1004eac9fadf8",
+        "app/src/moviestar/preview_native_videos.mjs": "791b6eebf85bb2e1118ad5e12923fc3082903c349b03dd54f65fa539d058f062",
+        "app/src/moviestar/preview_native_worker.mjs": "3410f31905b13b31a70fdf45b9475d0cea52c7a13593cb678b65a710ed1f7a83",
+        "app/src/moviestar/preview_worker.py": "f45932fe6048e8602685b031c60fa733215a3952388e681879da75a5bb080db7",
+        "app/src/moviestar/project.py": "e5ed3cb9d8182360d4a564bb8a850ac2b4e728f75e7e0164bdc2bdd71fe58d40",
+        "app/src/moviestar/remote_captions.py": "2707cbcbcf516ba7fa1f4beb4927ce7e63a4afeacc2579eb01f829585e623558",
+        "app/src/moviestar/resolved.py": "0e33bdc8c72c68775eb11f588b2e71aac4980bfd546b75c2ded7c9afb517ed75",
+        "app/src/moviestar/sharing.py": "fde7c87d9e01c3cd9c6548ed80a1d78759c13f9f283514ef39d6c0a3ebe3c943",
+        "app/src/moviestar/spatial_browser.mjs": "0ae46ca5d343bcfc191935b316b9b9e921b2b8cafc44019864196c23759dce01",
+        "app/src/moviestar/spatial_browser_lifecycle.mjs": "658d220fa2f1bd937624ad3f2064d967f95c1179b05c039a2f20ed461775f2ef",
+        "app/src/moviestar/spatial_catalog.py": "1132c131a5c8c2bb925175e7b8c68dea67b85d3c91ce35312f2d1af0e8ca9fa9",
+        "app/src/moviestar/spatial_composite.py": "920b128dd4ced2ae0bab9c5d0e60edb337c69f1f61d8ac1724c95f67cc227ca1",
+        "app/src/moviestar/spatial_dom.mjs": "59054c107bc21c7493697b8d25b6bf3f884347fcdab8f701218d06453f2abdac",
+        "app/src/moviestar/spatial_edit.py": "1dd115452d415c4f3266b9d9eac55739431f7c29dee4397584810d9192a264a6",
+        "app/src/moviestar/spatial_format.py": "dcea57c2e2eb37e313b83d5f6fcf77312f8d65fcd89885c7bfc62e6a9d956a6b",
+        "app/src/moviestar/spatial_inspection.py": "e4db79164d6d95564a844f85197477aed59f0239c5dbd573fc6b1c0732f1fee5",
+        "app/src/moviestar/spatial_layout.py": "0ddcf669500b727a90575aec2fc411d5e869f365aa6dc951eda0f4e7904bdb8e",
+        "app/src/moviestar/spatial_model.py": "354ec181859918ca7bfa09ff9f6f0871a81018572f7e7467353a121c522de39a",
+        "app/src/moviestar/spatial_motion.py": "4ee7bee35583f3479b584b79b54193476c75e2d90dfd364dce2b5e355e042b05",
+        "app/src/moviestar/spatial_preset.py": "3e4c6df132c09920d3fc26ba24766f0af0a55b9c4b13ad47584a979796a84db7",
+        "app/src/moviestar/spatial_regions.py": "e08806b95517a613738b6061a2bd74c1b86b6be49acf846fb3333c0b590ec530",
+        "app/src/moviestar/spatial_render.py": "1acbbb05081e1d27efc111dab0017678004898588981bfce00e69b183d388893",
+        "app/src/moviestar/spatial_saved_layouts.py": "07a3bea01dd6d1fa77ccc5d3973dd69ed8a155e58a9e3fc91ab237fbcccc0d86",
+        "app/src/moviestar/spatial_session.py": "dbc2637a039ee7a32f98765e0649d32cb405ee2b7ca189de5574e2528006bbf9",
+        "app/src/moviestar/spatial_transition.py": "f0fb5728fc3409fd494f024ae4f1e06c2081026769060ba032e30329642c7c3c",
+        "app/src/moviestar/spatial_video.py": "965c27a11898d3ea407b4d8cbdcece7d896b2b7be2124421db625da9fef4274f",
+        "app/src/moviestar/spec.py": "5edb477e54e600d74c748a6277260441fac58cecf5c0e096667656985a4f6662",
+        "app/src/moviestar/subscribe.py": "a0c2bb146c39263f209abfea9b16fd030b8b4035d9244914f58d0bfeaac4468c",
+        "app/src/moviestar/timecodes.py": "37b2b686be6bd81322174908622cef437139ce9d013ac1b146cc11fc737aebdf",
+        "app/src/moviestar/transcribe.py": "6d35a82cedee63d69d36aa624d2d5c6d3016de8cc65a1b99870ca23c8fa4ac71",
+        "app/src/moviestar/transitions.py": "ab2425f6812626aae2d22b1fe7630a163feb1b7f21920700cea519530506dd15"
+      },
+      "wheel_sha256": "8a58046e8daf8d4d0cbd03c63d5ecb2454ce0716586a56906a3e4d6bce1f0d7a",
+      "python": "3.12.16 (main, Oct 26 2026, 02:48:44) [GCC 15.2.0]",
+      "platform": "Linux-7.0.0-1019-azure-x86_64-with-glibc2.43",
+      "cpu_count": 4,
+      "chrome": "Google Chrome for Testing 156.0.8078.73",
+      "ffmpeg": "ffmpeg version 8.0.1-3ubuntu2 Copyright (c) 2000-2025 the FFmpeg developers",
+      "node": "v24.5.0",
+      "dependencies": {
+        "truststore": "0.10.5",
+        "packaging": "26.3",
+        "fsspec": "2026.9.0",
+        "pip": "25.0.1",
+        "faster-whisper": "1.2.1",
+        "cryptography": "50.0.2",
+        "jaraco.functools": "4.6.0",
+        "PyYAML": "6.0.3",
+        "moviestar": "0.7.0",
+        "keyring": "25.7.0",
+        "httpcore2": "2.16.0",
+        "idna": "3.20",
+        "httpx2": "2.16.0",
+        "jeepney": "0.9.0",
+        "typing_extensions": "4.16.0",
+        "click": "8.5.1",
+        "tokenizers": "0.23.3",
+        "anyio": "4.16.0",
+        "onnxruntime": "1.32.0",
+        "ctranslate2": "4.9.0",
+        "huggingface_hub": "2.4.0",
+        "RapidFuzz": "3.14.6",
+        "jaraco.context": "6.1.2",
+        "more-itertools": "11.2.1",
+        "hf-xet": "1.8.0",
+        "av": "18.1.0",
+        "tqdm": "4.70.1",
+        "jaraco.classes": "3.4.0",
+        "SecretStorage": "3.5.0",
+        "numpy": "2.5.4",
+        "h11": "0.16.0",
+        "flatbuffers": "25.12.19",
+        "filelock": "4.2.10",
+        "cffi": "2.1.1",
+        "pycparser": "3.12",
+        "protobuf": "7.36.2"
+      }
+    },
+    "native-audio-two-tracks-360x640-1": {
+      "source_hashes": {
+        "app/src/moviestar/__init__.py": "4d6069e3615cfb759eff4a69169348d83d5dec81d5c376c2f34466db0d26504a",
+        "app/src/moviestar/__main__.py": "83555779bc550efd4cd1013ff0131956f4eea8bf5838a38019ee33f359cbb038",
+        "app/src/moviestar/account.py": "ac8e33c5f9a856435ace85e1a4eb9d681bed71f207607176992c8886d1dbccea",
+        "app/src/moviestar/activity.py": "eb764e61ac747d4e88a16c37c813131620c92f4ce30bf3446d99956a7c1c525c",
+        "app/src/moviestar/audio_surface.py": "71df8189805594ea2ad3d484bbe3c6c6a95471f77fe2e5460fb6f569f5af856d",
+        "app/src/moviestar/camera.py": "2b4dc252d57d743093d984cb0ac6a5a162056215b3a670820b908a80c521f5f5",
+        "app/src/moviestar/caption_import.py": "eb61ef59750129b47976017f56c920c615ab8acd2ce66e14e56580fc357218ef",
+        "app/src/moviestar/captions.py": "441ff58a85f7bf0a627c369a16074c1be9bbdf07d74898d7961fd29560e7b68e",
+        "app/src/moviestar/cli.py": "9df077ec13a9b11f5f4f0c64e51c2eefe1d9c091cdb3ad17ce4742f777abf1d9",
+        "app/src/moviestar/composition_mock.py": "d232ea91dd1f3b65c7b3435d2713da4c6bcf5eb50b8d8bf7ca81e225afb9cf82",
+        "app/src/moviestar/feedback.py": "ec51bbc56da56823721769b5d79f331b88d3f957b1ef6ec9e9d3d146c2161d3b",
+        "app/src/moviestar/ffmpeg.py": "61e7e7f30badfe8ba6177b71cd32940a5767c20f8d92cf68bc84fecb3025d6a0",
+        "app/src/moviestar/find.py": "0d2b06a64c80a0f6dd5b1a166364a610373c3e2d912d4bd1d8c1c6d05970f4b6",
+        "app/src/moviestar/fonts.py": "5f2134271761dca57965d079b37d69fed48e110ff4348df141921660e1644027",
+        "app/src/moviestar/json_identity.py": "9069690d6f0b624f462aeb8a984ebd1378fbd84fba0820541a8cda0bf3bfcc0c",
+        "app/src/moviestar/local_preview.py": "7bb6e7e0db97f28afe8bed8a0b0df90ae978b7a53355d67ce0287845c9ab8d67",
+        "app/src/moviestar/masks.py": "8438b14fbe411577230df941184d779b482f7240006f90c160d6beb1d8999fa1",
+        "app/src/moviestar/motion.py": "ed21f8d8b8b5835a3311a07d7588f8ce3fc15c172562a5700e08351d6c8d8119",
+        "app/src/moviestar/native_audio.py": "ecb4d270310a2d1449f86f76621bbce4db393316f53784b2c8458f948c94bad0",
+        "app/src/moviestar/native_captions.py": "70f6d76299242b82d6d2c436877ed6326d270b904171d9f93fa451ee1eab6ab0",
+        "app/src/moviestar/native_preset.py": "7ee5bd99dbc140b1528d6b1a12afd767f113d7392b44e97919a13dd3de7cd851",
+        "app/src/moviestar/native_preview.py": "0df5d2d5d89e2f2b996b98998d5425b64ab4b4f1feca9b1cdabf4b52170aaf60",
+        "app/src/moviestar/overlays.py": "8cbfa6ddc96d86a441abf05eaae4170785fadce3e51902af34a4cccedb231d51",
+        "app/src/moviestar/platforms.py": "9d47069428f5b1971b2c8adc242549fe2a7e368ecb0c219d265d1dad16d684be",
+        "app/src/moviestar/preview_native.mjs": "314f6a4eecd149657f910a962da8ec1c2be9c956d1ce76c69e46c0befc3951e4",
+        "app/src/moviestar/preview_native_audio.mjs": "a291fa187996ced47c6c3193494475a27faed69d1d62f409808b5c28abdb84ef",
+        "app/src/moviestar/preview_native_buffer.mjs": "acd43432c3a40abe7ab638a599e70721ad57858b540da4dd7c569e9cd0737722",
+        "app/src/moviestar/preview_native_captions.mjs": "f32c09c00b80ab23ceec2a0d0b10054a06044f9ffba2414b6117ca2b08fd76d4",
+        "app/src/moviestar/preview_native_cut_meter.mjs": "e19161382c1443f3114734e690d182f98f9c832f10be362a630135a9c3aef3e5",
+        "app/src/moviestar/preview_native_cuts.mjs": "3c5e1ac3d481e52047824a601de74585eaaef0221b626d4e9af76cd37362cbd6",
+        "app/src/moviestar/preview_native_meter.mjs": "9d546fa96d6ce8a7b83589cfed7e3f8ab89284c75910a1ee81fe2ab927e71840",
+        "app/src/moviestar/preview_native_stage.mjs": "16c17c860f2b4de985723aaa7c90ed0ef00d995fb0e618699ce1004eac9fadf8",
+        "app/src/moviestar/preview_native_videos.mjs": "791b6eebf85bb2e1118ad5e12923fc3082903c349b03dd54f65fa539d058f062",
+        "app/src/moviestar/preview_native_worker.mjs": "3410f31905b13b31a70fdf45b9475d0cea52c7a13593cb678b65a710ed1f7a83",
+        "app/src/moviestar/preview_worker.py": "f45932fe6048e8602685b031c60fa733215a3952388e681879da75a5bb080db7",
+        "app/src/moviestar/project.py": "e5ed3cb9d8182360d4a564bb8a850ac2b4e728f75e7e0164bdc2bdd71fe58d40",
+        "app/src/moviestar/remote_captions.py": "2707cbcbcf516ba7fa1f4beb4927ce7e63a4afeacc2579eb01f829585e623558",
+        "app/src/moviestar/resolved.py": "0e33bdc8c72c68775eb11f588b2e71aac4980bfd546b75c2ded7c9afb517ed75",
+        "app/src/moviestar/sharing.py": "fde7c87d9e01c3cd9c6548ed80a1d78759c13f9f283514ef39d6c0a3ebe3c943",
+        "app/src/moviestar/spatial_browser.mjs": "0ae46ca5d343bcfc191935b316b9b9e921b2b8cafc44019864196c23759dce01",
+        "app/src/moviestar/spatial_browser_lifecycle.mjs": "658d220fa2f1bd937624ad3f2064d967f95c1179b05c039a2f20ed461775f2ef",
+        "app/src/moviestar/spatial_catalog.py": "1132c131a5c8c2bb925175e7b8c68dea67b85d3c91ce35312f2d1af0e8ca9fa9",
+        "app/src/moviestar/spatial_composite.py": "920b128dd4ced2ae0bab9c5d0e60edb337c69f1f61d8ac1724c95f67cc227ca1",
+        "app/src/moviestar/spatial_dom.mjs": "59054c107bc21c7493697b8d25b6bf3f884347fcdab8f701218d06453f2abdac",
+        "app/src/moviestar/spatial_edit.py": "1dd115452d415c4f3266b9d9eac55739431f7c29dee4397584810d9192a264a6",
+        "app/src/moviestar/spatial_format.py": "dcea57c2e2eb37e313b83d5f6fcf77312f8d65fcd89885c7bfc62e6a9d956a6b",
+        "app/src/moviestar/spatial_inspection.py": "e4db79164d6d95564a844f85197477aed59f0239c5dbd573fc6b1c0732f1fee5",
+        "app/src/moviestar/spatial_layout.py": "0ddcf669500b727a90575aec2fc411d5e869f365aa6dc951eda0f4e7904bdb8e",
+        "app/src/moviestar/spatial_model.py": "354ec181859918ca7bfa09ff9f6f0871a81018572f7e7467353a121c522de39a",
+        "app/src/moviestar/spatial_motion.py": "4ee7bee35583f3479b584b79b54193476c75e2d90dfd364dce2b5e355e042b05",
+        "app/src/moviestar/spatial_preset.py": "3e4c6df132c09920d3fc26ba24766f0af0a55b9c4b13ad47584a979796a84db7",
+        "app/src/moviestar/spatial_regions.py": "e08806b95517a613738b6061a2bd74c1b86b6be49acf846fb3333c0b590ec530",
+        "app/src/moviestar/spatial_render.py": "1acbbb05081e1d27efc111dab0017678004898588981bfce00e69b183d388893",
+        "app/src/moviestar/spatial_saved_layouts.py": "07a3bea01dd6d1fa77ccc5d3973dd69ed8a155e58a9e3fc91ab237fbcccc0d86",
+        "app/src/moviestar/spatial_session.py": "dbc2637a039ee7a32f98765e0649d32cb405ee2b7ca189de5574e2528006bbf9",
+        "app/src/moviestar/spatial_transition.py": "f0fb5728fc3409fd494f024ae4f1e06c2081026769060ba032e30329642c7c3c",
+        "app/src/moviestar/spatial_video.py": "965c27a11898d3ea407b4d8cbdcece7d896b2b7be2124421db625da9fef4274f",
+        "app/src/moviestar/spec.py": "5edb477e54e600d74c748a6277260441fac58cecf5c0e096667656985a4f6662",
+        "app/src/moviestar/subscribe.py": "a0c2bb146c39263f209abfea9b16fd030b8b4035d9244914f58d0bfeaac4468c",
+        "app/src/moviestar/timecodes.py": "37b2b686be6bd81322174908622cef437139ce9d013ac1b146cc11fc737aebdf",
+        "app/src/moviestar/transcribe.py": "6d35a82cedee63d69d36aa624d2d5c6d3016de8cc65a1b99870ca23c8fa4ac71",
+        "app/src/moviestar/transitions.py": "ab2425f6812626aae2d22b1fe7630a163feb1b7f21920700cea519530506dd15"
+      },
+      "wheel_sha256": "b0c5c22736e69f1e4dba5aa5750adf47821367e34a868445fcfd0329d9c5b981",
+      "python": "3.12.16 (main, Oct 26 2026, 02:48:44) [GCC 15.2.0]",
+      "platform": "Linux-7.0.0-1019-azure-x86_64-with-glibc2.43",
+      "cpu_count": 4,
+      "chrome": "Google Chrome for Testing 156.0.8078.73",
+      "ffmpeg": "ffmpeg version 8.0.1-3ubuntu2 Copyright (c) 2000-2025 the FFmpeg developers",
+      "node": "v24.5.0",
+      "dependencies": {
+        "truststore": "0.10.5",
+        "packaging": "26.3",
+        "fsspec": "2026.9.0",
+        "pip": "25.0.1",
+        "faster-whisper": "1.2.1",
+        "cryptography": "50.0.2",
+        "jaraco.functools": "4.6.0",
+        "PyYAML": "6.0.3",
+        "moviestar": "0.7.0",
+        "keyring": "25.7.0",
+        "httpcore2": "2.16.0",
+        "idna": "3.20",
+        "httpx2": "2.16.0",
+        "jeepney": "0.9.0",
+        "typing_extensions": "4.16.0",
+        "click": "8.5.1",
+        "tokenizers": "0.23.3",
+        "anyio": "4.16.0",
+        "onnxruntime": "1.32.0",
+        "ctranslate2": "4.9.0",
+        "huggingface_hub": "2.4.0",
+        "RapidFuzz": "3.14.6",
+        "jaraco.context": "6.1.2",
+        "more-itertools": "11.2.1",
+        "hf-xet": "1.8.0",
+        "av": "18.1.0",
+        "tqdm": "4.70.1",
+        "jaraco.classes": "3.4.0",
+        "SecretStorage": "3.5.0",
+        "numpy": "2.5.4",
+        "h11": "0.16.0",
+        "flatbuffers": "25.12.19",
+        "filelock": "4.2.10",
+        "cffi": "2.1.1",
+        "pycparser": "3.12",
+        "protobuf": "7.36.2"
+      }
+    }
+  },
+  "producer_hashes": {
+    "audio.py": "8f9ede8598dc45140817241a438c5c4bb39f119b1e28823a09394d0f26d683e5",
+    "audio_benchmark.mjs": "add753193b942d4f3ed4e6a30a83dfec323603dcf09a6f6bf274fddb5d2cef01",
+    "audio_benchmark.py": "4efd02ae597512850bbab1099bfab59fc0ca5b9532fb05dadb526b0cdf0ee397",
+    "benchmark.mjs": "c830c36cdbe23266656e9e0b29abfe1ce7bc093a37fd37af496063ec031fc778",
+    "benchmark.py": "0347abc59df33a1628288bce87bddbb660c2f040426b84ab7eff3a9bdff86c1e",
+    "browser.mjs": "136b11fe43adeada3026f84d3798c81b4ff423b672881bf57a7db70b341709e6",
+    "caption_benchmark.mjs": "ee019488cfd0756eb94ba02909af3865b2342da18610d09c6c09b4e048ab7b26",
+    "caption_benchmark.py": "567092e442ff64f630d4f9a42cf36d2293dede378150ddfb5b035ea6ae5a038d",
+    "cue_clock.mjs": "358689d73b2ece05666ca1097cc1702ae0f7d0a00c850d9fe6ef69a5aaa20c9a",
+    "cut_benchmark.py": "76a99955570d7f22fbe6be1e589ebd1f4781d9a1ae7ae8db861923a791cc2f11",
+    "cuts.py": "54d1d3d8ca2b6a0d2fd42d0d6d92de5c9f3d2ca3e3e60e08c16d2cf9dc3b3d11",
+    "diagnostics.mjs": "4f26cc054b8e5320d92c6ecdbff87ab716eab1315d8d5abf7a1cfcbb578bbcb5",
+    "fixtures.py": "becd1072c5980378695b217ff84e19d86f81aa1532ae8676d91890b0a7c9bb85",
+    "history.py": "3272e0acbfcb0fe5bcbf67303b0fb546ce63a34ad12125ee4678511b8a02a612",
+    "history_benchmark.py": "1cd7adec8626170d17312291c8ccc79dfb8b5ff497f99240632abbf6c78b4901",
+    "pip.py": "2ee0888c5eea7e71ad927645d9950c11053ce5e2335b9400576a472c2240f14e",
+    "pip_benchmark.mjs": "72e9c76b4cad2bbae0ed4554b0b4cf527eafeb774a359beb8ba488587d9ebec6",
+    "pip_benchmark.py": "a0632460e265e5d45354cb5c75ed87fcaa12449f0e3e69638df90e4cf66b2669",
+    "presented_frames.mjs": "dfa4ec5278f07f87112e58cc4bfbdc7aebc9756b1c98f59be1a34533499fd7b1",
+    "real_benchmark.py": "e573fd17b9379cd5e09137fc55b32a4e75c4cb955d684dacd22308223efad327",
+    "scaling.py": "26051152829f1838649ab8347d0c9bf348da388dece429fe892144bb5bda76d0",
+    "serve.py": "d21dc5d0e564fd238d08fda9fc5ae1395f67277bd90e3024ba158c57238300a9"
+  },
+  "cases": [
+    {
+      "canvas": [
+        1080,
+        1920
+      ],
+      "initial_history": 0,
+      "edits": [
+        {
+          "name": "add-bed",
+          "ms": 1466.9221440000001,
+          "cli_ms": 281.942814,
+          "reused_decoders": false
+        },
+        {
+          "name": "bed-gain",
+          "ms": 1019.8800309999997,
+          "cli_ms": 311.28151999999955,
+          "reused_decoders": true
+        },
+        {
+          "name": "bed-mute",
+          "ms": 1039.1078870000001,
+          "cli_ms": 282.9202660000001,
+          "reused_decoders": true
+        },
+        {
+          "name": "bed-unmute",
+          "ms": 1128.349185,
+          "cli_ms": 274.7060640000009,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-bed-unmute",
+          "ms": 1021.8707740000009,
+          "cli_ms": 188.4143320000003,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-bed-mute",
+          "ms": 1028.3057840000001,
+          "cli_ms": 197.16823000000113,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-bed-gain",
+          "ms": 1042.611543000001,
+          "cli_ms": 188.366003000001,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-add-bed",
+          "ms": 1278.1912080000002,
+          "cli_ms": 187.1331280000013,
+          "reused_decoders": false
+        }
+      ],
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 0
+      },
+      "problems": [],
+      "cue_clock": {
+        "observed_flashes": 5,
+        "observed_beeps": 5,
+        "cues": [
+          {
+            "cue": 0,
+            "result_time": 0.2,
+            "video_display_time": 911.099853515625,
+            "audio_display_time": 915.1046666666725,
+            "phase_ms": 4.004813151047529,
+            "nearest_frame_distance_ms": 5.551115123125783e-14,
+            "sampled_media_time": 1.2
+          },
+          {
+            "cue": 1,
+            "result_time": 1.2,
+            "video_display_time": 1927.8327558593746,
+            "audio_display_time": 1915.187333333345,
+            "phase_ms": -12.645422526029733,
+            "nearest_frame_distance_ms": 33.332999999999615,
+            "sampled_media_time": 3.166667
+          },
+          {
+            "cue": 2,
+            "result_time": 2.2,
+            "video_display_time": 2927.7998046875,
+            "audio_display_time": 2915.1778333333277,
+            "phase_ms": -12.621971354172274,
+            "nearest_frame_distance_ms": 0,
+            "sampled_media_time": 4.2
+          },
+          {
+            "cue": 3,
+            "result_time": 3.2,
+            "video_display_time": 3927.699951171875,
+            "audio_display_time": 3915.1265000000003,
+            "phase_ms": -12.573451171874694,
+            "nearest_frame_distance_ms": 0,
+            "sampled_media_time": 4.2
+          },
+          {
+            "cue": 4,
+            "result_time": 4.2,
+            "video_display_time": 4927.600097656251,
+            "audio_display_time": 4915.144166666661,
+            "phase_ms": -12.455930989590343,
+            "nearest_frame_distance_ms": 8.881784197001252e-13,
+            "sampled_media_time": 5.2
+          }
+        ],
+        "problems": []
+      },
+      "program_drift_ms": 16.566154296875055,
+      "stalls": 0,
+      "video_drops": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "clock_diagnostics": {
+        "audio_output_mapping": {
+          "min_ms": 672.4380000000059,
+          "max_ms": 672.5206666666784,
+          "spread_ms": 0.08266666667248046
+        },
+        "audio_cue_count": 5,
+        "picture_clock": {
+          "min_ms": 710.9999999999999,
+          "max_ms": 727.8667070312504,
+          "spread_ms": 16.866707031250485
+        },
+        "frame_observation_count": 118,
+        "picture_drift_ms": 16.566146484373803,
+        "picture_steps": [
+          {
+            "segment": 0,
+            "result_time": 0.3999999999999999,
+            "offset_ms": 727.6999511718751,
+            "previous_result_time": 0.3333330000000001,
+            "delta_ms": 16.633048828125197,
+            "segment_changed": false
+          }
+        ]
+      }
+    },
+    {
+      "canvas": [
+        1080,
+        1920
+      ],
+      "initial_history": 20,
+      "edits": [
+        {
+          "name": "add-bed",
+          "ms": 1396.315958,
+          "cli_ms": 315.852171,
+          "reused_decoders": false
+        },
+        {
+          "name": "bed-gain",
+          "ms": 1002.1290570000001,
+          "cli_ms": 313.230368,
+          "reused_decoders": true
+        },
+        {
+          "name": "bed-mute",
+          "ms": 1024.8397169999998,
+          "cli_ms": 308.9092019999998,
+          "reused_decoders": true
+        },
+        {
+          "name": "bed-unmute",
+          "ms": 1026.5007429999996,
+          "cli_ms": 309.52682600000026,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-bed-unmute",
+          "ms": 1030.0710720000006,
+          "cli_ms": 209.38004,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-bed-mute",
+          "ms": 1032.780248,
+          "cli_ms": 203.32999699999982,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-bed-gain",
+          "ms": 927.0947369999994,
+          "cli_ms": 219.88132300000052,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-add-bed",
+          "ms": 1418.7762600000005,
+          "cli_ms": 205.4747669999997,
+          "reused_decoders": false
+        }
+      ],
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 20
+      },
+      "problems": [],
+      "cue_clock": {
+        "observed_flashes": 5,
+        "observed_beeps": 5,
+        "cues": [
+          {
+            "cue": 0,
+            "result_time": 0.2,
+            "video_display_time": 917.699951171875,
+            "audio_display_time": 910.0818333333392,
+            "phase_ms": -7.618117838535795,
+            "nearest_frame_distance_ms": 5.551115123125783e-14,
+            "sampled_media_time": 1.2
+          },
+          {
+            "cue": 1,
+            "result_time": 1.2,
+            "video_display_time": 1951.1000976562498,
+            "audio_display_time": 1909.9963333333217,
+            "phase_ms": -41.1037643229281,
+            "nearest_frame_distance_ms": 2.220446049250313e-13,
+            "sampled_media_time": 3.2
+          },
+          {
+            "cue": 2,
+            "result_time": 2.2,
+            "video_display_time": 2951.000244140625,
+            "audio_display_time": 2910.0359999999823,
+            "phase_ms": -40.96424414064268,
+            "nearest_frame_distance_ms": 0,
+            "sampled_media_time": 4.2
+          },
+          {
+            "cue": 3,
+            "result_time": 3.2,
+            "video_display_time": 3950.900146484375,
+            "audio_display_time": 3910.002666666655,
+            "phase_ms": -40.89747981772007,
+            "nearest_frame_distance_ms": 0,
+            "sampled_media_time": 4.2
+          },
+          {
+            "cue": 4,
+            "result_time": 4.2,
+            "video_display_time": 4950.900146484376,
+            "audio_display_time": 4909.992333333334,
+            "phase_ms": -40.90781315104232,
+            "nearest_frame_distance_ms": 8.881784197001252e-13,
+            "sampled_media_time": 5.2
+          }
+        ],
+        "problems": []
+      },
+      "program_drift_ms": 33.166251953125055,
+      "stalls": 0,
+      "video_drops": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "clock_diagnostics": {
+        "audio_output_mapping": {
+          "min_ms": 677.9923333333336,
+          "max_ms": 678.0818333333392,
+          "spread_ms": 0.08950000000561431
+        },
+        "audio_cue_count": 5,
+        "picture_clock": {
+          "min_ms": 717.5671464843749,
+          "max_ms": 751.1672441406254,
+          "spread_ms": 33.600097656250455
+        },
+        "frame_observation_count": 142,
+        "picture_drift_ms": 33.1662441406238,
+        "picture_steps": [
+          {
+            "segment": 0,
+            "result_time": 0.06666700000000003,
+            "offset_ms": 734.333,
+            "previous_result_time": 0.03333300000000006,
+            "delta_ms": 16.666000000000054,
+            "segment_changed": false
+          },
+          {
+            "segment": 0,
+            "result_time": 0.10000000000000009,
+            "offset_ms": 717.6999511718749,
+            "previous_result_time": 0.06666700000000003,
+            "delta_ms": -16.633048828125084,
+            "segment_changed": false
+          },
+          {
+            "segment": 1,
+            "result_time": 1.0333329999999998,
+            "offset_ms": 734.4672929687501,
+            "previous_result_time": 0.9666669999999999,
+            "delta_ms": 16.83424414062506,
+            "segment_changed": true
+          },
+          {
+            "segment": 1,
+            "result_time": 1.2000000000000002,
+            "offset_ms": 751.1000976562498,
+            "previous_result_time": 1.1333330000000004,
+            "delta_ms": 16.632804687500084,
+            "segment_changed": false
+          }
+        ]
+      }
+    },
+    {
+      "canvas": [
+        1080,
+        1920
+      ],
+      "initial_history": 50,
+      "edits": [
+        {
+          "name": "add-bed",
+          "ms": 1581.293395,
+          "cli_ms": 356.95004900000004,
+          "reused_decoders": false
+        },
+        {
+          "name": "bed-gain",
+          "ms": 1099.751378,
+          "cli_ms": 353.47143400000004,
+          "reused_decoders": true
+        },
+        {
+          "name": "bed-mute",
+          "ms": 1145.1860799999995,
+          "cli_ms": 341.5864240000001,
+          "reused_decoders": true
+        },
+        {
+          "name": "bed-unmute",
+          "ms": 1017.6248969999997,
+          "cli_ms": 340.09945400000015,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-bed-unmute",
+          "ms": 1034.6555639999997,
+          "cli_ms": 235.66943600000013,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-bed-mute",
+          "ms": 1021.1484819999996,
+          "cli_ms": 238.01036899999963,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-bed-gain",
+          "ms": 1039.307995000001,
+          "cli_ms": 236.71035800000027,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-add-bed",
+          "ms": 1385.2172809999993,
+          "cli_ms": 230.16975099999945,
+          "reused_decoders": false
+        }
+      ],
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 46
+      },
+      "problems": [
+        "Cue 2 audio/display phase -50.02088216147058ms exceeds 50ms",
+        "Cue 3 audio/display phase -50.05421549480343ms exceeds 50ms"
+      ],
+      "cue_clock": {
+        "observed_flashes": 5,
+        "observed_beeps": 5,
+        "cues": [
+          {
+            "cue": 0,
+            "result_time": 0.2,
+            "video_display_time": 888,
+            "audio_display_time": 871.2429999999941,
+            "phase_ms": -16.75700000000586,
+            "nearest_frame_distance_ms": 5.551115123125783e-14,
+            "sampled_media_time": 1.2
+          },
+          {
+            "cue": 1,
+            "result_time": 1.2,
+            "video_display_time": 1904.7331464843746,
+            "audio_display_time": 1871.1955000000057,
+            "phase_ms": -33.537646484368906,
+            "nearest_frame_distance_ms": 33.332999999999615,
+            "sampled_media_time": 3.166667
+          },
+          {
+            "cue": 2,
+            "result_time": 2.2,
+            "video_display_time": 2921.300048828125,
+            "audio_display_time": 2871.2791666666544,
+            "phase_ms": -50.02088216147058,
+            "nearest_frame_distance_ms": 0,
+            "sampled_media_time": 4.2
+          },
+          {
+            "cue": 3,
+            "result_time": 3.2,
+            "video_display_time": 3921.300048828125,
+            "audio_display_time": 3871.2458333333216,
+            "phase_ms": -50.05421549480343,
+            "nearest_frame_distance_ms": 0,
+            "sampled_media_time": 4.2
+          },
+          {
+            "cue": 4,
+            "result_time": 4.2,
+            "video_display_time": 4921.200195312501,
+            "audio_display_time": 4871.239499999982,
+            "phase_ms": -49.96069531251851,
+            "nearest_frame_distance_ms": 8.881784197001252e-13,
+            "sampled_media_time": 5.2
+          }
+        ],
+        "problems": [
+          "Cue 2 audio/display phase -50.02088216147058ms exceeds 50ms",
+          "Cue 3 audio/display phase -50.05421549480343ms exceeds 50ms"
+        ]
+      },
+      "program_drift_ms": 33.266105468750055,
+      "stalls": 0,
+      "video_drops": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "clock_diagnostics": {
+        "audio_output_mapping": {
+          "min_ms": 649.8621666666722,
+          "max_ms": 649.9458333333209,
+          "spread_ms": 0.08366666664869626
+        },
+        "audio_cue_count": 5,
+        "picture_clock": {
+          "min_ms": 687.8669511718749,
+          "max_ms": 721.4330976562503,
+          "spread_ms": 33.566146484375395
+        },
+        "frame_observation_count": 114,
+        "picture_drift_ms": 33.2660976562488,
+        "picture_steps": [
+          {
+            "segment": 1,
+            "result_time": 1.0333329999999998,
+            "offset_ms": 704.6670000000001,
+            "previous_result_time": 0.9666669999999999,
+            "delta_ms": 16.73390234375006,
+            "segment_changed": true
+          },
+          {
+            "segment": 1,
+            "result_time": 1.233333,
+            "offset_ms": 721.3669511718749,
+            "previous_result_time": 1.1666670000000003,
+            "delta_ms": 16.633804687500287,
+            "segment_changed": false
+          }
+        ]
+      }
+    },
+    {
+      "canvas": [
+        360,
+        640
+      ],
+      "initial_history": 0,
+      "edits": [
+        {
+          "name": "add-bed",
+          "ms": 1448.6564840000003,
+          "cli_ms": 279.1895280000001,
+          "reused_decoders": false
+        },
+        {
+          "name": "bed-gain",
+          "ms": 997.6288460000001,
+          "cli_ms": 280.85811300000023,
+          "reused_decoders": true
+        },
+        {
+          "name": "bed-mute",
+          "ms": 1022.6496000000002,
+          "cli_ms": 281.8106590000002,
+          "reused_decoders": true
+        },
+        {
+          "name": "bed-unmute",
+          "ms": 1041.1070209999998,
+          "cli_ms": 289.3811400000004,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-bed-unmute",
+          "ms": 906.4771970000002,
+          "cli_ms": 193.8063229999998,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-bed-mute",
+          "ms": 1034.6102950000004,
+          "cli_ms": 190.77714600000036,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-bed-gain",
+          "ms": 1013.0615130000006,
+          "cli_ms": 184.50482100000045,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-add-bed",
+          "ms": 1397.911277000001,
+          "cli_ms": 191.09576900000138,
+          "reused_decoders": false
+        }
+      ],
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 0
+      },
+      "problems": [],
+      "cue_clock": {
+        "observed_flashes": 5,
+        "observed_beeps": 5,
+        "cues": [
+          {
+            "cue": 0,
+            "result_time": 0.2,
+            "video_display_time": 848.89990234375,
+            "audio_display_time": 832.1609999999913,
+            "phase_ms": -16.738902343758696,
+            "nearest_frame_distance_ms": 5.551115123125783e-14,
+            "sampled_media_time": 1.2
+          },
+          {
+            "cue": 1,
+            "result_time": 1.2,
+            "video_display_time": 1865.4997558593748,
+            "audio_display_time": 1832.0175,
+            "phase_ms": -33.482255859374845,
+            "nearest_frame_distance_ms": 2.220446049250313e-13,
+            "sampled_media_time": 3.2
+          },
+          {
+            "cue": 2,
+            "result_time": 2.2,
+            "video_display_time": 2865.499755859375,
+            "audio_display_time": 2832.0821666666634,
+            "phase_ms": -33.4175891927116,
+            "nearest_frame_distance_ms": 0,
+            "sampled_media_time": 4.2
+          },
+          {
+            "cue": 3,
+            "result_time": 3.2,
+            "video_display_time": 3865.5,
+            "audio_display_time": 3832.0228333333307,
+            "phase_ms": -33.47716666666929,
+            "nearest_frame_distance_ms": 0,
+            "sampled_media_time": 4.2
+          },
+          {
+            "cue": 4,
+            "result_time": 4.2,
+            "video_display_time": 4865.500000000001,
+            "audio_display_time": 4832.135499999988,
+            "phase_ms": -33.36450000001332,
+            "nearest_frame_distance_ms": 8.881784197001252e-13,
+            "sampled_media_time": 5.2
+          }
+        ],
+        "problems": []
+      },
+      "program_drift_ms": 16.666251953125055,
+      "stalls": 0,
+      "video_drops": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "clock_diagnostics": {
+        "audio_output_mapping": {
+          "min_ms": 610.6841666666664,
+          "max_ms": 610.8276666666579,
+          "spread_ms": 0.14349999999149077
+        },
+        "audio_cue_count": 5,
+        "picture_clock": {
+          "min_ms": 648.7329023437501,
+          "max_ms": 665.5671464843754,
+          "spread_ms": 16.834244140625287
+        },
+        "frame_observation_count": 129,
+        "picture_drift_ms": 16.666244140623803,
+        "picture_steps": [
+          {
+            "segment": 0,
+            "result_time": 0.3333330000000001,
+            "offset_ms": 665.4668046874999,
+            "previous_result_time": 0.30000000000000004,
+            "delta_ms": 16.666999999999916,
+            "segment_changed": false
+          }
+        ]
+      }
+    },
+    {
+      "canvas": [
+        360,
+        640
+      ],
+      "initial_history": 20,
+      "edits": [
+        {
+          "name": "add-bed",
+          "ms": 1463.3227419999998,
+          "cli_ms": 306.9943559999999,
+          "reused_decoders": false
+        },
+        {
+          "name": "bed-gain",
+          "ms": 1102.0848620000002,
+          "cli_ms": 306.8837990000002,
+          "reused_decoders": true
+        },
+        {
+          "name": "bed-mute",
+          "ms": 1056.4723999999997,
+          "cli_ms": 304.9816929999997,
+          "reused_decoders": true
+        },
+        {
+          "name": "bed-unmute",
+          "ms": 1208.3687439999994,
+          "cli_ms": 301.4793009999994,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-bed-unmute",
+          "ms": 929.6875329999993,
+          "cli_ms": 208.11187699999937,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-bed-mute",
+          "ms": 1030.0937220000005,
+          "cli_ms": 208.0032200000005,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-bed-gain",
+          "ms": 1022.6614690000006,
+          "cli_ms": 203.53158600000097,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-add-bed",
+          "ms": 1385.8798619999998,
+          "cli_ms": 203.23632799999905,
+          "reused_decoders": false
+        }
+      ],
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 20
+      },
+      "problems": [],
+      "cue_clock": {
+        "observed_flashes": 5,
+        "observed_beeps": 5,
+        "cues": [
+          {
+            "cue": 0,
+            "result_time": 0.2,
+            "video_display_time": 878.5,
+            "audio_display_time": 870.650833333345,
+            "phase_ms": -7.849166666655037,
+            "nearest_frame_distance_ms": 5.551115123125783e-14,
+            "sampled_media_time": 1.2
+          },
+          {
+            "cue": 1,
+            "result_time": 1.2,
+            "video_display_time": 1912.0002441406248,
+            "audio_display_time": 1870.6243333333275,
+            "phase_ms": -41.37591080729726,
+            "nearest_frame_distance_ms": 2.220446049250313e-13,
+            "sampled_media_time": 3.2
+          },
+          {
+            "cue": 2,
+            "result_time": 2.2,
+            "video_display_time": 2911.900146484375,
+            "audio_display_time": 2870.6369999999883,
+            "phase_ms": -41.26314648438665,
+            "nearest_frame_distance_ms": 0,
+            "sampled_media_time": 4.2
+          },
+          {
+            "cue": 3,
+            "result_time": 3.2,
+            "video_display_time": 3912,
+            "audio_display_time": 3870.586666666667,
+            "phase_ms": -41.41333333333296,
+            "nearest_frame_distance_ms": 0,
+            "sampled_media_time": 4.2
+          },
+          {
+            "cue": 4,
+            "result_time": 4.2,
+            "video_display_time": 4911.900146484376,
+            "audio_display_time": 4870.6773333333385,
+            "phase_ms": -41.22281315103737,
+            "nearest_frame_distance_ms": 8.881784197001252e-13,
+            "sampled_media_time": 5.2
+          }
+        ],
+        "problems": []
+      },
+      "program_drift_ms": 33.366203125000055,
+      "stalls": 0,
+      "video_drops": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "clock_diagnostics": {
+        "audio_output_mapping": {
+          "min_ms": 638.586666666667,
+          "max_ms": 638.6773333333385,
+          "spread_ms": 0.09066666667149548
+        },
+        "audio_cue_count": 5,
+        "picture_clock": {
+          "min_ms": 678.4670488281251,
+          "max_ms": 712.0671464843749,
+          "spread_ms": 33.60009765624977
+        },
+        "frame_observation_count": 142,
+        "picture_drift_ms": 33.3661953124988,
+        "picture_steps": [
+          {
+            "segment": 0,
+            "result_time": 0.3999999999999999,
+            "offset_ms": 695.1999511718751,
+            "previous_result_time": 0.3666670000000001,
+            "delta_ms": 16.667000000000257,
+            "segment_changed": false
+          },
+          {
+            "segment": 0,
+            "result_time": 0.43333299999999997,
+            "offset_ms": 711.866951171875,
+            "previous_result_time": 0.3999999999999999,
+            "delta_ms": 16.666999999999916,
+            "segment_changed": false
+          },
+          {
+            "segment": 1,
+            "result_time": 1.0333329999999998,
+            "offset_ms": 695.2670976562501,
+            "previous_result_time": 0.9666669999999999,
+            "delta_ms": -16.56590234374994,
+            "segment_changed": true
+          },
+          {
+            "segment": 1,
+            "result_time": 1.2000000000000002,
+            "offset_ms": 712.0002441406248,
+            "previous_result_time": 1.1333330000000004,
+            "delta_ms": 16.633048828125084,
+            "segment_changed": false
+          }
+        ]
+      }
+    },
+    {
+      "canvas": [
+        360,
+        640
+      ],
+      "initial_history": 50,
+      "edits": [
+        {
+          "name": "add-bed",
+          "ms": 1464.3250849999997,
+          "cli_ms": 345.57561799999985,
+          "reused_decoders": false
+        },
+        {
+          "name": "bed-gain",
+          "ms": 1093.7498099999998,
+          "cli_ms": 338.51286200000004,
+          "reused_decoders": true
+        },
+        {
+          "name": "bed-mute",
+          "ms": 1249.5899669999994,
+          "cli_ms": 337.6965829999999,
+          "reused_decoders": true
+        },
+        {
+          "name": "bed-unmute",
+          "ms": 1224.341996,
+          "cli_ms": 343.27462099999957,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-bed-unmute",
+          "ms": 959.6979779999992,
+          "cli_ms": 229.8574439999993,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-bed-mute",
+          "ms": 1021.0319,
+          "cli_ms": 226.67119299999922,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-bed-gain",
+          "ms": 1015.4935180000011,
+          "cli_ms": 229.97470000000067,
+          "reused_decoders": true
+        },
+        {
+          "name": "undo-add-bed",
+          "ms": 1381.8820809999997,
+          "cli_ms": 232.585599,
+          "reused_decoders": false
+        }
+      ],
+      "restored": {
+        "same_state": true,
+        "fresh_request": true,
+        "history": 46
+      },
+      "problems": [],
+      "cue_clock": {
+        "observed_flashes": 5,
+        "observed_beeps": 5,
+        "cues": [
+          {
+            "cue": 0,
+            "result_time": 0.2,
+            "video_display_time": 854.900146484375,
+            "audio_display_time": 848.0938333333509,
+            "phase_ms": -6.806313151024142,
+            "nearest_frame_distance_ms": 5.551115123125783e-14,
+            "sampled_media_time": 1.2
+          },
+          {
+            "cue": 1,
+            "result_time": 1.2,
+            "video_display_time": 1888.266853515625,
+            "audio_display_time": 1848.0703333333274,
+            "phase_ms": -40.19652018229749,
+            "nearest_frame_distance_ms": 33.333000000000055,
+            "sampled_media_time": 3.233333
+          },
+          {
+            "cue": 2,
+            "result_time": 2.2,
+            "video_display_time": 2888.2998046875,
+            "audio_display_time": 2848.025000000012,
+            "phase_ms": -40.274804687488086,
+            "nearest_frame_distance_ms": 0,
+            "sampled_media_time": 4.2
+          },
+          {
+            "cue": 3,
+            "result_time": 3.2,
+            "video_display_time": 3888.39990234375,
+            "audio_display_time": 3848.036666666661,
+            "phase_ms": -40.36323567708905,
+            "nearest_frame_distance_ms": 0,
+            "sampled_media_time": 4.2
+          },
+          {
+            "cue": 4,
+            "result_time": 4.2,
+            "video_display_time": 4888.300048828126,
+            "audio_display_time": 4848.044333333339,
+            "phase_ms": -40.25571549478718,
+            "nearest_frame_distance_ms": 8.881784197001252e-13,
+            "sampled_media_time": 5.2
+          }
+        ],
+        "problems": []
+      },
+      "program_drift_ms": 33.365958984375055,
+      "stalls": 0,
+      "video_drops": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "clock_diagnostics": {
+        "audio_output_mapping": {
+          "min_ms": 616.0250000000119,
+          "max_ms": 616.0938333333509,
+          "spread_ms": 0.0688333333389437
+        },
+        "audio_cue_count": 5,
+        "picture_clock": {
+          "min_ms": 654.9001464843749,
+          "max_ms": 688.4670488281254,
+          "spread_ms": 33.566902343750485
+        },
+        "frame_observation_count": 121,
+        "picture_drift_ms": 33.3659511718738,
+        "picture_steps": [
+          {
+            "segment": 1,
+            "result_time": 1.0333329999999998,
+            "offset_ms": 671.6670000000001,
+            "previous_result_time": 0.9666669999999999,
+            "delta_ms": 16.73390234375006,
+            "segment_changed": true
+          },
+          {
+            "segment": 1,
+            "result_time": 1.233333,
+            "offset_ms": 688.2668535156249,
+            "previous_result_time": 1.1333330000000004,
+            "delta_ms": 16.699951171875227,
+            "segment_changed": false
+          }
+        ]
+      }
+    }
+  ],
+  "diagnosis": [
+    "All 48 edits passed the 3000 ms gate, maximum 1581.293395 ms; all six FIFO restorations and zero-drop/stall checks passed.",
+    "1080x1920/history-50 failed the unchanged phase gate at cues 2 and 3 (-50.020882 and -50.054215 ms).",
+    "In that trace the mapped audio-clock intercept varies by about 0.084 ms. Picture-clock offset steps by 16.734 ms at the first cut, then 16.634 ms within the incoming span at result time 1.233333.",
+    "The accumulated picture shift, rather than a comparably large step in the mapped audio cue clock, accounts for the measured phase change. This is a trace-level observation, not proof of the underlying browser scheduling cause.",
+    "The second shift is inside a span, so attributing the entire failure to cut handoff would be incorrect. The nearest-frame interpolation at cue 1 also cannot explain cues 2/3, whose observed source instants match exactly.",
+    "Audit output now retains raw getOutputTimestamp pairs and sampling times; the next matrix also decomposes clock offsets without altering gates or playback.",
+    "No timing tolerance, source quality, frame rate, transport or authoring behavior was changed. A passing rerun alone will not clear this unresolved failure. Physical playback is pending."
+  ]
+}

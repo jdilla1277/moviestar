@@ -6,6 +6,7 @@ import json
 from math import nextafter
 from pathlib import Path
 
+from moviestar.native_audio import MAX_AUDIBLE_TRACKS
 from moviestar.resolved import resolve_project
 from moviestar.spatial_layout import prepare_layout_frame
 from moviestar.spatial_model import compile_spatial_frame
@@ -21,6 +22,7 @@ def walk(nodes):
 PROFILE = {"name": "native", "transport": "native-browser", "max_window_s": 10,
            "clip_end_tolerance_ms": 50, "clip_end": "approximate",
            "min_fps": 24, "max_fps": 60, "max_segments": 3, "max_videos_per_segment": 2,
+           "max_independent_audio_tracks": MAX_AUDIBLE_TRACKS,
            "fallback_mode": "rendered"}
 
 

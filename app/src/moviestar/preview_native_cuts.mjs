@@ -1,6 +1,6 @@
 // Native hard cuts: bounded prepared scenes, one shared running audio context.
 export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,cleanup=()=>{},drain=async()=>{},reviewAudio=null}){
-  let index=0,playing=false,disposed=false,generation=0,seekGeneration=0,pendingSeek,timer,handoffTimer;
+  let index=0,playing=false,disposed=false,generation=0,seekGeneration=0,pendingSeek,timer,handoffTimer,handoff=false,pendingPreroll=null;
   const duration=packet.range.to-packet.range.from;
   const length=i=>packet.segments[i].packet.range.to-packet.segments[i].packet.range.from;
   Object.assign(metrics,{frames:[],flashes:[],beeps:[],cuts:[],segments_shown:[],audio_blocks:[],stalls:0,finished:false});
@@ -25,9 +25,38 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
       droppedVideoFrames:stages.reduce((n,s)=>n+(s.api.metrics.quality?.droppedVideoFrames??0),0)};
     api.pause();
   }
+  const hasMaster=()=>reviewAudio?.snapshot().prepared&&typeof reviewAudio.outputTimeAt==='function';
+  const masterTime=()=>{
+    const at=reviewAudio.outputTimeAt(performance.timeOrigin+performance.now());
+    if(!Number.isFinite(at))throw Error('Native cut output clock is unavailable');
+    return at;
+  };
+  const pictureLead=1/(2*packet.fps);
+  async function advancePrepared(i,attempt,expectedAt){
+    if(handoff)return;handoff=true;
+    const incoming=i+1,boundary=packet.segments[incoming].offset;
+    const cut={from:i,to:incoming,result_time:packet.range.from+boundary,expected_at:expectedAt,play_requested_at:Date.now()};
+    try{
+      // The incoming decoder starts hidden. Its first source frame is already
+      // prepared; show it only at the mix's absolute result-time boundary.
+      pendingPreroll=incoming;await stages[incoming].api.play();
+      const deadline=performance.now()+1000;
+      while(!disposed&&playing&&attempt===generation&&masterTime()<boundary-1/audio.sampleRate){
+        if(performance.now()>deadline)throw Error('Native cut output clock did not advance');
+        await new Promise(resolve=>setTimeout(resolve,1));
+      }
+      if(disposed||!playing||attempt!==generation)return;
+      index=incoming;pendingPreroll=null;reveal(index,false);outputs(index);
+      Object.assign(cut,{switched_at:Date.now(),audio_context_time:audio.currentTime,incoming_time:stages[index].api.time,outgoing_time:stages[i].api.time});
+      metrics.cuts.push(cut);
+      handoffTimer=setTimeout(()=>{if(!disposed&&playing&&attempt===generation)stages[i].api.pause();},1);
+      handoff=false;arm(attempt);
+    }catch(error){if(attempt===generation)fail(error);}
+  }
   async function advance(i,attempt,expectedAt){
     if(disposed||!playing||attempt!==generation||index!==i)return;
     clearTimeout(timer);
+    if(hasMaster()&&i<stages.length-1){await advancePrepared(i,attempt,expectedAt);return;}
     if(i===stages.length-1){
       try{
         stages[i].api.pause();
@@ -60,15 +89,18 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
     clearTimeout(timer);const i=index;
     const check=()=>{
       if(disposed||!playing||attempt!==generation||index!==i)return;
-      const remaining=length(i)-stages[i].api.time;
-      if(remaining>.002){timer=setTimeout(check,Math.max(1,remaining*1000));return;}
-      advance(i,attempt,Date.now());
+      try{
+        const remaining=hasMaster()&&i<stages.length-1?packet.segments[i+1].offset-pictureLead-masterTime():length(i)-stages[i].api.time;
+        if(remaining>.002){timer=setTimeout(check,Math.max(1,remaining*1000));return;}
+        advance(i,attempt,Date.now());
+      }catch(error){fail(error);}
     };
-    timer=setTimeout(check,Math.max(0,(length(i)-stages[i].api.time)*1000));
+    const remaining=hasMaster()&&i<stages.length-1?packet.segments[i+1].offset-pictureLead-masterTime():length(i)-stages[i].api.time;
+    timer=setTimeout(check,Math.max(0,remaining*1000));
   }
   stages.forEach((stage,i)=>{
     stage.api.onFailure=fail;
-    stage.api.onSegmentEnd=expectedAt=>advance(i,generation,expectedAt);
+    stage.api.onSegmentEnd=expectedAt=>{if(!hasMaster()||i===stages.length-1)return advance(i,generation,expectedAt);};
     stage.api.onPresented=frame=>{
       if(!playing||index!==i)return;
       const mapped={...frame,segment:i,result_time:packet.range.from+packet.segments[i].offset+frame.media_time-stage.api.packet.source_start,
@@ -99,14 +131,19 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
       Object.assign(metrics,{frames:[],flashes:[],beeps:[],cuts:[],segments_shown:[],audio_blocks:[],stalls:0,finished:false,previous_white:false,play_at:Date.now(),play_context_time:audio.currentTime});
       delete metrics.first_presented_at;delete metrics.pause_context_time;reveal(index);
       try{
-        if(reviewAudio?.snapshot().prepared)await reviewAudio.play(api.time);
+        if(pendingPreroll!==null){
+          await stages[pendingPreroll].api.seek(0);
+          if(disposed||!playing||attempt!==generation)return;
+          pendingPreroll=null;
+        }
+        if(reviewAudio?.snapshot().prepared)await reviewAudio.play(api.time,{pictureLead});
         if(disposed||!playing||attempt!==generation)return;
         if(reviewAudio)metrics.prepared_audio=reviewAudio.snapshot();
         await stages[index].api.play();
         if(!disposed&&playing&&attempt===generation)arm(attempt);
       }catch(error){if(attempt===generation){fail(error);throw error;}}
     },
-    pause(){reviewAudio?.pause();if(playing)metrics.pause_context_time=audio.currentTime;generation++;playing=false;clearTimeout(timer);clearTimeout(handoffTimer);stages.forEach(s=>s.api.pause());outputs(-1);},
+    pause(){reviewAudio?.pause();if(playing)metrics.pause_context_time=audio.currentTime;generation++;playing=false;handoff=false;clearTimeout(timer);clearTimeout(handoffTimer);stages.forEach(s=>s.api.pause());outputs(-1);},
     async seek(at){
       api.pause();if(disposed)return;
       const attempt=++seekGeneration,target=Math.max(0,Math.min(duration-1/packet.fps,Math.round(at*packet.fps)/packet.fps));
@@ -115,7 +152,7 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
       // seek or disposal can prevent this destination from being committed.
       const operation=Promise.all(stages.map((stage,i)=>stage.api.seek(i===selected?target-packet.segments[i].offset:0))).then(()=>{
         if(disposed||attempt!==seekGeneration)return;
-        index=selected;metrics.finished=false;reviewAudio?.seek(target);reveal(index);
+        index=selected;pendingPreroll=null;metrics.finished=false;reviewAudio?.seek(target);reveal(index);
       });
       pendingSeek=operation;
       try{await operation;}

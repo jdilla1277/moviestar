@@ -894,3 +894,128 @@ identity and all generated evidence on success or failure, and fails on any
 unchanged driver gate. There is no acceptance rerun or `continue-on-error`.
 Runner results are a separate environment reference and do not prove the cause
 of shared-Mac failures or physical playback acceptance.
+### Two independently placed audio tracks
+
+```sh
+python experiments/live_browser_preview/audio_benchmark.py --scenario two-tracks --out /tmp/native-two-tracks-new
+python experiments/live_browser_preview/audio_benchmark.py --scenario two-tracks --canvas 1080x1920 --out /tmp/native-two-tracks-hd-new
+```
+
+The scenario starts with dialogue, then times adding a second music layer,
+changing its gain, muting/unmuting it and four individual undos at histories
+0/20/50. The second layer has its own source offset, result-time placement and
+edge fades. The generated right-channel tone is distinguishable from dialogue
+and leaves the left-channel flash/beep oracle unchanged. Only adding/removing
+the file dependency may rebuild decoders; the other edits must reuse them.
+Final playback reapplies the two-track mix after the timed undo checks.
+
+The native profile permits at most two audible independent tracks intersecting
+the selected window, alongside routed source audio. Muted/out-of-window tracks
+do not consume that audio-layer limit. More tracks, looping and ducking still
+fail explicitly; the canonical model and export have not acquired new limits.
+Independent analytic stereo sums and full-export slices check both placed
+layers, and actual-browser output checks cover source audio on/off, a muted bed,
+fades, seeking and camera cuts. Clip/window/clock/quality budgets are unchanged.
+The fade results above measure the earlier one-independent-track build and do
+not qualify the two-track build.
+
+
+The [initial two-track matrix](two-track-initial-results.json) preserves all
+48 completed edits (maximum 2,590 ms) and one failed playback case: at
+360×640/history-20, both final-span videos dropped three frames. No edit missed
+3,000 ms; playback quality still failed. That historical wheel predates the
+parent's fade-rounding correction; its exact hashes remain attached, rather
+than being presented as current-head qualification. The current CI workflow
+runs both fade and two-track scenarios at both rasters and all three histories
+with unchanged gates and complete generated artifacts. The rounding fix is not
+claimed to repair the dropped frames. Physical two-track playback remains a
+separate pending check.
+
+### Two-track CI timing failure (110a50c)
+
+The [current two-track CI failure](two-track-ci-failure-results.json) is distinct
+from the historical pre-rounding matrix. All 48 edits completed below 3,000 ms
+(maximum 1,581.294 ms), all six cases restored correctly, and playback reported
+zero drops/stalls. Nevertheless, 1080×1920/history-50 failed the **unchanged
+50 ms** audio/display limit: cues 2/3 measured −50.020882/−50.054215 ms. Full
+correctness CI passed. This scenario remains unqualified.
+
+In the failed trace, the audio-output mapping intercept varies by about
+0.084 ms. Picture presentation offset steps by 16.734 ms at the first cut,
+then another 16.634 ms at result time 1.233333 **within** the next span. Program
+drift is 33.27 ms. The second step prevents attributing the entire failure to
+cut handoff. Cues 2/3 have exact source-instant observations, so nearest-frame
+interpolation at cue 1 does not explain their failure either. These are observed
+clock relationships, not proof of a particular Chromium scheduling cause.
+
+The driver now reports these independent clock offsets/steps. Audit-mode beep
+records also retain raw `getOutputTimestamp()` pairs and sampling times for the
+next investigation. This adds evidence without altering playback, source quality,
+frame rate, phase calculations or acceptance gates. A passing rerun does not
+explain or erase the retained failure. Further work must correlate raw mapping,
+startup and in-span presentation scheduling before qualifying this profile;
+physical two-track listening/lip-sync remains pending.
+
+### Prepared-audio transport alignment (#215)
+
+The prepared mix now owns cut boundaries through its audible output clock.
+Incoming pictures start hidden half a source-frame before their absolute result
+boundary, then become visible on that boundary. An early/late outgoing media
+clock or end callback cannot accumulate timing error into the next scene.
+Initial picture launch likewise reserves a half-frame for presentation latency,
+rather than waiting until audio is audible before requesting picture startup.
+Audio starts at its original sample/offset and remains continuous; video rates,
+source quality and authored timing are unchanged. Legacy embedded-audio cuts
+keep their prior path.
+
+Deterministic regressions cover a late outgoing clock, early end callbacks,
+hidden preroll, reveal on the master clock, Pause during handoff, rewinding a
+canceled preroll before resuming, unavailable output clocks, and startup at
+24/30/60 fps. Browser waveform, zero-drop/stall, frame, seek/restart/replacement
+and 50 ms checks remain strict. Prior failed matrices are retained; a passing
+rerun alone is not the explanation for this change.
+
+Actual-browser sample capture also exposed a startup timestamp quirk: the
+worklet reported the same frame twice, then recovered by jumping two quanta.
+The captured PCM matched the reference byte-for-byte, but its recorded start
+was one quantum early. Capture-only timestamps now use a monotonic rendered
+sample cursor; raw stamps and adjustment sizes remain in audit blocks. No
+samples are inserted/removed, and forward gaps are not filled. A regression
+replays the captured repeated/recovered stamp sequence with distinct known
+sample blocks. **Beep timestamps, phase calculations and the 50 ms gate are
+unchanged**; this cannot turn the retained phase failure into a pass.
+
+Picture-rate feedback and source-pipeline isolation were investigated and
+rejected after browser quality checks failed. The final patch does neither;
+those prototype patches and failures remain in the originating workspace.
+Complete generated fade/two-track matrices and physical playback remain the
+qualification steps for this candidate, rather than a general long-timeline
+acceptance claim.
+
+
+The first complete master-clock CI reference passed **96/96 edits**, all twelve
+fade/two-track cases at both rasters and histories 0/20/50. Maximum edit latency
+was **1,401.553 ms**, maximum absolute cue phase **21.593 ms**, and program drift
+**33.167 ms**, with zero reported drops/stalls. Exact wheel/runtime/producer
+identities and per-case evidence are in
+[two-track-master-clock-results.json](two-track-master-clock-results.json), linked
+to [the generated run/artifacts](https://github.com/jdilla1277/moviestar/actions/runs/43586302786).
+This qualifies that bounded matrix; full correctness CI and physical listening
+remain separate. The earlier failed references stay retained unchanged.
+
+
+The same runtime head's [full-suite failure](master-clock-full-suite-failure.json)
+is retained separately: 3,564 main tests passed / nine skipped, but one legacy
+source-audio cut sample had barcode 32 with a callback timestamp for 31. All
+17 separate PiP/audio cases passed. This is the mismatch class tracked by #189,
+not a reason to relabel the passing prepared-audio timing reference as a full
+correctness pass.
+
+Audit pixel readback now runs before motion/DOM work can advance the live video
+image; final-cut samples still use the prepared held frame. A negative control
+reproduces a callback image of 31 followed by a live image of 32 during DOM work,
+and requires the callback record to retain 31. All three strict browser cut
+cases pass locally after this hardening, with no identity/count/drop/timing
+relaxation. This prevents that avoidable readback window; it does not establish
+the physical cause of every historical #189 observation. That investigation
+stays open, and fresh full-suite CI remains required.

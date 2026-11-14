@@ -126,8 +126,8 @@ one scene, overlapping any transition, or needing more than two visible videos
 at once are rejected. Transitions elsewhere in the
 project do not block an otherwise supported window. The chosen sources must have
 no source edit operations. Edits on unrelated sources and unplaced live caption tracks do not block
-this window. One independent audio track and source/track gain, mute and edge fades are
-supported as described below. Looping, ducking, multiple audible
+this window. Up to two independent audio tracks and source/track gain, mute and edge fades are
+supported as described below. Looping, ducking, more than two audible
 independent tracks and held/speed-changed media remain unsupported in this profile. Ordinary unit-speed spans after
 a hold elsewhere in the scene can be reviewed with their original scene clock.
 Other codecs, VFR, HDR/color parity and general large-project behavior have not
@@ -207,11 +207,11 @@ frame, fonts, images and canonical layout before it becomes current.
 
 ### Independent dialogue audio and existing mix controls
 
-Native review can play one independently placed audio track alongside routed
-source audio. Use the existing `audio add`, `audio source`, `audio dump` /
+Native review can play up to two independently placed audio tracks alongside routed
+source audio, including overlapping dialogue and music. Use the existing `audio add`, `audio source`, `audio dump` /
 `audio set` and `undo` commands. Source/track gain, mute and edge fades, selected source
 ranges and result-time placement retain their export meaning. Looping,
-ducking and more than one audible independent track in the selected window
+ducking and more than two audible independent tracks in the selected window
 remain unsupported and fail explicitly.
 
 An edited mix prepares only the selected window as lossless stereo 48 kHz PCM,

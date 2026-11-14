@@ -26,7 +26,7 @@ export function createPreparedAudio(context,destination,signal,duration){
         cancel(){if(!settled){prepared=null;settled=true;}}
       };
     },
-    async play(at){
+    async play(at,{pictureLead=0}={}){
       api.pause();if(!buffer||disposed)return;
       const attempt=generation,active=()=>!disposed&&!signal?.aborted&&attempt===generation;
       await context.resume();if(!active())return;
@@ -42,13 +42,21 @@ export function createPreparedAudio(context,destination,signal,duration){
       destination.port?.postMessage({kind:'capture'});
       startedAt=context.currentTime;lastStart={context_time:startedAt,offset};
       source.start(startedAt,offset);
-      // Media-element pictures can advance before queued Web Audio reaches
-      // the device. Start picture transport on this actual output-clock edge.
-      while(context.getOutputTimestamp().contextTime+1/context.sampleRate<startedAt){
+      // Starting HTML media also incurs presentation latency. Reserve one
+      // half-frame interval before the audible edge for picture launch;
+      // neither the audio samples nor picture playback rate are changed.
+      const lead=Math.max(0,Math.min(1/24,pictureLead));
+      while(context.getOutputTimestamp().contextTime+lead+1/context.sampleRate<startedAt){
         if(!active())return;
         if(performance.now()>deadline)throw Error('Prepared audio did not reach the output clock');
         await new Promise(resolve=>setTimeout(resolve,1));
       }
+    },
+    outputTimeAt(displayEpoch){
+      if(!source||!lastStart||disposed)return null;
+      const stamp=context.getOutputTimestamp();
+      if(!(stamp.contextTime>0&&stamp.performanceTime>0))return null;
+      return offset+stamp.contextTime+(displayEpoch-performance.timeOrigin-stamp.performanceTime)/1000-startedAt;
     },
     pause(){
       ++generation;
@@ -104,7 +112,8 @@ export async function createMixedOutput(context,metrics,signal,{audit=false,capt
       if(item.kind==='block'){(metrics.audio_blocks??=[]).push(item);continue;}
       const stamp=context.getOutputTimestamp();
       metrics.beeps.push({...item,display_time:stamp.performanceTime+(item.context_time-stamp.contextTime)*1000,
-        timestamp_available:stamp.performanceTime>0&&stamp.contextTime>0});
+        timestamp_available:stamp.performanceTime>0&&stamp.contextTime>0,
+        ...(audit?{output_timestamp:{...stamp},timestamp_sampled_at:performance.now()}: {})});
     }
   };
   const abort=()=>api.dispose();signal.addEventListener('abort',abort,{once:true});
