@@ -2226,7 +2226,9 @@ def build_storyboard_padding_tile_command(
     cmd: list[str] = [
         "ffmpeg", "-y", "-loglevel", "error",
         "-f", "lavfi",
-        "-i", f"color=c=0x262626:size={width}x{height}",
+        # Legacy color sources can round odd dimensions down. Restore the
+        # exact tile size before encoding so the mosaic graph never resets.
+        "-i", f"color=c=0x262626:size={width}x{height},scale={width}:{height}",
         "-frames:v", "1",
         # Match the video tiles' full-range JPEG pixel format. lavfi
         # color is limited-range yuv420p; a mid-sequence pixel-format
