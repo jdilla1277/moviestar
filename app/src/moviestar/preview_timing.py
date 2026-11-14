@@ -7,7 +7,7 @@ from time import perf_counter, time
 
 NAMES = {'snapshot_validation','queue_dispatch','worker_startup','module_imports',
          'request_read','descriptor_compile','audio_prepare','caption_paint',
-         'descriptor_publish','worker_exit_and_publication'}
+         'descriptor_publish','worker_exit_and_publication','caption_reuse_check','caption_reuse_copy'}
 
 
 class PreparationTiming:
