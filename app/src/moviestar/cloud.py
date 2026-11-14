@@ -411,3 +411,6 @@ from moviestar.cloud_probe import register_probe
 register_probe(cloud)
 from moviestar.cloud_screenshot import register_screenshot_commands
 register_screenshot_commands(cloud)
+
+from moviestar.cloud_watch import register_watch_commands
+register_watch_commands(cloud)
