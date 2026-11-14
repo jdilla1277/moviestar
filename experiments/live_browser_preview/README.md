@@ -1019,3 +1019,19 @@ cases pass locally after this hardening, with no identity/count/drop/timing
 relaxation. This prevents that avoidable readback window; it does not establish
 the physical cause of every historical #189 observation. That investigation
 stays open, and fresh full-suite CI remains required.
+
+### Secondary callback regression (996c45a)
+
+The [failed secondary-callback run](secondary-callback-failure-results.json)
+remains failed: every timing case detected uncaught browser exceptions, and the
+PiP gate had eleven failures. A stray copy of the primary readback block entered
+the secondary `observe(now, frame)` callback. It referenced undefined `metadata`
+in cut mode, stopping secondary frame observations, and attempted to sample the
+primary image in non-cut audit mode. This was an implementation error, not a
+reason to loosen quality gates or retry an unchanged acceptance run.
+
+The stray secondary block is removed; the primary callback's early image copy
+is retained. Four negative-control configurations execute the actual secondary
+callback body for cut/non-cut and audit/non-audit modes, requiring its own image,
+frame metadata, readiness notification and next callback. Complete browser and
+performance gates are rerun against the corrected source.

@@ -291,10 +291,6 @@ async function initialize(){
         if(disposed)return;
         item.firstFrame=true;item.frame={media_time:frame.mediaTime,display_time:frame.expectedDisplayTime,presented_frames:frame.presentedFrames};
         const running=playing&&!video.paused;
-  // Read the callback image before motion/layout work can let the live video
-  // image advance. At a cut's final frame, sample the held canonical pixels
-  // after installing them below, rather than reading beyond the edit.
-  const callbackPixels=running&&audit&&(!packet.cut_segment||metadata.mediaTime<packet.source_end-1/packet.fps-1e-6)?sourceFrame():null;
         if(packet.cut_segment&&running&&frame.mediaTime>=item.end-1e-6){
           freezeFollower(item);
           item.callback=media.requestVideoFrameCallback(observe);return;

@@ -161,3 +161,25 @@ assert.equal(vm.runInContext('sourceFrame().number',context),32,'Independent lat
 '''
     result=subprocess.run(['node','-e','const STAGE='+json.dumps(stage)+';'+script],capture_output=True,text=True,timeout=10)
     assert result.returncode==0,result.stdout+result.stderr
+
+
+@pytest.mark.parametrize('cut', [False,True])
+@pytest.mark.parametrize('audit_enabled', [False,True])
+def test_secondary_video_callback_uses_its_own_frame_and_image(cut,audit_enabled):
+    source=stage_script()
+    body=source.split('const observe=(now,frame)=>{',1)[1].split('\n      };',1)[0]
+    script=r'''
+const vm=require('node:vm'),assert=require('node:assert/strict');let scheduled=0,checks=0;
+const context={disposed:false,playing:true,audit:AUDIT,video:{paused:false},packet:{cut_segment:CUT,fps:30},
+ item:{path:['inset'],end:5},metrics:{},media:{requestVideoFrameCallback(){scheduled++;return scheduled;}},
+ sourceFrame(which){assert.equal(which,context.item,'The listener must sample its own image, not the primary video');return{number:61};},
+ recordVideoQuality(){},freezeFollower(){throw Error('This is not the final frame');},checkReady(){checks++;}};
+vm.runInNewContext('const observe=(now,frame)=>{'+BODY+'};observe(0,{mediaTime:2.033333,expectedDisplayTime:20,presentedFrames:2});',context);
+assert.equal(context.item.firstFrame,true);assert.equal(context.item.frame.media_time,2.033333);
+assert.equal(scheduled,1);assert.equal(checks,1);
+if(AUDIT){assert.equal(context.metrics.video_frames.length,1);assert.equal(context.metrics.video_frames[0].number,61);}
+else assert.equal(context.metrics.video_frames,undefined);
+'''
+    prefix='const BODY='+json.dumps(body)+',CUT='+json.dumps(cut)+',AUDIT='+json.dumps(audit_enabled)+';'
+    result=subprocess.run(['node','-e',prefix+script],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stdout+result.stderr
