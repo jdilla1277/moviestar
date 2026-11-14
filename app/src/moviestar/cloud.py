@@ -421,3 +421,6 @@ register_storyboard_commands(cloud)
 
 from moviestar.cloud_skim import register_skim_commands
 register_skim_commands(cloud)
+
+from moviestar.cloud_inspect import register_inspect_commands
+register_inspect_commands(cloud)
