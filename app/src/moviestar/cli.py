@@ -18987,6 +18987,60 @@ def _overlay_style_envelope(
     }
 
 
+def _validate_imported_overlay_styles(spec: dict) -> None:
+    """Check authored CSS without rewriting stored preset defaults/history.
+
+    Complete stored defaults can predate today's viewport-based presets.
+    Their values remain snapshots; explicit CSS must still match the same
+    resolver used by overlay authoring. Resolved-only styles stay explicit.
+    """
+    for index, overlay in enumerate(spec.get("overlays", [])):
+        style = overlay["style"]
+        where = f"overlays[{index}].style"
+        preset, css = style.get("preset"), style.get("css")
+        if preset is not None and not isinstance(preset, str):
+            raise ValueError(f"{where}.preset: must be a style preset name.")
+        if css is not None and not isinstance(css, str):
+            raise ValueError(f"{where}.css: must be a string or null.")
+        if not preset and not (css or "").strip():
+            continue
+        try:
+            highlight_color = (overlay.get("highlight") or {}).get("color")
+            expected = _overlay_style_envelope(
+                preset=preset or (
+                    "caption-default" if overlay["kind"] == "caption" else "title"
+                ),
+                css=css, highlight_color=highlight_color,
+            )["resolved"]
+            declared = _parse_overlay_css(css)
+        except (ValueError, TypeError, OverflowError) as exc:
+            raise ValueError(f"{where}: {exc}") from exc
+        resolved = style.get("resolved")
+        if not isinstance(resolved, dict):
+            raise ValueError(f"{where}.resolved: missing complete derived styling.")
+        missing = sorted(set(expected) - set(resolved))
+        if missing:
+            raise ValueError(
+                f"{where}.resolved: missing derived field(s): {', '.join(missing)}."
+            )
+        keys = set(declared) - {"stroke"}
+        if "stroke" in declared:
+            keys.add("stroke_width")
+            if len(str(declared["stroke"]).split(maxsplit=1)) > 1:
+                keys.add("stroke_color")
+        if highlight_color is not None:
+            keys.add("highlight_color")
+        stale = sorted(
+            key for key in keys
+            if isinstance(resolved.get(key), bool) or resolved.get(key) != expected.get(key)
+        )
+        if stale:
+            raise ValueError(
+                f"{where}.resolved: inconsistent with authored CSS/highlight "
+                f"for field(s): {', '.join(stale)}."
+            )
+
+
 def _split_css_declarations(css: str | None) -> list[str]:
     """Split CSS-ish declarations on semicolons or top-level commas.
 
@@ -25008,6 +25062,12 @@ def spec(edit_path: str | None, reset: bool, dry_run: bool) -> None:
                                      programmatically catches bugs
                                      before replacing the current edit.
 
+    Overlay preset/CSS inputs require complete ``style.resolved`` values
+    consistent with their CSS and highlight overrides. Both dry-run and apply
+    reject missing/stale derived styling before writing; use ``overlays set``
+    to recompute it, then dump a complete spec again. Existing preset defaults
+    are kept as stored, and styles containing only ``resolved`` remain explicit.
+
     Parse errors on ``--edit`` include a structured
     ``parse_error`` sub-object alongside the top-level error
     string: ``file``, ``line``, ``column``, ``message``, and the
@@ -25139,6 +25199,19 @@ def spec(edit_path: str | None, reset: bool, dry_run: bool) -> None:
             "spec",
             f"Spec source IDs {spec_ids} do not match project source IDs "
             f"{project_ids}. Replacing a spec across projects is not supported.",
+        )
+
+    try:
+        _validate_imported_overlay_styles(new_spec)
+    except ValueError as exc:
+        _error_exit_with_hint(
+            "spec", str(exc),
+            "Use 'moviestar overlays set FILE' to validate and recompute "
+            "preset/CSS styling, then dump a complete spec again with "
+            "'moviestar spec'. Derived captions must be edited through their "
+            "recipe or materialized before hand-editing. Complete stored "
+            "preset defaults and resolved-only styles are preserved.",
+            reason="overlay_style_unresolved",
         )
 
     # Issue #36 stage 1: dry-run forks here. Everything above (file
