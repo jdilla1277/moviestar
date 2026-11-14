@@ -418,3 +418,6 @@ register_screenshot_commands(cloud)
 
 from moviestar.cloud_storyboard import register_storyboard_commands
 register_storyboard_commands(cloud)
+
+from moviestar.cloud_skim import register_skim_commands
+register_skim_commands(cloud)
