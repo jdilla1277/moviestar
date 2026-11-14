@@ -19,7 +19,9 @@ Reopening with the same IDs does not run another extraction.
 Seconds and timecodes accept millisecond precision. Both endpoints are required;
 use an increasing range of at most 30 seconds within the asset. Cloud uses the
 local precise review extraction engine: H.264 video inside an orientation-aware
-720p box with available audio encoded to AAC. It intentionally differs from
+720p box with available audio encoded to AAC. For a local comparison on the
+raw file clock, use `watch --source SOURCE_ID --review`; omitting `--source`
+can apply an authored project audio mix instead. It intentionally differs from
 local watch's default keyframe-aligned stream copy. Source frame granularity
 and AAC padding can affect measured duration; the result reports requested and
 effective ranges, actual media duration, and first video/audio offsets relative
