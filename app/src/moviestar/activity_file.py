@@ -51,10 +51,14 @@ def normalize_options(options):
 def analyze_file_activity(filename, options):
     options = normalize_options(options)
     metadata = run_ffprobe(filename)
-    video = next((s for s in metadata.get('streams', []) if s.get('codec_type') == 'video' and not s.get('disposition', {}).get('attached_pic')), None)
-    if not video or not video.get('width') or not video.get('height'):
+    video = next((s for s in metadata.get('streams', []) if s.get('codec_type') == 'video'), None)
+    if not video or video.get('disposition', {}).get('attached_pic') or not video.get('width') or not video.get('height'):
         raise ActivityError('no_video')
     duration = float(metadata['format'].get('duration', 0))
+    if not math.isfinite(duration) or duration <= 0: raise ActivityError('invalid_range')
+    # Match the loaded local source's millisecond duration, including its
+    # default sample grid at rounded endpoints. Explicit controls stay exact.
+    duration = format_timecode(duration)['seconds']
     start, end = options['from_seconds'], options.get('to_seconds', duration)
     if not math.isfinite(duration) or not 0 <= start < end <= duration + 0.001 or end > 86400:
         raise ActivityError('invalid_range')

@@ -43,3 +43,21 @@ def test_subnormal_interval_is_a_structured_sample_limit(video):
         analyze_file_activity(video, {'interval_seconds':1e-320})
     with pytest.raises(ActivityError, match='sample_limit'):
         normalize_options({'interval_seconds':1e-320,'to_seconds':1})
+
+
+def test_default_range_matches_local_millisecond_duration(video, monkeypatch):
+    # Loaded local source metadata rounds duration to milliseconds. A raw probe
+    # value just above a sample boundary must not introduce an extra sample.
+    monkeypatch.setattr('moviestar.activity_file.run_ffprobe', lambda _: {'format':{'duration':'1.0004'},'streams':[{'codec_type':'video','width':160,'height':120}]})
+    planned=[]
+    def analyze(*args,**kwargs):
+        planned.extend(kwargs['samples']);return {'commands':[]}
+    monkeypatch.setattr('moviestar.activity_file.analyze_visual_activity',analyze)
+    assert analyze_file_activity(video,{})['range']['to']['seconds']==1
+    assert len(planned)==4
+
+
+def test_cover_art_is_not_a_usable_first_video_stream(monkeypatch):
+    monkeypatch.setattr('moviestar.activity_file.run_ffprobe', lambda _: {'format':{'duration':'2'},'streams':[{'codec_type':'video','width':160,'height':120,'disposition':{'attached_pic':1}},{'codec_type':'video','width':160,'height':120}]})
+    with pytest.raises(ActivityError,match='no_video'):
+        analyze_file_activity('unused',{})
