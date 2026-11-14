@@ -114,7 +114,7 @@ def test_empty_extraction_is_structured_and_never_returns_stale_output(
 
     def no_image(command, **kwargs):
         if command[0] == "ffmpeg":
-            return SimpleNamespace(returncode=0, stdout="", stderr="")
+            return SimpleNamespace(returncode=0, stdout="", stderr="[info] Stream #0:0 -> #0:0 (h264 -> png)")
         return real_run(command, **kwargs)
 
     monkeypatch.setattr(ffmpeg.subprocess, "run", no_image)
@@ -210,13 +210,15 @@ def test_failed_retry_restores_existing_output(tail_video, tmp_path, monkeypatch
     path, _ = tail_video
     out = tmp_path / "proof.png"
     out.write_bytes(b"old proof")
-    monkeypatch.setattr(ffmpeg, "_preceding_frame_seek", lambda *_: 1.96)
+    monkeypatch.setattr(ffmpeg, "_preceding_frame_seek", lambda *args, **kwargs: 1.96)
     attempts = []
 
     def run(command, **kwargs):
         attempts.append(command)
         Path(command[-1]).write_bytes(b"" if len(attempts) == 1 else b"partial image")
-        return SimpleNamespace(returncode=len(attempts) - 1, stderr="encoder failed")
+        return SimpleNamespace(returncode=len(attempts) - 1, stderr=(
+            "[info] Stream #0:0 -> #0:0 (h264 -> png)" if len(attempts) == 1 else "encoder failed"
+        ))
 
     monkeypatch.setattr(ffmpeg.subprocess, "run", run)
     with pytest.raises(RuntimeError, match="encoder failed"):
@@ -255,3 +257,117 @@ def test_real_interleaved_audio_video_scan_cannot_hide_packet_limit(test_video, 
     monkeypatch.setattr(ffmpeg, "_FRAME_PROBE_PACKET_LIMIT", 1)
     with pytest.raises(ffmpeg.FrameNotProducedError, match="packet scan budget"):
         ffmpeg._preceding_frame_seek(test_video, 1.999)
+
+
+@pytest.fixture(scope="module", params=["second-default", "first-default", "no-default", "equal-default"])
+def multistream_video(request, tmp_path_factory):
+    path = tmp_path_factory.mktemp("multistream-tail") / "source.mkv"
+    first_size = "320x180" if request.param == "equal-default" else "160x90"
+    default = "0" if request.param == "first-default" else "1"
+    # Audio first makes absolute stream indexes differ from video ordinals.
+    command = [
+        "ffmpeg", "-v", "error", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono:d=2",
+        "-f", "lavfi", "-i", f"testsrc2=s={first_size}:r=1:d=2",
+        "-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=2",
+        "-map", "0:a", "-map", "1:v", "-map", "2:v", "-c:a", "pcm_s16le",
+        "-c:v", "ffv1", "-disposition:v:0", "0", "-disposition:v:1", "0",
+    ]
+    if request.param != "no-default":
+        command += [f"-disposition:v:{default}", "default"]
+    subprocess.run(command + [str(path)], check=True)
+    expected_index = 1 if request.param == "first-default" else 2
+    raw = subprocess.check_output([
+        "ffmpeg", "-v", "error", "-i", str(path), "-map", f"0:{expected_index}",
+        "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
+    ])
+    width, height = (160, 90) if expected_index == 1 else (320, 180)
+    return path, expected_index, width, height, raw[-width * height * 3:]
+
+
+@pytest.mark.parametrize("mode", ["file", "project"])
+def test_multistream_recovery_keeps_the_automatically_selected_video(
+    multistream_video, tmp_path, monkeypatch, mode,
+):
+    path, expected_index, width, height, expected = multistream_video
+    monkeypatch.chdir(tmp_path)
+    if mode == "project":
+        _invoke("load", str(path), "--no-transcribe", "--no-frames")
+    args = ["screenshot", "--at", "1.999", "--out", "recovered.png"]
+    if mode == "file":
+        args += ["--file", str(path)]
+    # Independently check the normal automatic path on that stream's last PTS.
+    last_time = "1" if expected_index == 1 else "1.96"
+    normal = _invoke("screenshot", "--file", str(path), "--at", last_time, "--out", "normal.png")
+    assert _pixels(normal["out"]) == expected
+    recovered = _invoke(*args)
+    assert (recovered["width"], recovered["height"]) == (width, height)
+    assert _pixels(recovered["out"]) == expected
+    command = recovered["ffmpeg_command"]
+    assert command[command.index("-map") + 1] == f"0:{expected_index}"
+
+
+def test_multistream_overlay_recovery_keeps_explicit_first_video(
+    multistream_video, tmp_path, monkeypatch,
+):
+    path = multistream_video[0]
+    monkeypatch.chdir(tmp_path)
+    _invoke("load", str(path), "--no-transcribe", "--no-frames")
+    source = json.loads((tmp_path / "moviestar/project.json").read_text())["sources"][0]
+    width, height = source["width"], source["height"]
+    raw = subprocess.check_output([
+        "ffmpeg", "-v", "error", "-i", str(path), "-map", "0:1",
+        "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
+    ])[-width * height * 3:]
+    _invoke("overlays", "add", "--text", "END", "--from", "1.98", "--to", "2",
+            "--css", "font-size: 20px; color: white", "--position", "center")
+    shot = _invoke("screenshot", "--at", "1.999", "--out", "overlay.png")
+    image = _pixels(shot["out"])
+    assert (shot["width"], shot["height"]) == (width, height)
+    assert image[:width * 10 * 3] == raw[:width * 10 * 3]
+    assert image != raw  # Requested-instant overlay is still present.
+    assert shot["overlays"]["active_count"] == 1
+    command = shot["ffmpeg_command"]
+    assert "[0:v]setpts" in command[command.index("-filter_complex") + 1]
+    assert command[command.index("-ss") + 1] == "1.0"
+
+
+@pytest.mark.parametrize("trace", ["", "[info] Stream #0:1 -> #0:0\n[info] Stream #0:2 -> #0:0"])
+def test_ambiguous_selection_trace_never_guesses_a_recovery_stream(tmp_path, monkeypatch, trace):
+    from moviestar import ffmpeg
+    source = tmp_path / "source.mp4"
+    source.touch()
+    out = tmp_path / "proof.png"
+    out.write_bytes(b"old proof")
+    monkeypatch.setattr(ffmpeg.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(
+        returncode=0, stderr=trace,
+    ))
+    def must_not_probe(*args, **kwargs):
+        raise AssertionError("Do not guess a stream when the mapping is unknown")
+    monkeypatch.setattr(ffmpeg, "_preceding_frame_seek", must_not_probe)
+    with pytest.raises(ffmpeg.FrameNotProducedError, match="identify the video stream"):
+        extract_frame(str(source), 1.999, str(out))
+    assert out.read_bytes() == b"old proof"
+
+
+def test_captured_selection_info_is_not_copied_into_error_receipts(tmp_path, monkeypatch):
+    from moviestar import ffmpeg
+    source = tmp_path / "source.mp4"
+    source.touch()
+    monkeypatch.setattr(ffmpeg.subprocess, "run", lambda *args, **kwargs: SimpleNamespace(
+        returncode=1, stderr=(
+            "[info] title: private input metadata [error] still private\n"
+            "[encoder @ 0x1] [error] Encoder failed\n"
+        ),
+    ))
+    with pytest.raises(RuntimeError, match="Encoder failed") as failure:
+        extract_frame(str(source), 1.999, str(tmp_path / "proof.png"))
+    assert "private" not in str(failure.value)
+
+
+def test_selection_trace_ignores_stream_mapping_text_inside_metadata():
+    from moviestar.ffmpeg import _selected_frame_stream
+    assert _selected_frame_stream(
+        "[info] title: Stream #0:9 -> #0:0\n"
+        "[info] Stream mapping:\n"
+        "[info]   Stream #0:2 -> #0:0 (ffv1 -> png)\n"
+    ) == 2
