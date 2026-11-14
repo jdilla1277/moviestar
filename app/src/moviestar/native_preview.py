@@ -1,5 +1,8 @@
 """Compile native review descriptors; paint captions without decoding footage."""
 
+from time import perf_counter
+_MODULE_STARTED = perf_counter()
+
 from hashlib import sha256
 from copy import deepcopy
 import json
@@ -11,6 +14,8 @@ from moviestar.resolved import resolve_project
 from moviestar.spatial_layout import prepare_layout_frame
 from moviestar.spatial_model import compile_spatial_frame
 from moviestar.spatial_transition import active_transitions
+
+_MODULE_IMPORTED = perf_counter()
 
 
 def walk(nodes):
@@ -234,18 +239,43 @@ def _compile_span(snapshot, timeline, start, end, span, *, prepared_audio=False)
     return packet, assets
 
 
-def build(request_file):
+def build(request_file, *, startup=None):
     """Worker entry: descriptor and private asset registry stay in its owned folder."""
+    from moviestar.preview_timing import PreparationTiming
+    read_started = perf_counter()
     request_file = Path(request_file)
     request = json.loads(request_file.read_text())
-    packet, assets = compile_snapshot(request)
+    timing = PreparationTiming(request['preparation_timing']) if 'preparation_timing' in request else None
+    if timing is not None:
+        if startup is not None:
+            timing.add('worker_startup',timing.document['worker_started_perf'],startup[0])
+            timing.add('module_imports',*startup)
+        timing.add('request_read',read_started,perf_counter())
+    completed=False
+    try:
+        _build(request_file,request,timing)
+        completed=True
+    finally:
+        if timing is not None:
+            timing.document.update(completed=completed,worker_finished_perf=perf_counter())
+            try:
+                (request_file.parent/'timing.json').write_text(json.dumps(timing.document))
+            except OSError:
+                pass  # Supervisor reports missing diagnostics without failing playback.
+
+
+def _build(request_file,request,timing):
+    from moviestar.preview_timing import phase
+    with phase(timing,'descriptor_compile'):
+        packet, assets = compile_snapshot(request)
     packet.update(request_id=request['request_id'], requested_at=request['requested_at'],
                   input_identity=request['input_identity'])
     folder = request_file.parent
     if packet.get('audio_plane'):
         from moviestar.native_audio import prepare_audio
         plane = packet['audio_plane']; job_id = plane.pop('job')
-        path = prepare_audio(assets.pop(job_id), folder/('audio-'+job_id))
+        with phase(timing,'audio_prepare'):
+            path = prepare_audio(assets.pop(job_id), folder/('audio-'+job_id))
         identity = asset_identity(path)
         key = sha256(json.dumps([str(path), identity]).encode()).hexdigest()[:24]
         assets[key] = {'path': path, 'identity': identity, 'kind': 'audio'}
@@ -259,7 +289,8 @@ def build(request_file):
             continue
         job_id = plane.pop('job')
         if job_id not in painted:
-            paths = paint_plane(assets.pop(job_id), folder/('captions-'+job_id))
+            with phase(timing,'caption_paint'):
+                paths = paint_plane(assets.pop(job_id), folder/('captions-'+job_id))
             painted[job_id] = []
             for path, rect in paths:
                 identity = asset_identity(path)
@@ -269,17 +300,18 @@ def build(request_file):
         for state, (key, rect) in zip(plane['states'], painted[job_id]):
             state['asset'] = key
             state['rect'] = rect
-    (folder/'assets.json').write_text(json.dumps({key: {**value, 'path': str(value['path'])}
-        for key, value in assets.items()}))
-    staged = folder/'packet.tmp'
-    staged.write_text(json.dumps(packet, separators=(',', ':')))
-    staged.replace(folder/'preview.json')
+    with phase(timing,'descriptor_publish'):
+        (folder/'assets.json').write_text(json.dumps({key: {**value, 'path': str(value['path'])}
+            for key, value in assets.items()}))
+        staged = folder/'packet.tmp'
+        staged.write_text(json.dumps(packet, separators=(',', ':')))
+        staged.replace(folder/'preview.json')
 
 
 if __name__ == '__main__':
     import sys
     try:
-        build(sys.argv[1])
+        build(sys.argv[1],startup=(_MODULE_STARTED,_MODULE_IMPORTED))
     except (ValueError, OSError) as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(1)
