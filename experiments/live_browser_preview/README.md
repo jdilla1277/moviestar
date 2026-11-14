@@ -930,3 +930,28 @@ runs both fade and two-track scenarios at both rasters and all three histories
 with unchanged gates and complete generated artifacts. The rounding fix is not
 claimed to repair the dropped frames. Physical two-track playback remains a
 separate pending check.
+
+### Two-track CI timing failure (110a50c)
+
+The [current two-track CI failure](two-track-ci-failure-results.json) is distinct
+from the historical pre-rounding matrix. All 48 edits completed below 3,000 ms
+(maximum 1,581.294 ms), all six cases restored correctly, and playback reported
+zero drops/stalls. Nevertheless, 1080×1920/history-50 failed the **unchanged
+50 ms** audio/display limit: cues 2/3 measured −50.020882/−50.054215 ms. Full
+correctness CI passed. This scenario remains unqualified.
+
+In the failed trace, the audio-output mapping intercept varies by about
+0.084 ms. Picture presentation offset steps by 16.734 ms at the first cut,
+then another 16.634 ms at result time 1.233333 **within** the next span. Program
+drift is 33.27 ms. The second step prevents attributing the entire failure to
+cut handoff. Cues 2/3 have exact source-instant observations, so nearest-frame
+interpolation at cue 1 does not explain their failure either. These are observed
+clock relationships, not proof of a particular Chromium scheduling cause.
+
+The driver now reports these independent clock offsets/steps. Audit-mode beep
+records also retain raw `getOutputTimestamp()` pairs and sampling times for the
+next investigation. This adds evidence without altering playback, source quality,
+frame rate, phase calculations or acceptance gates. A passing rerun does not
+explain or erase the retained failure. Further work must correlate raw mapping,
+startup and in-span presentation scheduling before qualifying this profile;
+physical two-track listening/lip-sync remains pending.

@@ -104,7 +104,8 @@ export async function createMixedOutput(context,metrics,signal,{audit=false,capt
       if(item.kind==='block'){(metrics.audio_blocks??=[]).push(item);continue;}
       const stamp=context.getOutputTimestamp();
       metrics.beeps.push({...item,display_time:stamp.performanceTime+(item.context_time-stamp.contextTime)*1000,
-        timestamp_available:stamp.performanceTime>0&&stamp.contextTime>0});
+        timestamp_available:stamp.performanceTime>0&&stamp.contextTime>0,
+        ...(audit?{output_timestamp:{...stamp},timestamp_sampled_at:performance.now()}: {})});
     }
   };
   const abort=()=>api.dispose();signal.addEventListener('abort',abort,{once:true});

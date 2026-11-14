@@ -50,6 +50,8 @@ const output=await createMixedOutput(context,metrics,controller.signal,{audit:tr
 output.node.port.onmessage({data:{kind:'blocks',blocks:[.9,1.1,2.1].map(t=>({kind:'block',context_time:t,samples:[[.1],[.2]]}))}});
 assert.equal(metrics.audio_blocks.length,1);assert.deepEqual(metrics.audio_blocks[0].samples,[[.1],[.2]]);
 output.node.port.onmessage({data:{kind:'cue',context_time:1.2,rms:.1}});assert.equal(metrics.beeps.length,1);
+assert.deepEqual(metrics.beeps[0].output_timestamp,{contextTime:1,performanceTime:100});
+assert.ok(Number.isFinite(metrics.beeps[0].timestamp_sampled_at));
 const pending=output.drain();output.node.port.onmessage({data:{kind:'flushed',id:messages.at(-1).id}});await pending;
 const cancelled=output.drain();controller.abort();await assert.rejects(cancelled,/Superseded/);
 '''.replace('MODULE',repr(module))
