@@ -134,3 +134,81 @@ def test_duplicate_references_and_cursor_loops_are_rejected_before_writes(monkey
         result = invoke(target)
         assert result.exit_code == 1 and json.loads(result.output)['status'] == 'invalid_response'
         assert not target.exists()
+
+
+@pytest.mark.parametrize('failure', ['serialize', 'flush', 'close', 'publish', 'marker'])
+def test_manifest_io_failure_preserves_originals_without_completion_manifest(remote, tmp_path, monkeypatch, failure):
+    import errno
+    from moviestar import cloud_project_download as download
+    original_dump, original_open, original_link = download.json.dump, Path.open, download.os.link
+    original_unlink = Path.unlink
+
+    def dump(payload, output, *args, **kwargs):
+        if payload.get('status') == 'complete' and failure == 'serialize':
+            output.write('{"status":')
+            raise OSError(errno.ENOSPC, 'synthetic full disk')
+        return original_dump(payload, output, *args, **kwargs)
+
+    class BrokenFile:
+        def __init__(self, output):
+            self.output = output
+        def __enter__(self):
+            self.output.__enter__()
+            return self
+        def __exit__(self, *args):
+            self.output.__exit__(*args)
+            if failure == 'close':
+                raise OSError(errno.ENOSPC, 'synthetic close failure')
+        def __getattr__(self, name):
+            return getattr(self.output, name)
+        def flush(self):
+            if failure == 'flush':
+                raise OSError(errno.ENOSPC, 'synthetic flush failure')
+            return self.output.flush()
+
+    def open_file(path, *args, **kwargs):
+        output = original_open(path, *args, **kwargs)
+        if failure in ('flush', 'close') and 'x' in (args[0] if args else kwargs.get('mode', 'r')) and 'cloud-project.json' in path.name:
+            return BrokenFile(output)
+        return output
+
+    def link(source, target, *args, **kwargs):
+        if Path(target).name == 'cloud-project.json' and failure == 'publish':
+            raise OSError(errno.ENOSPC, 'synthetic publication failure')
+        return original_link(source, target, *args, **kwargs)
+
+    def unlink(path, *args, **kwargs):
+        if path.name == '.incomplete.json' and failure == 'marker':
+            raise OSError(errno.EACCES, 'synthetic marker cleanup failure')
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'unlink', unlink)
+    monkeypatch.setattr(download.json, 'dump', dump)
+    monkeypatch.setattr(Path, 'open', open_file)
+    monkeypatch.setattr(download.os, 'link', link)
+    target = tmp_path / 'incomplete'
+    result = invoke(target)
+    assert result.exit_code == 1, result.output
+    assert json.loads(result.output)['status'] == 'download_incomplete'
+    assert json.loads(result.output)['completed_assets'] == 1
+    assert not (target / 'cloud-project.json').exists()
+    assert (target / '.incomplete.json').exists()
+    assert next(target.rglob('*.png')).read_bytes() == DATA
+
+
+def test_manifest_publication_never_overwrites_a_path_created_during_transfer(remote, tmp_path, monkeypatch):
+    from moviestar import cloud_project_download as download
+    original_link = download.os.link
+
+    def link(source, target, *args, **kwargs):
+        if Path(target).name == 'cloud-project.json':
+            Path(target).write_text('preserve concurrent file')
+        return original_link(source, target, *args, **kwargs)
+
+    monkeypatch.setattr(download.os, 'link', link)
+    target = tmp_path / 'collision'
+    result = invoke(target)
+    assert result.exit_code == 1
+    assert json.loads(result.output)['status'] == 'download_incomplete'
+    assert (target / 'cloud-project.json').read_text() == 'preserve concurrent file'
+    assert (target / '.incomplete.json').exists()

@@ -155,11 +155,27 @@ def register_project_download(projects):
                 path.parent.mkdir(parents=True, exist_ok=False)
                 digest = _transfer(endpoint.removesuffix('/api/v1/account/cloud'), credential, item, path)
                 completed.append({**{name: value for name, value in item.items() if name != 'download_path'}, 'local_path': relative.as_posix(), 'sha256': digest})
-            with (destination / 'cloud-project.json').open('x') as output:
+            manifest_part = destination / '.cloud-project.json.part'
+            manifest_path = destination / 'cloud-project.json'
+            with manifest_part.open('x') as output:
                 json.dump({'contract_version': CONTRACT, 'status': 'complete', 'project': project, 'items': completed,
                            'contents': 'ready_originals_only', 'cloud_edits_included': False}, output, indent=2)
                 output.write('\n')
-            incomplete.unlink()
+                output.flush()
+                os.fsync(output.fileno())
+            # Publish a closed, fully written file without replacing any path.
+            os.link(manifest_part, manifest_path)
+            try:
+                incomplete.unlink()
+            except OSError:
+                manifest_path.unlink()
+                raise
+            # The completed manifest is already published; leftover temporary
+            # cleanup must not turn a successful transfer into an incomplete one.
+            try:
+                manifest_part.unlink()
+            except OSError:
+                pass
         except (HTTPError, URLError, HTTPException, OSError, ValueError):
             service._fail(COMMAND, 'download_incomplete', 'Download stopped. Completed files and .part files remain in this incomplete folder; no overwrite or automatic retry occurred. Check account/project access, then retry into a new --out folder.',
                           project_id=project_id, directory=str(destination), completed_assets=len(completed))
