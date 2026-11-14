@@ -45,6 +45,7 @@ The CLI's built-in help is the authoritative command reference. Run
 - [Account assets](account-assets.md) — upload private video, audio, image and
   caption/transcript originals with your approved CLI installation.
 - [Cloud asset inspection](cloud-probe.md) — probe remote media metadata and recover durable jobs.
+- [Detailed Cloud video inspection](cloud-inspect.md) — extract and reopen private timestamped frames for a short section.
 - [Personal Cloud projects](cloud-projects.md) — explicitly create, list, and reopen owned projects through an approved installation.
 
 - [Sharing and download](sharing.md) — private uploads, unlisted handoffs, retries, link management, and recipient downloads.
