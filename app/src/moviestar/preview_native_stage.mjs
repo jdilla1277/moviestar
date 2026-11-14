@@ -112,6 +112,10 @@ async function checkReady(){
 function onFrame(now,metadata){
   if(disposed)return;
   const running=playing&&!video.paused;
+  // Read the callback image before motion/layout work can let the live video
+  // image advance. At a cut's final frame, sample the held canonical pixels
+  // after installing them below, rather than reading beyond the edit.
+  const callbackPixels=running&&audit&&(!packet.cut_segment||metadata.mediaTime<packet.source_end-1/packet.fps-1e-6)?sourceFrame():null;
   const primary=videos.find(item=>item.primary);
   if(primary){primary.firstFrame=true;primary.frame={media_time:metadata.mediaTime,display_time:metadata.expectedDisplayTime,presented_frames:metadata.presentedFrames};}
   if(running&&primary)recordVideoQuality(primary,'frame');
@@ -136,7 +140,7 @@ function onFrame(now,metadata){
   if(!running&&metrics.initial_frame===undefined&&Math.abs(local)<1/packet.fps)metrics.initial_frame=metadata.mediaTime;
   if(running){
     if(metrics.first_presented_at===undefined)metrics.first_presented_at=performance.timeOrigin+metadata.expectedDisplayTime;
-    const sampled=audit?sourceFrame():{};
+    const sampled=audit?(callbackPixels??sourceFrame()):{};
     if(audit&&primary){metrics.video_frames??=[];metrics.video_frames.push({path:primary.path,...primary.frame,number:sampled.number});}
     metrics.frames.push({media_time:metadata.mediaTime,number:sampled.number,display_time:metadata.expectedDisplayTime,presented_frames:metadata.presentedFrames,
       ...(audit?{callback_time:performance.now(),current_time:video.currentTime,frozen:Boolean(frozenFrame)}:{}),
@@ -287,6 +291,10 @@ async function initialize(){
         if(disposed)return;
         item.firstFrame=true;item.frame={media_time:frame.mediaTime,display_time:frame.expectedDisplayTime,presented_frames:frame.presentedFrames};
         const running=playing&&!video.paused;
+  // Read the callback image before motion/layout work can let the live video
+  // image advance. At a cut's final frame, sample the held canonical pixels
+  // after installing them below, rather than reading beyond the edit.
+  const callbackPixels=running&&audit&&(!packet.cut_segment||metadata.mediaTime<packet.source_end-1/packet.fps-1e-6)?sourceFrame():null;
         if(packet.cut_segment&&running&&frame.mediaTime>=item.end-1e-6){
           freezeFollower(item);
           item.callback=media.requestVideoFrameCallback(observe);return;

@@ -1002,3 +1002,20 @@ identities and per-case evidence are in
 to [the generated run/artifacts](https://github.com/jdilla1277/moviestar/actions/runs/43586302786).
 This qualifies that bounded matrix; full correctness CI and physical listening
 remain separate. The earlier failed references stay retained unchanged.
+
+
+The same runtime head's [full-suite failure](master-clock-full-suite-failure.json)
+is retained separately: 3,564 main tests passed / nine skipped, but one legacy
+source-audio cut sample had barcode 32 with a callback timestamp for 31. All
+17 separate PiP/audio cases passed. This is the mismatch class tracked by #189,
+not a reason to relabel the passing prepared-audio timing reference as a full
+correctness pass.
+
+Audit pixel readback now runs before motion/DOM work can advance the live video
+image; final-cut samples still use the prepared held frame. A negative control
+reproduces a callback image of 31 followed by a live image of 32 during DOM work,
+and requires the callback record to retain 31. All three strict browser cut
+cases pass locally after this hardening, with no identity/count/drop/timing
+relaxation. This prevents that avoidable readback window; it does not establish
+the physical cause of every historical #189 observation. That investigation
+stays open, and fresh full-suite CI remains required.
