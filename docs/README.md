@@ -51,4 +51,5 @@ The CLI's built-in help is the authoritative command reference. Run
 
 - [Sharing and download](sharing.md) — private uploads, unlisted handoffs, retries, link management, and recipient downloads.
 
+- [Cloud watch excerpts](cloud-watch.md) — request private bounded video/audio, reopen durable jobs, and retrieve through the CLI.
 - [Cloud visual skims](cloud-skim.md) — timestamped private thumbnails from a ready Cloud video.
