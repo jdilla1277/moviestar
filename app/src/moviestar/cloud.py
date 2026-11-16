@@ -426,3 +426,6 @@ from moviestar.cloud_skim import register_skim_commands
 register_skim_commands(cloud)
 from moviestar.cloud_activity import register_activity
 register_activity(cloud)
+
+from moviestar.cloud_project_sharing import register_project_sharing
+register_project_sharing(projects)

@@ -556,26 +556,84 @@ this slice.
 
 ## Share a project with a viewer
 
-When the service enables project sharing, use the website to invite someone,
-see who has access, and revoke access. From the CLI:
+Owners can manage viewer access natively when `cloud capabilities` advertises
+`project_sharing.management.contract_version: native-project-sharing-v1`.
 
-```sh
-moviestar cloud projects share PROJECT_ID
+```bash
+moviestar cloud projects share PROJECT_ID recipient@example.com
+moviestar cloud projects access PROJECT_ID
+moviestar cloud projects access PROJECT_ID --cursor NEXT_CURSOR
+moviestar cloud projects resend-invitation INVITATION_ID
+moviestar cloud projects unshare INVITATION_ID --confirm
 ```
 
-Open the returned URL while signed in to the same account and choose **Share
-project**. This command checks current ownership and returns a browser handoff;
-it does not send an invitation. Native invitation mutations using CLI or API
-bearers are not supported in this slice. API developers can use the same
-service's `/account/projects?project=PROJECT_ID#project-sharing` website journey.
-In hosted MCP, ask to open the project and use its owner `sharing_url`.
+`share` deliberately requests an email. Its retry key is generated and saved
+before sending; rerun the same command after a lost reply to recover the same
+request. `--idempotency-key KEY` can recover an explicit request. Resends have
+separate saved retry keys and rotate the acceptance link. Do not automatically
+resend or generate a new key after an uncertain reply. `queued` means waiting
+for email delivery; delivery `accepted` means accepted by the email provider,
+not confirmed in the inbox or accepted by the recipient.
 
-The recipient opens the invitation email, signs in with the invited email and
-explicitly accepts viewer access. New invitations include downloads of current
-and future ready assets in that project. The seven-day deadline is for accepting
-the invitation; accepted access lasts until revoked or the project ends. Older
-metadata-only invitations stay metadata-only; remove and invite again to
-include assets. The owner can distinguish these scopes in the access list.
+`access` returns up to 50 invitations with a raw UUID `next_cursor`; follow it
+unchanged until null. Invitation `state: accepted` indicates recipient access.
+Revoked and expired history remains visible. Use an invitation ID from this
+list for `unshare`; repeating the same revocation is safe. No browser is opened
+for these owner operations. Initial account connection and recipient acceptance
+still use their normal account flows.
+
+New invitations grant viewer access to the project's current and future assets
+until revoked or the project ends. Recipients must sign in with the invited
+email verified and explicitly accept. Viewers cannot edit or reshare. Resending
+preserves the invitation's original scope, including legacy metadata-only
+invitations. Revocation denies later reads/downloads through that invitation;
+files already downloaded cannot be recalled, and independent access survives.
+
+The API uses the same service with a personal API key. Keep keys in environment
+variables and out of conversation or URLs:
+
+```bash
+# Generate once; retain this value when retrying this invitation request.
+INVITATION_REQUEST_KEY="$(python3 -c 'from uuid import uuid4; print(uuid4())')"
+curl --fail-with-body \
+  "https://trymoviestar.com/api/v1/account/cloud/projects/$PROJECT_ID/invitations" \
+  -H "Authorization: Bearer $MOVIESTAR_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -H "Idempotency-Key: $INVITATION_REQUEST_KEY" \
+  --data '{"email":"recipient@example.com"}'
+
+curl --fail-with-body \
+  "https://trymoviestar.com/api/v1/account/cloud/projects/$PROJECT_ID/invitations" \
+  -H "Authorization: Bearer $MOVIESTAR_API_KEY"
+
+curl --fail-with-body \
+  "https://trymoviestar.com/api/v1/account/project-invitations/$INVITATION_ID/revoke" \
+  -H "Authorization: Bearer $MOVIESTAR_API_KEY" \
+  -H 'Content-Type: application/json' --data '{}'
+```
+
+Create accepts only `{email}`. Resend uses `POST
+/api/v1/account/project-invitations/INVITATION_ID/resend` with `{}` and its own
+`Idempotency-Key`. List/revoke do not need a key. Every operation checks current
+credentials, consent and ownership; account scopes never allow a viewer to
+manage someone else's project. Recipient token review/acceptance remains a
+signed-in browser flow. API error bodies use `{status, hint?}` for these routes.
+
+Hosted MCP offers `moviestar_invite_project_viewer`,
+`moviestar_list_project_access`, `moviestar_resend_project_invitation`, and
+`moviestar_revoke_project_access`. Ask:
+
+> Share project PROJECT_ID with recipient@example.com as a viewer, then show
+> its access list.
+
+Then, on an explicit revocation request, the agent reads access and passes the
+selected `invitation_id` in both `invitation_id` and `confirm_invitation_id`.
+Agents generate and retain send/resend keys before the first call and reuse
+them after uncertainty. Owner management requires no website handoff; recipient
+verification/acceptance remains separate. Older services report unsupported
+native sharing rather than silently sending the user to a browser.
+
+### After accepting a project invitation
 
 Recipients can reopen the same ID through each supported surface:
 
