@@ -1035,3 +1035,55 @@ is retained. Four negative-control configurations execute the actual secondary
 callback body for cut/non-cut and audit/non-audit modes, requiring its own image,
 frame metadata, readiness notification and next callback. Complete browser and
 performance gates are rerun against the corrected source.
+
+
+### Visual edit and reversal benchmark
+
+```sh
+python experiments/live_browser_preview/edit_benchmark.py --out /tmp/native-visual-new
+python experiments/live_browser_preview/edit_benchmark.py --canvas 1080x1920 --out /tmp/native-visual-hd-new
+```
+
+This additional generated scenario tests the existing authoring surface, without
+changing native support or runtime behavior. It uses three PiP scenes with
+camera cuts, highlighted captions and an independent prepared dialogue mix.
+At each initial undo depth (0/20/50), ten actual CLI operations correct a word,
+change highlight color, reframe the first speaker, move the inset, swap the main
+picture, then reverse those changes. Caption rules belong to `project.json`,
+so their inverse is explicit rule removal; the other four edits use `undo`.
+Setup restores both project and spec files before measurement and checks the
+50-entry FIFO history after the timed reversals.
+Expected caption PNG hashes and crop rectangles come from independent canonical
+painting during untimed setup; the displayed image must match them, including
+after highlight/word changes and reversal. This does not replace the existing
+export/native pixel fidelity and synthetic flash/beep tests.
+
+Each timer starts with command launch and ends after successful CLI completion
+**and** the correct fresh request is visible at 0.2 seconds. It includes browser
+seeking if rebuilding a stage reset its playhead. A new request ID alone cannot
+pass: the complete descriptor is compared with a canonical compile of the saved
+edit, including all scenes, frame samples, cue schedules and audio intent. The
+active DOM must also have the expected slot rectangles, source assets/clocks,
+framing, caption text/highlight metadata and a loaded active caption image.
+Transport IDs and generated caption/audio asset filenames are excluded from
+the semantic comparison. This is a semantic/DOM freshness oracle, not a new
+independent pixel-perfect caption raster oracle; existing strict browser,
+caption-pixel and audio-sample tests remain required.
+
+After timing, each edit is inspected at 0.2/1.5/3/4.5 seconds to cover later
+scenes, and a screenshot is retained. Full playback is checked once with all
+visual edits applied and once after restoration. Both require zero reported
+stalls/dropped frames, actual decoder-quality observations, prepared-audio /
+presented-video output-clock phase within 50 ms and program drift within 50 ms.
+These clock checks also work for speech without synthetic beeps; human lip-sync
+and caption accuracy are separate checks. No edit may take 3,000 ms or longer.
+Screenshots, later inspections and playback are outside the edit timer.
+
+Use a new output folder every time. Reports retain commands, expected packets,
+request/stage timing, decoder-reuse observations, inspections, screenshots,
+partial failures and producer/runtime source hashes. A failed run stays failed;
+there is no relaxed deadline or acceptance rerun. Machine load is captured in
+traces but is not an automatic excuse for a miss. The `visual` CI scenarios run
+at both rasters and all three histories on fresh verified wheels, alongside
+the unchanged fade/two-track scenarios. Generated-fixture CI results and private
+real-footage replays qualify their own environments, not arbitrary machines.

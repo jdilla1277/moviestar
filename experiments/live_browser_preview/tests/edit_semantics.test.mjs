@@ -1,0 +1,18 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {checkSnapshot}from '../edit_semantics.mjs';
+const p={range:{from:0,to:5},fps:30,initial:{nodes:[{path:['inset'],style:{left:'10px',top:'20px',width:'30px',height:'40px'}}]},media:[{path:['main'],asset:'camera',source_start:1,object_fit:'cover',object_position:'25% 50%'}],caption_plane:{frames:[0],states:[{cues:[{text:'New',active_word:0}]}]}};
+const s={boxes:[{path:['inset'],rect:{x:10,y:20,width:30,height:40}}],videos:[{path:['main'],asset:'camera',media_time:1,ready_state:4,seeking:false}],video_styles:[{object_fit:'cover',object_position:'25% 50%'}],captions:[{text:'New',active_word:0}],caption_image_ready:true};
+test('reject stale pixels and layout even when a new version is declared',()=>{
+ assert.equal(checkSnapshot(p,s,0),true);
+ for(const edit of [x=>x.captions[0].text='Old',x=>x.boxes[0].rect.x=100,x=>x.videos[0].asset='other',x=>x.video_styles[0].object_position='50% 50%',x=>x.caption_image_ready=false]){
+  const next=structuredClone(s);edit(next);assert.equal(checkSnapshot(p,next,0),false);
+ }
+});
+
+test('reject a loaded image with stale caption pixels',()=>{
+ const wanted=structuredClone(p);wanted.caption_plane.rasters=[{sha256:'fresh',rect:{x:0,y:0,width:1,height:1}}];
+ const actual=structuredClone(s);actual.caption_sha256='stale';actual.caption_rect={x:0,y:0,width:1,height:1};
+ assert.equal(checkSnapshot(wanted,actual,0),false);
+ actual.caption_sha256='fresh';assert.equal(checkSnapshot(wanted,actual,0),true);
+ actual.caption_rect.width=2;assert.equal(checkSnapshot(wanted,actual,0),false);
+});
