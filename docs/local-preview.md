@@ -327,11 +327,35 @@ samples for the synthetic benchmark. Normal viewing avoids per-frame source
 canvas readback. The audio worklet passes through the sound sent to the output;
 clock estimates still require a physical flash/beep check for acceptance.
 
+Native preview reuses completed caption images when only audio intent changes.
+Every new request still validates and compiles its current saved state and prepares
+its current audio. Matching captions are copied byte-for-byte into the new
+request's folder, so deleting an older review cannot remove the current images.
+
+The reuse key includes the canonical caption job, visual/range state, renderer
+source identities, FFmpeg executable/version, Python/NumPy/PyAV versions, and
+discovered font/configuration identities (including macOS CoreText fonts).
+Same-path replacements with preserved size/mtime still invalidate via inode,
+ctime and resolved destination. Changed captions, word timing, styling, canvas,
+layout or source identity cause a miss. An input change during copy, missing or
+corrupt candidate, unknown font inventory, or expired lookup budget falls back
+to normal painting. Host `fc-list` and `fc-conflist` discovery is optional; without
+it native preview still works and paints normally.
+
+The foreground session holds at most eight candidate jobs referencing at most
+32 MiB of existing images. Eviction drops references; it never deletes another
+request's files. Candidates come only from successfully published requests and
+expire with their existing request owners. There is no persistent/shared render
+cache. The read-only request state reports numeric `caption_reuse` counters:
+`hits`, `misses`, `copied_bytes` and `eligible_jobs`.
+
 To measure native preparation, start the foreground session with
 `MOVIESTAR_PREVIEW_TIMING=1`. Each completed request in the read-only `state`
 endpoint then includes `preparation_timing`: snapshot/validation, queue/dispatch,
-worker startup, module imports, descriptor compilation, audio preparation, each
-caption paint, descriptor publication, and worker exit/supervisor publication.
+worker startup, initial module imports, descriptor compilation, audio preparation,
+caption reuse checks/copies, each fresh caption paint, descriptor publication,
+and worker exit/supervisor publication. Lazy imports belong to the phase that
+triggers them.
 Intervals use one host monotonic clock; `started_at` anchors them to epoch
 milliseconds for comparison with command and browser traces. `elapsed_ms` equals
 the sum of phase durations plus explicitly reported `unattributed_ms`.

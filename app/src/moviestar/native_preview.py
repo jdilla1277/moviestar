@@ -280,26 +280,34 @@ def _build(request_file,request,timing):
         key = sha256(json.dumps([str(path), identity]).encode()).hexdigest()[:24]
         assets[key] = {'path': path, 'identity': identity, 'kind': 'audio'}
         plane['asset'] = key
-    from moviestar.native_captions import paint_plane
+    from moviestar.native_caption_reuse import prepare_jobs
     packets = [s['packet'] for s in packet['segments']] if 'segments' in packet else [packet]
-    painted = {}
+    jobs,contexts={},{}
     for child in packets:
-        plane = child.get('caption_plane')
-        if not plane:
-            continue
-        job_id = plane.pop('job')
-        if job_id not in painted:
-            with phase(timing,'caption_paint'):
-                paths = paint_plane(assets.pop(job_id), folder/('captions-'+job_id))
-            painted[job_id] = []
-            for path, rect in paths:
-                identity = asset_identity(path)
-                key = sha256(json.dumps([str(path), identity]).encode()).hexdigest()[:24]
-                assets[key] = {'path': path, 'identity': identity, 'kind': 'image'}
-                painted[job_id].append((key, rect))
-        for state, (key, rect) in zip(plane['states'], painted[job_id]):
-            state['asset'] = key
-            state['rect'] = rect
+        plane=child.get('caption_plane')
+        if plane:
+            job_id=plane['job']
+            if job_id not in jobs:jobs[job_id]=assets.pop(job_id)
+            contexts.setdefault(job_id,[]).append(child)
+    paths,records,reuse=prepare_jobs(jobs,contexts,folder,request.get('caption_candidates',{}),timing)
+    painted={}
+    for job_id,outputs in paths.items():
+        painted[job_id]=[]
+        for path,rect in outputs:
+            identity=asset_identity(path)
+            key=sha256(json.dumps([str(path),identity]).encode()).hexdigest()[:24]
+            assets[key]={'path':path,'identity':identity,'kind':'image'}
+            painted[job_id].append((key,rect))
+    for child in packets:
+        plane=child.get('caption_plane')
+        if plane:
+            job_id=plane.pop('job')
+            for state,(key,rect) in zip(plane['states'],painted[job_id]):
+                state['asset']=key;state['rect']=rect
+    try:
+        (folder/'caption-reuse.json').write_text(json.dumps({'records':records,'stats':reuse}))
+    except OSError:
+        pass  # Candidate metadata is disposable; keep the canonical preview.
     with phase(timing,'descriptor_publish'):
         (folder/'assets.json').write_text(json.dumps({key: {**value, 'path': str(value['path'])}
             for key, value in assets.items()}))

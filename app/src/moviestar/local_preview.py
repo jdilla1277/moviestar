@@ -102,7 +102,7 @@ class PreviewQueue:
                 if request is None:
                     return None
                 result = {key: deepcopy(value) for key, value in request.items()
-                          if key not in {"media", "spec", "project", "root", "input_identity"}}
+                          if key not in {"media", "spec", "project", "root", "input_identity", "caption_candidates"}}
                 # Only the validated completed diagnostic is public. Internal
                 # monotonic origins travel to the child in request.json.
                 if 'origin_perf' in result.get('preparation_timing', {}):
@@ -213,6 +213,8 @@ class PreviewSession:
         self.directory = Path(directory)
         self.mode = mode
         self.assets = {}
+        from moviestar.native_caption_reuse import CaptionCandidates
+        self.caption_candidates = CaptionCandidates()
         self.queue = PreviewQueue()
         self.process = None
         self.active = None
@@ -307,6 +309,16 @@ class PreviewSession:
                 published = self.queue.finish(request_id, media=str(media) if media.exists() else None, error=error)
                 if published:
                     self.assets.update(assets)
+                    if self.mode == 'native':
+                        try:
+                            reuse=json.loads((folder/'caption-reuse.json').read_text())
+                            self.caption_candidates.accept(reuse['records'],folder)
+                            # Only numeric counters are public, never candidate paths.
+                            self.queue.requests[request_id]['caption_reuse']={key:reuse['stats'][key]
+                                for key in ('hits','misses','copied_bytes','eligible_jobs')
+                                if type(reuse['stats'].get(key)) is int and reuse['stats'][key]>=0}
+                        except (ValueError,OSError,KeyError,TypeError):
+                            pass  # Reuse is disposable; a valid packet remains usable.
             self.process = self.active = self.cancel_at = None
             # Native caption PNGs are part of the completed review, owned by
             # this request. Queue pruning removes them with the descriptor.
@@ -334,6 +346,8 @@ class PreviewSession:
                 timing.add('queue_dispatch',phase_end,time.perf_counter())
                 timing.document['worker_started_perf']=time.perf_counter()
                 request['preparation_timing']=timing.document
+            if self.mode == 'native':
+                request['caption_candidates']=self.caption_candidates.snapshot()
             folder = self.directory / request["request_id"]
             folder.mkdir()
             (folder / "request.json").write_text(json.dumps(request))
@@ -387,6 +401,8 @@ class PreviewSession:
                         directory.parent.rmdir()
                     except OSError:
                         pass
+
+        self.caption_candidates.prune()
 
     def run(self):
         try:
