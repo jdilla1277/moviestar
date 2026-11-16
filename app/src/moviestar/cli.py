@@ -23465,6 +23465,52 @@ def _position_margin(value, name: str) -> int | str:
     )
 
 
+def _normalized_overlay_tokens(tokens: list[dict] | None) -> list[dict] | None:
+    """Normalize imported word clocks before previews or persisted validation."""
+    if tokens is None:
+        return None
+    if not isinstance(tokens, list):
+        raise ValueError("Overlay tokens must be an array.")
+    normalized = []
+    for index, token in enumerate(tokens):
+        where = f"tokens[{index}]"
+        if not isinstance(token, dict):
+            raise ValueError(f"{where}: must be an object.")
+        if not isinstance(token.get("text"), str) or not token["text"]:
+            raise ValueError(f"{where}.text: must be a non-empty string.")
+        seconds = {}
+        for field in ("from", "to"):
+            value = token.get(field)
+            if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+                raise ValueError(f"{where}.{field}: must be seconds or a timecode.")
+            try:
+                parsed = parse_timecode(str(value))
+            except (ValueError, OverflowError) as exc:
+                raise ValueError(f"{where}.{field}: {exc}") from exc
+            if not math.isfinite(parsed):
+                raise ValueError(f"{where}.{field}: must be finite.")
+            seconds[field] = parsed
+        if seconds["from"] > seconds["to"]:
+            raise ValueError(f"{where}: 'from' must not be after 'to'.")
+        # Zero-duration tokens remain gaps, and out-of-cue tokens are clipped
+        # by the existing highlight planner. Preserve provenance/extra fields.
+        normalized.append({
+            **token,
+            **{field: format_timecode(value)["text"] for field, value in seconds.items()},
+        })
+    return normalized
+
+
+def _validated_overlay_candidate(spec: dict, records: list[dict]) -> dict:
+    """Run the save boundary's full validation, including the proposed undo state."""
+    candidate = set_overlays(spec, records)
+    try:
+        validate_spec(append_revision(spec, candidate, "overlays set"))
+    except SpecValidationError as exc:
+        _error_exit("overlays set", str(exc))
+    return candidate
+
+
 def _normalized_overlay(raw: dict, *, existing_ids: set[str]) -> dict:
     """Rebuild one overlay from an overlays.json entry through the same
     validators `overlays add` uses. Inputs (preset, css, timing, text,
@@ -23540,7 +23586,7 @@ def _normalized_overlay(raw: dict, *, existing_ids: set[str]) -> dict:
         style=style,
         z_index=z_index,
         highlight=raw.get("highlight"),
-        tokens=raw.get("tokens"),
+        tokens=_normalized_overlay_tokens(raw.get("tokens")),
         source=source,
     )
 
@@ -23943,6 +23989,10 @@ def overlays_set(overlay_file: str, dry_run: bool) -> None:
     Nested ``timing`` records use ``result`` or ``scene`` space. Dry-run
     resolves the same records without writing; omit it to persist them.
 
+    Word token clocks accept seconds or timecode strings and are stored as
+    H:MM:SS.mmm. Times must be finite, non-negative, and ordered. Zero-length
+    tokens remain gaps; tokens outside a cue keep the renderer's clipping.
+
     \b
       {"overlays": [
         {"text": "End card", "timing": {
@@ -24124,6 +24174,7 @@ def overlays_set(overlay_file: str, dry_run: bool) -> None:
                 "drop the id field to auto-assign one.",
             )
 
+        candidate_spec = _validated_overlay_candidate(spec, canonical)
         result = {
             "status": "validated_overlays" if dry_run else "set_overlays",
             "dry_run": dry_run,
@@ -24155,7 +24206,6 @@ def overlays_set(overlay_file: str, dry_run: bool) -> None:
             if drawtext_warning is not None:
                 warnings.append(drawtext_warning)
         _add_warnings(result, warnings)
-        candidate_spec = set_overlays(spec, canonical)
         if dry_run:
             result["resolved_geometry"] = _overlay_geometry_preview(
                 project, candidate_spec, canonical
@@ -24231,6 +24281,7 @@ def overlays_set(overlay_file: str, dry_run: bool) -> None:
             "drop the id field to auto-assign one.",
         )
 
+    candidate_spec = _validated_overlay_candidate(spec, normalized)
     replaced_count = len(spec.get("overlays", []))
     result = {
         "status": "validated_overlays" if dry_run else "set_overlays",
@@ -24263,7 +24314,7 @@ def overlays_set(overlay_file: str, dry_run: bool) -> None:
     if dry_run:
         result["overlays"] = [_overlay_view(record) for record in normalized]
         result["resolved_geometry"] = _overlay_geometry_preview(
-            project, set_overlays(spec, normalized), normalized
+            project, candidate_spec, normalized
         )
         result["derived_fields_note"] = (
             "style.resolved is derived from preset + css and is recomputed "
@@ -24271,9 +24322,8 @@ def overlays_set(overlay_file: str, dry_run: bool) -> None:
         )
 
     if not dry_run:
-        new_spec = set_overlays(spec, normalized)
         try:
-            save_spec(new_spec, command="overlays set")
+            save_spec(candidate_spec, command="overlays set")
         except SpecValidationError as exc:
             _error_exit("overlays set", str(exc))
 
