@@ -99,19 +99,31 @@ def register_watch_commands(cloud):
                 service._fail(command, 'result_not_ready', 'Poll these same IDs until the watch succeeds.', job=job)
             if job.get('artifact_available') is False:
                 service._fail(command, 'artifact_unavailable', 'The saved result remains, but its private media is unavailable. Reopening never extracts again; use a new request key only to request new work.', job=job)
+            metadata = job.get('result')
+            expected_bytes = metadata.get('file_size_bytes') if isinstance(metadata, dict) else None
+            if type(expected_bytes) is not int or not 12 <= expected_bytes <= 2097152:
+                service._fail(command, 'invalid_response', 'The saved result has no valid media length. Reopen these same IDs; no new extraction is scheduled.', job=job)
             req = Request(url+'/media', headers={'Authorization': 'Bearer '+credential, 'x-moviestar-client': _CLIENT_MARKER, 'Accept': 'video/mp4'})
             try:
                 with build_opener(_NoRedirectHandler()).open(req, timeout=30) as response:
                     if response.status != 200 or response.headers.get_content_type() != 'video/mp4':
                         raise ValueError('Invalid MP4 response')
+                    declared_bytes = response.headers.get('Content-Length')
+                    if declared_bytes is not None and (not declared_bytes.isascii() or not declared_bytes.isdecimal() or int(declared_bytes) != expected_bytes):
+                        raise ValueError('Invalid MP4 response length')
                     media = response.read(2097153)
-                if len(media)>2097152 or len(media)<12 or media[4:8]!=b'ftyp':
+                # A bounded HTTPResponse.read can end early without raising
+                # IncompleteRead. Check the retained artifact's size before
+                # creating a destination, including when HTTP omits its length.
+                if len(media) != expected_bytes or media[4:8]!=b'ftyp':
                     raise ValueError('Invalid MP4')
                 with out.open('xb') as output:
                     output.write(media)
                 result['out'] = str(out.resolve())
             except HTTPError as error:
                 service._fail(command, 'artifact_unavailable' if error.code == 410 else 'media_unavailable', 'Reopen these same IDs with current credentials; no new extraction is scheduled. Expired retained media needs an explicit new request key.')
+            except FileExistsError:
+                service._fail(command, 'output_exists', 'Choose a new output filename and retry these same IDs; the existing file is unchanged and no new extraction is scheduled.', job=job)
             except (URLError, HTTPException, OSError, ValueError):
-                service._fail(command, 'media_unavailable', 'Choose a new output filename and retry these same IDs; the server result is retained.')
+                service._fail(command, 'media_unavailable', 'The media transfer could not be completed or saved. Retry these same IDs; the server result is retained and no new extraction is scheduled.')
         click.echo(json.dumps(result, indent=2))

@@ -15,6 +15,10 @@ connect`. The first command returns a durable `job.id` immediately. Poll with
 `watch-show` until `state` is `succeeded`, then save the MP4. An existing output
 file is never overwritten. Disconnecting and reconnecting does not lose the job.
 Reopening with the same IDs does not run another extraction.
+An existing destination returns `output_exists`; choose another filename.
+Downloads must match the saved artifact's byte count and any HTTP Content-Length
+before the CLI creates the file. A truncated or inconsistent response returns
+`media_unavailable` without saving it; retry the same asset and job IDs.
 
 Seconds and timecodes accept millisecond precision. Both endpoints are required;
 use an increasing range of at most 30 seconds within the asset. Cloud uses the
