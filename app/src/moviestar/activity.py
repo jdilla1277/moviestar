@@ -136,7 +136,10 @@ def build_activity_decode_command(
         "-ss", _number(seek_seconds),
         "-i", video_path,
         "-map", "0:v:0",
-        "-vf", f"{fps_filter},scale={width}:{height}:flags=area,format=gray",
+        # Pad before resampling so an audio-only tail uses the actual final
+        # decoded frame, rather than repeating an earlier grid sample. The
+        # explicit output frame count bounds the cloned tail.
+        "-vf", f"tpad=stop_mode=clone:stop=-1,{fps_filter},scale={width}:{height}:flags=area,format=gray",
         "-frames:v", str(frame_count),
         "-f", "rawvideo", "-pix_fmt", "gray", "-",
     ]
