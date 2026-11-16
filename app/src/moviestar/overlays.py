@@ -522,7 +522,10 @@ def plan_overlays(
             )
 
         shadow = None
-        if resolved.get("text_shadow") is not None:
+        shadow_value = resolved.get("text_shadow")
+        # CSS none explicitly resets a preset shadow. Accept the keyword
+        # case-insensitively without rewriting previously stored styles.
+        if shadow_value is not None and str(shadow_value).strip().lower() != "none":
             match = _SHADOW_RE.match(str(resolved["text_shadow"]))
             if match:
                 shadow = {
