@@ -124,9 +124,12 @@ def build_activity_decode_command(
     fps grid at ``sample_offset_seconds`` makes the first raw frame correspond
     exactly to the requested evidence clock rather than the preceding packet.
     """
+    # Preserve a final sample before the real EOF even when EOF falls between
+    # grid points. Rounding EOF down would drop that sample and fail the
+    # decoder's exact-frame-count check for otherwise valid whole-file runs.
     fps_filter = (
         f"fps=fps=1/{_number(interval)}:"
-        f"start_time={_number(sample_offset_seconds)}:round=down"
+        f"start_time={_number(sample_offset_seconds)}:round=down:eof_action=pass"
     )
     return [
         "ffmpeg", "-v", "error",

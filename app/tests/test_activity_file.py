@@ -84,3 +84,21 @@ def test_multitrack_defaults_cannot_change_activity_stream(tmp_path, loaded_proj
     local=CliRunner().invoke(cli,['activity','--interval','0.5'])
     assert local.exit_code==0,local.output
     assert json.loads(local.stdout)['samples']==actual['samples']
+
+
+@pytest.mark.parametrize('duration,interval,count', [('0.3',0.25,2),('1.1',0.25,5),('2.1',0.5,5),('109.533',0.25,439)])
+def test_final_partial_sample_interval_keeps_last_frame(tmp_path, loaded_project, duration, interval, count):
+    path=tmp_path/'partial-interval.mp4'
+    subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i',
+        f'testsrc2=size=160x284:rate=30:duration={duration}',
+        '-an','-c:v','libx264',str(path)],check=True)
+    result=analyze_file_activity(str(path),{'interval_seconds':interval})
+    assert result['summary']['sample_count']==count
+    assert len(result['samples'])==count
+    last=result['samples'][-1]
+    assert last['clock']['source']['seconds']==(count-1)*interval
+    assert last['decoded_frame']['source_time']['seconds'] is not None
+    loaded_project(str(path),frames=False)
+    local=CliRunner().invoke(cli,['activity','--interval',str(interval)])
+    assert local.exit_code==0,local.output
+    assert json.loads(local.stdout)['samples']==result['samples']

@@ -47,8 +47,10 @@ The CLI's built-in help is the authoritative command reference. Run
 - [Cloud asset storyboards](cloud-storyboard.md) — labeled contact sheets and durable private image retrieval.
 - [Cloud visual activity](cloud-activity.md) — measure visual change and reopen timestamped evidence across API, CLI and hosted MCP.
 - [Cloud asset inspection](cloud-probe.md) — probe remote media metadata and recover durable jobs.
+- [Detailed Cloud video inspection](cloud-inspect.md) — extract and reopen private timestamped frames for a short section.
 - [Personal Cloud projects](cloud-projects.md) — explicitly create, list, and reopen owned projects through an approved installation.
 
 - [Sharing and download](sharing.md) — private uploads, unlisted handoffs, retries, link management, and recipient downloads.
 
+- [Cloud watch excerpts](cloud-watch.md) — request private bounded video/audio, reopen durable jobs, and retrieve through the CLI.
 - [Cloud visual skims](cloud-skim.md) — timestamped private thumbnails from a ready Cloud video.

@@ -409,12 +409,17 @@ def show_docs(page: str, json_output: bool, markdown: bool):
 
 from moviestar.cloud_probe import register_probe
 register_probe(cloud)
+from moviestar.cloud_inspect import register_inspect_commands
+register_inspect_commands(cloud)
 
 from moviestar.cloud_project_delete import register_project_delete
 register_project_delete(projects)
 
 from moviestar.cloud_screenshot import register_screenshot_commands
 register_screenshot_commands(cloud)
+
+from moviestar.cloud_watch import register_watch_commands
+register_watch_commands(cloud)
 
 from moviestar.cloud_project_download import register_project_download
 register_project_download(projects)
