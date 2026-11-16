@@ -3,7 +3,7 @@ import {join} from 'node:path';
 import {Browser} from './browser.mjs';
 import {startCommand,observeEdit,previewProbeExpression} from './diagnostics.mjs';
 import {describeAudioClocks} from './audio_clock_report.mjs';
-import {semanticPacket,checkSnapshot}from './edit_semantics.mjs';
+import {semanticPacket,checkSnapshot,completeVideoQuality}from './edit_semantics.mjs';
 const [url,root,out,python,chrome]=process.argv.slice(2),fixture=JSON.parse(await readFile(join(out,'case.json'),'utf8'));
 const result={edits:[],edit_attempts:[],problems:[],browser_exceptions:[]};
 const persist=()=>writeFile(join(out,'browser-report.json'),JSON.stringify(result,null,2));
@@ -39,7 +39,7 @@ function probe(expected,at=.2){
  return observation;})()`;
 }
 
-async function checkPlayback(label){
+async function checkPlayback(label,wanted){
   const report={label};
   for(const at of [0,1,2,3,4,0])await browser.evaluate('window.moviestarLive.stage.seek('+at+')');
   await browser.click('#play');
@@ -47,7 +47,7 @@ async function checkPlayback(label){
   const playback=await browser.evaluate('window.moviestarLive.stage.metrics');
   report.child_metrics=await browser.evaluate(`[...document.querySelector('iframe:not(.pending)').contentDocument.querySelectorAll('iframe')].map(f=>f.contentWindow.moviestarLiveStage.metrics)`);
   playback.video_quality=await browser.evaluate(`[...document.querySelector('iframe:not(.pending)').contentDocument.querySelectorAll('iframe')].flatMap(f=>f.contentWindow.moviestarLiveStage.metrics.video_quality??[])`);
-  if(playback.error||playback.stalls||!playback.video_quality.length||playback.video_quality.some(q=>q.dropped_frames))result.problems.push('Audio playback failed/stalled/dropped');
+  if(playback.error||playback.stalls||!completeVideoQuality(wanted,playback.video_quality))result.problems.push('Audio playback failed/stalled/dropped');
   report.clock_diagnostics=describeAudioClocks(playback);
   const stamp=await browser.evaluate("document.querySelector('iframe:not(.pending)').contentWindow.moviestarCutShared.audio.getOutputTimestamp()");
   report.audio_output_stamp=stamp;const started=playback.prepared_audio;
@@ -93,7 +93,7 @@ try{
       }
       await persist();
     }
-    if(action.name==='main-picture')await checkPlayback('edited');
+    if(action.name==='main-picture')await checkPlayback('edited',action.expected);
     await browser.evaluate('window.moviestarLive.stage.seek(.2)');
     if(attempt.trace.measurement_ms>=3000)result.problems.push(`${label} exceeds 3000ms`);
     await persist();
@@ -103,7 +103,7 @@ try{
   result.restored={same_state:initial.state_id===final.state_id,fresh_request:initial.request_id!==final.request_id,history:saved.revisions.length};
   if(!result.restored.same_state||!result.restored.fresh_request||saved.revisions.length!==fixture.expected_history)
     result.problems.push('Undo did not restore original visuals with expected FIFO history');
-  await checkPlayback('restored');
+  await checkPlayback('restored',fixture.initial);
   if(result.browser_exceptions.length)result.problems.push('Uncaught browser exception');
 }catch(error){result.problems.push(String(error.stack??error));}
 finally{await persist();await browser.close();}

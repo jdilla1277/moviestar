@@ -19,6 +19,7 @@ const metrics={},audio={currentTime:1,state:'running'},packet={range:{from:0,to:
  segments:[0,3,6].map((offset,i)=>({offset,packet:{range:{from:offset,to:offset+3}}}))};
 const stages=packet.segments.map((segment,i)=>{
  const api={time:0,paused:true,plays:0,metrics:{stalls:0,source_buffering:true,quality:{totalVideoFrames:90,droppedVideoFrames:0}},packet:{source_start:10+i},
+  holdEnd(){throw Error('Source audio cannot be held before its cut');},
   pause(){this.paused=true;},async play(){if(delayPlay)await new Promise(resolve=>resolvePlay=resolve);this.plays++;this.paused=false;},
   async seek(at){if(delaySeek)await new Promise(resolve=>resolveSeek=resolve);this.time=at;},snapshot(){return{source:{number:i},boxes:[]};}};
  return{api,gain:{value:0,gain:{cancelScheduledValues(){},setValueAtTime(value,at){this.value=value;this.at=at;}}}};
@@ -191,23 +192,24 @@ def test_prepared_cut_prerolls_hidden_picture_then_reveals_on_audible_clock(acti
     script=r'''
 import assert from 'node:assert/strict';
 const {createCutPlayback}=await import(MODULE);
-let at=0,nextId=0;const timers=new Map(),shown=[];
+let at=0,nextId=0;const timers=new Map(),shown=[],held=[];
 globalThis.setTimeout=(fn,ms)=>{const id=++nextId;timers.set(id,{fn,due:at+ms/1000});return id;};
 globalThis.clearTimeout=id=>timers.delete(id);
 const flush=()=>new Promise(r=>setImmediate(r));
 async function tick(time){at=time;for(const [id,t]of [...timers])if(t.due<=at+1e-8){timers.delete(id);t.fn();}await flush();}
 const metrics={},packet={range:{from:30,to:36},fps:30,segments:[0,3].map(offset=>({offset,packet:{range:{from:30+offset,to:33+offset}}}))};
 const stages=packet.segments.map((s,i)=>({gain:{gain:{cancelScheduledValues(){},setValueAtTime(){}}},api:{
- time:0,plays:0,packet:{source_start:10+i},metrics:{},pause(){},async play(){this.plays++;},async seek(time){this.time=time;},snapshot(){return{};}
+ time:0,plays:0,packet:{source_start:10+i},metrics:{},holdEnd(){held.push(i);},pause(){},async play(){this.plays++;},async seek(time){this.time=time;},snapshot(){return{};}
 }}));
 const reviewAudio={snapshot:()=>({prepared:true}),async play(){},pause(){},outputTimeAt:()=>at};
 const api=createCutPlayback({packet,stages,audio:{currentTime:100,sampleRate:48000,state:'running'},metrics,show:i=>shown.push(i),reviewAudio});
 await api.play();
 // Neither an early end callback nor a late outgoing local clock drives the cut.
 await stages[0].api.onSegmentEnd(0);assert.equal(stages[1].api.plays,0);
-stages[0].api.time=2.94;
+stages[0].api.time=2.94;assert.deepEqual(held,[],'Do not hold pictures before their last frame interval');
 await tick(3-1/60);assert.equal(stages[1].api.plays,1,'Start incoming pipeline one half-frame before the audible cut');
 assert.equal(shown.at(-1),0,'Incoming preroll must remain hidden');
+assert.deepEqual(held,[0],'Stop outgoing decode on its prepared final pictures while the independent mix continues');
 if(ACTION==='pause'||ACTION==='resume'){stages[1].api.time=.01;api.pause();}
 if(ACTION==='resume'){await api.play();assert.equal(stages[1].api.time,0,'Canceled preroll must rewind before audio resumes');}
 if(ACTION==='clock_lost')reviewAudio.outputTimeAt=()=>NaN;

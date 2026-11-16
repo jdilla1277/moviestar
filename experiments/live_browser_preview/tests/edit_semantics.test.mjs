@@ -1,5 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {checkSnapshot}from '../edit_semantics.mjs';
+import {checkSnapshot,completeVideoQuality}from '../edit_semantics.mjs';
 const p={range:{from:0,to:5},fps:30,initial:{nodes:[{path:['inset'],style:{left:'10px',top:'20px',width:'30px',height:'40px'}}]},media:[{path:['main'],asset:'camera',source_start:1,object_fit:'cover',object_position:'25% 50%'}],caption_plane:{frames:[0],states:[{cues:[{text:'New',active_word:0}]}]}};
 const s={boxes:[{path:['inset'],rect:{x:10,y:20,width:30,height:40}}],videos:[{path:['main'],asset:'camera',media_time:1,ready_state:4,seeking:false}],video_styles:[{object_fit:'cover',object_position:'25% 50%'}],captions:[{text:'New',active_word:0}],caption_image_ready:true};
 test('reject stale pixels and layout even when a new version is declared',()=>{
@@ -15,4 +15,13 @@ test('reject a loaded image with stale caption pixels',()=>{
  assert.equal(checkSnapshot(wanted,actual,0),false);
  actual.caption_sha256='fresh';assert.equal(checkSnapshot(wanted,actual,0),true);
  actual.caption_rect.width=2;assert.equal(checkSnapshot(wanted,actual,0),false);
+});
+
+test('require complete quality observations for every video in every scene',()=>{
+ const wanted={segments:[{packet:p},{packet:{...p,media:[{...p.media[0],path:['second']} ]}}]};
+ const quality=[{path:['main'],dropped_frames:0},{path:['second'],dropped_frames:0}];
+ assert.equal(completeVideoQuality(wanted,quality),true);
+ assert.equal(completeVideoQuality(wanted,quality.slice(0,1)),false);
+ assert.equal(completeVideoQuality(wanted,[quality[0],{...quality[1],dropped_frames:1}]),false);
+ assert.equal(completeVideoQuality(wanted,[quality[0],quality[0]]),false);
 });

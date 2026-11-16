@@ -402,6 +402,15 @@ window.moviestarLiveStage={ready,metrics,
       cancel:()=>{if(!committed){(cuts?transaction.cancel:transaction.dispose)();audioTransaction?.cancel();}}
     };
   },
+  holdEnd(){
+    if(disposed||!packet.cut_segment||!packet.prepared_audio)return;
+    // The parent calls inside the final frame's interval, only when its
+    // independent mix owns the cut clock. Keep both canonical end pictures
+    // visible while that mix and the incoming decoder continue unchanged.
+    freezeLastFrame();videos.filter(item=>!item.primary).forEach(freezeFollower);
+    apply((packet.samples.length-1)/packet.fps);this.pause();
+    metrics.held_quality=quality();
+  },
   async settleEnd(){
     if(videos.length>1){this.pause();await seekTo((packet.samples.length-1)/packet.fps);}
   },

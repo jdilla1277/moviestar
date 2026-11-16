@@ -33,3 +33,10 @@ export function checkSnapshot(p,s,at){
  }
  return true;
 }
+
+export function completeVideoQuality(packet,quality){
+ const packets=packet.segments?packet.segments.map(s=>s.packet):[packet];
+ const wanted=packets.flatMap(p=>p.media.filter(m=>m.kind==='video'||m.kind===undefined).map(m=>JSON.stringify(m.path))).sort();
+ const observed=quality.map(q=>JSON.stringify(q.path)).sort();
+ return wanted.length>0&&JSON.stringify(wanted)===JSON.stringify(observed)&&quality.every(q=>q.dropped_frames===0);
+}

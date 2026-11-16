@@ -39,6 +39,10 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
     try{
       // The incoming decoder starts hidden. Its first source frame is already
       // prepared; show it only at the mix's absolute result-time boundary.
+      // Prepared audio owns this edge. Stop decoding the outgoing sources
+      // behind their final-frame canvases before an inset can discard a frame
+      // beyond the selected range. Source-audio handoffs keep running below.
+      stages[i].api.holdEnd?.();
       pendingPreroll=incoming;await stages[incoming].api.play();
       const deadline=performance.now()+1000;
       while(!disposed&&playing&&attempt===generation&&masterTime()<boundary-1/audio.sampleRate){

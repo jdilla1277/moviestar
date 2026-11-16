@@ -1087,3 +1087,19 @@ traces but is not an automatic excuse for a miss. The `visual` CI scenarios run
 at both rasters and all three histories on fresh verified wheels, alongside
 the unchanged fade/two-track scenarios. Generated-fixture CI results and private
 real-footage replays qualify their own environments, not arbitrary machines.
+
+The [initial Linux visual matrix](visual-edit-initial-results.json) retains all
+60 operations: zero latency misses (maximum 1,684.795 ms), correct content and
+restoration, and passing output-clock/drift checks. All six **edited** playbacks
+still failed zero-drop quality: the first inset decoder reported one dropped
+frame at its outgoing range end. Restored playbacks passed. This matrix remains
+failed; its runtime predates the cut correction below.
+
+For cuts with a prepared independent audio mix, the outgoing scene now holds
+both canonical final pictures and pauses its video transports when incoming
+preroll begins, inside the last frame's interval. This avoids decoding behind
+an occluded inset beyond its selected range. The prepared mix keeps its original
+output clock and samples; source-audio-only handoffs keep their existing running
+transport. Playback quality and final-picture checks remain required, including
+seeking, pause/resume and missing callback cases. Raw held decoder counters are
+retained as `held_quality`; no drop tolerance is introduced.

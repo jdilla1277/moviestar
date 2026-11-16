@@ -327,6 +327,12 @@ samples for the synthetic benchmark. Normal viewing avoids per-frame source
 canvas readback. The audio worklet passes through the sound sent to the output;
 clock estimates still require a physical flash/beep check for acceptance.
 
+At a camera cut with a prepared independent audio mix, the outgoing videos hold
+their canonical final pictures before the incoming scene is revealed. Their
+decoders stop while the independent mix keeps running, so an occluded inset
+does not decode beyond its selected range. Source-audio-only cuts retain their
+running transport until the handoff.
+
 Native preview reuses completed caption images when only audio intent changes.
 Every new request still validates and compiles its current saved state and prepares
 its current audio. Matching captions are copied byte-for-byte into the new
