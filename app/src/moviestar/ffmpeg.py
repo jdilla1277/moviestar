@@ -1761,7 +1761,20 @@ def extract_frame(
     with _preserve_frame_output(output_path):
         for attempt in range(2):
             result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode != 0 or _has_bitmap_glyph_error(result.stderr):
+            # Some FFmpeg builds fail MJPEG encoder initialization after an
+            # empty seek instead of returning success without a file. Permit
+            # only that first empty JPEG attempt to reach the existing bounded
+            # presentation-time recovery; all other encoder errors still fail.
+            empty_jpeg_seek = (
+                attempt == 0 and result.returncode != 0
+                and Path(output_path).suffix.lower() in (".jpg", ".jpeg")
+                and not (os.path.isfile(output_path) and os.path.getsize(output_path) > 0)
+                and re.search(
+                    r"^\[vf[^\]]*\] \[warning\] No filtered frames for output stream\b",
+                    result.stderr, re.MULTILINE,
+                ) is not None
+            )
+            if (result.returncode != 0 and not empty_jpeg_seek) or _has_bitmap_glyph_error(result.stderr):
                 # Captured info includes private input metadata; retain only
                 # diagnostic levels in an error receipt, never the info trace.
                 if "[info]" in result.stderr:

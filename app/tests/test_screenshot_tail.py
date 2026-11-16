@@ -371,3 +371,30 @@ def test_selection_trace_ignores_stream_mapping_text_inside_metadata():
         "[info] Stream mapping:\n"
         "[info]   Stream #0:2 -> #0:0 (ffv1 -> png)\n"
     ) == 2
+
+
+def test_tail_jpeg_recovers_the_last_displayed_frame(tail_video, tmp_path):
+    path, expected = tail_video
+    out = tmp_path / 'last.jpg'
+    out.write_bytes(b'prior proof')
+    receipt = _invoke('screenshot', '--file', str(path), '--at', '1.999', '--out', str(out))
+    actual = _pixels(receipt['out'])
+    assert len(actual) == len(expected)
+    assert sum(abs(a-b) for a,b in zip(actual, expected)) / len(expected) < 8
+    assert out.read_bytes().startswith(b'\xff\xd8')
+
+
+def test_jpeg_encoder_errors_without_empty_seek_evidence_are_not_retried(tmp_path, monkeypatch):
+    from moviestar import ffmpeg
+    source = tmp_path / 'source.mp4'
+    source.write_bytes(b'synthetic')
+    out = tmp_path / 'prior.jpg'
+    out.write_bytes(b'prior proof')
+    monkeypatch.setattr(ffmpeg, 'check_ffmpeg_available', lambda: None)
+    monkeypatch.setattr(ffmpeg.subprocess, 'run', lambda *_args, **_kwargs:
+        SimpleNamespace(returncode=1, stdout='', stderr='[error] Error while opening encoder'))
+    monkeypatch.setattr(ffmpeg, '_preceding_frame_seek', lambda *_args, **_kwargs:
+        pytest.fail('A genuine encoder failure must not trigger frame recovery'))
+    with pytest.raises(RuntimeError):
+        extract_frame(str(source), 1.999, str(out))
+    assert out.read_bytes() == b'prior proof'

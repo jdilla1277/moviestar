@@ -1,6 +1,6 @@
 # Inspect a frame of a Cloud asset
 
-The screenshot service is an opt-in Preview capability. Use an existing ready
+The screenshot service must be enabled on the connected service. Use an existing ready
 video asset owned by the connected account. Finished video outputs can be
 inspected when they are available as ready account assets. Unrendered edits are
 not supported. Ordinary `moviestar screenshot --file FILE --at TIMESTAMP`
@@ -37,3 +37,18 @@ installation credentials additionally require `x-moviestar-client: moviestar-cli
 Keep credentials out of chat. OAuth clients use the hosted MCP tools directly:
 `moviestar_screenshot_asset` and `moviestar_get_asset_screenshot`. The latter
 returns a native MCP image content block once the job succeeds.
+
+Cloud timestamps refer to the selected file's own timeline, including for a
+finished render. The end boundary is exclusive: a timestamp at the duration is
+rejected. When a valid timestamp falls after the final frame's presentation
+time, current local extraction recovers that displayed frame using bounded
+decoded timing evidence, for JPEG as well as PNG. Cloud workers need a runtime
+containing this recovery behavior; updating the CLI alone does not update a
+remote worker. A failed job remains failed under its retained key after a
+worker upgrade; use a new key for a deliberate new execution.
+
+Cloud returns JPEG only, with no platform overlay or unrendered project edits.
+Local file screenshots can also produce PNG and platform previews. The requested
+time is reported; it should not be interpreted as an independently measured
+presentation timestamp. Retained images are streamed through account-authorized
+reads, so there is no image URL to renew or reason to re-extract just to reopen.
