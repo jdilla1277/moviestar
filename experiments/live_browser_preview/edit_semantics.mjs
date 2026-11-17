@@ -2,6 +2,7 @@
 export function semanticPacket(p){
  if(p.segments){const r={segments:p.segments.map(s=>({offset:s.offset,packet:semanticPacket(s.packet)})),range:p.range,canvas:p.canvas,fps:p.fps};if(p.audio_plane)r.audio_plane={source_audio:p.audio_plane.source_audio,tracks:p.audio_plane.tracks};return r;}
  const r=Object.fromEntries(['range','canvas','fps','initial','media','samples'].map(k=>[k,p[k]]));
+ r.initial=JSON.parse(JSON.stringify(p.initial,(k,v)=>['motion','content','caption'].includes(k)?undefined:v));
  if(p.caption_plane)r.caption_plane={frames:p.caption_plane.frames,states:p.caption_plane.states.map(s=>({frame:s.frame,cues:s.cues}))};
  if(p.audio_plane)r.audio_plane={source_audio:p.audio_plane.source_audio,tracks:p.audio_plane.tracks};
  return r;
@@ -22,6 +23,20 @@ export function checkSnapshot(p,s,at){
   if(actual.asset!==v.asset||actual.seeking||actual.ready_state<2||Math.abs(actual.media_time-(v.source_start+t))>1/p.fps+.001
    ||style?.object_fit!==v.object_fit||style?.object_position!==v.object_position)return false;
  }
+ const images=p.media.filter(m=>m.kind==='image');
+ if(images.length){
+  if(s.images?.length!==images.length)return false;
+  for(const image of images){const actual=s.images.find(i=>JSON.stringify(i.path)===JSON.stringify(image.path));
+   if(!actual?.ready||actual.asset!==image.asset||actual.object_fit!==image.object_fit||actual.object_position!==image.object_position)return false;
+  }
+ }
+ const frame=Math.max(0,Math.min((p.samples?.length??1)-1,Math.round(t*p.fps)));
+ const walk=function*(nodes){for(const n of nodes??[]){yield n;yield*walk(n.children);}};
+ const kinds=new Map([...walk(p.initial.nodes)].map(n=>[JSON.stringify(n.path),n.kind]));
+ for(const n of walk(p.samples?.[frame]?.nodes)){
+  const box=s.boxes.find(b=>JSON.stringify(b.path)===JSON.stringify(n.path));
+  if(['text','caption'].includes(kinds.get(JSON.stringify(n.path)))&&typeof n.content==='string'&&box?.text!==n.content)return false;
+ }
  const plane=p.caption_plane;
  if(plane){
   const index=plane.frames[Math.max(0,Math.min(plane.frames.length-1,Math.round(t*p.fps)))],state=plane.states[index];
@@ -38,5 +53,5 @@ export function completeVideoQuality(packet,quality){
  const packets=packet.segments?packet.segments.map(s=>s.packet):[packet];
  const wanted=packets.flatMap(p=>p.media.filter(m=>m.kind==='video'||m.kind===undefined).map(m=>JSON.stringify(m.path))).sort();
  const observed=quality.map(q=>JSON.stringify(q.path)).sort();
- return wanted.length>0&&JSON.stringify(wanted)===JSON.stringify(observed)&&quality.every(q=>q.dropped_frames===0);
+ return JSON.stringify(wanted)===JSON.stringify(observed)&&quality.every(q=>q.dropped_frames===0);
 }

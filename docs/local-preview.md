@@ -31,7 +31,8 @@ selects an existing workspace explicitly. Ranges use composition result time and
 are limited to ten seconds; restart the viewer to change the range.
 
 macOS and Linux are supported. Native descriptor preparation does not launch
-headless Chrome, Node or FFmpeg; the human's browser decodes the source. Loading
+headless Chrome or Node. The human's browser decodes videos and images directly;
+FFmpeg prepares bounded audio/caption planes when needed. Loading
 and indexing new sources still uses the normal project-loading tools. Rendered
 mode requires Chrome/headless Chrome, Node.js 22+, FFmpeg and ffprobe, as for
 spatial rendering. Native playback needs a browser with H.264/AAC, video-frame
@@ -56,8 +57,8 @@ scenes before and after it; `--from`/`--to` stay on the full composition's resul
 clock. For example, `--from 1801 --to 1806` reviews that section without preparing
 the preceding thirty minutes. Restart the viewer to select another range.
 
-Each selected span can have **one or two visible MP4s**. One visible video
-carries the resolved speaker audio; the other stays muted. Each video keeps its
+Each selected span can have **zero, one or two visible MP4s**. In scenes with
+video, one visible video carries the resolved speaker audio; the other stays muted. Each video keeps its
 own source offset. Play, Pause, seek and revision replacement operate on both
 pictures. Both first frames must be prepared before the version becomes current.
 Both video elements feed the same Web Audio clock. The selected speaker's gain
@@ -66,6 +67,22 @@ together. Pause, seek and replacement cancel pending startup too.
 A cut switches the composition and its selected speaker audio together. A → B → A can return to
 the same recording at a different source position, with a different layout,
 caption state or component arrangement in each scene.
+A scene containing only text, images, shapes and components uses the scene's
+resolved duration and output cadence, without a dummy video or encoded still
+clip. Image backgrounds are ordinary image elements placed behind other children;
+fit/fill, crop position, stacking, transparent logos and text stay editable.
+Play, Pause, Restart, seek, sampled motion, saved edits and undo all work on that
+scene clock. Images and fonts load before the version becomes current.
+
+Still scenes can be silent, use the existing independent audio mix, or sit
+between footage scenes. A selected window mixing stills with routed source audio
+prepares one canonical audio window, including the silent portions, so picture
+cuts do not restart its soundtrack. Still-only scenes do not infer source audio
+from an image; existing explicit audio routing and mix rules apply. Structured
+scenes without footage slots still need a declared duration in a loaded project;
+this does not add a new source-free project creation command. The ten-second,
+three-span limit and frame-aligned boundaries remain unchanged.
+
 Every source clock must be unit speed, matching the indexed output rate
 (24–60 fps). Reusable components, text, shapes, images, placed caption tracks and
 canonical sampled translation/scale/opacity are supported. Media wrappers must

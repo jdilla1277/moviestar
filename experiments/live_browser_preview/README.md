@@ -1103,3 +1103,43 @@ output clock and samples; source-audio-only handoffs keep their existing running
 transport. Playback quality and final-picture checks remain required, including
 seeking, pause/resume and missing callback cases. Raw held decoder counters are
 retained as `held_quality`; no drop tolerance is introduced.
+
+
+### Still-scene preview and edit latency
+
+```sh
+python experiments/live_browser_preview/still_benchmark.py --out /tmp/native-stills-new
+python experiments/live_browser_preview/still_benchmark.py --canvas 1080x1920 --out /tmp/native-stills-hd-new
+```
+
+The default runs silent cards, cards with independent audio, title → footage →
+closing-card cuts, and one standalone audio-backed card. Each runs at histories
+0/20/50 with ten actual CLI spec-edit/undo operations changing text, background
+color, a 4K image binding, fit/cover and component placement. These are editable
+components containing text, background images and transparent logos. Fixture
+source footage initializes a loaded project; still-only windows never register,
+decode or mount a video carrier. Source-free project creation is separate work.
+
+Use `--mode silent|audio|mixed|single` and `--history 0|20|50` to select cases;
+`--canvas 640x360` also exercises landscape. Every output directory must be new.
+The edit timer includes CLI success and the correct fresh, fully loaded version
+at 0.2 seconds. The full descriptor, DOM text/geometry, computed background color
+and decoded image identity/fit must match. Inspection covers four poses across
+the selected window; edited and restored playback retain the 50 ms clock/drift
+and zero reported decoder-drop/stall gates. Silent windows have no audio phase
+to measure; a window declaring prepared audio must supply it. An image-only
+window legitimately has zero decoder-quality records; a video window still
+requires a record for every expected decoder.
+
+Outside the timed interval, changed-image, fit, placement and restored samples
+are compared with independent canonical screenshot output at five image/background
+interior points, retaining both PNGs and the existing 8-level pixel tolerance.
+These samples supplement the existing text/mask/motion fidelity tests; they do
+not claim every glyph is pixel-identical. A dedicated browser regression checks
+scene-clock seeking, live component motion, Pause and Restart with no video DOM.
+
+The `stills` CI jobs run both authored rasters on source-verified fresh wheels,
+with the unchanged 3,000 ms edit gate. Existing audio and visual reference jobs
+remain enabled. Runtime/producer identities, commands, source assets, screenshots,
+traces and first failures are retained. No failed run is replaced by a passing
+rerun and no full-preview video is encoded to satisfy the timing gate.

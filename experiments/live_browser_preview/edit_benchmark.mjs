@@ -21,6 +21,14 @@ function probe(expected,at=.2){
   const frame=packet.segments?[...root.document.querySelectorAll('iframe')].find(f=>f.contentWindow.moviestarLiveStage?.packet.range.from===active.range.from):outer;
   const doc=frame.contentDocument;
   snapshot.video_styles=[...doc.querySelectorAll('video')].map(v=>({object_fit:doc.defaultView.getComputedStyle(v).objectFit,object_position:doc.defaultView.getComputedStyle(v).objectPosition}));
+  snapshot.images=active.media.filter(m=>m.kind==='image').map(m=>{
+   const entry=frame.contentWindow.moviestarScene.entries.find(e=>JSON.stringify(e.node.path)===JSON.stringify(m.path));
+   const image=entry?.element.querySelector('img'),style=image&&doc.defaultView.getComputedStyle(image);
+   return{path:m.path,asset:image?.currentSrc.split('/').at(-1),
+    ready:Boolean(image?.complete&&image.naturalWidth>0),object_fit:style?.objectFit,object_position:style?.objectPosition};
+  });
+  const color=doc.createElement('i');color.style.color=wantedActive.initial.root_style['background-color'];doc.body.append(color);
+  snapshot.background_matches=doc.defaultView.getComputedStyle(color).color===doc.defaultView.getComputedStyle(frame.contentWindow.moviestarScene.scene).backgroundColor;color.remove();
   const plane=active.caption_plane;
   if(plane){const index=Math.round((snapshot.time-(active.range.from-packet.range.from))*active.fps),state=plane.states[plane.frames[Math.max(0,Math.min(plane.frames.length-1,index))]];
    const image=[...doc.images].find(i=>i.src.includes('/assets/'+state.asset)&&i.isConnected&&i.complete&&i.naturalWidth===state.rect.width&&i.naturalHeight===state.rect.height);
@@ -33,7 +41,7 @@ function probe(expected,at=.2){
   snapshot.window_start=packet.range.from;
   const audio=packet.audio_plane;
   const soundReady=!audio||(snapshot.audio?.prepared&&snapshot.audio.asset===audio.asset);
-  observation.expected_text_visible=soundReady&&JSON.stringify(semanticPacket(packet))===JSON.stringify(semanticPacket(wanted))&&checkSnapshot(wantedActive,snapshot,snapshot.time);
+  observation.expected_text_visible=snapshot.background_matches&&soundReady&&JSON.stringify(semanticPacket(packet))===JSON.stringify(semanticPacket(wanted))&&checkSnapshot(wantedActive,snapshot,snapshot.time);
   observation.semantic_snapshot=snapshot;
  }catch(error){observation.semantic_error=String(error);observation.expected_text_visible=false;}
  return observation;})()`;
@@ -49,10 +57,13 @@ async function checkPlayback(label,wanted){
   playback.video_quality=await browser.evaluate(`[...document.querySelector('iframe:not(.pending)').contentDocument.querySelectorAll('iframe')].flatMap(f=>f.contentWindow.moviestarLiveStage.metrics.video_quality??[])`);
   if(playback.error||playback.stalls||!completeVideoQuality(wanted,playback.video_quality))result.problems.push('Audio playback failed/stalled/dropped');
   report.clock_diagnostics=describeAudioClocks(playback);
-  const stamp=await browser.evaluate("document.querySelector('iframe:not(.pending)').contentWindow.moviestarCutShared.audio.getOutputTimestamp()");
+  if(wanted.audio_plane&&!playback.prepared_audio?.prepared)result.problems.push('Missing expected prepared audio during playback');
+  if(playback.prepared_audio?.prepared){
+  const stamp=await browser.evaluate("window.moviestarLive.stage.audioOutputTimestamp");
   report.audio_output_stamp=stamp;const started=playback.prepared_audio;
-  report.audio_display_phases_ms=playback.frames.map(f=>f.display_time-(stamp.performanceTime+(started.started_context_time+f.result_time-started.started_offset-stamp.contextTime)*1000));
+  report.audio_display_phases_ms=playback.frames.map(f=>f.display_time-(stamp.performanceTime+(started.started_context_time+f.result_time-wanted.range.from-started.started_offset-stamp.contextTime)*1000));
   if(!report.audio_display_phases_ms.length||report.audio_display_phases_ms.some(n=>!Number.isFinite(n)||Math.abs(n)>50))result.problems.push('Prepared-audio/display output-clock phase exceeds 50ms');
+  }
   const first=playback.frames[0],last=playback.frames.at(-1);
   report.program_drift_ms=last.display_epoch-last.result_time*1000-first.display_epoch+first.result_time*1000;
   if(Math.abs(report.program_drift_ms)>50)result.problems.push('Program clock exceeds 50ms');
@@ -93,7 +104,13 @@ try{
       }
       await persist();
     }
-    if(action.name==='main-picture')await checkPlayback('edited',action.expected);
+    if(fixture.image_references?.[action.name]){
+      await browser.evaluate('window.moviestarLive.stage.seek(.2)');
+      const clip=await browser.evaluate(`(()=>{const r=document.querySelector('iframe:not(.pending)').getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,scale:1};})()`);
+      const shot=await browser.send('Page.captureScreenshot',{format:'png',clip,captureBeyondViewport:true});
+      await writeFile(join(out,label+'-scene.png'),Buffer.from(shot.data,'base64'));
+    }
+    if(action.name===(fixture.playback_after??'main-picture'))await checkPlayback('edited',action.expected);
     await browser.evaluate('window.moviestarLive.stage.seek(.2)');
     if(attempt.trace.measurement_ms>=3000)result.problems.push(`${label} exceeds 3000ms`);
     await persist();
