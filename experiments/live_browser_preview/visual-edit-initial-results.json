@@ -1,0 +1,2038 @@
+{
+  "status": "failed",
+  "tested_head": "c342b9d",
+  "workflow_run": "https://github.com/jdilla1277/moviestar/actions/runs/43864553345",
+  "runtime_changed_from_parent": false,
+  "edit_count": 60,
+  "edit_budget_misses": 0,
+  "maximum_edit_ms": 1684.7954279999994,
+  "summary": "All sixty edits passed latency/content/restore checks. Each edited playback reported one dropped frame on the first inset decoder at its cut. All restored playbacks and output-clock/drift gates passed. This reference remains failed; no gate was relaxed.",
+  "references": [
+    {
+      "artifact": "native-audio-visual-1080x1920-1",
+      "wheel_sha256": "ce5a5e7e0187d737e216e09d9d94f6c3bea331fdacf78bc1749c622e182a8009",
+      "source_hashes": {
+        "app/src/moviestar/__init__.py": "4d6069e3615cfb759eff4a69169348d83d5dec81d5c376c2f34466db0d26504a",
+        "app/src/moviestar/__main__.py": "83555779bc550efd4cd1013ff0131956f4eea8bf5838a38019ee33f359cbb038",
+        "app/src/moviestar/account.py": "ac8e33c5f9a856435ace85e1a4eb9d681bed71f207607176992c8886d1dbccea",
+        "app/src/moviestar/activity.py": "eb764e61ac747d4e88a16c37c813131620c92f4ce30bf3446d99956a7c1c525c",
+        "app/src/moviestar/audio_surface.py": "71df8189805594ea2ad3d484bbe3c6c6a95471f77fe2e5460fb6f569f5af856d",
+        "app/src/moviestar/camera.py": "2b4dc252d57d743093d984cb0ac6a5a162056215b3a670820b908a80c521f5f5",
+        "app/src/moviestar/caption_import.py": "eb61ef59750129b47976017f56c920c615ab8acd2ce66e14e56580fc357218ef",
+        "app/src/moviestar/captions.py": "441ff58a85f7bf0a627c369a16074c1be9bbdf07d74898d7961fd29560e7b68e",
+        "app/src/moviestar/cli.py": "9df077ec13a9b11f5f4f0c64e51c2eefe1d9c091cdb3ad17ce4742f777abf1d9",
+        "app/src/moviestar/composition_mock.py": "d232ea91dd1f3b65c7b3435d2713da4c6bcf5eb50b8d8bf7ca81e225afb9cf82",
+        "app/src/moviestar/feedback.py": "ec51bbc56da56823721769b5d79f331b88d3f957b1ef6ec9e9d3d146c2161d3b",
+        "app/src/moviestar/ffmpeg.py": "61e7e7f30badfe8ba6177b71cd32940a5767c20f8d92cf68bc84fecb3025d6a0",
+        "app/src/moviestar/find.py": "0d2b06a64c80a0f6dd5b1a166364a610373c3e2d912d4bd1d8c1c6d05970f4b6",
+        "app/src/moviestar/fonts.py": "5f2134271761dca57965d079b37d69fed48e110ff4348df141921660e1644027",
+        "app/src/moviestar/json_identity.py": "9069690d6f0b624f462aeb8a984ebd1378fbd84fba0820541a8cda0bf3bfcc0c",
+        "app/src/moviestar/local_preview.py": "d8264f5ab795deafa69beb1693d60c0928fe5ec381bc0a9d35764e12f52e97e7",
+        "app/src/moviestar/masks.py": "8438b14fbe411577230df941184d779b482f7240006f90c160d6beb1d8999fa1",
+        "app/src/moviestar/motion.py": "ed21f8d8b8b5835a3311a07d7588f8ce3fc15c172562a5700e08351d6c8d8119",
+        "app/src/moviestar/native_audio.py": "ecb4d270310a2d1449f86f76621bbce4db393316f53784b2c8458f948c94bad0",
+        "app/src/moviestar/native_caption_reuse.py": "ee9ced8a5e9a80a5504d67d08aad96ebeafe3466c42ace24a89e596a8b0ce2e0",
+        "app/src/moviestar/native_captions.py": "70f6d76299242b82d6d2c436877ed6326d270b904171d9f93fa451ee1eab6ab0",
+        "app/src/moviestar/native_preset.py": "7ee5bd99dbc140b1528d6b1a12afd767f113d7392b44e97919a13dd3de7cd851",
+        "app/src/moviestar/native_preview.py": "acfc3d968bf2f7d5b8b40f4bac43e8928205d6f9345d71e1460e6cb1cc513c32",
+        "app/src/moviestar/overlays.py": "8cbfa6ddc96d86a441abf05eaae4170785fadce3e51902af34a4cccedb231d51",
+        "app/src/moviestar/platforms.py": "9d47069428f5b1971b2c8adc242549fe2a7e368ecb0c219d265d1dad16d684be",
+        "app/src/moviestar/preview_native.mjs": "314f6a4eecd149657f910a962da8ec1c2be9c956d1ce76c69e46c0befc3951e4",
+        "app/src/moviestar/preview_native_audio.mjs": "14618240f87303ebf4014b920050b8e4b5ea724487645575487e1a49e9a58d8e",
+        "app/src/moviestar/preview_native_buffer.mjs": "acd43432c3a40abe7ab638a599e70721ad57858b540da4dd7c569e9cd0737722",
+        "app/src/moviestar/preview_native_captions.mjs": "f32c09c00b80ab23ceec2a0d0b10054a06044f9ffba2414b6117ca2b08fd76d4",
+        "app/src/moviestar/preview_native_cut_meter.mjs": "16d57f79b7ff848ae21b12f55a1efbba9e3e0064b829daf72a4dbb8522bb90dd",
+        "app/src/moviestar/preview_native_cuts.mjs": "403b071c7e6f3fbdf9769073e4e4d6b61bff2bfe6533b9acb5d69c1fc214a40c",
+        "app/src/moviestar/preview_native_meter.mjs": "9d546fa96d6ce8a7b83589cfed7e3f8ab89284c75910a1ee81fe2ab927e71840",
+        "app/src/moviestar/preview_native_stage.mjs": "2ec6e673edb7c004f80215e15fda213bbfbce077bff55732427ab284491af209",
+        "app/src/moviestar/preview_native_videos.mjs": "791b6eebf85bb2e1118ad5e12923fc3082903c349b03dd54f65fa539d058f062",
+        "app/src/moviestar/preview_native_worker.mjs": "3410f31905b13b31a70fdf45b9475d0cea52c7a13593cb678b65a710ed1f7a83",
+        "app/src/moviestar/preview_timing.py": "ba81fc62070bf1d566cdf6fe89e7e58e41dfe4eb95e018aa7610ad3125351975",
+        "app/src/moviestar/preview_worker.py": "f45932fe6048e8602685b031c60fa733215a3952388e681879da75a5bb080db7",
+        "app/src/moviestar/project.py": "e5ed3cb9d8182360d4a564bb8a850ac2b4e728f75e7e0164bdc2bdd71fe58d40",
+        "app/src/moviestar/remote_captions.py": "2707cbcbcf516ba7fa1f4beb4927ce7e63a4afeacc2579eb01f829585e623558",
+        "app/src/moviestar/resolved.py": "0e33bdc8c72c68775eb11f588b2e71aac4980bfd546b75c2ded7c9afb517ed75",
+        "app/src/moviestar/sharing.py": "fde7c87d9e01c3cd9c6548ed80a1d78759c13f9f283514ef39d6c0a3ebe3c943",
+        "app/src/moviestar/spatial_browser.mjs": "0ae46ca5d343bcfc191935b316b9b9e921b2b8cafc44019864196c23759dce01",
+        "app/src/moviestar/spatial_browser_lifecycle.mjs": "658d220fa2f1bd937624ad3f2064d967f95c1179b05c039a2f20ed461775f2ef",
+        "app/src/moviestar/spatial_catalog.py": "1132c131a5c8c2bb925175e7b8c68dea67b85d3c91ce35312f2d1af0e8ca9fa9",
+        "app/src/moviestar/spatial_composite.py": "920b128dd4ced2ae0bab9c5d0e60edb337c69f1f61d8ac1724c95f67cc227ca1",
+        "app/src/moviestar/spatial_dom.mjs": "59054c107bc21c7493697b8d25b6bf3f884347fcdab8f701218d06453f2abdac",
+        "app/src/moviestar/spatial_edit.py": "1dd115452d415c4f3266b9d9eac55739431f7c29dee4397584810d9192a264a6",
+        "app/src/moviestar/spatial_format.py": "dcea57c2e2eb37e313b83d5f6fcf77312f8d65fcd89885c7bfc62e6a9d956a6b",
+        "app/src/moviestar/spatial_inspection.py": "e4db79164d6d95564a844f85197477aed59f0239c5dbd573fc6b1c0732f1fee5",
+        "app/src/moviestar/spatial_layout.py": "0ddcf669500b727a90575aec2fc411d5e869f365aa6dc951eda0f4e7904bdb8e",
+        "app/src/moviestar/spatial_model.py": "354ec181859918ca7bfa09ff9f6f0871a81018572f7e7467353a121c522de39a",
+        "app/src/moviestar/spatial_motion.py": "4ee7bee35583f3479b584b79b54193476c75e2d90dfd364dce2b5e355e042b05",
+        "app/src/moviestar/spatial_preset.py": "3e4c6df132c09920d3fc26ba24766f0af0a55b9c4b13ad47584a979796a84db7",
+        "app/src/moviestar/spatial_regions.py": "e08806b95517a613738b6061a2bd74c1b86b6be49acf846fb3333c0b590ec530",
+        "app/src/moviestar/spatial_render.py": "1acbbb05081e1d27efc111dab0017678004898588981bfce00e69b183d388893",
+        "app/src/moviestar/spatial_saved_layouts.py": "07a3bea01dd6d1fa77ccc5d3973dd69ed8a155e58a9e3fc91ab237fbcccc0d86",
+        "app/src/moviestar/spatial_session.py": "dbc2637a039ee7a32f98765e0649d32cb405ee2b7ca189de5574e2528006bbf9",
+        "app/src/moviestar/spatial_transition.py": "f0fb5728fc3409fd494f024ae4f1e06c2081026769060ba032e30329642c7c3c",
+        "app/src/moviestar/spatial_video.py": "965c27a11898d3ea407b4d8cbdcece7d896b2b7be2124421db625da9fef4274f",
+        "app/src/moviestar/spec.py": "5edb477e54e600d74c748a6277260441fac58cecf5c0e096667656985a4f6662",
+        "app/src/moviestar/subscribe.py": "a0c2bb146c39263f209abfea9b16fd030b8b4035d9244914f58d0bfeaac4468c",
+        "app/src/moviestar/timecodes.py": "37b2b686be6bd81322174908622cef437139ce9d013ac1b146cc11fc737aebdf",
+        "app/src/moviestar/transcribe.py": "6d35a82cedee63d69d36aa624d2d5c6d3016de8cc65a1b99870ca23c8fa4ac71",
+        "app/src/moviestar/transitions.py": "ab2425f6812626aae2d22b1fe7630a163feb1b7f21920700cea519530506dd15"
+      },
+      "producer_hashes": {
+        "audio.py": "8f9ede8598dc45140817241a438c5c4bb39f119b1e28823a09394d0f26d683e5",
+        "audio_benchmark.mjs": "c46f518565a27f9be617c87a1955521ce24641b2e4cd6116df4e06ceb3af2b36",
+        "audio_benchmark.py": "4efd02ae597512850bbab1099bfab59fc0ca5b9532fb05dadb526b0cdf0ee397",
+        "audio_clock_report.mjs": "9b5f80825db79d596c61115aaf01e43f607a30909b0cd817c13bf9aeb5e40edf",
+        "benchmark.mjs": "c830c36cdbe23266656e9e0b29abfe1ce7bc093a37fd37af496063ec031fc778",
+        "benchmark.py": "0347abc59df33a1628288bce87bddbb660c2f040426b84ab7eff3a9bdff86c1e",
+        "browser.mjs": "136b11fe43adeada3026f84d3798c81b4ff423b672881bf57a7db70b341709e6",
+        "caption_benchmark.mjs": "ee019488cfd0756eb94ba02909af3865b2342da18610d09c6c09b4e048ab7b26",
+        "caption_benchmark.py": "567092e442ff64f630d4f9a42cf36d2293dede378150ddfb5b035ea6ae5a038d",
+        "cue_clock.mjs": "358689d73b2ece05666ca1097cc1702ae0f7d0a00c850d9fe6ef69a5aaa20c9a",
+        "cut_benchmark.py": "76a99955570d7f22fbe6be1e589ebd1f4781d9a1ae7ae8db861923a791cc2f11",
+        "cuts.py": "54d1d3d8ca2b6a0d2fd42d0d6d92de5c9f3d2ca3e3e60e08c16d2cf9dc3b3d11",
+        "diagnostics.mjs": "38c279863795bfe8ece4db06f6cd18badc1af8a21c75180ca65633a4a5090f24",
+        "edit_benchmark.mjs": "8ec8e8dff1e1dcf18d54f53f49cb594f294beb182bb46a2b6c4ea4ee732f38ba",
+        "edit_benchmark.py": "e587165617c9dd576b31dfb92e025b36d99fd6dcd6304398c92da998e6850996",
+        "edit_semantics.mjs": "a1392b7386e71298a78d0b92ee6265fec65b098a54cbe0f3a5c8ae6645ddfb89",
+        "fixtures.py": "becd1072c5980378695b217ff84e19d86f81aa1532ae8676d91890b0a7c9bb85",
+        "history.py": "3272e0acbfcb0fe5bcbf67303b0fb546ce63a34ad12125ee4678511b8a02a612",
+        "history_benchmark.py": "1cd7adec8626170d17312291c8ccc79dfb8b5ff497f99240632abbf6c78b4901",
+        "pip.py": "2ee0888c5eea7e71ad927645d9950c11053ce5e2335b9400576a472c2240f14e",
+        "pip_benchmark.mjs": "72e9c76b4cad2bbae0ed4554b0b4cf527eafeb774a359beb8ba488587d9ebec6",
+        "pip_benchmark.py": "a0632460e265e5d45354cb5c75ed87fcaa12449f0e3e69638df90e4cf66b2669",
+        "presented_frames.mjs": "dfa4ec5278f07f87112e58cc4bfbdc7aebc9756b1c98f59be1a34533499fd7b1",
+        "real_benchmark.py": "e573fd17b9379cd5e09137fc55b32a4e75c4cb955d684dacd22308223efad327",
+        "scaling.py": "26051152829f1838649ab8347d0c9bf348da388dece429fe892144bb5bda76d0",
+        "serve.py": "d21dc5d0e564fd238d08fda9fc5ae1395f67277bd90e3024ba158c57238300a9"
+      },
+      "environment": {
+        "python": "3.12.16 (main, Oct 26 2026, 02:48:44) [GCC 15.2.0]",
+        "platform": "Linux-7.0.0-1019-azure-x86_64-with-glibc2.43",
+        "cpu_count": 4,
+        "chrome": "Google Chrome for Testing 156.0.8078.73",
+        "ffmpeg": "ffmpeg version 8.0.1-3ubuntu2 Copyright (c) 2000-2025 the FFmpeg developers",
+        "node": "v24.5.0",
+        "dependencies": {
+          "truststore": "0.10.5",
+          "packaging": "26.3",
+          "fsspec": "2026.9.0",
+          "pip": "25.0.1",
+          "faster-whisper": "1.2.1",
+          "numpy": "2.5.5",
+          "cryptography": "50.0.2",
+          "jaraco.functools": "4.6.0",
+          "PyYAML": "6.0.3",
+          "moviestar": "0.7.0",
+          "keyring": "25.7.0",
+          "idna": "3.20",
+          "jeepney": "0.9.0",
+          "typing_extensions": "4.16.0",
+          "httpx2": "2.16.2",
+          "click": "8.5.1",
+          "tokenizers": "0.23.3",
+          "anyio": "4.16.0",
+          "onnxruntime": "1.32.0",
+          "ctranslate2": "4.9.0",
+          "huggingface_hub": "2.4.0",
+          "RapidFuzz": "3.14.6",
+          "jaraco.context": "6.1.2",
+          "httpcore2": "2.16.2",
+          "more-itertools": "11.2.1",
+          "hf-xet": "1.8.0",
+          "av": "18.1.0",
+          "tqdm": "4.70.1",
+          "jaraco.classes": "3.4.0",
+          "SecretStorage": "3.5.0",
+          "h11": "0.16.0",
+          "flatbuffers": "25.12.19",
+          "filelock": "4.2.10",
+          "cffi": "2.1.1",
+          "pycparser": "3.12",
+          "protobuf": "7.36.2"
+        }
+      },
+      "cases": [
+        {
+          "history": 0,
+          "edits": [
+            {
+              "name": "caption-wording",
+              "ms": 864.422485,
+              "cli_ms": 129.58070899999984,
+              "request_id": "36058459e23d86133891e795",
+              "state_id": "sha256:e8a59245f341747f5ce0df229386567d99a6f01edb1c886056dae1785b0fba78",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 24722,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            },
+            {
+              "name": "highlight-color",
+              "ms": 1330.1811669999997,
+              "cli_ms": 154.0035399999997,
+              "request_id": "dccfff019bc7b5c94f5cd501",
+              "state_id": "sha256:dbcf854dccfceaab2ffcc142265376b5d1e6ef76a130e84d9ef2195a2ffa447e",
+              "caption_reuse": {
+                "hits": 0,
+                "misses": 3,
+                "copied_bytes": 0,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            },
+            {
+              "name": "speaker-framing",
+              "ms": 1348.8235430000004,
+              "cli_ms": 122.06143900000006,
+              "request_id": "9dd7377ae2b079fdd13ab6b8",
+              "state_id": "sha256:d5f552d9c6807f421b66ca290f1b81f88b273557c01f32f2ec8e5906c281033d",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 24765,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "pip-position",
+              "ms": 1115.9799620000003,
+              "cli_ms": 120.82325400000082,
+              "request_id": "8edb5d548ff160c8b5309fa7",
+              "state_id": "sha256:c9ca026d051e306372edac1dea5a887feb2c75fa2f1810e81600e90519192318",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 24765,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "main-picture",
+              "ms": 1480.3441629999998,
+              "cli_ms": 127.1551899999995,
+              "request_id": "417ff450e499d038235bcc61",
+              "state_id": "sha256:13e6d910ac0c8c808948d0b1118e5d2bd902cb64b7f2b5b601fc4dd19f21908e",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 24765,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-main-picture",
+              "ms": 1194.1810010000008,
+              "cli_ms": 124.17565900000045,
+              "request_id": "97421ed5cd93dd98a051f700",
+              "state_id": "sha256:c9ca026d051e306372edac1dea5a887feb2c75fa2f1810e81600e90519192318",
+              "caption_reuse": {
+                "hits": 3,
+                "misses": 0,
+                "copied_bytes": 111357,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-pip-position",
+              "ms": 1238.2517570000018,
+              "cli_ms": 122.23500100000092,
+              "request_id": "c24d8efad99a1c03be883280",
+              "state_id": "sha256:d5f552d9c6807f421b66ca290f1b81f88b273557c01f32f2ec8e5906c281033d",
+              "caption_reuse": {
+                "hits": 3,
+                "misses": 0,
+                "copied_bytes": 111357,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-speaker-framing",
+              "ms": 1136.287737999999,
+              "cli_ms": 121.06876099999863,
+              "request_id": "c4b9a23ceb11938ed7392e4c",
+              "state_id": "sha256:dbcf854dccfceaab2ffcc142265376b5d1e6ef76a130e84d9ef2195a2ffa447e",
+              "caption_reuse": {
+                "hits": 3,
+                "misses": 0,
+                "copied_bytes": 111357,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-highlight-color",
+              "ms": 1119.9608530000005,
+              "cli_ms": 118.86501800000042,
+              "request_id": "6e6550eec6abd9c74dedd431",
+              "state_id": "sha256:e8a59245f341747f5ce0df229386567d99a6f01edb1c886056dae1785b0fba78",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 24722,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            },
+            {
+              "name": "remove-caption-rule",
+              "ms": 1187.9442230000022,
+              "cli_ms": 116.13024200000291,
+              "request_id": "2f092f214646608a256c008c",
+              "state_id": "sha256:e8a59245f341747f5ce0df229386567d99a6f01edb1c886056dae1785b0fba78",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 24722,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            }
+          ],
+          "restored": {
+            "same_state": true,
+            "fresh_request": true,
+            "history": 0
+          },
+          "problems": [
+            "Audio playback failed/stalled/dropped"
+          ],
+          "playbacks": [
+            {
+              "label": "edited",
+              "video_quality": [
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 31,
+                  "dropped_frames": 1
+                },
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 31,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 62,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 62,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                }
+              ],
+              "maximum_audio_display_phase_ms": 24.136686848958107,
+              "program_drift_ms": -0.13404101562494475
+            },
+            {
+              "label": "restored",
+              "video_quality": [
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 32,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 32,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 62,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 62,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                }
+              ],
+              "maximum_audio_display_phase_ms": 9.831930989612374,
+              "program_drift_ms": 16.365958984375055
+            }
+          ]
+        },
+        {
+          "history": 20,
+          "edits": [
+            {
+              "name": "caption-wording",
+              "ms": 1040.2666889999996,
+              "cli_ms": 124.62429599999996,
+              "request_id": "b1ad791505826837846f5159",
+              "state_id": "sha256:588026b32943f76f1429dcb3ba9bd5d2606b0efb5fd026fe374ebfc382c6f599",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 24722,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            },
+            {
+              "name": "highlight-color",
+              "ms": 1455.475601,
+              "cli_ms": 176.33097899999984,
+              "request_id": "ef1d3fbc63d6c46a074c66f9",
+              "state_id": "sha256:b7c0161f79a7dde85919bf708e90536d68af7ba44669938594424dfe4f54c7b5",
+              "caption_reuse": {
+                "hits": 0,
+                "misses": 3,
+                "copied_bytes": 0,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            },
+            {
+              "name": "speaker-framing",
+              "ms": 1498.1038680000001,
+              "cli_ms": 140.69902900000034,
+              "request_id": "f9f2d2856d2ce9331b212152",
+              "state_id": "sha256:2cf696c6db681840a4b2017e3bc0992f3d1071c6ea409a52fdde0774670dfe8a",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 24765,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "pip-position",
+              "ms": 1376.973132,
+              "cli_ms": 137.26548699999967,
+              "request_id": "62142db121a0c9827831b99d",
+              "state_id": "sha256:8a4fa93cabaa154f44f73b024840182175d9f42f987309978a1cce9b81da3eb9",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 24765,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "main-picture",
+              "ms": 1490.184482999999,
+              "cli_ms": 143.18381500000032,
+              "request_id": "9a2405dcec78f9dd23c6e2ff",
+              "state_id": "sha256:6f074011b20ae34ead0437b59b90dba61e8b21743bc3ba0d5b8a8695b540cce4",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 24765,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-main-picture",
+              "ms": 1190.2582489999986,
+              "cli_ms": 135.02466800000184,
+              "request_id": "261ee218694d55c9482e7ed6",
+              "state_id": "sha256:8a4fa93cabaa154f44f73b024840182175d9f42f987309978a1cce9b81da3eb9",
+              "caption_reuse": {
+                "hits": 3,
+                "misses": 0,
+                "copied_bytes": 111357,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-pip-position",
+              "ms": 1244.5758969999988,
+              "cli_ms": 137.0307709999979,
+              "request_id": "55f7e0a2c8be9001bc4ca21f",
+              "state_id": "sha256:2cf696c6db681840a4b2017e3bc0992f3d1071c6ea409a52fdde0774670dfe8a",
+              "caption_reuse": {
+                "hits": 3,
+                "misses": 0,
+                "copied_bytes": 111357,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-speaker-framing",
+              "ms": 1203.962453,
+              "cli_ms": 134.54150800000207,
+              "request_id": "d1f8af10de3876c22aa185c5",
+              "state_id": "sha256:b7c0161f79a7dde85919bf708e90536d68af7ba44669938594424dfe4f54c7b5",
+              "caption_reuse": {
+                "hits": 3,
+                "misses": 0,
+                "copied_bytes": 111357,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-highlight-color",
+              "ms": 1091.4408939999994,
+              "cli_ms": 134.37009799999942,
+              "request_id": "d10b6ffe74f8e43d61e251e7",
+              "state_id": "sha256:588026b32943f76f1429dcb3ba9bd5d2606b0efb5fd026fe374ebfc382c6f599",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 24722,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            },
+            {
+              "name": "remove-caption-rule",
+              "ms": 1193.4446849999986,
+              "cli_ms": 115.49481200000082,
+              "request_id": "28d79ee18496c4e865e8fabc",
+              "state_id": "sha256:588026b32943f76f1429dcb3ba9bd5d2606b0efb5fd026fe374ebfc382c6f599",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 24722,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            }
+          ],
+          "restored": {
+            "same_state": true,
+            "fresh_request": true,
+            "history": 20
+          },
+          "problems": [
+            "Audio playback failed/stalled/dropped"
+          ],
+          "playbacks": [
+            {
+              "label": "edited",
+              "video_quality": [
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 31,
+                  "dropped_frames": 1
+                },
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 31,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 62,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 62,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                }
+              ],
+              "maximum_audio_display_phase_ms": 23.987930989595043,
+              "program_drift_ms": -0.23413867187494475
+            },
+            {
+              "label": "restored",
+              "video_quality": [
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 31,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 32,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 62,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 62,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                }
+              ],
+              "maximum_audio_display_phase_ms": 9.38545117189733,
+              "program_drift_ms": 16.566154296875055
+            }
+          ]
+        },
+        {
+          "history": 50,
+          "edits": [
+            {
+              "name": "caption-wording",
+              "ms": 1063.583234,
+              "cli_ms": 157.218752,
+              "request_id": "b621bc0bb5816c7f349c292a",
+              "state_id": "sha256:77acd74aea2826c31e4362bc840dcfb5e799c6d6a9b39eb6d3ed0539efe10890",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 24722,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            },
+            {
+              "name": "highlight-color",
+              "ms": 1476.1513539999996,
+              "cli_ms": 209.09979500000009,
+              "request_id": "1be058987e40274caa4839b7",
+              "state_id": "sha256:5f4574ebacd1ba3679a6dfe2b88c522ba95f5b4ba750758e2cb6a7629352fe00",
+              "caption_reuse": {
+                "hits": 0,
+                "misses": 3,
+                "copied_bytes": 0,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            },
+            {
+              "name": "speaker-framing",
+              "ms": 1396.3224010000004,
+              "cli_ms": 181.42346400000042,
+              "request_id": "6c0659d4019cf945f90f16a9",
+              "state_id": "sha256:8748ad10f371a710707a98498c1f8a59889d0f242b50e7d563e98adbf898a209",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 24765,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "pip-position",
+              "ms": 1510.7835299999997,
+              "cli_ms": 172.15208799999982,
+              "request_id": "0de0f1b538e59b0b5386e9e3",
+              "state_id": "sha256:0f51de7a4f1ddf3024c7b2df08533a470acd491c9e8ef99deb18b947781a3749",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 24765,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "main-picture",
+              "ms": 1511.8946890000007,
+              "cli_ms": 180.74893100000008,
+              "request_id": "b604416be519ee254fb4a150",
+              "state_id": "sha256:dc6aea1d2284b7248b4658e6127be6b18832b4613c5a5f77ab8f30a1968bd1c0",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 24765,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-main-picture",
+              "ms": 1254.773575000001,
+              "cli_ms": 167.72190000000046,
+              "request_id": "adc0ba10c24928d52d658737",
+              "state_id": "sha256:0f51de7a4f1ddf3024c7b2df08533a470acd491c9e8ef99deb18b947781a3749",
+              "caption_reuse": {
+                "hits": 3,
+                "misses": 0,
+                "copied_bytes": 111357,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-pip-position",
+              "ms": 1220.4201979999998,
+              "cli_ms": 168.67498799999885,
+              "request_id": "1d3692783d3633fdf410b5ce",
+              "state_id": "sha256:8748ad10f371a710707a98498c1f8a59889d0f242b50e7d563e98adbf898a209",
+              "caption_reuse": {
+                "hits": 3,
+                "misses": 0,
+                "copied_bytes": 111357,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-speaker-framing",
+              "ms": 1256.254022000001,
+              "cli_ms": 167.52699199999915,
+              "request_id": "f58b07320dc33468fe36af05",
+              "state_id": "sha256:5f4574ebacd1ba3679a6dfe2b88c522ba95f5b4ba750758e2cb6a7629352fe00",
+              "caption_reuse": {
+                "hits": 3,
+                "misses": 0,
+                "copied_bytes": 111357,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-highlight-color",
+              "ms": 1121.223449000001,
+              "cli_ms": 167.61455299999943,
+              "request_id": "1f49342e0f16b0b667218b39",
+              "state_id": "sha256:77acd74aea2826c31e4362bc840dcfb5e799c6d6a9b39eb6d3ed0539efe10890",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 24722,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            },
+            {
+              "name": "remove-caption-rule",
+              "ms": 1175.4656769999965,
+              "cli_ms": 128.76750799999718,
+              "request_id": "897ef18bb353326c05e1ddae",
+              "state_id": "sha256:77acd74aea2826c31e4362bc840dcfb5e799c6d6a9b39eb6d3ed0539efe10890",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 24722,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            }
+          ],
+          "restored": {
+            "same_state": true,
+            "fresh_request": true,
+            "history": 46
+          },
+          "problems": [
+            "Audio playback failed/stalled/dropped"
+          ],
+          "playbacks": [
+            {
+              "label": "edited",
+              "video_quality": [
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 31,
+                  "dropped_frames": 1
+                },
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 31,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 62,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 62,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                }
+              ],
+              "maximum_audio_display_phase_ms": 25.24631315104125,
+              "program_drift_ms": 0.06591015625005525
+            },
+            {
+              "label": "restored",
+              "video_quality": [
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 31,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 31,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                }
+              ],
+              "maximum_audio_display_phase_ms": 20.683861979191533,
+              "program_drift_ms": -0.03418749999994475
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "artifact": "native-audio-visual-360x640-1",
+      "wheel_sha256": "3a3eda267ac7900799804ffacf5e1de549f6ec9ac5673e77f7bebbffb1d39707",
+      "source_hashes": {
+        "app/src/moviestar/__init__.py": "4d6069e3615cfb759eff4a69169348d83d5dec81d5c376c2f34466db0d26504a",
+        "app/src/moviestar/__main__.py": "83555779bc550efd4cd1013ff0131956f4eea8bf5838a38019ee33f359cbb038",
+        "app/src/moviestar/account.py": "ac8e33c5f9a856435ace85e1a4eb9d681bed71f207607176992c8886d1dbccea",
+        "app/src/moviestar/activity.py": "eb764e61ac747d4e88a16c37c813131620c92f4ce30bf3446d99956a7c1c525c",
+        "app/src/moviestar/audio_surface.py": "71df8189805594ea2ad3d484bbe3c6c6a95471f77fe2e5460fb6f569f5af856d",
+        "app/src/moviestar/camera.py": "2b4dc252d57d743093d984cb0ac6a5a162056215b3a670820b908a80c521f5f5",
+        "app/src/moviestar/caption_import.py": "eb61ef59750129b47976017f56c920c615ab8acd2ce66e14e56580fc357218ef",
+        "app/src/moviestar/captions.py": "441ff58a85f7bf0a627c369a16074c1be9bbdf07d74898d7961fd29560e7b68e",
+        "app/src/moviestar/cli.py": "9df077ec13a9b11f5f4f0c64e51c2eefe1d9c091cdb3ad17ce4742f777abf1d9",
+        "app/src/moviestar/composition_mock.py": "d232ea91dd1f3b65c7b3435d2713da4c6bcf5eb50b8d8bf7ca81e225afb9cf82",
+        "app/src/moviestar/feedback.py": "ec51bbc56da56823721769b5d79f331b88d3f957b1ef6ec9e9d3d146c2161d3b",
+        "app/src/moviestar/ffmpeg.py": "61e7e7f30badfe8ba6177b71cd32940a5767c20f8d92cf68bc84fecb3025d6a0",
+        "app/src/moviestar/find.py": "0d2b06a64c80a0f6dd5b1a166364a610373c3e2d912d4bd1d8c1c6d05970f4b6",
+        "app/src/moviestar/fonts.py": "5f2134271761dca57965d079b37d69fed48e110ff4348df141921660e1644027",
+        "app/src/moviestar/json_identity.py": "9069690d6f0b624f462aeb8a984ebd1378fbd84fba0820541a8cda0bf3bfcc0c",
+        "app/src/moviestar/local_preview.py": "d8264f5ab795deafa69beb1693d60c0928fe5ec381bc0a9d35764e12f52e97e7",
+        "app/src/moviestar/masks.py": "8438b14fbe411577230df941184d779b482f7240006f90c160d6beb1d8999fa1",
+        "app/src/moviestar/motion.py": "ed21f8d8b8b5835a3311a07d7588f8ce3fc15c172562a5700e08351d6c8d8119",
+        "app/src/moviestar/native_audio.py": "ecb4d270310a2d1449f86f76621bbce4db393316f53784b2c8458f948c94bad0",
+        "app/src/moviestar/native_caption_reuse.py": "ee9ced8a5e9a80a5504d67d08aad96ebeafe3466c42ace24a89e596a8b0ce2e0",
+        "app/src/moviestar/native_captions.py": "70f6d76299242b82d6d2c436877ed6326d270b904171d9f93fa451ee1eab6ab0",
+        "app/src/moviestar/native_preset.py": "7ee5bd99dbc140b1528d6b1a12afd767f113d7392b44e97919a13dd3de7cd851",
+        "app/src/moviestar/native_preview.py": "acfc3d968bf2f7d5b8b40f4bac43e8928205d6f9345d71e1460e6cb1cc513c32",
+        "app/src/moviestar/overlays.py": "8cbfa6ddc96d86a441abf05eaae4170785fadce3e51902af34a4cccedb231d51",
+        "app/src/moviestar/platforms.py": "9d47069428f5b1971b2c8adc242549fe2a7e368ecb0c219d265d1dad16d684be",
+        "app/src/moviestar/preview_native.mjs": "314f6a4eecd149657f910a962da8ec1c2be9c956d1ce76c69e46c0befc3951e4",
+        "app/src/moviestar/preview_native_audio.mjs": "14618240f87303ebf4014b920050b8e4b5ea724487645575487e1a49e9a58d8e",
+        "app/src/moviestar/preview_native_buffer.mjs": "acd43432c3a40abe7ab638a599e70721ad57858b540da4dd7c569e9cd0737722",
+        "app/src/moviestar/preview_native_captions.mjs": "f32c09c00b80ab23ceec2a0d0b10054a06044f9ffba2414b6117ca2b08fd76d4",
+        "app/src/moviestar/preview_native_cut_meter.mjs": "16d57f79b7ff848ae21b12f55a1efbba9e3e0064b829daf72a4dbb8522bb90dd",
+        "app/src/moviestar/preview_native_cuts.mjs": "403b071c7e6f3fbdf9769073e4e4d6b61bff2bfe6533b9acb5d69c1fc214a40c",
+        "app/src/moviestar/preview_native_meter.mjs": "9d546fa96d6ce8a7b83589cfed7e3f8ab89284c75910a1ee81fe2ab927e71840",
+        "app/src/moviestar/preview_native_stage.mjs": "2ec6e673edb7c004f80215e15fda213bbfbce077bff55732427ab284491af209",
+        "app/src/moviestar/preview_native_videos.mjs": "791b6eebf85bb2e1118ad5e12923fc3082903c349b03dd54f65fa539d058f062",
+        "app/src/moviestar/preview_native_worker.mjs": "3410f31905b13b31a70fdf45b9475d0cea52c7a13593cb678b65a710ed1f7a83",
+        "app/src/moviestar/preview_timing.py": "ba81fc62070bf1d566cdf6fe89e7e58e41dfe4eb95e018aa7610ad3125351975",
+        "app/src/moviestar/preview_worker.py": "f45932fe6048e8602685b031c60fa733215a3952388e681879da75a5bb080db7",
+        "app/src/moviestar/project.py": "e5ed3cb9d8182360d4a564bb8a850ac2b4e728f75e7e0164bdc2bdd71fe58d40",
+        "app/src/moviestar/remote_captions.py": "2707cbcbcf516ba7fa1f4beb4927ce7e63a4afeacc2579eb01f829585e623558",
+        "app/src/moviestar/resolved.py": "0e33bdc8c72c68775eb11f588b2e71aac4980bfd546b75c2ded7c9afb517ed75",
+        "app/src/moviestar/sharing.py": "fde7c87d9e01c3cd9c6548ed80a1d78759c13f9f283514ef39d6c0a3ebe3c943",
+        "app/src/moviestar/spatial_browser.mjs": "0ae46ca5d343bcfc191935b316b9b9e921b2b8cafc44019864196c23759dce01",
+        "app/src/moviestar/spatial_browser_lifecycle.mjs": "658d220fa2f1bd937624ad3f2064d967f95c1179b05c039a2f20ed461775f2ef",
+        "app/src/moviestar/spatial_catalog.py": "1132c131a5c8c2bb925175e7b8c68dea67b85d3c91ce35312f2d1af0e8ca9fa9",
+        "app/src/moviestar/spatial_composite.py": "920b128dd4ced2ae0bab9c5d0e60edb337c69f1f61d8ac1724c95f67cc227ca1",
+        "app/src/moviestar/spatial_dom.mjs": "59054c107bc21c7493697b8d25b6bf3f884347fcdab8f701218d06453f2abdac",
+        "app/src/moviestar/spatial_edit.py": "1dd115452d415c4f3266b9d9eac55739431f7c29dee4397584810d9192a264a6",
+        "app/src/moviestar/spatial_format.py": "dcea57c2e2eb37e313b83d5f6fcf77312f8d65fcd89885c7bfc62e6a9d956a6b",
+        "app/src/moviestar/spatial_inspection.py": "e4db79164d6d95564a844f85197477aed59f0239c5dbd573fc6b1c0732f1fee5",
+        "app/src/moviestar/spatial_layout.py": "0ddcf669500b727a90575aec2fc411d5e869f365aa6dc951eda0f4e7904bdb8e",
+        "app/src/moviestar/spatial_model.py": "354ec181859918ca7bfa09ff9f6f0871a81018572f7e7467353a121c522de39a",
+        "app/src/moviestar/spatial_motion.py": "4ee7bee35583f3479b584b79b54193476c75e2d90dfd364dce2b5e355e042b05",
+        "app/src/moviestar/spatial_preset.py": "3e4c6df132c09920d3fc26ba24766f0af0a55b9c4b13ad47584a979796a84db7",
+        "app/src/moviestar/spatial_regions.py": "e08806b95517a613738b6061a2bd74c1b86b6be49acf846fb3333c0b590ec530",
+        "app/src/moviestar/spatial_render.py": "1acbbb05081e1d27efc111dab0017678004898588981bfce00e69b183d388893",
+        "app/src/moviestar/spatial_saved_layouts.py": "07a3bea01dd6d1fa77ccc5d3973dd69ed8a155e58a9e3fc91ab237fbcccc0d86",
+        "app/src/moviestar/spatial_session.py": "dbc2637a039ee7a32f98765e0649d32cb405ee2b7ca189de5574e2528006bbf9",
+        "app/src/moviestar/spatial_transition.py": "f0fb5728fc3409fd494f024ae4f1e06c2081026769060ba032e30329642c7c3c",
+        "app/src/moviestar/spatial_video.py": "965c27a11898d3ea407b4d8cbdcece7d896b2b7be2124421db625da9fef4274f",
+        "app/src/moviestar/spec.py": "5edb477e54e600d74c748a6277260441fac58cecf5c0e096667656985a4f6662",
+        "app/src/moviestar/subscribe.py": "a0c2bb146c39263f209abfea9b16fd030b8b4035d9244914f58d0bfeaac4468c",
+        "app/src/moviestar/timecodes.py": "37b2b686be6bd81322174908622cef437139ce9d013ac1b146cc11fc737aebdf",
+        "app/src/moviestar/transcribe.py": "6d35a82cedee63d69d36aa624d2d5c6d3016de8cc65a1b99870ca23c8fa4ac71",
+        "app/src/moviestar/transitions.py": "ab2425f6812626aae2d22b1fe7630a163feb1b7f21920700cea519530506dd15"
+      },
+      "producer_hashes": {
+        "audio.py": "8f9ede8598dc45140817241a438c5c4bb39f119b1e28823a09394d0f26d683e5",
+        "audio_benchmark.mjs": "c46f518565a27f9be617c87a1955521ce24641b2e4cd6116df4e06ceb3af2b36",
+        "audio_benchmark.py": "4efd02ae597512850bbab1099bfab59fc0ca5b9532fb05dadb526b0cdf0ee397",
+        "audio_clock_report.mjs": "9b5f80825db79d596c61115aaf01e43f607a30909b0cd817c13bf9aeb5e40edf",
+        "benchmark.mjs": "c830c36cdbe23266656e9e0b29abfe1ce7bc093a37fd37af496063ec031fc778",
+        "benchmark.py": "0347abc59df33a1628288bce87bddbb660c2f040426b84ab7eff3a9bdff86c1e",
+        "browser.mjs": "136b11fe43adeada3026f84d3798c81b4ff423b672881bf57a7db70b341709e6",
+        "caption_benchmark.mjs": "ee019488cfd0756eb94ba02909af3865b2342da18610d09c6c09b4e048ab7b26",
+        "caption_benchmark.py": "567092e442ff64f630d4f9a42cf36d2293dede378150ddfb5b035ea6ae5a038d",
+        "cue_clock.mjs": "358689d73b2ece05666ca1097cc1702ae0f7d0a00c850d9fe6ef69a5aaa20c9a",
+        "cut_benchmark.py": "76a99955570d7f22fbe6be1e589ebd1f4781d9a1ae7ae8db861923a791cc2f11",
+        "cuts.py": "54d1d3d8ca2b6a0d2fd42d0d6d92de5c9f3d2ca3e3e60e08c16d2cf9dc3b3d11",
+        "diagnostics.mjs": "38c279863795bfe8ece4db06f6cd18badc1af8a21c75180ca65633a4a5090f24",
+        "edit_benchmark.mjs": "8ec8e8dff1e1dcf18d54f53f49cb594f294beb182bb46a2b6c4ea4ee732f38ba",
+        "edit_benchmark.py": "e587165617c9dd576b31dfb92e025b36d99fd6dcd6304398c92da998e6850996",
+        "edit_semantics.mjs": "a1392b7386e71298a78d0b92ee6265fec65b098a54cbe0f3a5c8ae6645ddfb89",
+        "fixtures.py": "becd1072c5980378695b217ff84e19d86f81aa1532ae8676d91890b0a7c9bb85",
+        "history.py": "3272e0acbfcb0fe5bcbf67303b0fb546ce63a34ad12125ee4678511b8a02a612",
+        "history_benchmark.py": "1cd7adec8626170d17312291c8ccc79dfb8b5ff497f99240632abbf6c78b4901",
+        "pip.py": "2ee0888c5eea7e71ad927645d9950c11053ce5e2335b9400576a472c2240f14e",
+        "pip_benchmark.mjs": "72e9c76b4cad2bbae0ed4554b0b4cf527eafeb774a359beb8ba488587d9ebec6",
+        "pip_benchmark.py": "a0632460e265e5d45354cb5c75ed87fcaa12449f0e3e69638df90e4cf66b2669",
+        "presented_frames.mjs": "dfa4ec5278f07f87112e58cc4bfbdc7aebc9756b1c98f59be1a34533499fd7b1",
+        "real_benchmark.py": "e573fd17b9379cd5e09137fc55b32a4e75c4cb955d684dacd22308223efad327",
+        "scaling.py": "26051152829f1838649ab8347d0c9bf348da388dece429fe892144bb5bda76d0",
+        "serve.py": "d21dc5d0e564fd238d08fda9fc5ae1395f67277bd90e3024ba158c57238300a9"
+      },
+      "environment": {
+        "python": "3.12.16 (main, Oct 26 2026, 02:48:44) [GCC 15.2.0]",
+        "platform": "Linux-7.0.0-1019-azure-x86_64-with-glibc2.43",
+        "cpu_count": 4,
+        "chrome": "Google Chrome for Testing 156.0.8078.73",
+        "ffmpeg": "ffmpeg version 8.0.1-3ubuntu2 Copyright (c) 2000-2025 the FFmpeg developers",
+        "node": "v24.5.0",
+        "dependencies": {
+          "truststore": "0.10.5",
+          "packaging": "26.3",
+          "fsspec": "2026.9.0",
+          "pip": "25.0.1",
+          "faster-whisper": "1.2.1",
+          "numpy": "2.5.5",
+          "cryptography": "50.0.2",
+          "jaraco.functools": "4.6.0",
+          "PyYAML": "6.0.3",
+          "moviestar": "0.7.0",
+          "keyring": "25.7.0",
+          "idna": "3.20",
+          "jeepney": "0.9.0",
+          "typing_extensions": "4.16.0",
+          "httpx2": "2.16.2",
+          "click": "8.5.1",
+          "tokenizers": "0.23.3",
+          "anyio": "4.16.0",
+          "onnxruntime": "1.32.0",
+          "ctranslate2": "4.9.0",
+          "huggingface_hub": "2.4.0",
+          "RapidFuzz": "3.14.6",
+          "jaraco.context": "6.1.2",
+          "httpcore2": "2.16.2",
+          "more-itertools": "11.2.1",
+          "hf-xet": "1.8.0",
+          "av": "18.1.0",
+          "tqdm": "4.70.1",
+          "jaraco.classes": "3.4.0",
+          "SecretStorage": "3.5.0",
+          "h11": "0.16.0",
+          "flatbuffers": "25.12.19",
+          "filelock": "4.2.10",
+          "cffi": "2.1.1",
+          "pycparser": "3.12",
+          "protobuf": "7.36.2"
+        }
+      },
+      "cases": [
+        {
+          "history": 0,
+          "edits": [
+            {
+              "name": "caption-wording",
+              "ms": 1267.990633,
+              "cli_ms": 159.46205400000008,
+              "request_id": "4bfe30ed7695e7312753e672",
+              "state_id": "sha256:3132545bdf4dde4d6e6459490e702edd4613ae4e0165c03b5fceda1f8721ea14",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 8264,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            },
+            {
+              "name": "highlight-color",
+              "ms": 1158.9735400000004,
+              "cli_ms": 200.5399769999999,
+              "request_id": "0fcf22dcbe141ce3fb063375",
+              "state_id": "sha256:b86acf013cfc6f8337f84c11ed148c512aeda9c7434225ba42d6239a6f82e535",
+              "caption_reuse": {
+                "hits": 0,
+                "misses": 3,
+                "copied_bytes": 0,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            },
+            {
+              "name": "speaker-framing",
+              "ms": 1519.1042879999995,
+              "cli_ms": 158.38306099999954,
+              "request_id": "b984a089fbda9d48d9b71d62",
+              "state_id": "sha256:f4210d2f7e2547103664a6f9d2b895e1a0d89b39e262ba663eb9c0ea08f5d239",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 8274,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "pip-position",
+              "ms": 1428.5291050000005,
+              "cli_ms": 167.47335900000053,
+              "request_id": "9d48fc9c390c1e0b0836c80d",
+              "state_id": "sha256:16cd3d41be67f30fd5d24282cd276c927b17ecef88f41bc6e6a3335d0ed9d414",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 8274,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "main-picture",
+              "ms": 1398.7185179999997,
+              "cli_ms": 167.58603199999925,
+              "request_id": "20d64b1faf46d2f2bcebe6a6",
+              "state_id": "sha256:d877c9eb76d48915242a3158e77980084121041f65f878f03676d8b75765c1c5",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 8274,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-main-picture",
+              "ms": 1405.1018129999993,
+              "cli_ms": 155.29953600000044,
+              "request_id": "8ca69216ee1441daaa1a38c3",
+              "state_id": "sha256:16cd3d41be67f30fd5d24282cd276c927b17ecef88f41bc6e6a3335d0ed9d414",
+              "caption_reuse": {
+                "hits": 3,
+                "misses": 0,
+                "copied_bytes": 36426,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-pip-position",
+              "ms": 1320.8208300000006,
+              "cli_ms": 186.2306239999998,
+              "request_id": "bfa627205b7df7194a0cace2",
+              "state_id": "sha256:f4210d2f7e2547103664a6f9d2b895e1a0d89b39e262ba663eb9c0ea08f5d239",
+              "caption_reuse": {
+                "hits": 3,
+                "misses": 0,
+                "copied_bytes": 36426,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-speaker-framing",
+              "ms": 1207.107987000003,
+              "cli_ms": 155.5719420000023,
+              "request_id": "e83fcfa6439aa29cac092099",
+              "state_id": "sha256:b86acf013cfc6f8337f84c11ed148c512aeda9c7434225ba42d6239a6f82e535",
+              "caption_reuse": {
+                "hits": 3,
+                "misses": 0,
+                "copied_bytes": 36426,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-highlight-color",
+              "ms": 1119.3359299999975,
+              "cli_ms": 161.25551899999846,
+              "request_id": "2415acbcae3ba87b3af9c7e0",
+              "state_id": "sha256:3132545bdf4dde4d6e6459490e702edd4613ae4e0165c03b5fceda1f8721ea14",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 8264,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            },
+            {
+              "name": "remove-caption-rule",
+              "ms": 1237.5343749999993,
+              "cli_ms": 202.36939599999823,
+              "request_id": "19d731866c63aa7d1336c351",
+              "state_id": "sha256:3132545bdf4dde4d6e6459490e702edd4613ae4e0165c03b5fceda1f8721ea14",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 8264,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            }
+          ],
+          "restored": {
+            "same_state": true,
+            "fresh_request": true,
+            "history": 0
+          },
+          "problems": [
+            "Audio playback failed/stalled/dropped"
+          ],
+          "playbacks": [
+            {
+              "label": "edited",
+              "video_quality": [
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 31,
+                  "dropped_frames": 1
+                },
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 31,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 62,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 62,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                }
+              ],
+              "maximum_audio_display_phase_ms": 24.76921549479448,
+              "program_drift_ms": 16.666007812500055
+            },
+            {
+              "label": "restored",
+              "video_quality": [
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 32,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 32,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 62,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 62,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                }
+              ],
+              "maximum_audio_display_phase_ms": 12.302764322922485,
+              "program_drift_ms": 16.566154296875055
+            }
+          ]
+        },
+        {
+          "history": 20,
+          "edits": [
+            {
+              "name": "caption-wording",
+              "ms": 1154.5097070000002,
+              "cli_ms": 165.81879099999992,
+              "request_id": "3bfe25e67e02f0d9290c82ba",
+              "state_id": "sha256:682c888bed5cc1c9fcb0b2b0cf8f6636d7905e069d2068a8c43648b6a5f391bf",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 8264,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            },
+            {
+              "name": "highlight-color",
+              "ms": 1456.515019,
+              "cli_ms": 221.08703600000035,
+              "request_id": "9c0b744f2d6abb37898ce43c",
+              "state_id": "sha256:181f4804389a852f5956fde803390126df404bcdf2adbb157438cc0fb19d805d",
+              "caption_reuse": {
+                "hits": 0,
+                "misses": 3,
+                "copied_bytes": 0,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            },
+            {
+              "name": "speaker-framing",
+              "ms": 1554.511509,
+              "cli_ms": 183.0273360000001,
+              "request_id": "2e7041c78dd0b4f4eb5648d2",
+              "state_id": "sha256:bb00d330b88d52c45b2abfd8fb122da026df1a008b942f9d7e59bbb1bd2d7759",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 8274,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "pip-position",
+              "ms": 1560.228994,
+              "cli_ms": 182.59680300000036,
+              "request_id": "778162f64e91e80feff8f91a",
+              "state_id": "sha256:d29037d020318039d41a089b8eb35203611304cf9cfd50263c383f1e884b442b",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 8274,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "main-picture",
+              "ms": 1443.3675129999992,
+              "cli_ms": 187.45024600000033,
+              "request_id": "647fc3539136f22eff562523",
+              "state_id": "sha256:5a51d3cfadbd3405790fd802fc5b082ef34b76f465ef60567c9dd38820d5ebb9",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 8274,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-main-picture",
+              "ms": 1354.4750249999997,
+              "cli_ms": 176.27319500000158,
+              "request_id": "59e0328515d0860ba445f07e",
+              "state_id": "sha256:d29037d020318039d41a089b8eb35203611304cf9cfd50263c383f1e884b442b",
+              "caption_reuse": {
+                "hits": 3,
+                "misses": 0,
+                "copied_bytes": 36426,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-pip-position",
+              "ms": 1358.5538320000014,
+              "cli_ms": 183.79677900000024,
+              "request_id": "403724832318e22b054e838a",
+              "state_id": "sha256:bb00d330b88d52c45b2abfd8fb122da026df1a008b942f9d7e59bbb1bd2d7759",
+              "caption_reuse": {
+                "hits": 3,
+                "misses": 0,
+                "copied_bytes": 36426,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-speaker-framing",
+              "ms": 1254.1687559999991,
+              "cli_ms": 177.93211599999995,
+              "request_id": "2a9b2cc6a5348afd2d6564b8",
+              "state_id": "sha256:181f4804389a852f5956fde803390126df404bcdf2adbb157438cc0fb19d805d",
+              "caption_reuse": {
+                "hits": 3,
+                "misses": 0,
+                "copied_bytes": 36426,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-highlight-color",
+              "ms": 1231.779332000002,
+              "cli_ms": 180.75710700000127,
+              "request_id": "cf400050cd68713ba5d550f7",
+              "state_id": "sha256:682c888bed5cc1c9fcb0b2b0cf8f6636d7905e069d2068a8c43648b6a5f391bf",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 8264,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            },
+            {
+              "name": "remove-caption-rule",
+              "ms": 1223.340157999999,
+              "cli_ms": 160.18226800000048,
+              "request_id": "26bc582b70419b443da4fcf1",
+              "state_id": "sha256:682c888bed5cc1c9fcb0b2b0cf8f6636d7905e069d2068a8c43648b6a5f391bf",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 8264,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            }
+          ],
+          "restored": {
+            "same_state": true,
+            "fresh_request": true,
+            "history": 20
+          },
+          "problems": [
+            "Audio playback failed/stalled/dropped"
+          ],
+          "playbacks": [
+            {
+              "label": "edited",
+              "video_quality": [
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 31,
+                  "dropped_frames": 1
+                },
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 31,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                }
+              ],
+              "maximum_audio_display_phase_ms": 25.567166666653975,
+              "program_drift_ms": 16.566154296875055
+            },
+            {
+              "label": "restored",
+              "video_quality": [
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 31,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 31,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                }
+              ],
+              "maximum_audio_display_phase_ms": 12.481666666679303,
+              "program_drift_ms": 16.565910156250055
+            }
+          ]
+        },
+        {
+          "history": 50,
+          "edits": [
+            {
+              "name": "caption-wording",
+              "ms": 1236.4773420000001,
+              "cli_ms": 176.05589599999985,
+              "request_id": "f30fbe3fec0623c593299883",
+              "state_id": "sha256:ce681909644d85baf1a349c1c1f8f1c2434bfebb3393da2d780e5cb384921442",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 8264,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            },
+            {
+              "name": "highlight-color",
+              "ms": 1262.3131240000002,
+              "cli_ms": 260.22758999999996,
+              "request_id": "40ed94ecfde8c848f399f4ee",
+              "state_id": "sha256:9dd3fb3eaea440febb037736e0bef0700d0e203afbb4a17886d650922517abbd",
+              "caption_reuse": {
+                "hits": 0,
+                "misses": 3,
+                "copied_bytes": 0,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            },
+            {
+              "name": "speaker-framing",
+              "ms": 1471.3180499999999,
+              "cli_ms": 220.46677400000044,
+              "request_id": "95b61538e53144375b6e6678",
+              "state_id": "sha256:81628b35b93d806de7ff77201ddcda87229d26720613ae22370fbfa68b5fb6e6",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 8274,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "pip-position",
+              "ms": 1684.7954279999994,
+              "cli_ms": 213.3924790000001,
+              "request_id": "13efd32fa2f7fc26c0a9a8e4",
+              "state_id": "sha256:eb8b4df0493fde187e53a506b3737a25c0fc43d35647b5ec3f73e4901c982a9d",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 8274,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "main-picture",
+              "ms": 1566.6730929999994,
+              "cli_ms": 248.77511199999935,
+              "request_id": "1fc348da71310542a56cf41b",
+              "state_id": "sha256:294a855be66dfec78db0e64171f69c810fd6cb6dec67bbf8b441aa6a95085aa0",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 8274,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-main-picture",
+              "ms": 1421.566240000002,
+              "cli_ms": 200.40225800000007,
+              "request_id": "217b13fbb223c5a5e4ed7801",
+              "state_id": "sha256:eb8b4df0493fde187e53a506b3737a25c0fc43d35647b5ec3f73e4901c982a9d",
+              "caption_reuse": {
+                "hits": 3,
+                "misses": 0,
+                "copied_bytes": 36426,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-pip-position",
+              "ms": 1494.6887370000004,
+              "cli_ms": 200.79931299999953,
+              "request_id": "f0ed9678e67ab905128a3d97",
+              "state_id": "sha256:81628b35b93d806de7ff77201ddcda87229d26720613ae22370fbfa68b5fb6e6",
+              "caption_reuse": {
+                "hits": 3,
+                "misses": 0,
+                "copied_bytes": 36426,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-speaker-framing",
+              "ms": 1344.5984099999987,
+              "cli_ms": 206.1663329999974,
+              "request_id": "ae8d381ea501a37fa53458f9",
+              "state_id": "sha256:9dd3fb3eaea440febb037736e0bef0700d0e203afbb4a17886d650922517abbd",
+              "caption_reuse": {
+                "hits": 3,
+                "misses": 0,
+                "copied_bytes": 36426,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": false
+            },
+            {
+              "name": "undo-highlight-color",
+              "ms": 1304.3893989999997,
+              "cli_ms": 207.20082199999888,
+              "request_id": "cbeefa06e1afe916fd1be5cc",
+              "state_id": "sha256:ce681909644d85baf1a349c1c1f8f1c2434bfebb3393da2d780e5cb384921442",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 8264,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            },
+            {
+              "name": "remove-caption-rule",
+              "ms": 1058.5695120000019,
+              "cli_ms": 151.1814090000007,
+              "request_id": "c199e0b1070f2e7e5f559669",
+              "state_id": "sha256:ce681909644d85baf1a349c1c1f8f1c2434bfebb3393da2d780e5cb384921442",
+              "caption_reuse": {
+                "hits": 2,
+                "misses": 1,
+                "copied_bytes": 8264,
+                "eligible_jobs": 3
+              },
+              "reused_decoders": true
+            }
+          ],
+          "restored": {
+            "same_state": true,
+            "fresh_request": true,
+            "history": 46
+          },
+          "problems": [
+            "Audio playback failed/stalled/dropped"
+          ],
+          "playbacks": [
+            {
+              "label": "edited",
+              "video_quality": [
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 31,
+                  "dropped_frames": 1
+                },
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 31,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 62,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 62,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                }
+              ],
+              "maximum_audio_display_phase_ms": 25.795284505220025,
+              "program_drift_ms": 16.599845703125055
+            },
+            {
+              "label": "restored",
+              "video_quality": [
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 31,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "review",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 31,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 62,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "middle",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 62,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "main",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                },
+                {
+                  "path": [
+                    "return",
+                    "slots",
+                    "inset",
+                    "video"
+                  ],
+                  "total_frames": 61,
+                  "dropped_frames": 0
+                }
+              ],
+              "maximum_audio_display_phase_ms": 29.62204882811875,
+              "program_drift_ms": -7.812499944748197e-06
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
