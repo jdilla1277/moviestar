@@ -102,3 +102,32 @@ def test_final_partial_sample_interval_keeps_last_frame(tmp_path, loaded_project
     local=CliRunner().invoke(cli,['activity','--interval',str(interval)])
     assert local.exit_code==0,local.output
     assert json.loads(local.stdout)['samples']==result['samples']
+
+
+@pytest.mark.parametrize('audio_duration,count', [('1.1',5),('2.1',9)])
+def test_audio_tail_holds_the_actual_final_video_frame(tmp_path, loaded_project, audio_duration, count):
+    path=tmp_path/'audio-tail.mp4'
+    # The final red frame is distinct from the preceding blue frames. A sample
+    # in the audio-only tail must keep that final red frame.
+    subprocess.run(['ffmpeg','-v','error',
+        '-f','lavfi','-i',"color=blue:size=160x120:rate=10:duration=1,drawbox=color=red:t=fill:enable='gte(t,0.9)'",
+        '-f','lavfi','-i',f'sine=frequency=440:duration={audio_duration}',
+        '-c:v','libx264','-preset','ultrafast','-c:a','aac',str(path)],check=True)
+    result=analyze_file_activity(str(path),{})
+    assert result['summary']['sample_count']==count
+    samples=result['samples']
+    assert samples[4]['decoded_frame']['source_time']['seconds']==0.9
+    assert all(s['frame_state']=='held' for s in samples[5:])
+    assert samples[3]['visual_change']['mean_absolute_luma_difference']>0
+    assert samples[4]['visual_change']['mean_absolute_luma_difference']==0
+    assert all(s['visual_change']['mean_absolute_luma_difference']==0 for s in samples[5:])
+    loaded_project(str(path),frames=False)
+    local=CliRunner().invoke(cli,['activity'])
+    assert local.exit_code==0,local.output
+    assert json.loads(local.stdout)['samples']==samples
+
+    if audio_duration=='2.1':
+        tail=analyze_file_activity(str(path),{'from_seconds':1.25,'to_seconds':2.0})
+        assert tail['summary']['sample_count']==3
+        assert all(s['decoded_frame']['source_time']['seconds']==0.9 for s in tail['samples'])
+        assert all(s['frame_state']=='held' for s in tail['samples'][1:])
