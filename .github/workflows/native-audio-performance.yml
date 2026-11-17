@@ -6,6 +6,7 @@ on:
       - 'app/src/moviestar/**'
       - 'app/tests/test_native_audio*'
       - 'app/tests/test_native_pip_browser.py'
+      - 'app/tests/test_native_still*'
       - 'experiments/live_browser_preview/**'
       - '.github/workflows/native-audio-performance.yml'
 
@@ -20,7 +21,7 @@ jobs:
       fail-fast: false
       matrix:
         canvas: ['360x640', '1080x1920']
-        scenario: ['fades', 'two-tracks', 'visual']
+        scenario: ['fades', 'two-tracks', 'visual', 'stills']
     env:
       MOVIESTAR_CHROME_NO_SANDBOX: '1'
     steps:
@@ -82,6 +83,9 @@ jobs:
         run: |
           if [ '${{ matrix.scenario }}' = visual ]; then
             "$RUNNER_TEMP/native-env/bin/python" experiments/live_browser_preview/edit_benchmark.py \
+              --canvas '${{ matrix.canvas }}' --out "$RUNNER_TEMP/native-audio-evidence/matrix"
+          elif [ '${{ matrix.scenario }}' = stills ]; then
+            "$RUNNER_TEMP/native-env/bin/python" experiments/live_browser_preview/still_benchmark.py \
               --canvas '${{ matrix.canvas }}' --out "$RUNNER_TEMP/native-audio-evidence/matrix"
           else
             "$RUNNER_TEMP/native-env/bin/python" experiments/live_browser_preview/audio_benchmark.py \

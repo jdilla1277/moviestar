@@ -118,6 +118,7 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
   const api={
     get time(){return packet.segments[index].offset+stages[index].api.time;},
     get paused(){return !playing;},get audioState(){return audio.state;},
+    get audioOutputTimestamp(){return audio.getOutputTimestamp?.();},
     get sourceBuffering(){return stages.every(stage=>stage.api.metrics.source_buffering===true);},
     async play(){
       // Do not invalidate the destination while its child seeks are pending.

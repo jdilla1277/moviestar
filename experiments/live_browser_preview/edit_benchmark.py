@@ -18,6 +18,14 @@ from moviestar.spec import append_revision, load_spec, save_spec
 HERE = Path(__file__).resolve().parent
 
 
+def _static_initial(value):
+    if isinstance(value, dict):
+        return {k: _static_initial(v) for k, v in value.items() if k not in ('motion', 'content', 'caption')}
+    if isinstance(value, list):
+        return [_static_initial(v) for v in value]
+    return value
+
+
 def semantic_packet(packet):
     """Keep authored content, excluding request IDs and generated paint assets."""
     if 'segments' in packet:
@@ -26,6 +34,7 @@ def semantic_packet(packet):
             **{k: packet[k] for k in ('range', 'canvas', 'fps')}}
     else:
         result = {k: packet[k] for k in ('range', 'canvas', 'fps', 'initial', 'media', 'samples')}
+        result['initial'] = _static_initial(packet['initial'])
         if packet.get('caption_plane'):
             plane = packet['caption_plane']
             result['caption_plane'] = {'frames': plane['frames'], 'states': [

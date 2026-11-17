@@ -416,8 +416,8 @@ a footage slot and is rejected here. With no timed footage slots anywhere in
 the composition, the existing output cadence defaults to 30 fps; mixed edits
 use the cadence chosen from their timed footage slots.
 
-Watch, export, `model frame`, `model layout`, and `model preview` support these
-scenes, including scene-relative motion and existing visual transitions in video.
+Native local preview, watch, export, `model frame`, `model layout`, and
+`model preview` support these scenes, including scene-relative motion and existing visual transitions in video.
 Standard `screenshot` and thumbnail `inspect` also render these scenes. This
 adds independently timed scenes to a loaded
 project; creating an entirely source-free project is outside this slice.

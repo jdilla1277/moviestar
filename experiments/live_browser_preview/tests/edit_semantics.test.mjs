@@ -25,3 +25,26 @@ test('require complete quality observations for every video in every scene',()=>
  assert.equal(completeVideoQuality(wanted,[quality[0],{...quality[1],dropped_frames:1}]),false);
  assert.equal(completeVideoQuality(wanted,[quality[0],quality[0]]),false);
 });
+
+test('still-image quality means no video decoders, not missing video measurements',()=>{
+ assert.equal(completeVideoQuality({media:[{kind:'image',path:['background']}]},[]),true);
+ assert.equal(completeVideoQuality(p,[]),false);
+});
+test('reject stale, unloaded or incorrectly cropped image layers',()=>{
+ const image={kind:'image',path:['background'],asset:'fresh',object_fit:'cover',object_position:'50% 50%'};
+ const wanted={...p,media:[image]},actual={...s,videos:[],images:[{...image,ready:true}]};
+ assert.equal(checkSnapshot(wanted,actual,0),true);
+ for(const edit of [i=>i.asset='stale',i=>i.ready=false,i=>i.object_fit='contain']){
+  const next=structuredClone(actual);edit(next.images[0]);assert.equal(checkSnapshot(wanted,next,0),false);
+ }
+});
+
+test('compare immutable samples while live DOM initial nodes acquire sampled fields',async()=>{
+ const {semanticPacket}=await import('../edit_semantics.mjs');
+ const packet={...p,initial:{nodes:[{path:['title'],kind:'text',content:'First',style:{}}]},samples:[{nodes:[{path:['title'],content:'First'}]}]};
+ const live=structuredClone(packet);live.initial.nodes[0].content='Later';live.initial.nodes[0].motion=null;live.initial.nodes[0].caption=null;
+ assert.deepEqual(semanticPacket(live),semanticPacket(packet));
+ live.samples[0].nodes[0].content='Stale';assert.notDeepEqual(semanticPacket(live),semanticPacket(packet));
+ const wanted={...packet,media:[],caption_plane:undefined};
+ assert.equal(checkSnapshot(wanted,{...s,videos:[],boxes:[{path:['title'],kind:'text',text:'Wrong',rect:{}}]},0),false);
+});

@@ -5,7 +5,7 @@ let resolveReady,rejectReady,packet,video,audio,meter,frameCallback,stopTimer,cu
 const controller=new AbortController(),audit=new URLSearchParams(location.search).has('audit');
 const pendingSeeks=new Set();
 let lastIndex=-1, playing=false, readyDone=false, metadataReady=false, imageReady=false,finishing=false,playGeneration=0;
-let videoGroup,reviewAudio,outputMixer;
+let videoGroup,reviewAudio,outputMixer,sceneClock;
 let playbackIdentity;
 let captionLayer,captionImages=[],captionState=-1;
 const videos=[];
@@ -239,7 +239,7 @@ async function initialize(){
     cuts=await mountCuts(packet,controller.signal,metrics);if(disposed){cuts.dispose();return;}
     metrics.source_buffering=cuts.sourceBuffering;metrics.prepared_at=Date.now();resolveReady(true);return;
   }
-  metrics.source_buffering=await enableSourceBuffering(controller.signal);if(disposed)return;
+  metrics.source_buffering=packet.media.some(m=>m.kind==='video')?await enableSourceBuffering(controller.signal):false;if(disposed)return;
   Object.assign(window.frameElement.style,{width:packet.canvas.width+'px',height:packet.canvas.height+'px'});
   const measured=await render({...packet.initial,paint_dir:'native',live_dom:true});
   if(disposed)return;
@@ -306,7 +306,10 @@ async function initialize(){
       else item.callback=media.requestVideoFrameCallback(observe);
     }
   }
-  if(!video)throw Error('Native preview audio carrier is missing');
+  if(!video){
+    if(packet.clock!=='scene')throw Error('Native preview audio carrier is missing');
+    await initializeStill(images);return;
+  }
   const {createVideoGroup}=await import('./preview_native_videos.mjs');if(disposed)return;
   videoGroup=createVideoGroup(videos);
   shared=packet.cut_segment?window.parent.moviestarCutShared:null;
@@ -332,6 +335,30 @@ async function initialize(){
   }
   if(metadataReady&&Math.abs(video.currentTime-packet.source_start)>1e-6)video.currentTime=packet.source_start;
   await Promise.all(images);imageReady=true;checkReady();
+}
+async function initializeStill(images){
+  shared=packet.cut_segment?window.parent.moviestarCutShared:null;
+  if(packet.cut_segment&&!shared)throw Error('Native cut audio context is unavailable');
+  audio=shared?.audio??new AudioContext({sampleRate:48000});
+  if(!shared){
+    const {createPreparedAudio,createMixedOutput}=await import('./preview_native_audio.mjs');
+    if(disposed)return;
+    // Keep an output graph ready for a later audio-only revision of a silent
+    // scene. Atomic audio replacement can then reuse this same still player.
+    outputMixer=await createMixedOutput(audio,metrics,controller.signal,{audit,
+      capturePcm:new URLSearchParams(location.search).has('audit_pcm')});
+    meter=outputMixer.node;
+    reviewAudio=createPreparedAudio(audio,meter,controller.signal,packet.range.to-packet.range.from);
+    const prepared=await reviewAudio.prepare(packet.audio_plane,controller.signal);prepared.commit();
+  }
+  await Promise.all(images);if(disposed)return;
+  const {createSceneClock}=await import('./preview_native_scene_clock.mjs');if(disposed)return;
+  sceneClock=createSceneClock({packet,metrics,apply,audio:reviewAudio,onError:fail,
+    resume:()=>audio.resume(),contextTime:()=>audio.currentTime,drain:()=>outputMixer?.drain(),
+    present:frame=>window.moviestarLiveStage.onPresented?.(frame),
+    end:()=>window.moviestarLiveStage.onSegmentEnd?.(Date.now())});
+  apply(0);await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  if(disposed)return;metrics.prepared_at=Date.now();resolveReady(true);
 }
 async function seekTo(at){
   await ready;
@@ -369,10 +396,11 @@ async function seekTo(at){
 }
 window.moviestarLiveStage={ready,metrics,
   get packet(){return packet;},
-  get time(){if(cuts)return cuts.time;return video?Math.max(0,video.currentTime-packet.source_start):0;},
-  get paused(){return cuts?cuts.paused:video?.paused??true;},
+  get time(){if(cuts)return cuts.time;if(sceneClock)return sceneClock.time;return video?Math.max(0,video.currentTime-packet.source_start):0;},
+  get paused(){return cuts?cuts.paused:sceneClock?sceneClock.paused:video?.paused??true;},
   get audioState(){return cuts?cuts.audioState:audio?.state;},
   get error(){return metrics.error;},
+  get audioOutputTimestamp(){return cuts?cuts.audioOutputTimestamp:audio?.getOutputTimestamp?.();},
   async prepareCaptionUpdate(next,signal){
     await ready;signal?.throwIfAborted();
     if(disposed||metrics.error||playbackIdentity!==playbackKey(next)
@@ -403,6 +431,7 @@ window.moviestarLiveStage={ready,metrics,
     };
   },
   holdEnd(){
+    if(sceneClock){sceneClock.holdEnd();return;}
     if(disposed||!packet.cut_segment||!packet.prepared_audio)return;
     // The parent calls inside the final frame's interval, only when its
     // independent mix owns the cut clock. Keep both canonical end pictures
@@ -412,10 +441,12 @@ window.moviestarLiveStage={ready,metrics,
     metrics.held_quality=quality();
   },
   async settleEnd(){
+    if(sceneClock){sceneClock.pause();apply((packet.samples.length-1)/packet.fps);return;}
     if(videos.length>1){this.pause();await seekTo((packet.samples.length-1)/packet.fps);}
   },
   async play(){
     if(cuts)return cuts.play();
+    if(sceneClock)return sceneClock.play();
     this.pause();
     const attempt=playGeneration;
     const active=()=>!disposed&&attempt===playGeneration;
@@ -443,11 +474,11 @@ window.moviestarLiveStage={ready,metrics,
       if(videoGroup)await videoGroup.play();else await video.play();
     }catch(error){if(active()){fail(error);throw error;}}
   },
-  pause(){if(cuts){cuts.pause();return;}if(playing&&outputMixer)metrics.pause_context_time=audio.currentTime;reviewAudio?.pause();if(playing&&videos.length){videos.forEach(item=>recordVideoQuality(item,'before-pause'));recordQuality();}++playGeneration;playing=false;clearTimeout(stopTimer);stopTimer=null;videoGroup?.pause();video?.pause();},
-  async seek(at){if(cuts)return cuts.seek(at);this.pause();try{if(await seekTo(at))metrics.finished=false;}catch(error){fail(error);throw error;}},
+  pause(){if(cuts){cuts.pause();return;}if(sceneClock){sceneClock.pause();return;}if(playing&&outputMixer)metrics.pause_context_time=audio.currentTime;reviewAudio?.pause();if(playing&&videos.length){videos.forEach(item=>recordVideoQuality(item,'before-pause'));recordQuality();}++playGeneration;playing=false;clearTimeout(stopTimer);stopTimer=null;videoGroup?.pause();video?.pause();},
+  async seek(at){if(cuts)return cuts.seek(at);if(sceneClock){await sceneClock.seek(at);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return;}this.pause();try{if(await seekTo(at))metrics.finished=false;}catch(error){fail(error);throw error;}},
   snapshot(){
     if(cuts)return cuts.snapshot();
-    return {request_id:packet.request_id,state_id:packet.state_id,time:this.time,source:sourceFrame(),
+    return {request_id:packet.request_id,state_id:packet.state_id,time:this.time,source:sceneClock?null:sourceFrame(),
       audio:reviewAudio?.snapshot(),
       captions:packet.caption_plane?.states[captionState]?.cues??[],
       videos:videos.map(item=>({path:item.path,asset:item.video.currentSrc.match(/\/assets\/([a-f0-9]{24})(?:[?#]|$)/)?.[1]??null,audio_gain:item.audioGain?.gain.value,audio_connected:Boolean(item.audioSource),source:sourceFrame(item),media_time:item.video.currentTime,paused:item.video.paused,seeking:item.video.seeking,ready_state:item.video.readyState})),
@@ -458,7 +489,7 @@ window.moviestarLiveStage={ready,metrics,
       })};
   },
   dispose(){
-    if(disposed)return;this.pause();disposed=true;cuts?.dispose();reviewAudio?.dispose();outputMixer?.dispose();for(const cancel of pendingSeeks)cancel();controller.abort();
+    if(disposed)return;this.pause();disposed=true;sceneClock?.dispose();cuts?.dispose();reviewAudio?.dispose();outputMixer?.dispose();for(const cancel of pendingSeeks)cancel();controller.abort();
     if(frameCallback)video?.cancelVideoFrameCallback(frameCallback);
     for(const item of videos)if(item.callback)item.video.cancelVideoFrameCallback(item.callback);
     if(videoGroup)videoGroup.dispose();else if(videos.length){for(const item of videos){item.video.removeAttribute('src');item.video.load();}}else if(video){video.removeAttribute('src');video.load();}clearTimeout(stopTimer);
