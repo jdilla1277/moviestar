@@ -10,7 +10,22 @@ export function semanticPacket(p){
 export function checkSnapshot(p,s,at){
  const t=at-(p.range.from-(s.window_start??p.range.from));
  const near=(a,b)=>Number.isFinite(a)&&Math.abs(a-b)<=1;
- for(const n of p.initial.nodes){
+ const pose=p.pose_boxes?.[Math.round(t*p.fps)];
+ if(pose){
+  for(const expected of pose){
+   const actual=s.boxes.find(b=>JSON.stringify(b.path)===JSON.stringify(expected.path));
+   if(!actual||!['x','y','width','height'].every(k=>near(actual.rect[k],expected.rect[k])))return false;
+   if(expected.caption_words){
+    if(actual.text!==expected.text||actual.caption_words?.length!==expected.caption_words.length)return false;
+    for(let i=0;i<expected.caption_words.length;i++){
+     const a=actual.caption_words[i],e=expected.caption_words[i];
+     if(['cue_id','word_index','text','active','color'].some(k=>a[k]!==e[k])||!['x','y','width','height'].every(k=>near(a.rect[k],e.rect[k])))return false;
+    }
+    if(actual.text_lines?.length!==expected.text_lines.length)return false;
+   }
+  }
+ }
+ for(const n of pose?[]:p.initial.nodes){
   const values=['left','top','width','height'].map(k=>n.style?.[k]);
   if(!values.every(v=>typeof v==='string'&&/^-?[\d.]+px$/.test(v)))continue;
   const box=s.boxes.find(b=>JSON.stringify(b.path)===JSON.stringify(n.path));

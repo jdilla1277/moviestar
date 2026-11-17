@@ -46,6 +46,8 @@ _LAYOUT = {
     "justify_items": "justify-items", "justify_self": "justify-self",
 }
 _STYLE = {
+    "highlight_color": "--moviestar-highlight-color", "highlight_mode": "--moviestar-highlight-mode",
+    "stroke_color": "-webkit-text-stroke-color", "stroke_width": "-webkit-text-stroke-width",
     "background_color": "background-color", "color": "color", "font_family": "font-family",
     "font_size": "font-size", "font_weight": "font-weight", "line_height": "line-height",
     "text_align": "text-align", "white_space": "white-space", "border_color": "border-color",
@@ -67,7 +69,7 @@ _LENGTH_PROPERTIES = {
     "grid-template-columns", "grid-template-rows", "grid-auto-columns", "grid-auto-rows",
     "gap", "row-gap", "column-gap", "padding", "margin", "width", "height",
     "min-width", "max-width", "min-height", "max-height", "top", "right", "bottom", "left",
-    "font-size", "border-width", "border-radius",
+    "font-size", "border-width", "border-radius", "-webkit-text-stroke-width",
 }
 
 
@@ -89,6 +91,8 @@ def _css(properties: dict, allowed: dict[str, str], path: str) -> dict[str, str]
         if isinstance(raw_value, (int, float)) and not math.isfinite(raw_value):
             raise SpatialLayoutError(f"{path}.{raw_key}: expected a finite CSS value")
         value = str(raw_value)
+        if css_key == '--moviestar-highlight-mode' and value not in {'auto', 'none', 'spoken-word'}:
+            raise SpatialLayoutError(f'{path}.{raw_key}: expected auto, none, or spoken-word')
         if not value.strip() or _UNSAFE_CSS.search(value):
             raise SpatialLayoutError(f"{path}.{raw_key}: unsafe or empty CSS value")
         if isinstance(raw_value, (int, float)) and css_key in _LENGTH_PROPERTIES:
@@ -181,13 +185,14 @@ def prepare_layout_frame(frame: dict, canvas: dict) -> dict:
     scene_layout = _resolve_styles({'layout': root_properties}, frame.get('format_rules', []), {},
                                     size, [frame.get('scene_id') or 'scene'], diagnostics, root=True)
 
-    def prepare_node(node: dict) -> dict:
+    def prepare_node(node: dict, inherited_mode=scene_layout['style'].get('--moviestar-highlight-mode', 'auto')) -> dict:
         if not isinstance(node, dict) or not isinstance(node.get("occurrence_path"), list):
             raise SpatialLayoutError("frame.children: expected identified nodes")
         path = node["occurrence_path"]
         where = "/".join(path)
         resolved = _resolve_styles(node.get('base_rules', node), node.get('format_rules', []),
                                    node.get('local_overrides', {}), size, path, diagnostics)
+        mode = resolved['style'].get('--moviestar-highlight-mode', inherited_mode)
         kind = node.get("type", "component")
         content = node.get("content")
         text = content.get("text", "") if kind == "text" and isinstance(content, dict) else ""
@@ -195,9 +200,21 @@ def prepare_layout_frame(frame: dict, canvas: dict) -> dict:
         if kind == "caption":
             if not isinstance(caption, dict):
                 raise SpatialLayoutError(f"{where}: resolve caption cues with model frame first")
+            from copy import deepcopy
+            caption = deepcopy(caption)
+            for cue in caption['cues']:
+                effective = cue.get('highlight_mode', 'none') if mode == 'auto' else mode
+                if effective == 'spoken-word':
+                    if not cue.get('word_spans'):
+                        diagnostics.append({'code': 'invalid_caption_tokens', 'severity': 'error',
+                            'path': path, 'overlay_id': cue['id'], 'message': cue.get('word_error') or
+                            'Regenerate captions with word timing or correct the cue text and tokens together.'})
+                    cue['highlight_mode'] = effective
+                elif 'highlight_mode' in cue or mode != 'auto':
+                    cue['highlight_mode'] = 'none';cue['active_word'] = None
             text = caption["text"]
         prepared = {"path": path, "kind": kind, "content": text, **resolved,
-                    "children": [prepare_node(child) for child in node.get("children", [])]}
+                    "children": [prepare_node(child, mode) for child in node.get("children", [])]}
         if node.get('motion'):
             try:
                 prepared['motion_transform'] = bool(set(node['motion']) - {'opacity'})

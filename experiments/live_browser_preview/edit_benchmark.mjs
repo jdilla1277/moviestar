@@ -56,6 +56,29 @@ async function checkPlayback(label,wanted){
   report.child_metrics=await browser.evaluate(`[...document.querySelector('iframe:not(.pending)').contentDocument.querySelectorAll('iframe')].map(f=>f.contentWindow.moviestarLiveStage.metrics)`);
   playback.video_quality=await browser.evaluate(`[...document.querySelector('iframe:not(.pending)').contentDocument.querySelectorAll('iframe')].flatMap(f=>f.contentWindow.moviestarLiveStage.metrics.video_quality??[])`);
   if(playback.error||playback.stalls||!completeVideoQuality(wanted,playback.video_quality))result.problems.push('Audio playback failed/stalled/dropped');
+  if(fixture.spatial_caption_playback){
+    const packets=wanted.segments?wanted.segments.map(s=>s.packet):[wanted];
+    const observed=wanted.segments?report.child_metrics:[playback];
+    const walk=function*(nodes){for(const n of nodes??[]){yield n;yield*walk(n.children);}};
+    report.spatial_caption_playback={observations:0,max_apply_lateness_ms:0};
+    for(let i=0;i<packets.length;i++)for(const frame of observed[i]?.frames??[]){
+      const p=packets[i],video=p.media.find(m=>m.kind==='video'||m.kind===undefined);
+      const local=frame.media_time-(video?.source_start??0),sample=p.samples[Math.max(0,Math.min(p.samples.length-1,Math.round(local*p.fps)))];
+      const captions=[...walk(sample.nodes)].filter(n=>n.caption);
+      if(frame.spatial_captions?.length!==captions.length){result.problems.push('Missing spatial caption playback observations');continue;}
+      for(const n of captions){
+        const actual=frame.spatial_captions.find(c=>JSON.stringify(c.path)===JSON.stringify(n.path));
+        const words=n.caption.cues.flatMap(c=>c.highlight_mode==='spoken-word'?(c.word_spans??[]).map((w,index)=>({cue_id:c.id,
+          word_index:index,text:Array.from(c.text).slice(w.start,w.end).join(''),active:c.active_word===index})):[]);
+        if(actual?.text!==n.content||JSON.stringify(actual.words)!==JSON.stringify(words))result.problems.push('Wrong spatial caption on presented frame');
+      }
+      report.spatial_caption_playback.observations++;
+      const late=frame.caption_applied_at-frame.display_time;
+      report.spatial_caption_playback.max_apply_lateness_ms=Math.max(report.spatial_caption_playback.max_apply_lateness_ms,late);
+      if(!Number.isFinite(late)||late>50)result.problems.push('Spatial caption application more than 50ms late');
+    }
+    if(!report.spatial_caption_playback.observations)result.problems.push('No spatial caption playback observations');
+  }
   report.clock_diagnostics=describeAudioClocks(playback);
   if(wanted.audio_plane&&!playback.prepared_audio?.prepared)result.problems.push('Missing expected prepared audio during playback');
   if(playback.prepared_audio?.prepared){

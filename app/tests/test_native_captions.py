@@ -249,11 +249,14 @@ def test_unplaced_live_recipe_does_not_block_a_spatial_window(live_project):
     assert packet['samples'][30]['nodes'][2]['content'] == 'Second\nline'
 
 
-def test_spatial_highlights_are_rejected_instead_of_silently_disappearing(live_project):
+def test_spatial_highlights_keep_word_states_without_preset_planes(live_project):
     spec, _, root = live_project
     spec['overlays'] = [cue()]; save_spec(spec, cwd=root)
-    with pytest.raises(NativePreviewUnsupported, match='spatial caption'):
-        compile_snapshot(read_snapshot(root, 0, 5))
+    packet, _ = compile_snapshot(read_snapshot(root, 0, 5))
+    assert 'caption_plane' not in packet
+    state = packet['samples'][9]['nodes'][2]['caption']['cues'][0]
+    assert state['active_word'] == 0
+    assert state['highlight_color'] == '#ffe94a'
 
 
 def test_live_recipe_uses_project_word_corrections(pip_project, monkeypatch):
@@ -303,3 +306,25 @@ def test_spatial_to_captioned_preset_cut_uses_both_canonical_caption_paths(live_
     assert spatial['samples'][0]['nodes'][2]['content'] == 'Second\nline'
     assert preset['caption_plane']['states'][0]['cues'][0]['text'] == 'Second\nline'
     assert (root/'moviestar/spec.json').read_bytes() == before
+
+
+@pytest.mark.parametrize('frozen',[False,True])
+def test_structured_recipe_refresh_uses_word_corrections_and_trim(live_project,monkeypatch,frozen):
+    spec,_,root=live_project;monkeypatch.chdir(root)
+    inject_synthetic_transcript(root,[make_word('First',1,1.5),make_word('second',1.7,3)],
+        [make_segment('First second',1,3)])
+    runner=CliRunner()
+    result=runner.invoke(cli,['captions','generate','--highlight','spoken-word'])
+    assert result.exit_code==0,result.output
+    result=runner.invoke(cli,['captions','rules','add','--replace','First=Fresh'])
+    assert result.exit_code==0,result.output
+    spec=read_snapshot(root,0,5)['spec'];spec['captions'][0]['frozen']=frozen
+    spec['composition'][0]['slots'][0].update(source_from='0:00:02.000',source_to='0:00:07.000')
+    spec['spatial']['scenes']['scene']['layout']['children'][0]['bindings']['clip']['source']={'start':2,'end':7}
+    save_spec(spec,cwd=root);before=(root/'moviestar/spec.json').read_bytes()
+    packet,_=compile_snapshot(read_snapshot(root,0,5))
+    state=packet['samples'][0]['nodes'][2]['caption']['cues'][0]
+    assert state['text']==('First second' if frozen else 'second')
+    assert state['active_word']==0
+    assert 'caption_plane' not in packet
+    assert (root/'moviestar/spec.json').read_bytes()==before

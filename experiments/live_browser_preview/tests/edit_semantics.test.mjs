@@ -48,3 +48,15 @@ test('compare immutable samples while live DOM initial nodes acquire sampled fie
  const wanted={...packet,media:[],caption_plane:undefined};
  assert.equal(checkSnapshot(wanted,{...s,videos:[],boxes:[{path:['title'],kind:'text',text:'Wrong',rect:{}}]},0),false);
 });
+
+test('spatial captions require canonical glyph pose, color and active word',()=>{
+ const word={cue_id:'cue',word_index:0,text:'Hello',active:true,color:'rgb(0, 255, 0)',rect:{x:12,y:22,width:50,height:25}};
+ const box={path:['group','words'],rect:{x:10,y:20,width:100,height:50},text:'Hello',caption_words:[word],text_lines:[{x:12,y:22,width:50,height:25}]};
+ const wanted={range:{from:0,to:5},fps:30,initial:{nodes:[]},media:[],pose_boxes:{6:[box]}};
+ const actual={boxes:[structuredClone(box)],videos:[]};
+ assert.equal(checkSnapshot(wanted,actual,.2),true);
+ for(const edit of [w=>w.active=false,w=>w.color='rgb(255, 255, 255)',w=>w.rect.x+=2,w=>w.text='Stale']){
+  const next=structuredClone(actual);edit(next.boxes[0].caption_words[0]);assert.equal(checkSnapshot(wanted,next,.2),false);
+ }
+ const next=structuredClone(actual);next.boxes[0].rect.x+=2;assert.equal(checkSnapshot(wanted,next,.2),false);
+});

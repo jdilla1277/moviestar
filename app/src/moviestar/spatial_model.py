@@ -793,10 +793,12 @@ def _place_captions(spec: dict, nodes: list[dict], at_s: float, diagnostics: lis
 
     tracks = {recipe["track"] for recipe in spec.get("captions", [])}
     cues_by_track: dict[str, list[dict]] = {}
+    records = {}
     for record in spec.get("overlays", []):
         if record.get("kind") != "caption":
             continue
         track = record["track"]
+        records[record["id"]] = record
         tracks.add(track)
         start = parse_timecode_string(record["from"], "caption.from")
         end = parse_timecode_string(record["to"], "caption.to")
@@ -811,6 +813,19 @@ def _place_captions(spec: dict, nodes: list[dict], at_s: float, diagnostics: lis
                 content = node.get("content") or {}
                 track = None if content.get("empty") else content.get("track", "captions")
                 cues = sorted(cues_by_track.get(track, []), key=lambda cue: (cue["from_s"], cue["id"]))
+                from moviestar.spatial_caption import highlight_state
+                cues = deepcopy(cues)
+                for cue in cues:
+                    record = records[cue['id']]
+                    requested = (record.get('highlight') or {}).get('mode') == 'spoken-word'
+                    if requested or record.get('tokens'):
+                        cue['highlight_mode'] = 'spoken-word' if requested else 'none'
+                        try:
+                            cue.update(highlight_state(record, at_s, force=True))
+                        except ValueError as exc:
+                            cue['word_error'] = str(exc)
+                            diagnostics.append({'code': 'invalid_caption_tokens', 'severity': 'warning',
+                                'path': node['occurrence_path'], 'overlay_id': cue['id'], 'message': str(exc)})
                 node["caption"] = {"track": track, "visible": bool(cues),
                                    "text": "\n".join(cue["text"] for cue in cues),
                                    "cues": deepcopy(cues)}

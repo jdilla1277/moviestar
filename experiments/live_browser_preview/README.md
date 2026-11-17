@@ -1143,3 +1143,26 @@ with the unchanged 3,000 ms edit gate. Existing audio and visual reference jobs
 remain enabled. Runtime/producer identities, commands, source assets, screenshots,
 traces and first failures are retained. No failed run is replaced by a passing
 rerun and no full-preview video is encoded to satisfy the timing gate.
+
+### Highlighted captions inside reusable components
+
+```bash
+python experiments/live_browser_preview/spatial_caption_benchmark.py \
+  --canvas 360x640 --out /tmp/spatial-caption-360-first
+python experiments/live_browser_preview/spatial_caption_benchmark.py \
+  --canvas 1080x1920 --out /tmp/spatial-caption-1080-first
+```
+
+Each raster runs PiP footage with camera cuts and an image card with independent
+sound, at undo depths 0/20/50. Each case measures five actual CLI edits (word
+correction, inherited highlight color, font size, placement and parent motion)
+and five undos, including command completion and the correct fresh visible
+revision. The same 3,000 ms limit applies. Four seek poses compare canonical
+export layout, active word, computed color, glyph rectangles (within one pixel)
+and line count; six ready-pose crops compare opaque caption pixels (maximum
+channel error eight). Edited and restored playback retain the existing complete
+video-quality, audio cue, output-clock phase and drift checks. Generated/frozen
+word timing makes image-card captions valid without inventing a video carrier;
+live recipe corrections/trim refresh have separate package tests. CI installs a
+fresh wheel, records source/producer hashes and retains the first evidence on
+success or failure. Use a new output directory for every run.
