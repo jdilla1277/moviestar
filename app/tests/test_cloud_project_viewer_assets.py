@@ -1,4 +1,4 @@
-"""Project-scoped download links and an explicit browser sharing handoff."""
+"""Project-scoped authenticated download links."""
 import json
 
 import pytest
@@ -50,29 +50,3 @@ def test_foreign_or_unscoped_download_paths_are_rejected(remote, path):
     remote["path"] = path
     result, body = invoke("assets", P)
     assert result.exit_code == 1 and body["status"] == "invalid_response"
-
-
-def test_sharing_handoff_requires_current_owner_access_and_never_sends_an_invitation(remote):
-    result, body = invoke("share", P)
-    assert result.exit_code == 0, result.output
-    assert body["status"] == "browser_required"
-    assert body["url"] == f"https://service.invalid/account/projects?project={P}#project-sharing"
-    assert all(not options for _, options in remote["calls"])
-    remote["role"] = "viewer"
-    result, body = invoke("share", P)
-    assert result.exit_code == 1 and body["status"] == "permission_denied"
-    assert "url" not in body
-
-
-def test_disabled_sharing_fails_before_reading_the_project(remote):
-    remote["sharing"] = False
-    result, body = invoke("share", P)
-    assert result.exit_code == 1 and body["status"] == "unsupported_operation"
-    assert len(remote["calls"]) == 1
-
-
-def test_sharing_handoff_rejects_another_projects_ownership_receipt(remote):
-    remote["returned_id"] = R
-    result, body = invoke("share", P)
-    assert result.exit_code == 1 and body["status"] == "invalid_response"
-    assert "url" not in body

@@ -114,32 +114,6 @@ def _list(command, project, limit, cursor, shared=False):
 
 
 def register_asset_commands(cloud, projects):
-    @projects.command("share")
-    @click.argument("project_id")
-    def share_project(project_id):
-        """Open the website journey to invite viewers and manage project access.
-
-        Returns a browser link after checking ownership. Sends no invitation.
-        """
-        command = "cloud projects share"
-        _ids(command, project_id)
-        endpoint, credential = service._connection(command)
-        capabilities = service._capabilities(command, endpoint, credential)
-        sharing = capabilities.get("project_sharing")
-        if not isinstance(sharing, dict) or sharing.get("contract_version") != "recipient-projects-v1":
-            service._fail(command, "unsupported_operation", "Project sharing is unavailable on this service.")
-        status, body = service._request(f"{endpoint}/projects/{project_id.lower()}", credential)
-        if status != 200:
-            _fail(command, status, body)
-        project = service._project(body)
-        if project is None or project["id"].lower() != project_id.lower():
-            service._fail(command, "invalid_response", "Could not confirm the project's current ownership.")
-        if project.get("access", {}).get("role") != "owner":
-            service._fail(command, "permission_denied", "Viewers cannot invite others or manage project access.")
-        url = endpoint.removesuffix("/api/v1/account/cloud") + f"/account/projects?project={project_id.lower()}#project-sharing"
-        click.echo(json.dumps({"command": command, "status": "browser_required", "project_id": project_id.lower(), "url": url,
-            "hint": "Open this link while signed in to the same account. Choose Share project to invite a viewer, see access, or remove it. No invitation has been sent."}, indent=2))
-
     @cloud.group("assets")
     def assets():
         """Find existing ready account assets. No upload or local editing."""
