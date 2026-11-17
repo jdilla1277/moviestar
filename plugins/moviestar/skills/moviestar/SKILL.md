@@ -67,6 +67,9 @@ commands. Before delivery, follow [render verification](references/verification.
 - Do not submit feedback, create accounts, subscribe an email address, download
   large models, or install optional dependencies unless the user requested or
   approved that action.
+- User-approved feedback can use the CLI's existing Moviestar account connection
+  for report follow-up; `feedback --anonymous` omits that connection. Contact is
+  resolved by the service, never by searching device files or browser profiles.
 
 ## Finish with evidence
 
