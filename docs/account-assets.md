@@ -130,3 +130,38 @@ Hosted MCP uses `moviestar_list_assets` with `collection: "shared"` (or `"owned"
 the default), plus optional `limit` and `cursor`. The website exposes the same
 collection under **Assets → Shared with me**. Individual asset invitations are
 not supported yet; this collection discovers access through project shares.
+
+## Rename an asset's display name
+
+```sh
+moviestar cloud assets rename ASSET_ID "Interview opening"
+```
+
+The command reads the current owned asset's name before writing. Its ID,
+original filename, bytes, project references and sharing permissions stay the
+same. All project and shared-list views show the new `display_name`.
+Existing assets default to their original filename. Names are trimmed,
+1–240 Unicode characters, and cannot contain control or bidirectional
+formatting characters. Viewers cannot rename an asset.
+
+If the result is uncertain, preserve `expected_display_name` from the response:
+
+```sh
+moviestar cloud assets rename ASSET_ID "Interview opening" --expected-name "Previous name"
+```
+
+Retry the same target and expected names. An `asset_changed` conflict means a
+different name is current; read it and review the change before replacing it.
+The CLI does not automatically retry writes. Older services fail with
+`unsupported_operation` before sending a rename.
+
+API: `PATCH /api/v1/account/cloud/assets/ASSET_ID`, using your API key or approved
+installation, with JSON `{"display_name":"Interview opening","expected_display_name":"Previous name"}`.
+Success returns `status: "renamed"`, `changed` and the updated `asset`.
+Repeating the request confirms success if the desired name is already current;
+it cannot overwrite a different name saved since the first request.
+
+MCP: `moviestar_rename_asset` takes `asset_id`, `display_name` and
+`expected_display_name`. Read `display_name` from an asset listing first (falling
+back to `filename` for older responses). The website offers **Rename asset** in
+an owned asset's detail view and keeps the original filename visible there.

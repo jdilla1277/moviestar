@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from urllib.parse import urlencode
 from uuid import uuid4
 
@@ -15,6 +16,7 @@ KINDS = {"video", "audio", "image", "transcript"}
 HINTS = {**service._HINTS,
     "not_found": "This project, asset or reference is unavailable to the connected account.",
     "project_assets_not_shared": "This invitation includes project metadata only. Ask the owner for a new invitation that includes assets.",
+    "asset_changed": "This asset was renamed elsewhere. Read its current display name and review your change before retrying.",
     "asset_not_ready": "Complete asset validation before adding it to a project.",
     "reference_removed": "That attachment remains removed. Use a new key only to deliberately add it again.",
     "idempotency_conflict": "Retry this attachment's original asset/key, or use a new key for another attachment."}
@@ -57,7 +59,13 @@ def _asset(raw):
             or not isinstance(raw.get("metadata"), dict) or "ready_at" not in raw
             or (raw["ready_at"] is not None and not isinstance(raw["ready_at"], str))):
         return None
-    return {k: raw[k] for k in ("id", "owner_account_id", "kind", "format", "filename", "content_type", "size_bytes", "state", "metadata", "created_at", "ready_at")}
+    result = {k: raw[k] for k in ("id", "owner_account_id", "kind", "format", "filename", "content_type", "size_bytes", "state", "metadata", "created_at", "ready_at")}
+    if "display_name" in raw:
+        name = raw["display_name"]
+        if not isinstance(name, str) or not 1 <= len(name) <= 240:
+            return None
+        result["display_name"] = name
+    return result
 
 
 def _reference(raw, project, asset):
@@ -117,6 +125,45 @@ def register_asset_commands(cloud, projects):
     @cloud.group("assets")
     def assets():
         """Find existing ready account assets. No upload or local editing."""
+
+    @assets.command("rename")
+    @click.argument("asset_id")
+    @click.argument("display_name")
+    @click.option("--expected-name", help="Exact display name previously read; retain it when retrying an uncertain rename. Otherwise read it first.")
+    def rename_asset(asset_id, display_name, expected_name):
+        """Rename an owned asset's display name everywhere it is referenced.
+
+        The original filename and bytes stay unchanged. If another name is
+        current, stop and review it. After an uncertain reply retry with the
+        SAME --expected-name; never silently replace a newer name.
+        """
+        command = "cloud assets rename"
+        valid = (isinstance(display_name, str) and display_name == display_name.strip() and 1 <= len(display_name) <= 240
+                 and not re.search(r"[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]", display_name))
+        if not valid or (expected_name is not None and (not 1 <= len(expected_name) <= 240 or "\x00" in expected_name)):
+            service._fail(command, "invalid_request", "Use a trimmed display name of 1–240 characters without control or bidirectional formatting characters.")
+        _ids(command, asset_id)
+        endpoint, credential = _connection(command, "assets:rename")
+        if expected_name is None:
+            url = endpoint.removesuffix("/api/v1/account/cloud") + f"/api/v1/assets/{asset_id.lower()}"
+            status, body = service._request(url, credential)
+            if status != 200:
+                _fail(command, status, body)
+            original = _asset(body.get("asset"))
+            if original is None or original["id"].lower() != asset_id.lower():
+                service._fail(command, "invalid_response", "Could not read this owned asset's current display name.")
+            expected_name = original.get("display_name", original["filename"])
+        fields = {"asset_id": asset_id.lower(), "display_name": display_name, "expected_display_name": expected_name}
+        status, body = service._request(f"{endpoint}/assets/{asset_id.lower()}", credential, method="PATCH",
+                                       payload={"display_name": display_name, "expected_display_name": expected_name})
+        if status != 200 and 400 <= status < 500:
+            _fail(command, status, body, rename_outcome="rejected", **fields)
+        result = _asset(body.get("asset"))
+        if (status != 200 or body.get("status") != "renamed" or type(body.get("changed")) is not bool or result is None
+                or result["id"].lower() != asset_id.lower() or result.get("display_name") != display_name):
+            service._fail(command, "rename_unconfirmed", "The rename may have succeeded. Read the asset, or retry with the same --expected-name. No automatic retry was sent.",
+                          rename_outcome="unknown", **fields)
+        click.echo(json.dumps({"command": command, "status": "renamed", "changed": body["changed"], "asset": result}, indent=2))
 
     @assets.command("list")
     @click.option("--limit", type=click.IntRange(1, 100), default=20, show_default=True)
