@@ -154,7 +154,7 @@ def register_project_download(projects):
     def download_project(project_id, out):
         """Download ready project originals and a manifest without a browser.
 
-        Supports owners and accepted asset viewers. Requires the service's
+        Supports owners and accepted asset viewers/editors. Requires the service's
         project-download-v1 manifest. No local loading, editing or media tools
         run; use the downloaded originals with local editing commands afterward.
         """

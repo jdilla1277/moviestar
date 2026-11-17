@@ -139,7 +139,7 @@ def _project(raw: object) -> dict | None:
     parsed = {name: raw[name] for name in ("id", "title", "state", "owner_id", "current_revision")}
     if "access" in raw:
         access = raw["access"]
-        if not isinstance(access, dict) or access.get("role") not in ("owner", "viewer"):
+        if not isinstance(access, dict) or access.get("role") not in ("owner", "viewer", "editor"):
             return None
         parsed["access"] = {"role": access["role"]}
     return parsed
@@ -150,7 +150,7 @@ def _sharing_supported(capabilities: dict) -> bool:
     return (isinstance(sharing, dict) and sharing.get("contract_version") == "recipient-projects-v1"
             and sharing.get("discovery_path") == "/api/v1/account/cloud/shared-projects"
             and sharing.get("detail_path") == "/api/v1/account/cloud/projects/:id"
-            and sharing.get("roles") == {"viewer": ["projects:read"]}
+            and isinstance(sharing.get("roles"), dict) and sharing["roles"].get("viewer") == ["projects:read"]
             and sharing.get("permissions_are_resource_specific") is True
             and sharing.get("account_scopes_do_not_grant_collaborator_writes") is True)
 
@@ -237,7 +237,7 @@ def create_project(title: str, idempotency_key: str | None):
 @click.option("--cursor", help="Use next_cursor from the previous page unchanged.")
 @click.option("--shared", is_flag=True, help="List accepted shared projects instead of owned projects.")
 def list_projects(limit: int, cursor: str | None, shared: bool):
-    """Read one owned page, or --shared for accepted viewer invitations.
+    """Read one owned page, or --shared for accepted viewer/editor invitations.
 
     Call both collections to find all accessible projects. Keep pagination
     cursors with their original collection. Missing media fields are
@@ -265,13 +265,13 @@ def list_projects(limit: int, cursor: str | None, shared: bool):
                 break
             if shared:
                 handle = item.get("shared_by")
-                if (body.get("contract_version") != "recipient-projects-v1" or item.get("role") != "viewer"
-                        or item.get("permissions") != ["projects:read"] or not isinstance(handle, str)
+                if (body.get("contract_version") != "recipient-projects-v1" or item.get("role") not in ("viewer", "editor")
+                        or item.get("permissions") != (["projects:read", "projects:rename", "references:attach", "references:detach"] if item.get("role") == "editor" else ["projects:read"]) or not isinstance(handle, str)
                         or not re.fullmatch(r"[a-z0-9][a-z0-9_]{2,29}", handle)):
                     parsed = None
                     break
                 project["shared_by"] = handle
-            project["access"] = {"role": "viewer" if shared else "owner"}
+            project["access"] = {"role": item["role"] if shared else "owner"}
             parsed.append(project)
     if shared and body.get("contract_version") != "recipient-projects-v1":
         parsed = None
@@ -337,7 +337,7 @@ def rename_project(project_id: str, title: str, expected_title: str | None):
         _failure(command, status, body, rename_outcome="rejected", **fields)
     project = _project(body.get("project"))
     if (status != 200 or body.get("status") != "renamed" or type(body.get("changed")) is not bool or project is None
-            or project["id"].lower() != project_id.lower() or project["title"] != title or project.get("access") != {"role": "owner"}):
+            or project["id"].lower() != project_id.lower() or project["title"] != title or project.get("access", {}).get("role") not in ("owner", "editor")):
         _fail(command, "rename_unconfirmed", "The rename may have succeeded. Inspect the project, or retry with the exact returned expected_title using --expected-title. No automatic retry was sent.", rename_outcome="unknown", **fields)
     click.echo(json.dumps({"command": command, "status": "renamed", "changed": body["changed"], "project": project}, indent=2))
 
