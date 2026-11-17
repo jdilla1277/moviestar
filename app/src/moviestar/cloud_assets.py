@@ -29,7 +29,7 @@ def _fail(command, status, body, **fields):
     service._fail(command, code, HINTS[code], **fields)
 
 
-def _connection(command, operation):
+def _connection(command, operation, shared=False):
     endpoint, credential = service._connection(command)
     cap = service._capabilities(command, endpoint, credential).get("project_assets")
     if (not isinstance(cap, dict) or cap.get("contract_version") != CONTRACT
@@ -37,6 +37,8 @@ def _connection(command, operation):
             or cap.get("kinds") != ["video", "audio", "image", "transcript"]
             or not isinstance(cap.get("operations"), list) or operation not in cap["operations"]):
         service._fail(command, "unsupported_operation", "The connected service does not advertise this asset-reference operation. Existing project commands remain available.")
+    if shared and cap.get("shared_collection") != "accepted_project_assets":
+        service._fail(command, "unsupported_operation", "The connected service does not advertise the shared asset collection.")
     return endpoint, credential
 
 
@@ -67,19 +69,21 @@ def _reference(raw, project, asset):
     return {k: raw[k] for k in ("id", "project_id", "asset_id", "added_by_account_id", "created_at", "removed_at")}
 
 
-def _list(command, project, limit, cursor):
+def _list(command, project, limit, cursor, shared=False):
     if project:
         _ids(command, project)
     if cursor is not None and not service._CURSOR.fullmatch(cursor):
         service._fail(command, "invalid_request", "Use the previous page's next_cursor unchanged.")
-    endpoint, credential = _connection(command, "references:list" if project else "assets:list")
+    endpoint, credential = _connection(command, "references:list" if project else "assets:list", shared)
     path = f"/projects/{project.lower()}/assets" if project else "/assets"
-    status, body = service._request(endpoint + path + "?" + urlencode({"limit": limit, **({"cursor": cursor} if cursor else {})}), credential)
+    status, body = service._request(endpoint + path + "?" + urlencode({"limit": limit, **({"cursor": cursor} if cursor else {}), **({"collection": "shared"} if shared else {})}), credential)
     if status != 200:
         _fail(command, status, body)
     items, next_cursor = body.get("items"), body.get("next_cursor", "missing")
     valid = body.get("contract_version") == CONTRACT and isinstance(items, list) and len(items) <= limit
     valid = valid and (next_cursor is None or isinstance(next_cursor, str) and bool(service._CURSOR.fullmatch(next_cursor)))
+    if shared:
+        valid = valid and body.get("collection") == "shared"
     if project:
         valid = valid and isinstance(body.get("project_id"), str) and body["project_id"].lower() == project.lower()
     parsed = []
@@ -89,6 +93,13 @@ def _list(command, project, limit, cursor):
             if asset is None or (project and (not isinstance(item.get("reference_id"), str) or not service._UUID.fullmatch(item["reference_id"]))):
                 valid = False
                 break
+            if shared:
+                via = item.get("shared_via")
+                if (not isinstance(via, dict) or any(not isinstance(via.get(k), str) or not service._UUID.fullmatch(via[k]) for k in ("project_id", "reference_id"))
+                        or not isinstance(via.get("project_title"), str) or not isinstance(via.get("shared_by"), str) or not via["shared_by"]):
+                    valid = False
+                    break
+                asset["shared_via"] = {k: via[k] for k in ("project_id", "project_title", "reference_id", "shared_by")}
             entry = {"reference_id": item["reference_id"], "asset": asset} if project else asset
             if project and "download_path" in item:
                 expected = f"/api/v1/account/cloud/projects/{project.lower()}/asset-references/{item['reference_id']}/download"
@@ -99,7 +110,7 @@ def _list(command, project, limit, cursor):
             parsed.append(entry)
     if not valid or len({item["reference_id"] if project else item["id"] for item in parsed}) != len(parsed):
         service._fail(command, "invalid_response", "The service returned incomplete asset metadata. Retry later.")
-    click.echo(json.dumps({"contract_version": CONTRACT, **({"project_id": project.lower()} if project else {}), "items": parsed, "next_cursor": next_cursor}, indent=2))
+    click.echo(json.dumps({"contract_version": CONTRACT, **({"project_id": project.lower()} if project else {}), **({"collection": "shared"} if shared else {}), "items": parsed, "next_cursor": next_cursor}, indent=2))
 
 
 def register_asset_commands(cloud, projects):
@@ -136,12 +147,14 @@ def register_asset_commands(cloud, projects):
     @assets.command("list")
     @click.option("--limit", type=click.IntRange(1, 100), default=20, show_default=True)
     @click.option("--cursor")
-    def list_assets(limit, cursor):
+    @click.option("--shared", is_flag=True, help="List assets available through accepted project shares, once per asset.")
+    def list_assets(limit, cursor, shared):
         """List owned video, audio, image and transcript/caption originals.
 
-        Legacy project sources and shared assets are not in this catalog yet.
+        Use --shared for assets accessible through accepted project invitations.
+        Legacy project sources are excluded.
         """
-        _list("cloud assets list", None, limit, cursor)
+        _list("cloud assets list", None, limit, cursor, shared)
 
     @projects.command("assets")
     @click.argument("project_id")

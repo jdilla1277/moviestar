@@ -98,3 +98,35 @@ The CLI uses these same endpoints with its approved installation bearer and
 ownership and account consent. Browser cookies are not authentication for these
 endpoints. Create keys and connect the CLI on the same service you are testing;
 Preview and Production credentials are separate.
+
+## List owned assets and assets shared with you
+
+```sh
+moviestar cloud assets list
+moviestar cloud assets list --shared
+moviestar cloud assets list --shared --limit 20 --cursor NEXT_CURSOR
+```
+
+The default collection contains your ready originals. `--shared` contains ready
+originals available through accepted project invitations that include assets.
+Each asset appears once even when several shared projects reference it.
+`shared_via` identifies one currently accessible project, its title, the source
+owner's handle and the project reference ID. Open that project to see or download
+the original. This does not grant permission to edit or reshare it.
+
+Follow `next_cursor` unchanged, keeping it with the same collection. Revoked
+invitations, removed references, deleted projects, nonready assets and
+metadata-only invitations do not grant catalog access. Every read rechecks
+current credentials and account consent. A service without this capability
+returns `unsupported_operation`, rather than an empty or owned collection.
+
+The API equivalent is
+`GET /api/v1/account/cloud/assets?collection=shared&limit=20`, authenticated with
+your personal API key or approved installation. Responses include
+`collection: "shared"`, `items`, `next_cursor` and
+`contract_version: "project-asset-references-v1"`.
+
+Hosted MCP uses `moviestar_list_assets` with `collection: "shared"` (or `"owned"`,
+the default), plus optional `limit` and `cursor`. The website exposes the same
+collection under **Assets → Shared with me**. Individual asset invitations are
+not supported yet; this collection discovers access through project shares.

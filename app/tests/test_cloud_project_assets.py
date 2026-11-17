@@ -101,3 +101,48 @@ def test_malformed_assets_are_not_presented_as_ready(remote, field, value):
     remote["asset"][field] = value
     result, body = invoke("projects", "assets", P)
     assert result.exit_code == 1 and body["status"] == "invalid_response"
+
+
+def test_shared_collection_is_explicit_and_preserves_access_provenance(remote, monkeypatch):
+    remote['cap']['shared_collection'] = 'accepted_project_assets'
+    previous = cloud._request
+    def request(url, credential, **kwargs):
+        status, body = previous(url, credential, **kwargs)
+        if 'collection=shared' in url:
+            body.update(collection='shared', items=[{**ASSET, 'shared_via': {'project_id': P, 'project_title': 'Shared project', 'reference_id': R, 'shared_by': 'alex'}}])
+        return status, body
+    monkeypatch.setattr(cloud, '_request', request)
+    result, body = invoke('assets', 'list', '--shared')
+    assert result.exit_code == 0, result.output
+    assert body['collection'] == 'shared'
+    assert body['items'][0]['shared_via']['project_id'] == P
+    assert 'collection=shared' in remote['calls'][-1][0]
+
+
+def test_old_service_does_not_silently_return_owned_assets_for_shared(remote):
+    result, body = invoke('assets', 'list', '--shared')
+    assert result.exit_code == 1 and body['status'] == 'unsupported_operation'
+    assert len(remote['calls']) == 1
+
+
+@pytest.mark.parametrize('change', ['missing_collection', 'missing_provenance', 'bad_reference', 'duplicate'])
+def test_shared_catalog_never_accepts_downgraded_or_malformed_rows(remote, monkeypatch, change):
+    remote['cap']['shared_collection'] = 'accepted_project_assets'
+    previous = cloud._request
+    def request(url, credential, **kwargs):
+        status, body = previous(url, credential, **kwargs)
+        if 'collection=shared' in url:
+            item = {**ASSET, 'shared_via': {'project_id': P, 'project_title': 'Shared', 'reference_id': R, 'shared_by': 'alex'}}
+            body.update(collection='shared', items=[item])
+            if change == 'missing_collection':
+                body.pop('collection')
+            elif change == 'missing_provenance':
+                item.pop('shared_via')
+            elif change == 'bad_reference':
+                item['shared_via']['reference_id'] = 'bad'
+            else:
+                body['items'].append(item)
+        return status, body
+    monkeypatch.setattr(cloud, '_request', request)
+    result, body = invoke('assets', 'list', '--shared')
+    assert result.exit_code == 1 and body['status'] == 'invalid_response'
