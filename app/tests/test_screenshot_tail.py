@@ -127,8 +127,9 @@ def test_empty_extraction_is_structured_and_never_returns_stale_output(
     assert out.read_bytes() == b"prior proof"
 
 
+@pytest.mark.parametrize("extension", ["png", "jpg"])
 def test_tail_fallback_keeps_overlay_clock_at_requested_result_time(
-    tail_video, tmp_path, monkeypatch,
+    tail_video, tmp_path, monkeypatch, extension,
 ):
     path, _ = tail_video
     monkeypatch.chdir(tmp_path)
@@ -136,11 +137,23 @@ def test_tail_fallback_keeps_overlay_clock_at_requested_result_time(
     _invoke("trim", "--from", "1", "--to", "2")
     _invoke("overlays", "add", "--text", "END", "--from", "0.98", "--to", "1",
             "--css", "font-size: 20px; color: white", "--position", "center")
-    shot = _invoke("screenshot", "--at", "0.999", "--out", "with-text.png")
-    raw = _invoke("screenshot", "--file", str(path), "--at", "1.999", "--out", "raw.png")
+    shot = _invoke("screenshot", "--at", "0.999", "--out", f"with-text.{extension}")
+    raw = _invoke("screenshot", "--file", str(path), "--at", "1.999", "--out", f"raw.{extension}")
     assert shot["overlays"]["active_count"] == 1
     assert _pixels(shot["out"]) != _pixels(raw["out"])
     assert shot["source_timecode"]["seconds"] == 1.999
+    if extension == "jpg":
+        reference = _invoke("screenshot", "--at", "0.999", "--out", "reference.png")
+        plain = _invoke("screenshot", "--file", str(path), "--at", "1.999", "--out", "plain.png")
+        actual, expected, background = (
+            _pixels(item["out"]) for item in (shot, reference, plain)
+        )
+        # Check overlay ink against PNG, not merely JPEG/background differences.
+        ink = [
+            i for i, (a, b) in enumerate(zip(expected, background)) if abs(a - b) > 64
+        ]
+        assert len(ink) > 10
+        assert sum(abs(actual[i] - expected[i]) for i in ink) / len(ink) < 25
 
 
 @pytest.mark.parametrize("failure", ["empty", "partial", "invalid", "timestamp", "beyond", "timeout", "decoder"])

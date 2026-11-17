@@ -1589,9 +1589,13 @@ def build_extract_frame_command(
     selection is left to FFmpeg; capture its mapping so empty-seek recovery
     can pin that exact input stream without reproducing version-specific rules.
     """
+    # Overlay graphs already bind the input stream. Capture empty-seek
+    # warnings for JPEG recovery without collecting source metadata at info.
     cmd = [
         "ffmpeg", "-y", "-loglevel",
-        "error" if overlay_plans or video_stream_index is not None else "level+info",
+        "level+warning" if overlay_plans else (
+            "error" if video_stream_index is not None else "level+info"
+        ),
         "-ss", str(at_seconds),
         "-i", video_path,
     ]
@@ -1770,7 +1774,8 @@ def extract_frame(
                 and Path(output_path).suffix.lower() in (".jpg", ".jpeg")
                 and not (os.path.isfile(output_path) and os.path.getsize(output_path) > 0)
                 and re.search(
-                    r"^\[vf[^\]]*\] \[warning\] No filtered frames for output stream\b",
+                    r"^\[(?:vf|fc)[^\]]*\](?: \[vo[^\]]*\])? "
+                    r"\[warning\] No filtered frames for output stream\b",
                     result.stderr, re.MULTILINE,
                 ) is not None
             )
