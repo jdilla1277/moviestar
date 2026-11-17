@@ -51,5 +51,7 @@ attached to feedback.
 Contact capture does not enroll anyone in a newsletter or automatically send a
 follow-up message. A failed or ambiguous receipt may include `feedback_id`; keep
 that identifier and do not automatically resend a report that may already have
-been received. Older services that do not confirm account linkage are reported
+been received. If an account-linked request times out or its receipt is invalid,
+`anonymous: null` means anonymity is unconfirmed; the report may already have
+been stored with account contact. Older services that do not confirm account linkage are reported
 as such rather than being described as authenticated success.

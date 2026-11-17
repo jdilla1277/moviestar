@@ -138,12 +138,21 @@ def _send_remote(payload: dict, *, anonymous: bool = False) -> dict:
         },
         method="POST",
     )
+    # A failed receipt does not prove the service rejected the report. Retain
+    # the attempted linkage without claiming anonymity or encouraging duplicates.
+    delivery_context = {
+        "anonymous": None,
+        "hint": "The account-linked report may have been received before the receipt failed. Do not resend automatically; verify delivery before submitting another report.",
+    } if credential else {}
     try:
         with urlopen(request, timeout=10) as response:
             body = json.loads(response.read().decode("utf-8"))
+            if not isinstance(body, dict):
+                raise ValueError("Expected a JSON object from feedback service.")
             if response.status != 200:
                 return {
                     "err": f"Server returned HTTP {response.status}.",
+                    **delivery_context,
                     "discord": body.get("discord"),
                     "feedback_id": body.get("feedback_id"),
                 }
@@ -164,20 +173,22 @@ def _send_remote(payload: dict, *, anonymous: bool = False) -> dict:
         discord = None
         try:
             body = json.loads(exc.read().decode("utf-8"))
-            discord = body.get("discord")
+            discord = body.get("discord") if isinstance(body, dict) else None
         except (json.JSONDecodeError, UnicodeDecodeError, OSError):
             pass
         return {
             "err": f"HTTP {exc.code}: {exc.reason}",
+            **delivery_context,
             "discord": discord,
             "feedback_id": None,
             **({"hint": "Reconnect or review your Moviestar account, or deliberately use --anonymous for an unlinked report."} if credential and exc.code in {401, 403} else {}),
         }
     except (URLError, TimeoutError, OSError) as exc:
-        return {"err": str(exc), "discord": None}
-    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        return {"err": str(exc), "discord": None, **delivery_context}
+    except (ValueError, UnicodeDecodeError) as exc:
         return {
             "err": f"Invalid response from feedback service: {exc}",
+            **delivery_context,
             "discord": None,
         }
 

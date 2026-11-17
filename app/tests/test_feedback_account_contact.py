@@ -176,3 +176,38 @@ def test_unsafe_anonymous_endpoint_is_rejected_before_any_account_or_network_acc
     assert result.exit_code == 1
     assert "service URL" in result.stdout
     assert "password" not in result.output
+
+
+@pytest.mark.parametrize("failure", ["timeout", "connection", "http", "json", "encoding", "shape"])
+@pytest.mark.parametrize("anonymous", [False, True])
+def test_ambiguous_delivery_never_claims_account_linked_report_is_anonymous(
+    connected, monkeypatch, failure, anonymous
+):
+    requests = []
+
+    class InvalidReply(Reply):
+        def read(self):
+            return {"json": b"{", "encoding": b"\xff", "shape": b"[]"}[failure]
+
+    def send(request, **kwargs):
+        requests.append(request)
+        if failure == "timeout":
+            raise TimeoutError("Timed out waiting for receipt")
+        if failure == "connection":
+            raise OSError("Connection reset while reading receipt")
+        if failure == "http":
+            raise HTTPError(request.full_url, 503, "Unavailable", {}, io.BytesIO(b'{}'))
+        return InvalidReply()
+
+    monkeypatch.setattr(feedback, "urlopen", send)
+    args = ["feedback", "--quick", "Synthetic report"] + (["--anonymous"] if anonymous else [])
+    result = CliRunner().invoke(cli, args)
+    assert result.exit_code == 1
+    assert len(requests) == 1
+    assert requests[0].get_header("Authorization") == (None if anonymous else "Bearer " + SECRET)
+    receipt = json.loads(result.stdout)
+    assert receipt["anonymous"] is (True if anonymous else None)
+    if not anonymous:
+        assert "may have been received" in receipt["hint"]
+        assert "Do not resend automatically" in receipt["hint"]
+    assert SECRET not in result.output
