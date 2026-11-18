@@ -18,13 +18,14 @@ from moviestar.spatial_render import render_spatial_frame
 from tests.test_native_edit_benchmark import benchmark
 
 
-def test_live_decorated_boxes_match_export_and_reject_empty_content(tmp_path,benchmark):
+@pytest.mark.parametrize('radius,padding', [(40,'10px'),('30% 50% / 20% 40%','6px 10px 12px 4px')])
+def test_live_decorated_boxes_match_export_and_reject_empty_content(tmp_path,benchmark,radius,padding):
     if not browser_available():pytest.skip('Chrome and Node required')
     from framing_benchmark import prepare
     root=tmp_path/'project';prepare(root,(360,640),'framing');spec=load_spec(root)
     video=spec['spatial']['definitions']['speaker_card']['children'][0]
-    video['layout']['padding']='10px'
-    video['style'].update(border_width=5,border_style='solid',border_color='#ffe000',border_radius=40,
+    video['layout']['padding']=padding
+    video['style'].update(border_width=5,border_style='solid',border_color='#ffe000',border_radius=radius,
         object_position='right 10px bottom 5px',background_color='#183848')
     save_spec(spec,cwd=root);before=Path.cwd()
     try:
@@ -51,6 +52,8 @@ try{
  await b.send('Emulation.setDeviceMetricsOverride',{width:1280,height:1100,deviceScaleFactor:1,mobile:false});
  await b.send('Page.navigate',{url:URL});await b.wait('window.moviestarLive?.is_current',20000);
  await b.evaluate(`(()=>{const s=document.getElementById('stage'),style=document.createElement('style');style.textContent='#stage{max-width:none!important;width:'+(360+s.offsetWidth-s.clientWidth)+'px!important;border-radius:0!important;border-color:transparent!important;box-shadow:none!important}';document.head.append(style);})()`);
+ const edges=await b.evaluate(`(()=>{const outer=document.querySelector('iframe:not(.pending)'),frame=outer.contentDocument.querySelector('iframe')??outer,doc=frame.contentDocument;return[...doc.querySelectorAll('video')].map(v=>{const c=doc.defaultView.getComputedStyle(v);return{padding:c.padding,border:c.borderWidth,clip:doc.defaultView.getComputedStyle(v.parentElement).clipPath};});})()`);
+ assert.ok(edges.length===2&&edges.every(e=>e.padding==='0px'&&e.border==='0px'&&e.clip==='content-box'),'Native video stays undecorated inside the content clip: '+JSON.stringify(edges));
  await b.evaluate('window.moviestarLive.stage.seek(.5)');const snapshot=await b.evaluate('window.moviestarLive.stage.snapshot()');
  for(const box of BOXES.filter(b=>b.media_box)){
   const actual=snapshot.boxes.find(b=>JSON.stringify(b.path)===JSON.stringify(box.path));

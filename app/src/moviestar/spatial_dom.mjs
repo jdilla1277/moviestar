@@ -153,7 +153,9 @@ export async function render(input) {
       - borderX - px('padding-left') - px('padding-right'));
     const height = Math.max(0, (parseFloat(css.height) || element.clientHeight + borderY)
       - borderY - px('padding-top') - px('padding-bottom'));
-    const box = element.getBoundingClientRect(), scale = worldScales.get(element) ?? worldScales.get(element.parentElement) ?? 1;
+    let ancestor = element;
+    while (ancestor && !worldScales.has(ancestor)) ancestor = ancestor.parentElement;
+    const box = element.getBoundingClientRect(), scale = worldScales.get(ancestor) ?? 1;
     return {css, width, height, rect: {
       x: box.x + (px('border-left-width') + px('padding-left')) * scale,
       y: box.y + (px('border-top-width') + px('padding-top')) * scale,
@@ -189,20 +191,25 @@ export async function render(input) {
     const {css, width, height} = contentMetrics(element);
     if (!(width > 0 && height > 0)) throw Error('Media content box '+(asset.path??[]).join('/')+' needs positive width and height; enlarge the box or reduce padding/borders');
     const px = key => parseFloat(css.getPropertyValue(key)) || 0;
-    // Replaced elements already implement object-fit/position and rounded
-    // content clipping. Reproduce the host's entire border box transparently,
-    // preserving its painted border/background underneath the live pixels.
-    const style = {position:'absolute',boxSizing:'border-box',display:'block',
+    // Keep decoded pixels undecorated. Chrome clips an internal transparent
+    // frame to its rounded content edge; the authored host paints the border
+    // and background. This also keeps padding/borders off the video layer.
+    const frame = {position:'absolute',boxSizing:'border-box',display:'block',
       left:-px('border-left-width')+'px',top:-px('border-top-width')+'px',
       width:'calc(100% + '+(px('border-left-width')+px('border-right-width'))+'px)',
       height:'calc(100% + '+(px('border-top-width')+px('border-bottom-width'))+'px)',
-      objectFit:asset.object_fit,objectPosition:asset.object_position??css.objectPosition,
+      objectPosition:css.objectPosition,clipPath:'content-box',
       borderRadius:css.borderRadius,borderStyle:'solid',borderColor:'transparent'};
     for (const edge of ['Top','Right','Bottom','Left']) {
-      style['padding'+edge] = css['padding'+edge];
-      style['border'+edge+'Width'] = css['border'+edge+'Width'];
+      frame['padding'+edge] = css['padding'+edge];
+      frame['border'+edge+'Width'] = css['border'+edge+'Width'];
     }
-    return style;
+    const media = {position:'absolute',boxSizing:'border-box',display:'block',
+      left:css.paddingLeft,top:css.paddingTop,padding:'0px',border:'0px',
+      width:'calc(100% - '+(px('padding-left')+px('padding-right'))+'px)',
+      height:'calc(100% - '+(px('padding-top')+px('padding-bottom'))+'px)',
+      objectFit:asset.object_fit,objectPosition:asset.object_position??css.objectPosition};
+    return {frame,media};
   }
   const videoPlanes = [];
   const mediaPlanes = [];

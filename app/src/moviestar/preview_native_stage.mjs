@@ -8,7 +8,15 @@ let lastIndex=-1, playing=false, readyDone=false, metadataReady=false, imageRead
 let videoGroup,reviewAudio,outputMixer,sceneClock;
 let playbackIdentity;
 let captionLayer,captionImages=[],captionState=-1;
-const videos=[];
+const videos=[],mediaFrames=[];
+let mediaResize;
+function syncMediaFrames(){
+  for(const {element,asset,frame,media} of mediaFrames){
+    const styles=window.moviestarScene.mediaStyle(element,asset);
+    for(const [target,style] of [[frame,styles.frame],[media,styles.media]])
+      for(const [key,value] of Object.entries(style))if(target.style[key]!==value)target.style[key]=value;
+  }
+}
 const ready=new Promise((resolve,reject)=>{resolveReady=resolve;rejectReady=reject;});
 // Parent attaches after iframe load; keep early failures observable through ready.
 ready.catch(()=>{});
@@ -289,9 +297,11 @@ async function initialize(){
     const {element}=entries.get(key(asset.path));
     const computed=getComputedStyle(element);
     if(!['relative','absolute'].includes(computed.position)||['inline','contents','none'].includes(computed.display))throw Error('Unsupported native media containing block.');
-    const media=document.createElement(asset.kind==='video'?'video':'img');
-    Object.assign(media.style,window.moviestarScene.mediaStyle(element,asset));
-    element.append(media);
+    if(!CSS.supports('clip-path','content-box'))throw Error('Native media framing needs content-box clipping.');
+    const frame=document.createElement('div'),media=document.createElement(asset.kind==='video'?'video':'img');
+    const styles=window.moviestarScene.mediaStyle(element,asset);
+    Object.assign(frame.style,styles.frame);Object.assign(media.style,styles.media);
+    frame.append(media);element.append(frame);mediaFrames.push({element,asset,frame,media});
     if(asset.kind==='image'){
       media.src='assets/'+asset.asset;const decoded=media.decode();decoded.catch(()=>{});images.push(decoded);
     }else{
@@ -333,6 +343,8 @@ async function initialize(){
       else item.callback=media.requestVideoFrameCallback(observe);
     }
   }
+  mediaResize=new ResizeObserver(()=>{if(!disposed)try{syncMediaFrames();}catch(error){fail(error);}});
+  for(const {element} of mediaFrames)mediaResize.observe(element);
   if(!video){
     if(packet.clock!=='scene')throw Error('Native preview audio carrier is missing');
     await initializeStill(images);return;
@@ -519,7 +531,7 @@ window.moviestarLiveStage={ready,metrics,
       })};
   },
   dispose(){
-    if(disposed)return;this.pause();disposed=true;sceneClock?.dispose();cuts?.dispose();reviewAudio?.dispose();outputMixer?.dispose();for(const cancel of pendingSeeks)cancel();controller.abort();
+    if(disposed)return;this.pause();disposed=true;mediaResize?.disconnect();sceneClock?.dispose();cuts?.dispose();reviewAudio?.dispose();outputMixer?.dispose();for(const cancel of pendingSeeks)cancel();controller.abort();
     if(frameCallback)video?.cancelVideoFrameCallback(frameCallback);
     for(const item of videos)if(item.callback)item.video.cancelVideoFrameCallback(item.callback);
     if(videoGroup)videoGroup.dispose();else if(videos.length){for(const item of videos){item.video.removeAttribute('src');item.video.load();}}else if(video){video.removeAttribute('src');video.load();}clearTimeout(stopTimer);
