@@ -8,25 +8,34 @@ import pytest
 
 
 @pytest.mark.skipif(not shutil.which('node'), reason='Node required')
-@pytest.mark.parametrize('case',['initial_play','sequence','seek','pause_startup','dispose_startup','cancel_restart_seek','failure','source_eof_audio','buffer_fallback','settle_failure','settle_cancel','drain_finish','drain_cancel','drain_failure'])
+@pytest.mark.parametrize('case',['initial_play','sequence','seek','pause_startup','dispose_startup','cancel_restart_seek','failure','source_eof_audio','buffer_fallback','settle_failure','settle_cancel','drain_finish','drain_cancel','drain_failure','lightweight_audit','lightweight_still_audit'])
 def test_cut_playback_controls(case):
     module=(Path(__file__).parents[1]/'src/moviestar/preview_native_cuts.mjs').as_uri()
     script=r'''
 import assert from 'node:assert/strict';
 const {createCutPlayback}=await import(MODULE);
-let resolvePlay,resolveSeek,resolveDrain,rejectDrain,delayDrain=false,delayPlay=false,delaySeek=false,cleaned=0,shown=[];
+let resolvePlay,resolveSeek,resolveDrain,rejectDrain,delayDrain=false,delayPlay=false,delaySeek=false,cleaned=0,shown=[],sourceReads=0,fullReads=0;
 const metrics={},audio={currentTime:1,state:'running'},packet={range:{from:0,to:9},fps:30,
  segments:[0,3,6].map((offset,i)=>({offset,packet:{range:{from:offset,to:offset+3}}}))};
 const stages=packet.segments.map((segment,i)=>{
  const api={time:0,paused:true,plays:0,metrics:{stalls:0,source_buffering:true,quality:{totalVideoFrames:90,droppedVideoFrames:0}},packet:{source_start:10+i},
   holdEnd(){throw Error('Source audio cannot be held before its cut');},
   pause(){this.paused=true;},async play(){if(delayPlay)await new Promise(resolve=>resolvePlay=resolve);this.plays++;this.paused=false;},
-  async seek(at){if(delaySeek)await new Promise(resolve=>resolveSeek=resolve);this.time=at;},snapshot(){return{source:{number:i},boxes:[]};}};
+  async seek(at){if(delaySeek)await new Promise(resolve=>resolveSeek=resolve);this.time=at;},sourceSnapshot(){sourceReads++;return CASE==='lightweight_still_audit'?null:{number:i};},snapshot(){fullReads++;return{source:{number:i},boxes:[]};}};
  return{api,gain:{value:0,gain:{cancelScheduledValues(){},setValueAtTime(value,at){this.value=value;this.at=at;}}}};
 });
-const api=createCutPlayback({packet,stages,audio,metrics,show:i=>shown.push(i),cleanup:()=>cleaned++,drain:async()=>{if(delayDrain)await new Promise((resolve,reject)=>{resolveDrain=resolve;rejectDrain=reject;});}});
+const api=createCutPlayback({packet,stages,audio,metrics,audit:CASE.startsWith('lightweight_'),show:i=>shown.push(i),cleanup:()=>cleaned++,drain:async()=>{if(delayDrain)await new Promise((resolve,reject)=>{resolveDrain=resolve;rejectDrain=reject;});}});
 const gains=()=>stages.map(stage=>stage.gain.gain.value),flush=()=>new Promise(resolve=>setImmediate(resolve));
-if(CASE==='initial_play'){
+if(CASE.startsWith('lightweight_')){
+ assert.equal(fullReads,0,'Initial cut audit must not inspect layout');
+ await api.play();stages[0].api.time=3;await stages[0].api.onSegmentEnd(Date.now());
+ assert.equal(fullReads,0,'Camera handoff must not compute unused layout/glyph rectangles');
+ const expected=CASE==='lightweight_still_audit'?null:{number:1};
+ assert.deepEqual(metrics.segments_shown.at(-1).source,expected);
+ assert.deepEqual(api.sourceSnapshot(),expected);assert.ok(sourceReads>=2);
+ assert.equal(fullReads,0,'A null still source must not fall back to full inspection');
+ api.snapshot();assert.equal(fullReads,1,'Explicit full inspection remains available');
+}else if(CASE==='initial_play'){
  await api.play();await new Promise(resolve=>setTimeout(resolve,15));assert.equal(api.paused,false);assert.equal(metrics.cuts.length,0);
 }else if(CASE==='sequence'){
  await api.play();assert.deepEqual(gains(),[1,0,0]);
