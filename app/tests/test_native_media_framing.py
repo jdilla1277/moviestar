@@ -1,4 +1,5 @@
 """Live media content boxes agree with export and fail atomically."""
+from copy import deepcopy
 import json
 import os
 from pathlib import Path
@@ -35,7 +36,13 @@ def test_live_decorated_boxes_match_export_and_reject_empty_content(tmp_path,ben
         boxes=measure_spatial_layout(frame,{'width':360,'height':640})['boxes']
         render_spatial_frame(spec,frame,{'width':360,'height':640},project_root=root,output_path=tmp_path/'reference.png')
     finally:os.chdir(before)
-    if bad_mode=='initial':video['layout']['width']=10
+    if bad_mode=='initial':
+        # Invalidate just the addressed occurrence. Invalidating the shared
+        # definition races all three prepared scenes for the reported path.
+        card=deepcopy(spec['spatial']['definitions']['speaker_card'])
+        card['children'][0]['layout']['width']=10
+        spec['spatial']['definitions']['invalid_card']=card
+        spec['spatial']['scenes']['review']['layout']['children'][0]['definition_id']='invalid_card'
     else:
         # A later cue can consume a flex row even when its own text fits. Every
         # restorable caption state must leave the decorated source a content box.
@@ -91,7 +98,9 @@ try{
  assert.match(await b.evaluate('document.getElementById("error").textContent'),/Media content box/);
  assert.match(await b.evaluate('document.getElementById("error").textContent'),/review\/main\/footage/);
  assert.equal(await b.evaluate('window.moviestarLive.current.request_id'),prior);assert.equal(await b.evaluate('window.moviestarLive.is_current'),false);
- run(['undo']);await b.wait('window.moviestarLive.is_current&&window.moviestarLive.current.request_id!=='+JSON.stringify(prior),15000);
+ run(['undo']);try{await b.wait('window.moviestarLive.is_current&&window.moviestarLive.current.request_id!=='+JSON.stringify(prior),15000);}catch(error){
+  error.message+='; '+JSON.stringify(await b.evaluate('({current:window.moviestarLive.current,error:document.getElementById("error").textContent,state:window.moviestarLive.state})'));throw error;
+ }
 }finally{await b.close();}
 '''
             result=subprocess.run(['node','--input-type=module','-e',''.join('const '+k+'='+json.dumps(v)+';' for k,v in constants.items())+script],
@@ -156,7 +165,9 @@ try{
  assert.equal(await b.evaluate('window.moviestarLive.is_current'),false);
  await b.evaluate('window.moviestarLive.stage.seek(2.5)');
  assert.equal(await b.evaluate('window.moviestarLive.stage.snapshot().boxes.find(b=>b.path.join("/")==="title/row/words").text'),'W');
- run(['undo']);await b.wait('window.moviestarLive.is_current&&window.moviestarLive.current.request_id!=='+JSON.stringify(prior),15000);
+ run(['undo']);try{await b.wait('window.moviestarLive.is_current&&window.moviestarLive.current.request_id!=='+JSON.stringify(prior),15000);}catch(error){
+  error.message+='; '+JSON.stringify(await b.evaluate('({current:window.moviestarLive.current,error:document.getElementById("error").textContent,state:window.moviestarLive.state})'));throw error;
+ }
  await b.evaluate('window.moviestarLive.stage.seek(2.5)');
  assert.equal(await b.evaluate('window.moviestarLive.stage.snapshot().boxes.find(b=>b.path.join("/")==="title/row/words").text'),'W');
 }finally{await b.close();}
