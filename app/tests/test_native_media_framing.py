@@ -18,8 +18,9 @@ from moviestar.spatial_render import render_spatial_frame
 from tests.test_native_edit_benchmark import benchmark
 
 
-@pytest.mark.parametrize('radius,padding', [(40,'10px'),('30% 50% / 20% 40%','6px 10px 12px 4px')])
-def test_live_decorated_boxes_match_export_and_reject_empty_content(tmp_path,benchmark,radius,padding):
+@pytest.mark.parametrize('radius,padding,bad_mode', [(40,'10px','initial'),
+    ('30% 50% / 20% 40%','6px 10px 12px 4px','initial'),(40,'10px','later-cue')])
+def test_live_decorated_boxes_match_export_and_reject_empty_content(tmp_path,benchmark,radius,padding,bad_mode):
     if not browser_available():pytest.skip('Chrome and Node required')
     from framing_benchmark import prepare
     root=tmp_path/'project';prepare(root,(360,640),'framing');spec=load_spec(root)
@@ -34,7 +35,24 @@ def test_live_decorated_boxes_match_export_and_reject_empty_content(tmp_path,ben
         boxes=measure_spatial_layout(frame,{'width':360,'height':640})['boxes']
         render_spatial_frame(spec,frame,{'width':360,'height':640},project_root=root,output_path=tmp_path/'reference.png')
     finally:os.chdir(before)
-    video['layout']['width']=10;bad=tmp_path/'bad.json';bad.write_text(json.dumps(spec))
+    if bad_mode=='initial':video['layout']['width']=10
+    else:
+        # A later cue can consume a flex row even when its own text fits. Every
+        # restorable caption state must leave the decorated source a content box.
+        card=spec['spatial']['definitions']['speaker_card']
+        card['inputs'].append({'name':'track','type':'caption','required':True})
+        card['children'].append({'id':'flow-caption','type':'caption','content':{'input':'track'},
+            'layout':{'width':'max-content','height':'100%','flex':'0 0 auto'},
+            'style':{'font_family':'monospace','font_size':4}})
+        for scene in spec['spatial']['scenes'].values():
+            scene['layout']['children']=[n for n in scene['layout']['children'] if n.get('instance_id')!='captions']
+            for instance in scene['layout']['children'][:2]:
+                instance['layout']['display']='flex';instance['bindings']['track']={'track':'captions'}
+        cue=spec['overlays'][0];cue['to']='0:00:00.400'
+        cue['tokens'][0]['to']='0:00:00.200';cue['tokens'][1].update({'from':'0:00:00.200','to':'0:00:00.400'})
+        spec['overlays'].append({**cue,'id':'later-wide','kind':'caption','track':'captions','from':'0:00:00.400',
+            'to':'0:00:01.000','text':'W'*1000,'tokens':[{'text':'W'*1000,'from':'0:00:00.400','to':'0:00:01.000'}]})
+    bad=tmp_path/'bad.json';bad.write_text(json.dumps(spec))
     with (tmp_path/'server.log').open('w')as log:
         server=subprocess.Popen([sys.executable,'-m','moviestar.cli','preview','--workspace',str(root),
             '--mode','native','--from','0','--to','5','--port','0','--no-open'],stdout=subprocess.PIPE,stderr=log,text=True)
@@ -64,7 +82,8 @@ try{
  const shot=await b.send('Page.captureScreenshot',{format:'png',clip,captureBeyondViewport:true});await writeFile(PNG,Buffer.from(shot.data,'base64'));
  const prior=await b.evaluate('window.moviestarLive.current.request_id');const {spawnSync}=await import('node:child_process');
  const run=args=>{const r=spawnSync(PYTHON,['-m','moviestar.cli',...args],{cwd:ROOT,encoding:'utf8'});assert.equal(r.status,0,r.stdout+r.stderr);};
- run(['spec','--edit',BAD]);await b.wait('document.getElementById("error").textContent.includes("Media content box")',15000);
+ run(['spec','--edit',BAD]);await b.wait('document.getElementById("error").textContent||window.moviestarLive.current.request_id!=='+JSON.stringify(prior),15000);
+ assert.match(await b.evaluate('document.getElementById("error").textContent'),/Media content box/);
  assert.match(await b.evaluate('document.getElementById("error").textContent'),/review\/main\/footage/);
  assert.equal(await b.evaluate('window.moviestarLive.current.request_id'),prior);assert.equal(await b.evaluate('window.moviestarLive.is_current'),false);
  run(['undo']);await b.wait('window.moviestarLive.is_current&&window.moviestarLive.current.request_id!=='+JSON.stringify(prior),15000);
