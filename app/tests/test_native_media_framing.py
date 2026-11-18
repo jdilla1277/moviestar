@@ -110,3 +110,63 @@ try{
     for y in (0,5,10,15,25,200,350,630):
         for x in (0,5,10,15,25,180,350,359):
             assert np.abs(expected[y,x]-actual[y,x]).max()<=8,(x,y,expected[y,x],actual[y,x])
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node required')
+def test_still_image_later_caption_collapse_is_rejected_before_publication(tmp_path,benchmark):
+    from spatial_caption_benchmark import prepare
+    root=tmp_path/'project';prepare(root,(360,640),'still');spec=load_spec(root)
+    spec['spatial']['scenes']['title']['layout']['children']=[{
+        'id':'row','type':'shape','layout':{'display':'flex','width':300,'height':120},'children':[
+            {'id':'picture','type':'image','content':{'asset_id':'background'},
+             'layout':{'width':'100%','height':'100%','padding':10},'style':{'object_fit':'cover'}},
+            {'id':'words','type':'caption','content':{'track':'captions'},
+             'layout':{'width':'max-content','height':'100%','flex':'0 0 auto'},
+             'style':{'font_family':'monospace','font_size':4}}]}]
+    for cue in spec['overlays']:
+        cue['text']='W';cue['tokens']=[{'text':'W','from':cue['from'],'to':cue['to']}]
+    save_spec(spec,cwd=root)
+    cue=spec['overlays'][2];cue['text']='W'*1000;cue['tokens'][0]['text']=cue['text']
+    bad=tmp_path/'bad.json';bad.write_text(json.dumps(spec))
+    with (tmp_path/'server.log').open('w') as log:
+        server=subprocess.Popen([sys.executable,'-m','moviestar.cli','preview','--workspace',str(root),
+            '--mode','native','--from','0','--to','5','--port','0','--no-open'],stdout=subprocess.PIPE,stderr=log,text=True)
+        try:
+            with selectors.DefaultSelector() as selector:
+                selector.register(server.stdout,selectors.EVENT_READ);assert selector.select(20)
+                ready=json.loads(server.stdout.readline())
+            constants={'MODULE':(Path(__file__).parents[2]/'experiments/live_browser_preview/browser.mjs').as_uri(),
+                'CHROME':str(_chrome_path()),'OUT':str(tmp_path/'browser'),'URL':ready['url'],
+                'PYTHON':sys.executable,'ROOT':str(root),'BAD':str(bad)}
+            script=r'''
+import assert from 'node:assert/strict';import{spawnSync}from'node:child_process';
+const {Browser}=await import(MODULE),b=await Browser.launch(CHROME,OUT);
+const run=args=>{const r=spawnSync(PYTHON,['-m','moviestar.cli',...args],{cwd:ROOT,encoding:'utf8'});assert.equal(r.status,0,r.stdout+r.stderr);};
+try{
+ await b.send('Page.navigate',{url:URL});await b.wait('window.moviestarLive?.is_current',20000);
+ await b.evaluate('window.moviestarLive.stage.seek(2.5)');
+ assert.equal(await b.evaluate('window.moviestarLive.stage.snapshot().videos.length'),0);
+ const prior=await b.evaluate('window.moviestarLive.current.request_id');
+ await b.evaluate('window.priorFrame=document.querySelector("iframe:not(.pending)")');
+ run(['spec','--edit',BAD]);
+ await b.wait('document.getElementById("error").textContent||window.moviestarLive.current.request_id!=='+JSON.stringify(prior),15000);
+ assert.match(await b.evaluate('document.getElementById("error").textContent'),/Media content box title\/row\/picture/);
+ assert.equal(await b.evaluate('window.moviestarLive.current.request_id'),prior,'Invalid later cue must never become current');
+ assert.equal(await b.evaluate('document.querySelector("iframe:not(.pending)")===window.priorFrame'),true);
+ assert.equal(await b.evaluate('window.moviestarLive.is_current'),false);
+ await b.evaluate('window.moviestarLive.stage.seek(2.5)');
+ assert.equal(await b.evaluate('window.moviestarLive.stage.snapshot().boxes.find(b=>b.path.join("/")==="title/row/words").text'),'W');
+ run(['undo']);await b.wait('window.moviestarLive.is_current&&window.moviestarLive.current.request_id!=='+JSON.stringify(prior),15000);
+ await b.evaluate('window.moviestarLive.stage.seek(2.5)');
+ assert.equal(await b.evaluate('window.moviestarLive.stage.snapshot().boxes.find(b=>b.path.join("/")==="title/row/words").text'),'W');
+}finally{await b.close();}
+'''
+            result=subprocess.run(['node','--input-type=module','-e',
+                ''.join('const '+k+'='+json.dumps(v)+';'for k,v in constants.items())+script],
+                capture_output=True,text=True,timeout=65)
+            assert result.returncode==0,result.stdout+result.stderr
+        finally:
+            server.terminate()
+            try:server.wait(timeout=9)
+            except subprocess.TimeoutExpired:server.kill();server.wait()
+            server.stdout.close()

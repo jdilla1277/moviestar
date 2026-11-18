@@ -89,10 +89,13 @@ async function validateCaptionSamples(){
       if(seen.has(signature))continue;seen.add(signature);
       apply(i/packet.fps);await document.fonts.ready;if(disposed)return;
       scene.refreshLayout();
+      // Resize observers can miss temporary validation poses. Check every
+      // media box synchronously before the candidate revision is published.
+      syncMediaFrames();
       for(const {node,element} of captions)if(scene.inspectCaption(element).overflow)
         throw Error('caption_overflow '+node.path.join('/')+': caption text exceeds its content box; enlarge the region or reduce font size');
     }
-  }finally{if(!disposed){apply(0);scene.refreshLayout();}}
+  }finally{if(!disposed){apply(0);scene.refreshLayout();syncMediaFrames();}}
 }
 function clearFrozenFrame(){if(frozenFrame){frozenFrame.remove();frozenFrame.width=frozenFrame.height=0;frozenFrame=null;}for(const item of videos){if(item.frozen){item.frozen.remove();item.frozen.width=item.frozen.height=0;item.frozen=null;}}}
 function freezeLastFrame(){
