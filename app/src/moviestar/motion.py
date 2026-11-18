@@ -16,6 +16,9 @@ from moviestar.spec import SpecValidationError, parse_timecode_string
 
 
 _EPSILON = 0.0005
+# Authored timecodes persist at millisecond precision. Do not split off a
+# millisecond (or smaller) source tail just to insert a hold before the end.
+_MIN_HOLD_TAIL_S = 0.001
 
 
 class PacingResolutionError(SpecValidationError):
@@ -342,6 +345,13 @@ def _validated_entries(
                 if at_s < 0 or at_s > scene_duration + _EPSILON:
                     raise PacingResolutionError(
                         f"{where}: hold is outside 0-{_timecode(scene_duration)}"
+                    )
+                if at_s != scene_duration and abs(_round(scene_duration - at_s)) <= _MIN_HOLD_TAIL_S:
+                    raise PacingResolutionError(
+                        f"{where}: hold {entry.get('id')!r} at {at_s:g}s is within "
+                        f"1 ms of the resolved scene end {_timecode(scene_duration)}. "
+                        f'Set "at": "{_timecode(scene_duration)}" to hold at the '
+                        "exact scene extent, or leave more than 1 ms of final source."
                     )
                 if duration_s <= 0:
                     raise PacingResolutionError(f"{where}: duration must be positive")

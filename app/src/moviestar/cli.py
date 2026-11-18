@@ -5904,6 +5904,13 @@ def _scene_video_render_artifacts(
         render_plan["audio_from_input"] is not None
         for render_plan in render_plans
     ]
+    # Validate before the low-level builder can raise an unstructured ValueError.
+    _validate_audio_join_fade_durations(
+        audio_join_fade,
+        [segment[2] - segment[1] for segment in concat_segments],
+        command,
+        noun="scene",
+    )
     concat_command = build_render_segments_command(
         concat_segments,
         abs_output,
@@ -17632,7 +17639,9 @@ def scenes_motion_set(motion_file: str, dry_run: bool) -> None:
     automatic return to full-frame.
 
     Source-local 0:00 is the slot's source_from. Result-local 0:00 is
-    the authored scene's start after pacing.
+    the authored scene's start after pacing. To hold at a scene's end, set
+    'at' to its exact source-local extent. Holds within 1 ms of that end are
+    rejected to avoid a near-zero final render segment.
 
     """
     command = "scenes motion set"
@@ -26575,15 +26584,6 @@ def _export_scene_layout_composition(
             "--loudness-target requires an exported audio track, but this "
             "scene composition has no routed audio.",
         )
-    _validate_audio_join_fade_durations(
-        audio_join_fade,
-        [
-            segment[2] - segment[1]
-            for segment in artifacts["concat_segments"]
-        ],
-        "export",
-        noun="scene",
-    )
     plan = _scene_report_from_render_plans(plan, render_plans)
 
     def audio_route(render_plan: dict) -> dict:
