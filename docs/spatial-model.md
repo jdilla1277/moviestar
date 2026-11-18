@@ -985,6 +985,9 @@ not supported by these tracks.
 Active caption glyphs must fit even when the authored box has zero width.
 Inspection still reports `caption_overflow` for such text, including under a
 scaled ancestor; preview rejects it before replacing either output artifact.
+Overflow is checked in untransformed layout coordinates with a one-layout-pixel
+tolerance, so shrinking or growing a component cannot hide overflowing text.
+The rendered pose and inspection glyph rectangles retain the authored motion.
 
 Generate a caption track with `moviestar captions generate`, or import cues with
 `moviestar captions import`. Place it in a structured scene with an element:

@@ -145,3 +145,25 @@ def test_token_overlap_clipping_and_zero_duration(caption_project):
     assert state['active_word']==1
     assert state['word_windows']==[{'word_index':0,'from_s':.25,'to_s':.8},
                                    {'word_index':1,'from_s':.8,'to_s':1.5}]
+
+
+@pytest.mark.parametrize('scale',[.0001,.01,.2,1])
+@pytest.mark.parametrize('overflow',[False,True])
+def test_overflow_is_independent_of_nested_motion_scale(caption_project,scale,overflow):
+    from moviestar.spatial_layout import browser_available,measure_spatial_layout
+    if not browser_available():pytest.skip('Chrome and Node required')
+    spec,project=caption_project
+    spec['overlays'][0]['text']='A very long caption\n'*4 if overflow else 'Fits'
+    parent=spec['spatial']['scenes']['first']['layout']['children'][0]
+    parent['motion']={'scale':[{'at':0,'value':scale}]}
+    child=spec['spatial']['definitions']['subtitles']['children'][0]
+    child['motion']={'scale':[{'at':0,'value':.5}]}
+    spec['spatial']['definitions']['subtitles']['children'].append({
+        'id':'marker','type':'text','content':{'text':'Marker'},
+        'layout':{'width':20,'height':20}})
+    result=measure_spatial_layout(_frame(spec,project,.3),{'width':640,'height':360})
+    assert result['boxes'][1]['overflow'] is overflow
+    assert bool([d for d in result['diagnostics'] if d['code']=='caption_overflow']) is overflow
+    # Inspection must restore the rendered pose after checking layout geometry.
+    assert result['boxes'][0]['rect']['width']==pytest.approx(608*scale,abs=.01)
+    assert result['boxes'][2]['rect']['width']==pytest.approx(20*scale,abs=.001)

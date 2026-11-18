@@ -271,7 +271,7 @@ async function initialize(){
   const measured=await render({...packet.initial,paint_dir:'native',live_dom:true});
   if(disposed)return;
   const bad=measured.diagnostics.find(item=>item.severity==='error');
-  if(bad)throw Error(bad.code);
+  if(bad)throw Error(bad.code+' '+(bad.path??[]).join('/')+(bad.reason?': '+bad.reason:''));
   const entries=new Map(window.moviestarScene.entries.map(entry=>[key(entry.node.path),entry]));
   const images=[];
   if(packet.caption_plane){

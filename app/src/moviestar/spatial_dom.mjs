@@ -246,16 +246,31 @@ export async function render(input) {
     }
     return lines;
   }
-  function inspectCaption(element, lines=textLines(element)) {
-    const rect = element.getBoundingClientRect(), css = getComputedStyle(element);
-    const px = key => (parseFloat(css.getPropertyValue(key)) || 0) * worldScales.get(element);
-    const left = rect.left + px('border-left-width') + px('padding-left');
-    const top = rect.top + px('border-top-width') + px('padding-top');
-    const right = rect.right - px('border-right-width') - px('padding-right');
-    const bottom = rect.bottom - px('border-bottom-width') - px('padding-bottom');
-    const stroke = px('-webkit-text-stroke-width') / 2;
-    return {overflow: lines.some(line => line.x - stroke < left - 1 || line.y - stroke < top - 1
-      || line.x + line.width + stroke > right + 1 || line.y + line.height + stroke > bottom + 1)};
+  function inspectCaption(element) {
+    // Overflow is a layout constraint. A screen-pixel tolerance would hide it
+    // at small motion scales, making content-only cue validation pose-dependent.
+    // Keep transform containing blocks while measuring their untransformed
+    // geometry, then restore the authored pose before returning to the caller.
+    const transforms = [];
+    for (let ancestor = element; ancestor; ancestor = ancestor.parentElement) {
+      if (ancestor.style.transform && ancestor.style.transform !== 'none') {
+        transforms.push([ancestor, ancestor.style.transform]);
+        ancestor.style.transform = 'translate(0px, 0px) scale(1)';
+      }
+    }
+    try {
+      const rect = element.getBoundingClientRect(), css = getComputedStyle(element);
+      const px = key => parseFloat(css.getPropertyValue(key)) || 0;
+      const left = rect.left + px('border-left-width') + px('padding-left');
+      const top = rect.top + px('border-top-width') + px('padding-top');
+      const right = rect.right - px('border-right-width') - px('padding-right');
+      const bottom = rect.bottom - px('border-bottom-width') - px('padding-bottom');
+      const stroke = px('-webkit-text-stroke-width') / 2;
+      return {overflow: textLines(element).some(line => line.x - stroke < left - 1 || line.y - stroke < top - 1
+        || line.x + line.width + stroke > right + 1 || line.y + line.height + stroke > bottom + 1)};
+    } finally {
+      for (const [ancestor, transform] of transforms) ancestor.style.transform = transform;
+    }
   }
   const boxes = [];
   const diagnostics = [];
@@ -290,7 +305,7 @@ export async function render(input) {
       if (node.kind === 'caption') {
         box.caption = node.caption;
         box.caption_words = captionWords(element);
-        box.overflow = inspectCaption(element, lines).overflow;
+        box.overflow = inspectCaption(element).overflow;
         if (box.overflow) {
           diagnostics.push({code: 'caption_overflow', severity: 'error', path: node.path,
                             track: node.caption.track, line_count: lines.length,

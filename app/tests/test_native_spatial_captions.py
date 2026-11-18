@@ -11,7 +11,8 @@ from moviestar.spatial_layout import browser_available, _chrome_path
 from tests.test_native_edit_benchmark import benchmark
 
 
-def test_later_cue_overflow_keeps_previous_preview(tmp_path,benchmark):
+@pytest.mark.parametrize('initial_scale',[None,.01,.001])
+def test_later_cue_overflow_keeps_previous_preview(tmp_path,benchmark,initial_scale):
     if not browser_available():pytest.skip('Chrome and Node required')
     from spatial_caption_benchmark import prepare
     root=tmp_path/'project';prepare(root,(360,640),'still')
@@ -20,6 +21,12 @@ def test_later_cue_overflow_keeps_previous_preview(tmp_path,benchmark):
     # before the new stage is published, even if the viewer is paused at zero.
     model['overlays'][-1]['text']='A very long caption\n'*30
     model['overlays'][-1].pop('tokens');model['overlays'][-1].pop('highlight')
+    if initial_scale is not None:
+        for cue in model['overlays']:
+            cue['text']='A very long caption\n'*4
+            cue.pop('tokens',None);cue.pop('highlight',None)
+        group=model['spatial']['scenes']['title']['layout']['children'][-1]
+        group['motion']={'scale':[{'at':0,'value':initial_scale},{'at':1,'value':1}]}
     bad=tmp_path/'bad.json';bad.write_text(json.dumps(model))
     with (tmp_path/'server.log').open('w') as log:
         server=subprocess.Popen([sys.executable,'-m','moviestar.cli','preview','--workspace',str(root),
