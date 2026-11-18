@@ -7,6 +7,10 @@ AI agents. Start with the path that matches your task:
   transcription, supplied captions, or diarization.
 - [Getting started](getting-started.md) — install Moviestar and produce a
   first verified edit.
+- [Sharing with Moviestar](sharing-guide.md) — ask your agent to share a finished
+  video, email its link, and manage access.
+- [Leaving feedback](feedback-guide.md) — write a report with your agent, review
+  what it contains, and send it to the Moviestar team.
 - [Agent guide](agent-guide.md) — understand project state, time spaces,
   structured output, composition, and verification.
 - [Review exports](review-exports.md) — create a 720p rendition while preserving
