@@ -52,7 +52,7 @@ _STYLE = {
     "font_size": "font-size", "font_weight": "font-weight", "line_height": "line-height",
     "text_align": "text-align", "white_space": "white-space", "border_color": "border-color",
     "border_width": "border-width", "border_style": "border-style",
-    "border_radius": "border-radius", "opacity": "opacity", "object_fit": "object-fit",
+    "border_radius": "border-radius", "opacity": "opacity", "object_fit": "object-fit", "object_position": "object-position",
 }
 _ROOT = {key: value for key, value in {**_LAYOUT, **_STYLE}.items()
          if key not in {"width", "height", "min_width", "max_width", "min_height",

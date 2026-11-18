@@ -86,7 +86,11 @@ three-span limit and frame-aligned boundaries remain unchanged.
 Every source clock must be unit speed, matching the indexed output rate
 (24–60 fps). Reusable components, text, shapes, images, placed caption tracks and
 canonical sampled translation/scale/opacity are supported. Media wrappers must
-be relative/absolute, without padding, border widths or nested children.
+be relative/absolute and have no authored children. Video/image elements support
+`object_fit`, `object_position`, padding, borders, rounded corners and background
+colors. Live media uses the same content box as inspection/export; transparent
+letterboxing exposes the authored background. A box with no positive content
+width/height fails the new revision and preserves the prior playable preview.
 
 Audio can be explicitly selected for the scene, inferred from its single
 audio-capable slot, or selected by `composition_audio_from`. These routes are

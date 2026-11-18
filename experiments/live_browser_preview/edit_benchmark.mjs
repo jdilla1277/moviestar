@@ -20,12 +20,19 @@ function probe(expected,at=.2){
   const wantedActive=wanted.segments?wanted.segments[snapshot.segment].packet:wanted;
   const frame=packet.segments?[...root.document.querySelectorAll('iframe')].find(f=>f.contentWindow.moviestarLiveStage?.packet.range.from===active.range.from):outer;
   const doc=frame.contentDocument;
-  snapshot.video_styles=[...doc.querySelectorAll('video')].map(v=>({object_fit:doc.defaultView.getComputedStyle(v).objectFit,object_position:doc.defaultView.getComputedStyle(v).objectPosition}));
+  snapshot.video_styles=[...doc.querySelectorAll('video')].map((v,i)=>{
+   const wanted=active.media.filter(m=>m.kind==='video'||m.kind===undefined)[i];
+   const probe=doc.createElement('i');probe.style.position='absolute';probe.style.visibility='hidden';probe.style.objectPosition=wanted.object_position;
+   v.parentElement.append(probe);const expectedPosition=doc.defaultView.getComputedStyle(probe).objectPosition;probe.remove();
+   return{object_fit:doc.defaultView.getComputedStyle(v).objectFit,object_position:doc.defaultView.getComputedStyle(v).objectPosition,expected_object_position:expectedPosition};
+  });
   snapshot.images=active.media.filter(m=>m.kind==='image').map(m=>{
    const entry=frame.contentWindow.moviestarScene.entries.find(e=>JSON.stringify(e.node.path)===JSON.stringify(m.path));
    const image=entry?.element.querySelector('img'),style=image&&doc.defaultView.getComputedStyle(image);
+   const probe=doc.createElement('i');probe.style.position='absolute';probe.style.visibility='hidden';probe.style.objectPosition=m.object_position;entry.element.append(probe);
+   const expectedPosition=doc.defaultView.getComputedStyle(probe).objectPosition;probe.remove();
    return{path:m.path,asset:image?.currentSrc.split('/').at(-1),
-    ready:Boolean(image?.complete&&image.naturalWidth>0),object_fit:style?.objectFit,object_position:style?.objectPosition};
+    ready:Boolean(image?.complete&&image.naturalWidth>0),object_fit:style?.objectFit,object_position:style?.objectPosition,expected_object_position:expectedPosition};
   });
   const color=doc.createElement('i');color.style.color=wantedActive.initial.root_style['background-color'];doc.body.append(color);
   snapshot.background_matches=doc.defaultView.getComputedStyle(color).color===doc.defaultView.getComputedStyle(frame.contentWindow.moviestarScene.scene).backgroundColor;color.remove();
@@ -99,7 +106,7 @@ try{
   await persist();await browser.send('Media.enable');await browser.send('Page.navigate',{url:url+'?audit=1'});
   await browser.wait('window.moviestarLive?.is_current',20000);
   await browser.send('Emulation.setDeviceMetricsOverride',{width:Math.max(1280,fixture.canvas.width+100),height:Math.max(1000,fixture.canvas.height+500),deviceScaleFactor:1,mobile:false});
-  await browser.evaluate(`(async()=>{const s=document.getElementById('stage'),style=document.createElement('style');style.textContent='#stage{max-width:none!important;width:'+(${fixture.canvas.width}+s.offsetWidth-s.clientWidth)+'px!important}';document.head.append(style);await window.moviestarLive.stage.seek(.2);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));})()`);
+  await browser.evaluate(`(async()=>{const s=document.getElementById('stage'),style=document.createElement('style');style.textContent='#stage{max-width:none!important;width:'+(${fixture.canvas.width}+s.offsetWidth-s.clientWidth)+'px!important;${fixture.unclipped_scene?'border-radius:0!important;border-color:transparent!important;box-shadow:none!important;':''}}';document.head.append(style);await window.moviestarLive.stage.seek(.2);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));})()`);
   result.initial_probe=await browser.evaluate(probe(fixture.initial));await persist();
   await browser.wait(`(${probe(fixture.initial)}).then(p=>p.expected_text_visible)`,5000);
   const initial=await browser.evaluate('window.moviestarLive.current');
@@ -124,6 +131,11 @@ try{
       if(at===.2||at===3){
         const shot=await browser.send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
         await writeFile(join(out,label+'-at-'+at+'.png'),Buffer.from(shot.data,'base64'));
+      }
+      if(fixture.pose_image_references?.[action.name]?.[at]){
+        const clip=await browser.evaluate(`(()=>{const r=document.querySelector('iframe:not(.pending)').getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,scale:1};})()`);
+        const shot=await browser.send('Page.captureScreenshot',{format:'png',clip,captureBeyondViewport:true});
+        await writeFile(join(out,label+'-at-'+at+'-scene.png'),Buffer.from(shot.data,'base64'));
       }
       await persist();
     }

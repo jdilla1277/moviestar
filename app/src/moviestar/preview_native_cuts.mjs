@@ -7,11 +7,15 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
   function outputs(active,at=audio.currentTime){
     stages.forEach((stage,i)=>{stage.gain.gain.cancelScheduledValues(audio.currentTime);stage.gain.gain.setValueAtTime(i===active?1:0,at);});
   }
+  function sourceSnapshot(i){
+    const stage=stages[i].api;
+    return typeof stage.sourceSnapshot==='function'?stage.sourceSnapshot():stage.snapshot().source;
+  }
   function reveal(i,selectAudio=true){
     show(i);if(selectAudio)outputs(playing?i:-1);
     metrics.segments_shown.push({segment:i,result_time:packet.range.from+packet.segments[i].offset,
       media_time:stages[i].api.packet.source_start+stages[i].api.time,
-      source:audit?stages[i].api.snapshot().source:undefined,shown_at:Date.now()});
+      source:audit?sourceSnapshot(i):undefined,shown_at:Date.now()});
   }
   function fail(error){metrics.error=String(error.message??error);if(!metrics.error.includes('--mode rendered'))metrics.error+=' Use --mode rendered.';api.pause();}
   async function finish(){
@@ -164,6 +168,7 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
       catch(error){if(!disposed&&attempt===seekGeneration)fail(error);throw error;}
       finally{if(pendingSeek===operation)pendingSeek=null;}
     },
+    sourceSnapshot(){return sourceSnapshot(index);},
     snapshot(){return{...stages[index].api.snapshot(),time:api.time,segment:index,audio:reviewAudio?.snapshot()};},
     async prepareCaptionUpdate(next,signal){
       if(next.audio_plane&&audio.sampleRate!==48000)return null;

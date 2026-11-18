@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""Install the same Ubuntu FFmpeg packages through bounded official HTTPS setup."""
+from pathlib import Path
+import re
+import subprocess
+
+
+def install(*,sources_dir=Path('/etc/apt'),run=subprocess.run):
+    # Hosted runners may reference mirror+file:/etc/apt/apt-mirrors.txt
+    # rather than spelling archive URLs directly in the Deb822 source file.
+    paths=[sources_dir/'sources.list',*sorted(sources_dir.glob('*mirrors*.txt')),*sorted((sources_dir/'sources.list.d').glob('*.sources')),
+           *sorted((sources_dir/'sources.list.d').glob('*.list'))]
+    for path in paths:
+        if not path.is_file():continue
+        original=path.read_text()
+        updated=re.sub(r'http://(?:[a-z0-9.-]+\.)?archive\.ubuntu\.com/ubuntu',
+                       'https://archive.ubuntu.com/ubuntu',original)
+        updated=updated.replace('http://security.ubuntu.com/ubuntu','https://security.ubuntu.com/ubuntu')
+        if updated!=original:
+            run(['sudo','tee',str(path)],input=updated,text=True,stdout=subprocess.DEVNULL,check=True,timeout=30)
+    options=['sudo','apt-get','-o','Acquire::Retries=2','-o','Acquire::http::Timeout=30',
+             '-o','Acquire::https::Timeout=30']
+    run([*options,'update'],check=True,timeout=120)
+    run([*options,'install','-y','ffmpeg'],check=True,timeout=300)
+
+
+if __name__=='__main__':install()

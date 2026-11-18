@@ -8,7 +8,15 @@ let lastIndex=-1, playing=false, readyDone=false, metadataReady=false, imageRead
 let videoGroup,reviewAudio,outputMixer,sceneClock;
 let playbackIdentity;
 let captionLayer,captionImages=[],captionState=-1;
-const videos=[];
+const videos=[],mediaFrames=[];
+let mediaResize;
+function syncMediaFrames(){
+  for(const {element,asset,frame,media} of mediaFrames){
+    const styles=window.moviestarScene.mediaStyle(element,asset);
+    for(const [target,style] of [[frame,styles.frame],[media,styles.media]])
+      for(const [key,value] of Object.entries(style))if(target.style[key]!==value)target.style[key]=value;
+  }
+}
 const ready=new Promise((resolve,reject)=>{resolveReady=resolve;rejectReady=reject;});
 // Parent attaches after iframe load; keep early failures observable through ready.
 ready.catch(()=>{});
@@ -81,10 +89,13 @@ async function validateCaptionSamples(){
       if(seen.has(signature))continue;seen.add(signature);
       apply(i/packet.fps);await document.fonts.ready;if(disposed)return;
       scene.refreshLayout();
+      // Resize observers can miss temporary validation poses. Check every
+      // media box synchronously before the candidate revision is published.
+      syncMediaFrames();
       for(const {node,element} of captions)if(scene.inspectCaption(element).overflow)
         throw Error('caption_overflow '+node.path.join('/')+': caption text exceeds its content box; enlarge the region or reduce font size');
     }
-  }finally{if(!disposed){apply(0);scene.refreshLayout();}}
+  }finally{if(!disposed){apply(0);scene.refreshLayout();syncMediaFrames();}}
 }
 function clearFrozenFrame(){if(frozenFrame){frozenFrame.remove();frozenFrame.width=frozenFrame.height=0;frozenFrame=null;}for(const item of videos){if(item.frozen){item.frozen.remove();item.frozen.width=item.frozen.height=0;item.frozen=null;}}}
 function freezeLastFrame(){
@@ -289,9 +300,11 @@ async function initialize(){
     const {element}=entries.get(key(asset.path));
     const computed=getComputedStyle(element);
     if(!['relative','absolute'].includes(computed.position)||['inline','contents','none'].includes(computed.display))throw Error('Unsupported native media containing block.');
-    const media=document.createElement(asset.kind==='video'?'video':'img');
-    Object.assign(media.style,{position:'absolute',left:'0',top:'0',width:'100%',height:'100%',objectFit:asset.object_fit,objectPosition:asset.object_position??'50% 50%',borderRadius:computed.borderRadius});
-    element.append(media);
+    if(!CSS.supports('clip-path','content-box'))throw Error('Native media framing needs content-box clipping.');
+    const frame=document.createElement('div'),media=document.createElement(asset.kind==='video'?'video':'img');
+    const styles=window.moviestarScene.mediaStyle(element,asset);
+    Object.assign(frame.style,styles.frame);Object.assign(media.style,styles.media);
+    frame.append(media);element.append(frame);mediaFrames.push({element,asset,frame,media});
     if(asset.kind==='image'){
       media.src='assets/'+asset.asset;const decoded=media.decode();decoded.catch(()=>{});images.push(decoded);
     }else{
@@ -333,6 +346,10 @@ async function initialize(){
       else item.callback=media.requestVideoFrameCallback(observe);
     }
   }
+  mediaResize=new ResizeObserver(()=>{if(!disposed)try{syncMediaFrames();}catch(error){fail(error);}});
+  // Content width may stay constant while percentage padding and the outer
+  // frame resize. Track both boxes so the inner source follows either change.
+  for(const {element,frame} of mediaFrames){mediaResize.observe(element);mediaResize.observe(frame,{box:'border-box'});}
   if(!video){
     if(packet.clock!=='scene')throw Error('Native preview audio carrier is missing');
     await initializeStill(images);return;
@@ -503,6 +520,7 @@ window.moviestarLiveStage={ready,metrics,
   },
   pause(){if(cuts){cuts.pause();return;}if(sceneClock){sceneClock.pause();return;}if(playing&&outputMixer)metrics.pause_context_time=audio.currentTime;reviewAudio?.pause();if(playing&&videos.length){videos.forEach(item=>recordVideoQuality(item,'before-pause'));recordQuality();}++playGeneration;playing=false;clearTimeout(stopTimer);stopTimer=null;videoGroup?.pause();video?.pause();},
   async seek(at){if(cuts)return cuts.seek(at);if(sceneClock){await sceneClock.seek(at);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return;}this.pause();try{if(await seekTo(at))metrics.finished=false;}catch(error){fail(error);throw error;}},
+  sourceSnapshot(){return cuts?cuts.sourceSnapshot():packet.clock==='scene'?null:sourceFrame();},
   snapshot(){
     if(cuts)return cuts.snapshot();
     return {request_id:packet.request_id,state_id:packet.state_id,time:this.time,source:packet.clock==='scene'?null:sourceFrame(),
@@ -512,11 +530,13 @@ window.moviestarLiveStage={ready,metrics,
       boxes:window.moviestarScene.entries.map(({node,element})=>{
         const r=element.getBoundingClientRect();let opacity=1;
         for(let ancestor=element;ancestor;ancestor=ancestor.parentElement)opacity*=Number(getComputedStyle(ancestor).opacity);
-        return {path:node.path,kind:node.kind,text:element.textContent,rect:{x:r.x,y:r.y,width:r.width,height:r.height},opacity,caption:node.kind==='caption'?node.caption:undefined,caption_words:node.kind==='caption'?window.moviestarScene.captionWords(element):undefined,text_lines:['text','caption'].includes(node.kind)?window.moviestarScene.textLines(element):undefined};
+        return {path:node.path,kind:node.kind,text:element.textContent,
+          ...(['video','image'].includes(node.kind)?{media_box:(()=>{const m=window.moviestarScene.contentMetrics(element.querySelector('video,img')??element);return{
+            object_fit:m.css.objectFit,object_position:m.css.objectPosition,content_rect:m.rect};})()} : {}),rect:{x:r.x,y:r.y,width:r.width,height:r.height},opacity,caption:node.kind==='caption'?node.caption:undefined,caption_words:node.kind==='caption'?window.moviestarScene.captionWords(element):undefined,text_lines:['text','caption'].includes(node.kind)?window.moviestarScene.textLines(element):undefined};
       })};
   },
   dispose(){
-    if(disposed)return;this.pause();disposed=true;sceneClock?.dispose();cuts?.dispose();reviewAudio?.dispose();outputMixer?.dispose();for(const cancel of pendingSeeks)cancel();controller.abort();
+    if(disposed)return;this.pause();disposed=true;mediaResize?.disconnect();sceneClock?.dispose();cuts?.dispose();reviewAudio?.dispose();outputMixer?.dispose();for(const cancel of pendingSeeks)cancel();controller.abort();
     if(frameCallback)video?.cancelVideoFrameCallback(frameCallback);
     for(const item of videos)if(item.callback)item.video.cancelVideoFrameCallback(item.callback);
     if(videoGroup)videoGroup.dispose();else if(videos.length){for(const item of videos){item.video.removeAttribute('src');item.video.load();}}else if(video){video.removeAttribute('src');video.load();}clearTimeout(stopTimer);

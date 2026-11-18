@@ -145,23 +145,85 @@ export async function render(input) {
     for (const {element} of entries) baseRects.set(element, element.getBoundingClientRect());
     applyMotion();
   }
+  function contentMetrics(element) {
+    const css = getComputedStyle(element), px = key => parseFloat(css.getPropertyValue(key)) || 0;
+    const borderX = px('border-left-width') + px('border-right-width');
+    const borderY = px('border-top-width') + px('border-bottom-width');
+    const width = Math.max(0, (parseFloat(css.width) || element.clientWidth + borderX)
+      - borderX - px('padding-left') - px('padding-right'));
+    const height = Math.max(0, (parseFloat(css.height) || element.clientHeight + borderY)
+      - borderY - px('padding-top') - px('padding-bottom'));
+    let ancestor = element;
+    while (ancestor && !worldScales.has(ancestor)) ancestor = ancestor.parentElement;
+    const box = element.getBoundingClientRect(), scale = worldScales.get(ancestor) ?? 1;
+    return {css, width, height, rect: {
+      x: box.x + (px('border-left-width') + px('padding-left')) * scale,
+      y: box.y + (px('border-top-width') + px('padding-top')) * scale,
+      width: width * scale, height: height * scale}};
+  }
+  function positionOffset(element, position, dx, dy, where) {
+    // Chrome normalizes <position> keywords/edge offsets into two components.
+    // Keep calc()/min()/max() intact, and let CSS resolve their lengths against
+    // the free space (which is negative for a cover crop), not the host width.
+    const axes = [], parts = [];let depth = 0;
+    for (const char of position.trim()) {
+      if (char === '(') depth++;if (char === ')') depth--;
+      if (/\s/.test(char) && depth === 0) {
+        if (parts.length) {axes.push(parts.join(''));parts.length = 0;}
+      } else parts.push(char);
+    }
+    if (parts.length) axes.push(parts.join(''));
+    if (axes.length !== 2) throw Error(where+'.object_position: unresolved CSS position '+position);
+    const probe = document.createElement('i');
+    probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;width:0;height:0;font:inherit';
+    element.append(probe);
+    try {
+      return axes.map((axis, i) => {
+        const value = axis.replace(/(-?(?:\d*\.)?\d+)%/g, (_, n) => (Number(n) * [dx, dy][i] / 100)+'px');
+        probe.style.left = '';probe.style.left = value;
+        const offset = parseFloat(getComputedStyle(probe).left);
+        if (!probe.style.left || !Number.isFinite(offset)) throw Error(where+'.object_position: unresolved CSS position '+position);
+        return offset;
+      });
+    } finally {probe.remove();}
+  }
+  function mediaStyle(element, asset) {
+    const {css, width, height} = contentMetrics(element);
+    if (!(width > 0 && height > 0)) throw Error('Media content box '+(asset.path??[]).join('/')+' needs positive width and height; enlarge the box or reduce padding/borders');
+    const px = key => parseFloat(css.getPropertyValue(key)) || 0;
+    // Keep decoded pixels undecorated. Chrome clips an internal transparent
+    // frame to its rounded content edge; the authored host paints the border
+    // and background. This also keeps padding/borders off the video layer.
+    const frame = {position:'absolute',boxSizing:'border-box',display:'block',
+      left:-px('border-left-width')+'px',top:-px('border-top-width')+'px',
+      width:'calc(100% + '+(px('border-left-width')+px('border-right-width'))+'px)',
+      height:'calc(100% + '+(px('border-top-width')+px('border-bottom-width'))+'px)',
+      objectPosition:css.objectPosition,clipPath:'content-box',
+      borderRadius:css.borderRadius,borderStyle:'solid',borderColor:'transparent'};
+    for (const edge of ['Top','Right','Bottom','Left']) {
+      frame['padding'+edge] = css['padding'+edge];
+      frame['border'+edge+'Width'] = css['border'+edge+'Width'];
+    }
+    const media = {position:'absolute',boxSizing:'border-box',display:'block',
+      left:css.paddingLeft,top:css.paddingTop,padding:'0px',border:'0px',
+      width:'calc(100% - '+(px('padding-left')+px('padding-right'))+'px)',
+      height:'calc(100% - '+(px('padding-top')+px('padding-bottom'))+'px)',
+      objectFit:asset.object_fit,objectPosition:asset.object_position??css.objectPosition};
+    return {frame,media};
+  }
   const videoPlanes = [];
   const mediaPlanes = [];
   const mediaElements = [];
   if (input.paint_dir) {
     for (const {node, element} of entries) {
       if (!node.video && !node.image) continue;
-      const computed = getComputedStyle(element);
-      const padding = key => parseFloat(computed.getPropertyValue(`padding-${key}`)) || 0;
-      const width = Math.max(0, element.clientWidth - padding('left') - padding('right'));
-      const height = Math.max(0, element.clientHeight - padding('top') - padding('bottom'));
+      const metrics = contentMetrics(element), computed = metrics.css;
+      const {width, height} = metrics;
       if (node.video && !(width > 0 && height > 0)) {
         throw new Error(`${node.path.join('/')}: unresolved video geometry`);
       }
-      const box = element.getBoundingClientRect();
       const worldScale = worldScales.get(element);
-      const left = box.x + ((parseFloat(computed.borderLeftWidth) || 0) + padding('left')) * worldScale;
-      const top = box.y + ((parseFloat(computed.borderTopWidth) || 0) + padding('top')) * worldScale;
+      const left = metrics.rect.x, top = metrics.rect.y;
       let nativeWidth, nativeHeight;
       if (node.image) {
         const image = new Image();
@@ -178,7 +240,7 @@ export async function render(input) {
         nativeWidth = node.video.width;
         nativeHeight = node.video.height;
       }
-      const fit = node.style['object-fit'] || 'fill';
+      const fit = computed.objectFit;
       const contain = Math.min(width / nativeWidth, height / nativeHeight);
       const cover = Math.max(width / nativeWidth, height / nativeHeight);
       const factor = fit === 'contain' ? contain : fit === 'cover' ? cover
@@ -187,8 +249,10 @@ export async function render(input) {
       let fittedHeight = factor === null ? height : nativeHeight * factor;
       fittedWidth *= worldScale;
       fittedHeight *= worldScale;
-      let x = left + (width * worldScale - fittedWidth) / 2;
-      let y = top + (height * worldScale - fittedHeight) / 2;
+      const offsets = positionOffset(element, computed.objectPosition,
+        width - fittedWidth / worldScale, height - fittedHeight / worldScale, node.path.join('/'));
+      let x = left + offsets[0] * worldScale;
+      let y = top + offsets[1] * worldScale;
       if (node.video) {
         x = Math.round(x); y = Math.round(y);
         fittedWidth = Math.round(fittedWidth); fittedHeight = Math.round(fittedHeight);
@@ -282,6 +346,11 @@ export async function render(input) {
       path: node.path, kind: node.kind, dom_order: index,
       rect: {x: rounded(rect.x), y: rounded(rect.y),
              width: rounded(rect.width), height: rounded(rect.height)},
+      ...(node.kind === 'video' || node.kind === 'image' ? {media_box: (() => {
+        const {css, rect} = contentMetrics(element);
+        return {object_fit: css.objectFit, object_position: css.objectPosition,
+          content_rect: Object.fromEntries(['x','y','width','height'].map(k => [k, rounded(rect[k])]))};
+      })()} : {}),
       base_rect: Object.fromEntries(['x', 'y', 'width', 'height'].map(key => [key, rounded(baseRects.get(element)[key])])),
       layout_rule: node.style,
       rule_sources: node.rule_sources, matched_format_rules: node.matched_format_rules,
@@ -376,7 +445,7 @@ export async function render(input) {
       document.body.append(label);
     }
   }
-  if (input.live_dom) window.moviestarScene = {scene, entries, applyMotion, refreshLayout, updateCaption, captionWords, inspectCaption, textLines};
+  if (input.live_dom) window.moviestarScene = {scene, entries, applyMotion, refreshLayout, mediaStyle, contentMetrics, updateCaption, captionWords, inspectCaption, textLines};
   window.moviestarLabelView = labelView;
   window.moviestarRepaint = async () => {
     // Partial repaint can reuse rounded-clip edge pixels from a prior capture.

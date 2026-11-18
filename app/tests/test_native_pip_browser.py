@@ -70,7 +70,7 @@ try{
    const video=this;
    return request.call(video,function deliver(now,frame){
     if(!video.paused&&Math.abs(frame.mediaTime-Math.floor(frame.mediaTime)-29/30)<1e-5){
-     const path=window.moviestarScene.entries.find(e=>e.element===video.parentElement).node.path;
+     const path=window.moviestarScene.entries.find(e=>e.node.kind==='video'&&e.element.contains(video)).node.path;
      (window.omittedEndCallbacks??=[]).push({path,media_time:frame.mediaTime});
      request.call(video,deliver);
     }else callback(now,frame);

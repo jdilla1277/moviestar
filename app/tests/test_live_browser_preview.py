@@ -70,7 +70,7 @@ def test_live_packet_keeps_canonical_motion_captions_and_source_offset(live_proj
     assert spec['spatial']['scenes']['scene']['layout']['children'][1]['content']['text'] == 'Original title'
 
 
-@pytest.mark.parametrize('mutation', ['extra_video', 'no_audio', 'speed', 'padding', 'media_children', 'inherited_fit', 'unknown_fps', 'low_rate'])
+@pytest.mark.parametrize('mutation', ['extra_video', 'no_audio', 'speed', 'media_children', 'inherited_fit', 'unknown_fps', 'low_rate'])
 def test_live_packet_rejects_unimplemented_behavior(live_project, mutation):
     spec, project, root = live_project
     if mutation == 'extra_video':
@@ -93,8 +93,6 @@ def test_live_packet_rejects_unimplemented_behavior(live_project, mutation):
         save_project(project, cwd=root)
     elif mutation == 'inherited_fit':
         spec['spatial']['definitions']['card']['children'][0]['style']['object_fit'] = 'inherit'
-    elif mutation == 'padding':
-        spec['spatial']['definitions']['card']['children'][0]['layout']['padding'] = 3
     else:
         spec['spatial']['definitions']['card']['children'][0]['children'] = [
             {'id': 'inside', 'type': 'text', 'content': {'text': 'unsupported child'}}]

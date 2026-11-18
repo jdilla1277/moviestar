@@ -60,3 +60,17 @@ test('spatial captions require canonical glyph pose, color and active word',()=>
  }
  const next=structuredClone(actual);next.boxes[0].rect.x+=2;assert.equal(checkSnapshot(wanted,next,.2),false);
 });
+
+test('require actual media content-box geometry and normalized CSS crop position',()=>{
+ const media_box={object_fit:'contain',object_position:'0% 50%',content_rect:{x:18,y:28,width:14,height:24}};
+ const wanted={...p,media:[],caption_plane:undefined,pose_boxes:{0:[{...s.boxes[0],media_box}]}};
+ const actual={...s,videos:[],boxes:[{...s.boxes[0],media_box:structuredClone(media_box)}]};
+ assert.equal(checkSnapshot(wanted,actual,0),true);
+ for(const edit of [b=>b.content_rect.x+=2,b=>b.content_rect.width-=2,b=>b.object_position='50% 50%']){
+  const next=structuredClone(actual);edit(next.boxes[0].media_box);assert.equal(checkSnapshot(wanted,next,0),false);
+ }
+ const image={kind:'image',path:['logo'],asset:'fresh',object_fit:'contain',object_position:'left center'};
+ const snapshot={...s,videos:[],images:[{...image,object_position:'0% 50%',expected_object_position:'0% 50%',ready:true}]};
+ assert.equal(checkSnapshot({...p,media:[image]},snapshot,0),true);
+ snapshot.images[0].object_position='50% 50%';assert.equal(checkSnapshot({...p,media:[image]},snapshot,0),false);
+});
