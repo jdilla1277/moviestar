@@ -80,6 +80,11 @@ try{
  }
  const clip=await b.evaluate(`(()=>{const r=document.querySelector('iframe:not(.pending)').getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,scale:1};})()`);
  const shot=await b.send('Page.captureScreenshot',{format:'png',clip,captureBeyondViewport:true});await writeFile(PNG,Buffer.from(shot.data,'base64'));
+ // Responsive percentage padding can change while the host's content width
+ // stays constant. Observe the surrounding frame as well as the content box.
+ await b.evaluate(`(async()=>{const outer=document.querySelector('iframe:not(.pending)'),frame=outer.contentDocument.querySelector('iframe')??outer,w=frame.contentWindow;const host=w.moviestarScene.entries.find(e=>e.node.path.join('/')==='review/main/footage').element;host.style.padding='0px calc((100% - 170px) / 2)';await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));host.parentElement.style.width='400px';await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));})()`);
+ const responsive=await b.evaluate(`(()=>{const outer=document.querySelector('iframe:not(.pending)'),frame=outer.contentDocument.querySelector('iframe')??outer,w=frame.contentWindow,host=w.moviestarScene.entries.find(e=>e.node.path.join('/')==='review/main/footage').element;return{expected:w.moviestarScene.contentMetrics(host).rect,actual:w.moviestarScene.contentMetrics(host.querySelector('video')).rect};})()`);
+ for(const key of ['x','y','width','height'])assert.ok(Math.abs(responsive.actual[key]-responsive.expected[key])<=1,'Responsive content frame: '+JSON.stringify(responsive));
  const prior=await b.evaluate('window.moviestarLive.current.request_id');const {spawnSync}=await import('node:child_process');
  const run=args=>{const r=spawnSync(PYTHON,['-m','moviestar.cli',...args],{cwd:ROOT,encoding:'utf8'});assert.equal(r.status,0,r.stdout+r.stderr);};
  run(['spec','--edit',BAD]);await b.wait('document.getElementById("error").textContent||window.moviestarLive.current.request_id!=='+JSON.stringify(prior),15000);

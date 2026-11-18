@@ -344,7 +344,9 @@ async function initialize(){
     }
   }
   mediaResize=new ResizeObserver(()=>{if(!disposed)try{syncMediaFrames();}catch(error){fail(error);}});
-  for(const {element} of mediaFrames)mediaResize.observe(element);
+  // Content width may stay constant while percentage padding and the outer
+  // frame resize. Track both boxes so the inner source follows either change.
+  for(const {element,frame} of mediaFrames){mediaResize.observe(element);mediaResize.observe(frame,{box:'border-box'});}
   if(!video){
     if(packet.clock!=='scene')throw Error('Native preview audio carrier is missing');
     await initializeStill(images);return;
