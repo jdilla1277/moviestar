@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'app/src/moviestar/**'
+      - 'bin/install-ci-ffmpeg'
       - 'app/tests/test_native_audio*'
       - 'app/tests/test_native_pip_browser.py'
       - 'app/tests/test_native_still*'

@@ -6,7 +6,9 @@ import subprocess
 
 
 def install(*,sources_dir=Path('/etc/apt'),run=subprocess.run):
-    paths=[sources_dir/'sources.list',*sorted((sources_dir/'sources.list.d').glob('*.sources')),
+    # Hosted runners may reference mirror+file:/etc/apt/apt-mirrors.txt
+    # rather than spelling archive URLs directly in the Deb822 source file.
+    paths=[sources_dir/'sources.list',*sorted(sources_dir.glob('*mirrors*.txt')),*sorted((sources_dir/'sources.list.d').glob('*.sources')),
            *sorted((sources_dir/'sources.list.d').glob('*.list'))]
     for path in paths:
         if not path.is_file():continue

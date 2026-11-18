@@ -40,3 +40,17 @@ def test_ci_setup_fails_when_installation_does_not_finish(tmp_path):
     import pytest
     def run(args,**kwargs):raise subprocess.TimeoutExpired(args,kwargs['timeout'])
     with pytest.raises(subprocess.TimeoutExpired):installer().install(sources_dir=tmp_path,run=run)
+
+
+def test_ci_setup_rewrites_runner_mirror_list_without_changing_source_pointer(tmp_path):
+    sources=tmp_path/'sources.list.d';sources.mkdir()
+    source=sources/'ubuntu.sources'
+    original='URIs: mirror+file:/etc/apt/apt-mirrors.txt\nSuites: resolute resolute-updates\nComponents: main universe\n'
+    source.write_text(original)
+    mirrors=tmp_path/'apt-mirrors.txt'
+    mirrors.write_text('http://us-east-2.ec2.archive.ubuntu.com/ubuntu/ priority:1\nhttp://archive.ubuntu.com/ubuntu/ priority:2\nhttps://packages.example.test/vendor priority:3\n')
+    def run(args,**kwargs):
+        if args[:2]==['sudo','tee']:Path(args[2]).write_text(kwargs['input'])
+    installer().install(sources_dir=tmp_path,run=run)
+    assert source.read_text()==original
+    assert mirrors.read_text()==('https://archive.ubuntu.com/ubuntu/ priority:1\nhttps://archive.ubuntu.com/ubuntu/ priority:2\nhttps://packages.example.test/vendor priority:3\n')
