@@ -155,3 +155,24 @@ def test_artifact_producing_attempt_survives_replay_reopen_and_expiry(tmp_path):
     call(tmp_path, 'fixture', 'expire', P, artifact['id'])
     _, reopened = call(tmp_path, 'artifacts', 'show', P, artifact['id'])
     assert reopened['artifact']['attempt_id'] == attempt_id
+
+
+def test_synthetic_engine_and_unfrozen_retention_are_explicit(tmp_path):
+    _, accepted = submit(tmp_path)
+    _, completed = call(tmp_path, 'fixture', 'complete', P, accepted['job']['id'])
+    assert completed['job']['engine_version'] == '20a5aef963db69e21d8f14e8f6afcbcdabfd3ccc'
+    assert completed['artifact']['engine_version'] == completed['job']['engine_version']
+    assert completed['artifact']['retention'] == {'status': 'unfrozen', 'expires_at': None}
+
+
+def test_canonical_errors_keep_cli_recovery_hint_outside_inner_error(tmp_path):
+    _, unknown = submit(tmp_path, '--lose-reply')
+    assert set(unknown['error']) == {'code', 'message', 'details', 'retryable'}
+    assert unknown['error']['retryable'] is True
+    assert unknown['request_id'] == 'mock_delivery_submission_unconfirmed'
+    assert unknown['hint'] and unknown['idempotency_key'] == 'retained-key'
+    for actor, code, message in [('foreign', 'not_found', 'Resource is absent or inaccessible.'),
+                                  ('revoked', 'credential_invalid', 'Reconnect with a currently authorized personal credential.')]:
+        _, denied = call(tmp_path, '--actor', actor, 'renders', 'show', P, R)
+        assert denied['error'] == {'code': code, 'message': message, 'details': {}, 'retryable': False}
+        assert denied['request_id'] == 'mock_delivery_' + code

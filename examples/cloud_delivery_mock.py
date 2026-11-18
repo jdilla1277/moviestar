@@ -10,13 +10,24 @@ from uuid import UUID, uuid4, uuid5, NAMESPACE_URL
 
 import click
 
+ENGINE_VERSION = '20a5aef963db69e21d8f14e8f6afcbcdabfd3ccc'
+ERROR_MESSAGES = {
+    'not_found': 'Resource is absent or inaccessible.',
+    'credential_invalid': 'Reconnect with a currently authorized personal credential.',
+    'idempotency_conflict': 'Retained request key already identifies different input.',
+    'artifact_unavailable': 'Retained artifact media is unavailable.',
+    'submission_unconfirmed': 'The submission outcome is unknown; retry the retained request.',
+}
+
 
 def emit(**body):
     click.echo(json.dumps({'mock': True, 'media_delivered': False, **body}, indent=2))
 
 
 def fail(code, hint, **fields):
-    emit(error={'code': code, 'hint': hint}, **fields)
+    emit(error={'code': code, 'message': ERROR_MESSAGES.get(code, hint),
+                'details': {}, 'retryable': code == 'submission_unconfirmed'},
+         request_id='mock_delivery_' + code, hint=hint, **fields)
     raise click.exceptions.Exit(1)
 
 
@@ -117,7 +128,7 @@ def submit(ctx, project, revision, kind, idempotency_key, lose_reply):
         fail('idempotency_conflict', 'Recover the original body/key; use a new key only for deliberately different work.')
     job_id = str(uuid5(NAMESPACE_URL, request_id))
     if not previous:
-        data['jobs'][job_id] = {'id': job_id, 'project_id': project, **payload,
+        data['jobs'][job_id] = {'id': job_id, 'project_id': project, **payload, 'engine_version': ENGINE_VERSION,
                                'state': 'queued', 'phase': 'queued', 'attempt_number': 0, 'attempt_id': None,
                                'artifact_id': None, 'failure_code': None}
         data['requests'][request_id] = {'payload': payload, 'job_id': job_id}
@@ -246,6 +257,7 @@ def complete(ctx, project, job_id):
     artifact = data['artifacts'].get(artifact_id) or {
         'id': artifact_id, 'project_id': job['project_id'], 'revision_id': job['revision_id'],
         'job_id': job['id'], 'attempt_id': attempt_id, 'kind': job['kind'], 'available': True,
+        'engine_version': ENGINE_VERSION, 'retention': {'status': 'unfrozen', 'expires_at': None},
         'verification': 'synthetic_fixture_only', 'sha256': ('a' if job['kind'] == 'preview' else 'd')*64, 'size_bytes': 12345,
         'runtime_manifest_sha256': 'b'*64, 'output_profile_sha256': ('c' if job['kind'] == 'preview' else 'e')*64,
         'media': {'duration_ms': 10000, 'width': 854 if job['kind'] == 'preview' else 1920,

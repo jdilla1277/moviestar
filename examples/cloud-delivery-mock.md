@@ -40,6 +40,19 @@ ordinal zero). Canonical preview/final keys yield attempt UUIDs
 do not imply measured work, usage, price or provider costs. Use a fresh disposable
 journal after fixture-schema changes; older mock journals are not migrated.
 
+Job/artifact `engine_version` explicitly names the checked-in worker commit as a
+synthetic reference, not an installed runtime measurement. Artifact
+`retention: {status: "unfrozen", expires_at: null}` leaves retention unknown; it
+does not promise unlimited storage. Full fixture equality is not production
+schema completeness or media acceptance.
+
+Application failures retain canonical
+`{error:{code,message,details,retryable},request_id}` fields matching API/MCP
+fixtures. A separate top-level `hint` and retained key/request explain CLI
+recovery. `submission_unconfirmed` is a client transport-uncertainty outcome,
+not a server rollback receipt. Mock request IDs are stable synthetic labels;
+Click syntax/argument errors remain normal CLI usage diagnostics.
+
 For the revised edit, use revision `00000000-0000-4000-8000-000000000102`, kind
 `final` and a new retained key. Old preview identities remain unchanged.
 `artifacts list PROJECT --revision REVISION` discovers that revision's outputs.
