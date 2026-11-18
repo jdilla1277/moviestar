@@ -38,8 +38,7 @@ jobs:
         env:
           CHROME_FOR_TESTING_VERSION: '156.0.8078.73'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          python bin/install-ci-ffmpeg
           curl --fail --location --silent --show-error \
             "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_FOR_TESTING_VERSION}/linux64/chrome-headless-shell-linux64.zip" \
             --output "$RUNNER_TEMP/chrome.zip"

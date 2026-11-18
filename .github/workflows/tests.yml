@@ -38,8 +38,7 @@ jobs:
           cache-dependency-path: app/pyproject.toml
       - name: Install FFmpeg and Python dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          python bin/install-ci-ffmpeg
           python -m pip install -e ./app pytest "numpy==1.24.4"
       - name: Compare the compositor with FFmpeg on the oldest supported Python
         run: |
@@ -68,8 +67,7 @@ jobs:
       # Moviestar shells out to FFmpeg and ffprobe for media operations.
       - name: Install ffmpeg
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          python bin/install-ci-ffmpeg
           ffmpeg -version | head -1
           ffprobe -version | head -1
 
