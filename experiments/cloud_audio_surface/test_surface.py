@@ -3,6 +3,7 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 
 HERE = Path(__file__).parent
@@ -38,9 +39,12 @@ def test_validate_apply_and_mcp_share_request_and_audio_semantics():
     assert all(v["response"] == values[0]["response"] for v in values)
     assert values[1]["transport"]["body"] == values[2]["transport"]["arguments"]["request"]
     assert all(not any(v["effects"].values()) for v in values)
-    assert values[0]["response"]["changed_fields"] == ["audio_mix.source_audio.gain_db"]
+    assert values[0]["response"]["changed_fields"] == ["audio_mix"]
+    assert values[0]["response"]["changed_paths"] == ["audio_mix.source_audio.gain_db"]
     applied = invoke("--surface", "api", "apply", "--request", path, "--idempotency-key", "retained-gain")
     assert applied["response"]["revision"]["spec"]["audio_mix"]["source_audio"]["gain_db"] == -6.0
+    assert applied["response"]["status"] == "committed"
+    assert applied["response"]["changed_fields"] == ["audio_mix"]
     assert applied["effects"] == dict(saved_revisions=1, activity_events=1, processing_jobs=0, customer_usage=0)
     assert applied["response"]["revision"]["resolved"]["routing"] == values[0]["response"]["projected_resolved"]["routing"]
     assert values[0]["response"]["current_undo_remaining"] == 0
@@ -66,11 +70,40 @@ def test_replay_recovers_original_revision_not_newer_pointer():
     assert not any(value["effects"].values())
 
 
+def test_undo_replay_and_exact_read_do_not_rewind_pointer():
+    value = invoke("--scenario", "retry", "apply", "--request", str(HERE / "requests" / "undo.json"), "--idempotency-key", "retained-undo")
+    response = value["response"]
+    assert response["replayed"] is True
+    assert response["revision"]["id"].endswith("104")
+    assert response["current_revision"] == response["revision"]["id"]
+    assert not any(value["effects"].values())
+    exact = invoke("show", "--revision", response["revision"]["id"])
+    assert exact["response"]["current_revision"] == response["revision"]["id"]
+
+
+@pytest.mark.parametrize("key", ["", "a" * 129, "bad/key", "bad key", "é", "bad\n"])
+def test_invalid_key_never_commits_even_in_retry_fixture(key):
+    for scenario in ("normal", "retry"):
+        value = invoke("--scenario", scenario, "apply", "--request", str(HERE / "requests" / "gain.json"), "--idempotency-key", key, code=1)
+        assert value["response"]["error"]["code"] == "invalid_request"
+        assert value["response"]["error"]["details"]["field"] == "idempotency_key"
+        assert "revision" not in value["response"]
+        assert not any(value["effects"].values())
+
+
+@pytest.mark.parametrize("key", ["a", "a" * 128, "A_z-09"])
+def test_valid_key_boundaries(key):
+    value = invoke("apply", "--request", str(HERE / "requests" / "gain.json"), "--idempotency-key", key)
+    assert value["response"]["status"] == "committed"
+
+
 def test_errors_and_lost_reply_are_explicit_and_not_acceptance():
     path = str(HERE / "requests" / "gain.json")
-    for scenario, code in (("stale", "revision_conflict"), ("unauthorized", "not_found"), ("changed-key", "idempotency_conflict"), ("disabled", "edit_admission_disabled")):
+    for scenario, code in (("stale", "revision_conflict"), ("unauthorized", "not_found"), ("changed-key", "idempotency_conflict"), ("disabled", "edits_unavailable")):
         response = invoke("--scenario", scenario, "apply", "--request", path, "--idempotency-key", "retained", code=1)
         assert response["response"]["error"]["code"] == code
+        assert set(response["response"]["error"]) == {"code", "message", "details", "retryable"}
+        assert response["response"]["error"]["retryable"] is (scenario == "disabled")
         assert not any(response["effects"].values())
     lost = invoke("--scenario", "lost-response", "apply", "--request", path, "--idempotency-key", "retained", code=1)
     assert lost["response"]["outcome"] == "unknown"
@@ -78,8 +111,10 @@ def test_errors_and_lost_reply_are_explicit_and_not_acceptance():
     assert lost["effects"] is None
     assert lost["fixture_expected_effects"]["saved_revisions"] == 1
     stale = invoke("--scenario", "stale", "apply", "--request", path, "--idempotency-key", "retained", code=1)
-    assert stale["response"]["error"]["expected_base_revision"].endswith("101")
-    assert stale["response"]["error"]["current_revision"].endswith("103")
+    assert stale["response"]["error"]["details"]["expected_base_revision"].endswith("101")
+    assert stale["response"]["error"]["details"]["current_revision"].endswith("103")
+    disabled_validate = invoke("--scenario", "disabled", "validate", "--request", path, code=1)
+    assert disabled_validate["response"]["error"]["code"] == "edits_unavailable"
 
 
 def test_unknown_request_is_rejected_as_fixture_limit(tmp_path):

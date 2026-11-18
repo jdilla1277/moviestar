@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 from pathlib import Path
 
 import click
@@ -77,7 +78,7 @@ def emit(ctx, command, response, status=200, body=None, key=None, selected=None,
             transport["arguments"]["revision_id"] = selected
     effects = dict(saved_revisions=saved, activity_events=saved, processing_jobs=0, customer_usage=0)
     envelope = dict(mock=True, fixture_limit=LIMIT,
-                    fixture_context="Independent read fixture current is 103; apply fixtures show their own resulting pointer. No state carries between invocations.",
+                    fixture_context="Independent read fixture current is 103, or 104 when reading undo revision 104. Recovered undo also has current 104; gain recovery has current 103. No state carries between invocations.",
                     transport=transport, http_status=status, response=response, effects=None if uncertain else effects)
     if uncertain:
         envelope["fixture_expected_effects"] = effects
@@ -88,7 +89,8 @@ def emit(ctx, command, response, status=200, body=None, key=None, selected=None,
 
 
 def failure(ctx, command, code, hint, status=409, error_fields=None, **kwargs):
-    emit(ctx, command, dict(error=dict(code=code, hint=hint, **(error_fields or {}))), status=status, **kwargs)
+    emit(ctx, command, dict(error=dict(code=code, message=hint, details=error_fields or {},
+                                      retryable=code == "edits_unavailable")), status=status, **kwargs)
 
 
 @cli.command()
@@ -106,7 +108,7 @@ def show(ctx, selected):
     if ctx.obj["scenario"] == "unauthorized":
         failure(ctx, "show", "not_found", "Check project access.", status=404, selected=selected)
     index = REVISIONS.index(selected) if selected else 2
-    emit(ctx, "show", dict(project_id=PROJECT, current_revision=REVISIONS[2], revision=revision(index)), selected=selected)
+    emit(ctx, "show", dict(project_id=PROJECT, current_revision=REVISIONS[max(2, index)], revision=revision(index)), selected=selected)
 
 
 def read_request(ctx, command, path):
@@ -120,7 +122,7 @@ def read_request(ctx, command, path):
     failure(ctx, command, "mock_fixture_required", "Only requests/gain.json, mute.json and undo.json are canned. This is not production validation.", status=422)
 
 
-def changed(index):
+def changed_paths(index):
     return [["audio_mix.source_audio.gain_db"], ["audio_mix.source_audio.muted"], ["audio_mix"]][index]
 
 
@@ -138,16 +140,17 @@ def validate(ctx, path):
     if ctx.obj["scenario"] == "unauthorized":
         failure(ctx, "validate", "not_found", "Check project access.", status=404, body=body)
     if ctx.obj["scenario"] == "disabled":
-        failure(ctx, "validate", "edit_admission_disabled", "Read saved revisions; new validation/admission is unavailable.", status=503, body=body)
+        failure(ctx, "validate", "edits_unavailable", "Read saved revisions; new validation/admission is unavailable.", status=503, body=body)
     emit(ctx, "validate", dict(status="would_apply", normalized_request=body,
-                               changed_fields=changed(index), current_undo_remaining=resolved(index)["undo_remaining"],
+                               changed_fields=["audio_mix"], changed_paths=changed_paths(index),
+                               current_undo_remaining=resolved(index)["undo_remaining"],
                                projected_resolved=resolved(index + 1),
                                hint="Apply this exact request with a retained idempotency key. No loudness measurement or render was requested."), body=body)
 
 
 @cli.command()
 @click.option("--request", "path", type=click.Path(path_type=Path), required=True)
-@click.option("--idempotency-key", required=True, help=RETRY)
+@click.option("--idempotency-key", required=True, help="1–128 ASCII letters, digits, underscore or hyphen. " + RETRY)
 @click.pass_context
 def apply(ctx, path, idempotency_key):
     """Save a canned source-gain/mute change or undo one complete command.
@@ -158,13 +161,16 @@ def apply(ctx, path, idempotency_key):
     Saves are unmetered and start no render. Use the shared delivery path after
     saving, then listen to the actual output. This mock cannot render or play.
     """
+    if re.fullmatch(r"[A-Za-z0-9_-]{1,128}", idempotency_key) is None:
+        failure(ctx, "apply", "invalid_request", "Use an idempotency key of 1–128 ASCII letters, digits, underscore or hyphen.",
+                status=422, error_fields=dict(field="idempotency_key"))
     index, body = read_request(ctx, "apply", path)
     scenario = ctx.obj["scenario"]
     kwargs = dict(body=body, key=idempotency_key)
     errors = dict(stale=("revision_conflict", "Reopen current revision and deliberately rebase; do not silently retry against latest."),
                   **{"changed-key": ("idempotency_conflict", "Use the original body/base/key to recover its result; a changed edit needs a new key.")},
                   unauthorized=("not_found", "Check project and input asset access."),
-                  disabled=("edit_admission_disabled", "Authorized saved reads remain available; new mutation admission is disabled."))
+                  disabled=("edits_unavailable", "Authorized saved reads remain available; new mutation admission is disabled."))
     if scenario in errors:
         code, hint = errors[scenario]
         fields = dict(expected_base_revision=body["expected_base_revision"], current_revision=REVISIONS[3] if index == 2 else REVISIONS[2]) if scenario == "stale" else None
@@ -172,11 +178,12 @@ def apply(ctx, path, idempotency_key):
     if scenario == "lost-response":
         emit(ctx, "apply", dict(outcome="unknown", idempotency_key=idempotency_key, request=body, hint=RETRY), status=504, saved=1, uncertain=True, **kwargs)
     replayed = scenario == "retry"
-    emit(ctx, "apply", dict(status="saved", project_id=PROJECT, idempotency_key=idempotency_key,
+    emit(ctx, "apply", dict(status="committed", project_id=PROJECT, idempotency_key=idempotency_key,
                             request_sha256=hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
                             expected_base_revision=body["expected_base_revision"], replayed=replayed,
-                            revision=revision(index + 1), current_revision=REVISIONS[2] if replayed else REVISIONS[index + 1],
-                            changed_fields=changed(index), hint="Reopen this exact revision on another surface. Request preview/final through shared delivery, then verify the saved file and listen."),
+                            revision=revision(index + 1), current_revision=REVISIONS[max(2, index + 1)] if replayed else REVISIONS[index + 1],
+                            changed_fields=["audio_mix"], changed_paths=changed_paths(index),
+                            hint="Reopen this exact revision on another surface. Request preview/final through shared delivery, then verify the saved file and listen."),
          status=200 if replayed else 201, saved=0 if replayed else 1, **kwargs)
 
 

@@ -57,9 +57,11 @@ Fixture project: `00000000-0000-4000-8000-000000000010`.
 | 103 | Source gain -6 dB, muted | 2 |
 | 104 | Undo mute; source gain -6 dB, unmuted | 1 |
 
-The fixture current pointer is always 103 for `show`, including historical
-reads. Apply/undo outputs project their own canned resulting pointer. That
-fixed pointer is a mock limitation, not a persistent lifecycle simulation.
+The read fixture current pointer is 103 for revisions 101–103, and 104 when
+reading undo revision 104. Apply/undo outputs project their own canned resulting
+pointer. Recovery of gain 102 reports current 103; recovery of undo 104 reports
+current 104. These are independent snapshots, not a persistent lifecycle
+simulation; reading the undo snapshot never implies that its pointer rewound.
 
 ```bash
 "$audio_python" "$audio_mock" show --revision 00000000-0000-4000-8000-000000000101
@@ -86,12 +88,25 @@ it starts no render. Historical reads and retained-key replay create neither.
 These counters are expected contract behavior printed by the mock, not database
 or billing evidence.
 
+Successful apply/replay uses `status: committed`. `changed_fields: ["audio_mix"]`
+names the engine journal family; optional `changed_paths` supplies finer gain or
+mute diagnostics. Undo reports the parent `audio_mix` restoration scope in
+`changed_paths`, because it restores the complete command rather than applying
+a leaf patch. Errors use the shared
+`error: {code, message, details, retryable}` shape. Stale expected/current
+revision IDs live in `details`. Disabled admission is `edits_unavailable` and
+retryable; a stale edit requires deliberate rebasing rather than blind retry.
+
 ## Retained-key recovery and failures
 
 Retain the exact request/body/base/key before sending. After an uncertain reply,
 retry them unchanged; do not automatically fetch a newer base. Replay returns
 the original saved revision plus a separately named current pointer, which may
 already have advanced.
+
+Keys must contain 1–128 ASCII letters, digits, underscores or hyphens
+(`[A-Za-z0-9_-]`). Empty, overlong or other-character keys fail nonzero with
+`invalid_request`, before any canned commit or replay and with zero effects.
 
 ```bash
 "$audio_python" "$audio_mock" --scenario lost-response apply --request "$audio_requests/gain.json" --idempotency-key retained-gain
@@ -111,7 +126,7 @@ reads. None of these scenarios establishes actual concurrency or authorization.
 
 Run `app/.venv/bin/python -m pytest experiments/cloud_audio_surface/test_surface.py -q`.
 Tests assert envelope/transport parity, dry-run effects, exact reads, mute undo,
-replay and explicit fixture limits. Agent friction testing should use only
+gain/undo replay, key bounds and explicit fixture limits. Agent friction testing should use only
 command help, fixture request inputs and command outputs.
 
 Actual acceptance still needs the shared personal-account revision service and
@@ -122,3 +137,8 @@ dialogue routing and joins, then listen to continuity, gain/mute and sync.
 Measure achieved loudness and true peak on the identified output independently.
 `loudness: null` / `not_measured` in these fixtures is intentional. Metadata,
 configured gain or a render URL cannot establish listening acceptance.
+
+The current fixtures contain zero source fades and no independent tracks. They
+do not prove preservation of a populated mix. Runtime regression acceptance
+must start with nonzero fades and existing tracks and verify a gain/mute patch
+and whole-command undo preserve those fields and dependency identities.
