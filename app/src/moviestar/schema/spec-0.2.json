@@ -284,6 +284,7 @@
     },
     "spatial_element": {
       "type": "object", "required": ["id", "type"],
+      "dependentSchemas": { "media_motion": { "properties": { "type": { "enum": ["video", "image"] } } } },
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "reference_ids": {
@@ -295,6 +296,7 @@
         "content": { "$ref": "#/$defs/spatial_binding" },
         "format_rules": { "type": "array", "items": { "$ref": "#/$defs/spatial_format_rule" } },
         "motion": { "$ref": "#/$defs/spatial_motion" },
+        "media_motion": { "$ref": "#/$defs/spatial_motion", "description": "Move/scale media pixels inside the fixed video/image content viewport, on scene-result time." },
         "layout": { "type": "object" },
         "style": { "type": "object" },
         "children": { "type": "array", "items": { "$ref": "#/$defs/spatial_node" } }

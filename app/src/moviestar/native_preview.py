@@ -225,14 +225,14 @@ def _compile_span(snapshot, timeline, start, end, span, *, prepared_audio=False)
                 key = sha256(json.dumps([str(path), identity]).encode()).hexdigest()[:24]
                 assets[key] = {'path': path, 'identity': identity, 'kind': kind}
                 media.append({'path': node['path'], 'kind': kind, 'asset': key,
-                              'object_fit': style.get('object-fit', 'fill'),
-                              'object_position': original.get('native_object_position', style.get('object-position', '50% 50%')),
+                              'object_fit': 'fill' if 'media_motion' in node else style.get('object-fit', 'fill'),
+                              'object_position': '50% 50%' if 'media_motion' in node else original.get('native_object_position', style.get('object-position', '50% 50%')),
                               **({'has_audio': bool(metadata[asset].get('audio_codec')),
                                   'source_start': clocks[tuple(node['path'])],
                                   'source_end': clocks[tuple(node['path'])]+end-start} if kind == 'video' else {})})
         def dynamic(nodes):
             return [{'path': node['path'], 'content': node['content'],
-                     'motion': node.get('motion'), 'caption': node.get('caption'),
+                     'motion': node.get('motion'), 'media_motion': node.get('media_motion'), 'caption': node.get('caption'),
                      'children': dynamic(node['children'])} for node in nodes]
         samples.append({'nodes': dynamic(prepared['nodes'])})
     packet = {'state_id': snapshot['state_id'], 'canvas': initial['canvas'], 'fps': fps,

@@ -435,3 +435,11 @@ Its [SIL Open Font License 1.1](../app/src/moviestar/fonts/DMSerifDisplay-OFL.tx
 and copyright notice ship alongside the font and in the wheel's license files.
 The font SHA-256 is `8cc3643535edf039aa5d95440a8542735e9197e4f4b8d9303e980fefbf5ab616`.
 The viewer also uses the existing bundled Inter family under its existing OFL.
+
+Structured video/image elements can use `media_motion` to pan or zoom pixels
+inside a stationary content viewport while preserving padding, border and rounded
+clipping. These tracks share scene-result time with ordinary element motion;
+see [camera pan/zoom](spatial-model.md#camera-pan-and-zoom-inside-a-fixed-frame).
+Native inspection reports the actual inner camera box and opacity as well as
+the fixed outer frame. Legacy preset camera/pacing records retain their existing
+rendered-mode requirement.

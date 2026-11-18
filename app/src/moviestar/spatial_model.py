@@ -190,9 +190,9 @@ def _customizations(value: object, path: str, definitions: dict, definition_id: 
         allowed = {"op", "path"}
         if op == "property_set":
             prop = edit.get("property")
-            if not isinstance(prop, str) or not prop.startswith(("style.", "layout.", "motion.")) or len(prop.split(".")) != 2:
-                _fail(f"{here}.property", "must be style.KEY, layout.KEY, or motion.KEY")
-            if prop.startswith('motion.'):
+            if not isinstance(prop, str) or not prop.startswith(("style.", "layout.", "motion.", "media_motion.")) or len(prop.split(".")) != 2:
+                _fail(f"{here}.property", "must be style.KEY, layout.KEY, motion.KEY, or media_motion.KEY")
+            if prop.startswith(('motion.', 'media_motion.')):
                 _motion({prop.split('.')[1]: edit.get('value')}, here)
             allowed |= {"property", "value"}
             if "value" not in edit:
@@ -236,6 +236,10 @@ def _children(children: object, path: str, definitions: dict, inputs: dict[str, 
         if "style" in node and not isinstance(node["style"], dict):
             _fail(f"{here}.style", "must be an object")
         _format_rules(node, here)
+        if 'media_motion' in node:
+            if is_instance or node.get('type') not in {'video', 'image'}:
+                _fail(f'{here}.media_motion', 'place media motion on a video or image element')
+            _motion(node['media_motion'], f'{here}.media_motion')
         if 'motion' in node:
             _motion(node['motion'], f'{here}.motion')
         if is_instance:
@@ -329,6 +333,8 @@ def validate_spatial_model(spec: dict) -> None:
         _identifier(definition_id, path)
         if not isinstance(definition, dict):
             _fail(path, "must be an object")
+        if 'media_motion' in definition:
+            _fail(f'{path}.media_motion', 'place media motion on a video or image child')
         if 'motion' in definition:
             _fail(f'{path}.motion', 'place motion on a rendered child or component instance')
         if 'format_rules' in definition:
@@ -344,6 +350,8 @@ def validate_spatial_model(spec: dict) -> None:
             _fail(path, "unknown timeline scene id")
         if not isinstance(scene, dict) or not isinstance(scene.get("layout"), dict):
             _fail(f"{path}.layout", "must be an object")
+        if 'media_motion' in scene['layout']:
+            _fail(f'{path}.layout.media_motion', 'place media motion on a video or image child')
         if 'motion' in scene['layout']:
             _fail(f'{path}.layout.motion', 'place motion on a rendered child or component instance')
         _format_rules(scene['layout'], f'{path}.layout')
@@ -511,6 +519,11 @@ def expand_spatial_scene(spec: dict, scene_id: str, *, include_binding_provenanc
             if 'motion' in node:
                 _motion(node['motion'], '/'.join(address) + '.motion')
                 common['motion'] = deepcopy(node['motion'])
+            if 'media_motion' in node:
+                if node.get('type') not in {'video', 'image'}:
+                    _fail('/'.join(address)+'.media_motion', 'place media motion on a video or image element')
+                _motion(node['media_motion'], '/'.join(address)+'.media_motion')
+                common['media_motion'] = deepcopy(node['media_motion'])
             if 'format_rules' in node:
                 common['format_rules'] = deepcopy(node['format_rules'])
             if local_overrides:

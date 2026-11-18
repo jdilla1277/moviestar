@@ -11,7 +11,9 @@ let captionLayer,captionImages=[],captionState=-1;
 const videos=[],mediaFrames=[];
 let mediaResize;
 function syncMediaFrames(){
-  for(const {element,asset,frame,media} of mediaFrames){
+  window.moviestarScene.refreshMediaFrames();
+  for(const {element,asset,frame,media,camera} of mediaFrames){
+    if(camera)continue;
     const styles=window.moviestarScene.mediaStyle(element,asset);
     for(const [target,style] of [[frame,styles.frame],[media,styles.media]])
       for(const [key,value] of Object.entries(style))if(target.style[key]!==value)target.style[key]=value;
@@ -61,7 +63,7 @@ function apply(at){
   let layoutChanged=false;
   for(const entry of window.moviestarScene.entries){
     const node=next.get(key(entry.node.path));
-    entry.node.motion=node.motion;
+    entry.node.motion=node.motion;entry.node.media_motion=node.media_motion;
     if(['text','caption'].includes(entry.node.kind)){
       if(entry.node.kind==='caption')layoutChanged=window.moviestarScene.updateCaption(entry.element,node.caption,entry.node.path)||layoutChanged;
       else if(entry.element.textContent!==node.content){entry.element.textContent=node.content;layoutChanged=true;}
@@ -301,12 +303,19 @@ async function initialize(){
     const computed=getComputedStyle(element);
     if(!['relative','absolute'].includes(computed.position)||['inline','contents','none'].includes(computed.display))throw Error('Unsupported native media containing block.');
     if(!CSS.supports('clip-path','content-box'))throw Error('Native media framing needs content-box clipping.');
-    const frame=document.createElement('div'),media=document.createElement(asset.kind==='video'?'video':'img');
-    const styles=window.moviestarScene.mediaStyle(element,asset);
-    Object.assign(frame.style,styles.frame);Object.assign(media.style,styles.media);
-    frame.append(media);element.append(frame);mediaFrames.push({element,asset,frame,media});
+    const scene=window.moviestarScene,target=scene.mediaTarget(element),camera=target!==element;
+    const frame=camera?target.parentElement.parentElement:document.createElement('div');
+    const media=document.createElement(asset.kind==='video'?'video':'img');
+    if(camera){
+      Object.assign(media.style,{position:'absolute',display:'block',left:'0px',top:'0px',width:'100%',height:'100%',
+        border:'0px',padding:'0px',objectFit:asset.object_fit,objectPosition:asset.object_position});target.append(media);
+    }else{
+      const styles=scene.mediaStyle(element,asset);Object.assign(frame.style,styles.frame);Object.assign(media.style,styles.media);
+      frame.append(media);element.append(frame);
+    }
+    mediaFrames.push({element,asset,frame,media,camera});
     if(asset.kind==='image'){
-      media.src='assets/'+asset.asset;const decoded=media.decode();decoded.catch(()=>{});images.push(decoded);
+      media.src='assets/'+asset.asset;const decoded=media.decode().then(()=>scene.setMediaIntrinsic(element,media.naturalWidth,media.naturalHeight));decoded.catch(()=>{});images.push(decoded);
     }else{
       const primary=key(asset.path)===key(packet.video_path),item={video:media,path:asset.path,start:asset.source_start??packet.source_start,end:asset.source_end??packet.source_end,fps:packet.fps,primary,hasAudio:asset.has_audio!==false};
       videos.push(item);if(primary)video=media;
@@ -314,6 +323,7 @@ async function initialize(){
       media.addEventListener('error',()=>fail(Error('Source video could not load.')));
       media.addEventListener('canplay',checkReady);media.addEventListener('seeked',checkReady);
       media.addEventListener('loadedmetadata',()=>{
+        scene.setMediaIntrinsic(element,media.videoWidth,media.videoHeight);
         item.metadata=true;if(primary)metadataReady=true;
         if(!media.videoWidth||!media.videoHeight)fail(Error('Source has no decodable video.'));
         checkReady();
@@ -531,8 +541,7 @@ window.moviestarLiveStage={ready,metrics,
         const r=element.getBoundingClientRect();let opacity=1;
         for(let ancestor=element;ancestor;ancestor=ancestor.parentElement)opacity*=Number(getComputedStyle(ancestor).opacity);
         return {path:node.path,kind:node.kind,text:element.textContent,
-          ...(['video','image'].includes(node.kind)?{media_box:(()=>{const m=window.moviestarScene.contentMetrics(element.querySelector('video,img')??element);return{
-            object_fit:m.css.objectFit,object_position:m.css.objectPosition,content_rect:m.rect};})()} : {}),rect:{x:r.x,y:r.y,width:r.width,height:r.height},opacity,caption:node.kind==='caption'?node.caption:undefined,caption_words:node.kind==='caption'?window.moviestarScene.captionWords(element):undefined,text_lines:['text','caption'].includes(node.kind)?window.moviestarScene.textLines(element):undefined};
+          ...(node.media_motion?{media_motion:node.media_motion}:{}),...(['video','image'].includes(node.kind)?{media_box:node.media_motion?window.moviestarScene.mediaBox(element):(()=>{const m=window.moviestarScene.contentMetrics(element.querySelector('video,img')??element);return{object_fit:m.css.objectFit,object_position:m.css.objectPosition,content_rect:m.rect};})()} : {}),rect:{x:r.x,y:r.y,width:r.width,height:r.height},opacity,caption:node.kind==='caption'?node.caption:undefined,caption_words:node.kind==='caption'?window.moviestarScene.captionWords(element):undefined,text_lines:['text','caption'].includes(node.kind)?window.moviestarScene.textLines(element):undefined};
       })};
   },
   dispose(){

@@ -42,8 +42,9 @@ test('reject stale, unloaded or incorrectly cropped image layers',()=>{
 test('compare immutable samples while live DOM initial nodes acquire sampled fields',async()=>{
  const {semanticPacket}=await import('../edit_semantics.mjs');
  const packet={...p,initial:{nodes:[{path:['title'],kind:'text',content:'First',style:{}}]},samples:[{nodes:[{path:['title'],content:'First'}]}]};
- const live=structuredClone(packet);live.initial.nodes[0].content='Later';live.initial.nodes[0].motion=null;live.initial.nodes[0].caption=null;
+ const live=structuredClone(packet);live.initial.nodes[0].content='Later';live.initial.nodes[0].motion=null;live.initial.nodes[0].media_motion={scale:2};live.initial.nodes[0].caption=null;
  assert.deepEqual(semanticPacket(live),semanticPacket(packet));
+ live.samples[0].nodes[0].media_motion={scale:2};assert.notDeepEqual(semanticPacket(live),semanticPacket(packet));
  live.samples[0].nodes[0].content='Stale';assert.notDeepEqual(semanticPacket(live),semanticPacket(packet));
  const wanted={...packet,media:[],caption_plane:undefined};
  assert.equal(checkSnapshot(wanted,{...s,videos:[],boxes:[{path:['title'],kind:'text',text:'Wrong',rect:{}}]},0),false);
@@ -73,4 +74,15 @@ test('require actual media content-box geometry and normalized CSS crop position
  const snapshot={...s,videos:[],images:[{...image,object_position:'0% 50%',expected_object_position:'0% 50%',ready:true}]};
  assert.equal(checkSnapshot({...p,media:[image]},snapshot,0),true);
  snapshot.images[0].object_position='50% 50%';assert.equal(checkSnapshot({...p,media:[image]},snapshot,0),false);
+});
+
+test('camera readiness requires the sampled inner pose and opacity',()=>{
+ const media_box={object_fit:'cover',object_position:'50% 50%',content_rect:{x:10,y:20,width:80,height:80},
+  camera_rect:{x:0,y:10,width:100,height:100},media_opacity:.8};
+ const wanted={...p,media:[],caption_plane:undefined,pose_boxes:{0:[{...s.boxes[0],media_box}]}};
+ const actual={...s,videos:[],boxes:[{...s.boxes[0],media_box:structuredClone(media_box)}]};
+ assert.equal(checkSnapshot(wanted,actual,0),true);
+ for(const edit of [b=>delete b.camera_rect,b=>b.camera_rect.x+=2,b=>b.camera_rect.width+=2,b=>b.media_opacity=1]){
+  const next=structuredClone(actual);edit(next.boxes[0].media_box);assert.equal(checkSnapshot(wanted,next,0),false);
+ }
 });

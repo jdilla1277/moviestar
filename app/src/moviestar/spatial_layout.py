@@ -221,6 +221,13 @@ def prepare_layout_frame(frame: dict, canvas: dict) -> dict:
                 prepared['motion'] = sample_motion(node['motion'], frame.get('scene_time_s'), f'{where}.motion')
             except SpatialMotionError as exc:
                 raise SpatialLayoutError(str(exc)) from exc
+        if 'media_motion' in node:
+            if kind not in {'video','image'}:
+                raise SpatialLayoutError(f'{where}.media_motion: use a video or image element')
+            try:
+                prepared['media_motion'] = sample_motion(node['media_motion'], frame.get('scene_time_s'), f'{where}.media_motion')
+            except SpatialMotionError as exc:
+                raise SpatialLayoutError(str(exc)) from exc
         if caption is not None:
             prepared["caption"] = caption
         return prepared

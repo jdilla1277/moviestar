@@ -16,7 +16,7 @@ from moviestar.spatial_model import (
 
 
 CONTENT_TYPES = {'video', 'image', 'caption', 'text'}
-_COMMON_FIELDS = {'layout', 'style', 'format_rules', 'motion', 'reference_ids'}
+_COMMON_FIELDS = {'layout', 'style', 'format_rules', 'motion', 'media_motion', 'reference_ids'}
 
 
 def _node_fields(node):
@@ -234,8 +234,9 @@ def inspect_saved_layout(spec: dict, identity: str) -> dict:
     for node in _walk(expanded['children']):
         if 'definition_id' in node:
             components.add(node['definition_id'])
-        for frames in node.get('motion', {}).values():
-            last_keyframe = max(last_keyframe, frames[-1]['at'])
+        for tracks in ('motion','media_motion'):
+            for frames in node.get(tracks, {}).values():
+                last_keyframe = max(last_keyframe, frames[-1]['at'])
         if node.get('type') in CONTENT_TYPES:
             declaration = declarations.get(tuple(node['occurrence_path'][1:]))
             value = declaration.get('default', {'input': declaration['name']}) if declaration else {'empty': True}
@@ -449,7 +450,8 @@ def apply_saved_layout(spec: dict, identity: str, scene_id: str, bindings: dict 
                     if item.scene['id'] == scene_id)
     warnings = []
     for node in _walk(expanded['children']):
-        for property, frames in node.get('motion', {}).items():
+        for property, frames in {**node.get('motion', {}),
+                                  **{f'media_motion.{k}':v for k,v in node.get('media_motion', {}).items()}}.items():
             if frames[-1]['at'] > duration:
                 warnings.append({'code': 'motion_exceeds_scene_duration', 'severity': 'warning',
                     'path': node['occurrence_path'], 'property': property,

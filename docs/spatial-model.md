@@ -1213,3 +1213,78 @@ if they consume the entire box.
 This static framing path does not add camera pan/zoom tracks or translate legacy
 slot camera settings into structured elements. Existing preset framing keeps its
 read-only compatibility adapter.
+
+## Camera pan and zoom inside a fixed frame
+
+A video or image element can have `media_motion` tracks alongside its ordinary
+`motion`. `motion` moves/scales the whole element, including its padding and
+border. `media_motion` moves/scales its media pixels inside the fixed content
+viewport; the element's layout, border, rounded clipping and siblings stay put.
+The two motions compose, so an entire framed component can move while its
+picture zooms independently.
+
+```json
+{
+  "id": "speaker", "type": "video", "content": {"input": "clip"},
+  "layout": {"width": "100%", "height": "100%", "padding": 8},
+  "style": {
+    "object_fit": "cover", "object_position": "50% 50%",
+    "border_width": 4, "border_style": "solid", "border_color": "#65ffb2",
+    "border_radius": 24, "background_color": "#183848"
+  },
+  "media_motion": {
+    "scale": [{"at": 0, "value": 1}, {"at": 5, "value": 1.4}],
+    "translate_x": [{"at": 0, "value": "0%"}, {"at": 5, "value": "-20%"}],
+    "translate_y": [{"at": 0, "value": "0%"}, {"at": 5, "value": "-20%"}]
+  }
+}
+```
+
+This is a centered 1× → 1.4× zoom over five scene-result seconds. Uniform scale
+uses the content viewport's top-left origin. To keep its center fixed, translate
+each axis by `-(scale - 1) / 2 * 100%` at each scale key. A pan moves media left
+for negative x and up for negative y. For example, keep scale 1.5 and y at -25%,
+and move x from -10% to -40% to pan across the picture. Panning or zooming out
+may deliberately expose the element's background; there is no automatic crop
+clamping or subject tracking.
+
+The source is fitted and positioned using `object_fit` and `object_position`
+first. Motion then transforms the complete fitted source, including portions
+outside the viewport; it does not transform an already-cropped screenshot.
+Pixels remain clipped to the authored content edge and rounded corners.
+`contain`, `cover`, `fill`, `none` and `scale-down` retain their ordinary fitting
+semantics. Image alpha reveals the authored background. `media_motion.opacity`
+can fade the picture while leaving its border/background visible.
+
+Tracks use the same validation, linear interpolation and endpoint holds as
+`motion`. Translation accepts finite pixels or viewport percentages; scale is
+finite and positive, and opacity is 0–1. Defaults are zero translation, scale
+one and opacity one. The clock is scene-relative **result time**, not source
+seconds or project time. Reusing a component in another scene starts its motion
+on that scene's clock. Keyframes beyond the scene end stay authored and do not
+stretch the scene. Media motion does not change footage selection, pacing,
+source audio or caption timing.
+
+Put `media_motion` on video/image children in reusable definitions. Existing
+`component.update`, `instance.customize` and `instance.reset` operations accept
+properties such as `media_motion.scale` and `media_motion.translate_x`. Local
+tracks override the shared track; other occurrences keep shared edits. Saving
+an arrangement preserves these tracks and opens its content inputs in the usual
+way. To remove media motion entirely, remove the `media_motion` object through
+`spec --edit`; undo restores the previous complete edit. Component instances,
+text/shapes, definition roots and scene roots do not accept `media_motion`.
+A media viewport needs a positioned containing block; the default relative
+position works, while `position: static` returns an addressed error.
+
+Inspection without assets reports sampled `media_motion`, the stationary
+`media_box.content_rect` and the transformed **content coordinate box** in
+`media_box.camera_rect`. The latter is not the fitted source's visible bounds;
+cover/contain may extend beyond or inside that coordinate box. Rendered
+inspection's `media` array reports fitted video-plane rectangles. Labeled layout
+views show the sampled media zoom and a cyan dashed camera coordinate box. Native snapshots expose the same camera box
+and inner opacity, so a correct outer rectangle alone cannot pass the preview
+readiness checks.
+
+Native preview retains its existing source-clock/window/profile restrictions.
+This path does not apply legacy slot camera records to a structured tree; the
+structured element owns its source fitting and media motion.
