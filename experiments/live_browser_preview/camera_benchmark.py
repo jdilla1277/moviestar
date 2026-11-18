@@ -37,6 +37,19 @@ def prepare(root,canvas,mode):
     save_spec(spec,cwd=root)
 
 
+def camera_target(spec):
+    # Still fixtures retain unused footage definitions. Choose an instantiated
+    # occurrence, and identify its media by ID rather than child ordering.
+    for scene_id, scene in spec['spatial']['scenes'].items():
+        for instance in scene['layout']['children']:
+            definition=instance.get('definition_id')
+            if definition not in ('speaker_card','panel'):continue
+            leaf='footage' if definition=='speaker_card' else 'background'
+            media=next(c for c in spec['spatial']['definitions'][definition]['children'] if c.get('id')==leaf)
+            return definition,media,[scene_id,instance['instance_id'],leaf]
+    raise AssertionError('No active camera fixture occurrence')
+
+
 def prepare_case(root,folder,depth):
     spec=load_spec(root);spec['revisions']=[]
     for i in range(depth):
@@ -45,9 +58,7 @@ def prepare_case(root,folder,depth):
     save_spec(spec,cwd=root,record=False)
     original=(root/'moviestar/spec.json').read_bytes();previous=Path.cwd()
     actions=[];references={};painted={};poses={}
-    pip='speaker_card' in spec['spatial']['definitions']
-    definition='speaker_card' if pip else 'panel'
-    target=['review','main','footage'] if pip else ['title','panel','background']
+    definition,_,target=camera_target(spec)
     def capture(name):
         references[name]={}
         for at in POSES:
@@ -57,7 +68,7 @@ def prepare_case(root,folder,depth):
     try:
         os.chdir(root);initial=wanted(root,folder,painted,poses)
         for name in ('zoom','pan','timing','local','reset'):
-            model=load_spec(root);video=model['spatial']['definitions'][definition]['children'][0]
+            model=load_spec(root);_,video,_=camera_target(model)
             if name=='zoom':video['media_motion']['scale']=tracks(1.6)['scale']
             if name=='pan':video['media_motion'].update(tracks(1.6,-25))
             if name=='timing':video['media_motion']=tracks(1.6,-25,2)
