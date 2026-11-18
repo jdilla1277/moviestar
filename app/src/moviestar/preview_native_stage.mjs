@@ -290,7 +290,7 @@ async function initialize(){
     const computed=getComputedStyle(element);
     if(!['relative','absolute'].includes(computed.position)||['inline','contents','none'].includes(computed.display))throw Error('Unsupported native media containing block.');
     const media=document.createElement(asset.kind==='video'?'video':'img');
-    Object.assign(media.style,{position:'absolute',left:'0',top:'0',width:'100%',height:'100%',objectFit:asset.object_fit,objectPosition:asset.object_position??'50% 50%',borderRadius:computed.borderRadius});
+    Object.assign(media.style,window.moviestarScene.mediaStyle(element,asset));
     element.append(media);
     if(asset.kind==='image'){
       media.src='assets/'+asset.asset;const decoded=media.decode();decoded.catch(()=>{});images.push(decoded);
@@ -512,7 +512,9 @@ window.moviestarLiveStage={ready,metrics,
       boxes:window.moviestarScene.entries.map(({node,element})=>{
         const r=element.getBoundingClientRect();let opacity=1;
         for(let ancestor=element;ancestor;ancestor=ancestor.parentElement)opacity*=Number(getComputedStyle(ancestor).opacity);
-        return {path:node.path,kind:node.kind,text:element.textContent,rect:{x:r.x,y:r.y,width:r.width,height:r.height},opacity,caption:node.kind==='caption'?node.caption:undefined,caption_words:node.kind==='caption'?window.moviestarScene.captionWords(element):undefined,text_lines:['text','caption'].includes(node.kind)?window.moviestarScene.textLines(element):undefined};
+        return {path:node.path,kind:node.kind,text:element.textContent,
+          ...(['video','image'].includes(node.kind)?{media_box:(()=>{const m=window.moviestarScene.contentMetrics(element.querySelector('video,img')??element);return{
+            object_fit:m.css.objectFit,object_position:m.css.objectPosition,content_rect:m.rect};})()} : {}),rect:{x:r.x,y:r.y,width:r.width,height:r.height},opacity,caption:node.kind==='caption'?node.caption:undefined,caption_words:node.kind==='caption'?window.moviestarScene.captionWords(element):undefined,text_lines:['text','caption'].includes(node.kind)?window.moviestarScene.textLines(element):undefined};
       })};
   },
   dispose(){

@@ -216,10 +216,6 @@ def _compile_span(snapshot, timeline, start, end, span, *, prepared_audio=False)
                     fail('use an explicit object-fit value for native media')
                 if style.get('position', 'relative') not in {'relative', 'absolute'}:
                     fail('native media requires a relative/absolute containing block')
-                edge_keys = [key for key in style if key == 'padding' or key.startswith('padding-')
-                             or (key.startswith('border') and key.endswith('width'))]
-                if any(any(value not in {'0px', '0'} for value in style[key].split()) for key in edge_keys):
-                    fail('media padding and borders are not implemented')
                 original = expanded[tuple(node['path'])]
                 asset = original.get('content', {}).get('asset_id')
                 path = (source_paths if kind == 'video' else image_paths).get(asset)
@@ -230,7 +226,7 @@ def _compile_span(snapshot, timeline, start, end, span, *, prepared_audio=False)
                 assets[key] = {'path': path, 'identity': identity, 'kind': kind}
                 media.append({'path': node['path'], 'kind': kind, 'asset': key,
                               'object_fit': style.get('object-fit', 'fill'),
-                              'object_position': original.get('native_object_position', '50% 50%'),
+                              'object_position': original.get('native_object_position', style.get('object-position', '50% 50%')),
                               **({'has_audio': bool(metadata[asset].get('audio_codec')),
                                   'source_start': clocks[tuple(node['path'])],
                                   'source_end': clocks[tuple(node['path'])]+end-start} if kind == 'video' else {})})

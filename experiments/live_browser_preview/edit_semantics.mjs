@@ -15,6 +15,10 @@ export function checkSnapshot(p,s,at){
   for(const expected of pose){
    const actual=s.boxes.find(b=>JSON.stringify(b.path)===JSON.stringify(expected.path));
    if(!actual||!['x','y','width','height'].every(k=>near(actual.rect[k],expected.rect[k])))return false;
+   if(expected.media_box){
+    const a=actual.media_box,e=expected.media_box;
+    if(!a||a.object_fit!==e.object_fit||a.object_position!==e.object_position||!['x','y','width','height'].every(k=>near(a.content_rect[k],e.content_rect[k])))return false;
+   }
    if(expected.caption_words){
     if(actual.text!==expected.text||actual.caption_words?.length!==expected.caption_words.length)return false;
     for(let i=0;i<expected.caption_words.length;i++){
@@ -36,13 +40,13 @@ export function checkSnapshot(p,s,at){
  for(let i=0;i<videos.length;i++){
   const v=videos[i],actual=s.videos[i],style=s.video_styles[i];
   if(actual.asset!==v.asset||actual.seeking||actual.ready_state<2||Math.abs(actual.media_time-(v.source_start+t))>1/p.fps+.001
-   ||style?.object_fit!==v.object_fit||style?.object_position!==v.object_position)return false;
+   ||style?.object_fit!==v.object_fit||style?.object_position!==(style?.expected_object_position??v.object_position))return false;
  }
  const images=p.media.filter(m=>m.kind==='image');
  if(images.length){
   if(s.images?.length!==images.length)return false;
   for(const image of images){const actual=s.images.find(i=>JSON.stringify(i.path)===JSON.stringify(image.path));
-   if(!actual?.ready||actual.asset!==image.asset||actual.object_fit!==image.object_fit||actual.object_position!==image.object_position)return false;
+   if(!actual?.ready||actual.asset!==image.asset||actual.object_fit!==image.object_fit||actual.object_position!==(actual.expected_object_position??image.object_position))return false;
   }
  }
  const frame=Math.max(0,Math.min((p.samples?.length??1)-1,Math.round(t*p.fps)));

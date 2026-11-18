@@ -38,7 +38,8 @@ def prepare_preset(spec, project, timeline, span, start, end, fail):
             'layout': {'position': 'absolute', 'left': pad, 'top': pad,
                 'width': region['width'], 'height': region['height']},
             'style': {'object_fit': 'contain' if framing['mode'] == 'fit' else 'cover',
-                'border_radius': inner_radius, 'background_color': 'black'},
+                'border_radius': inner_radius, 'background_color': 'black',
+                'object_position': f'{x*100:g}% {y*100:g}%'},
             'native_object_position': f'{x*100:g}% {y*100:g}%',
             'media': {'asset_id': slot['source'], 'source_time_s': slot['source_from'], 'visible': True}}
         nodes.append({'id': slot['slot'], 'type': 'shape',

@@ -1170,3 +1170,46 @@ declaration changes remain separate contract work.
 Replacing the timeline with `moviestar scenes set` retains visual trees for
 scene IDs that remain and removes trees owned by deleted scenes in the same
 undoable revision.
+
+
+## Media framing inside components
+
+Put framing on the video/image element, including elements inside reusable
+components. `style.object_fit` supports `fill`, `contain`, `cover`, `none`, and
+`scale-down`. `style.object_position` uses CSS positions: percentages, lengths,
+physical keywords (`left top`), edge offsets (`right 10px bottom 5px`), and CSS
+math (`calc(100% - 10px) 50%`). Its default is `50% 50%`. Percentages distribute
+the free space after fitting; with `cover`, that space is negative and positions
+the crop. An explicit `inherit` follows the containing component's CSS value.
+Matching format rules and local overrides use the ordinary style cascade.
+
+```json
+{
+  "id": "speaker", "type": "video", "content": {"input": "clip"},
+  "layout": {"width": "100%", "height": "100%", "padding": "6px 10px"},
+  "style": {
+    "object_fit": "cover", "object_position": "25% 50%",
+    "border_width": 4, "border_style": "solid", "border_color": "#ffe000",
+    "border_radius": 24, "background_color": "#183848"
+  }
+}
+```
+
+The media paints inside the content box, after padding and borders. Rounded
+clipping follows that box; border/background paint remains visible outside it.
+Image alpha and `contain` letterboxing reveal the authored background. Background
+images remain ordinary image elements placed behind their siblings. Media framing
+uses the same result/source clocks as before; changing a crop does not change
+which frame or audio is selected.
+
+Measured media boxes expose `media_box.object_fit`, `media_box.object_position`
+(the computed CSS value), and `media_box.content_rect` on the output canvas.
+Rendered inspection also reports the fitted video plane rectangle in `media`.
+Native stage snapshots report the actual live media content rectangle and crop,
+so an agent can verify that framing reached the new playable revision. A media
+box needs positive content width/height; enlarge it or reduce padding/borders
+if they consume the entire box.
+
+This static framing path does not add camera pan/zoom tracks or translate legacy
+slot camera settings into structured elements. Existing preset framing keeps its
+read-only compatibility adapter.

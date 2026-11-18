@@ -74,7 +74,7 @@ def wanted(root,folder,painted,poses):
         if key not in poses:
             measured=measure_spatial_layout(frame,result['canvas'])
             assert not any(d.get('severity')!='warning' for d in measured['diagnostics']),measured
-            poses[key]=[{**{k:b[k] for k in ('path','rect','text_lines','caption_words') if k in b},
+            poses[key]=[{**{k:b[k] for k in ('path','rect','text_lines','caption_words','media_box') if k in b},
                 **({'text':b['caption']['text']} if 'caption' in b else {})}
                 for b in measured['boxes']]
         segment=next((s for s in reversed(result.get('segments',[])) if s['offset']<=at),None)
@@ -148,9 +148,9 @@ def pixel_parity(folder,case,report):
         if error is None or error>8:report['problems'].append(f'Canonical caption pixel mismatch {name}: {error}')
 
 
-def run_case(folder,depth,chrome,canvas,mode):
+def run_case(folder,depth,chrome,canvas,mode,*,fixture_builder=prepare,case_builder=prepare_case,parity_checker=pixel_parity):
     import moviestar
-    folder.mkdir();root=folder/'project';prepare(root,canvas,mode);case=prepare_case(root,folder,depth)
+    folder.mkdir();root=folder/'project';fixture_builder(root,canvas,mode);case=case_builder(root,folder,depth)
     package=Path(moviestar.__file__).parent
     case.update(mode=mode,producer_hashes=driver_hashes(),package_source_hashes={
         p.name:sha256(p.read_bytes()).hexdigest() for p in package.iterdir() if p.suffix in ('.py','.mjs')})
@@ -168,7 +168,7 @@ def run_case(folder,depth,chrome,canvas,mode):
                 code=subprocess.run(['node',str(HERE/'edit_benchmark.mjs'),ready['url'],str(root),str(folder),
                     sys.executable,chrome],stdout=driver,stderr=subprocess.STDOUT,timeout=240).returncode
             path=folder/'browser-report.json';report=json.loads(path.read_text())
-            pixel_parity(folder,case,report)
+            parity_checker(folder,case,report)
             for playback in report.get('playbacks',[]):
                 if len(playback['metrics'].get('beeps',[]))!=5:report['problems'].append('Missing audio cue')
             path.write_text(json.dumps(report,indent=2));return 1 if report['problems'] else code
