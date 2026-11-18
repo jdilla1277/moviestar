@@ -105,9 +105,14 @@ also support authored caption/text overlays, including
 regeneration and undo. Preset camera/pacing motion still requires rendered mode.
 Spatial caption elements retain their canonical DOM placement, text and motion;
 live recipes now refresh through the same derivation used by export. Spoken-word
-highlight painting in this slice is for preset overlays. Placed spatial caption
-elements with active spoken-word highlights are explicitly rejected rather than
-shown with the highlighting silently removed.
+highlighting also works inside nested spatial caption components, with their own
+layout, backgrounds, strokes, inherited highlight colors and parent motion.
+These elements use the shared export DOM directly, without caption PNG planes
+or a preview-video render. Before a revision becomes current, every distinct
+caption text is checked for overflow, including later cues. Invalid word timing
+or overflow fails the new revision and leaves the previous playable version
+available. See [timed caption elements](spatial-model.md#timed-caption-elements)
+for mode/color overrides and inspection fields.
 
 Native video still plays from the original sources. For preset overlays, a worker
 uses export's wrapping, font resolution, drawtext and ASS highlight events to

@@ -4,7 +4,7 @@ export async function render(input) {
   function applyStyles(element, styles, where) {
     for (const [property, value] of Object.entries(styles)) {
       // Invalid setProperty calls preserve any existing preset declaration.
-      if (!CSS.supports(property, value)) {
+      if (!CSS.supports(property === '--moviestar-highlight-color' ? 'color' : property, value)) {
         throw new Error(`${where}.${property}: invalid CSS value ${JSON.stringify(value)}`);
       }
       element.style.setProperty(property, value);
@@ -21,6 +21,53 @@ export async function render(input) {
   scene.style.height = `${height}px`;
   document.body.append(scene);
   const entries = [];
+  const captionStates = new WeakMap();
+  function updateCaption(element, caption, path=[]) {
+    const cues = caption?.cues ?? [];
+    if (!cues.some(cue => cue.highlight_mode === 'spoken-word' && cue.word_spans)) {
+      const changed = captionStates.has(element) || element.textContent !== (caption?.text ?? '');
+      if (changed) element.textContent = caption?.text ?? '';
+      captionStates.delete(element);return changed;
+    }
+    const signature = JSON.stringify(cues.map(cue => [cue.id, cue.text, cue.highlight_mode, cue.word_spans]));
+    let state = captionStates.get(element), changed = state?.signature !== signature;
+    if (changed) {
+      const fragment = document.createDocumentFragment(), words = [];
+      cues.forEach((cue, index) => {
+        if (index) fragment.append(document.createTextNode('\n'));
+        if (cue.highlight_mode !== 'spoken-word' || !cue.word_spans) {fragment.append(document.createTextNode(cue.text));return;}
+        let cursor = 0;
+        // Python character spans count Unicode code points, not UTF-16 units.
+        const letters = Array.from(cue.text), slice = (start, end) => letters.slice(start, end).join('');
+        cue.word_spans.forEach((range, wordIndex) => {
+          fragment.append(document.createTextNode(slice(cursor, range.start)));
+          const span = document.createElement('span');span.textContent = slice(range.start, range.end);
+          span.dataset.captionWord = String(wordIndex);span.dataset.captionCue = cue.id;
+          fragment.append(span);words.push({span, cueId: cue.id, index: wordIndex});cursor = range.end;
+        });
+        fragment.append(document.createTextNode(slice(cursor)));
+      });
+      element.replaceChildren(fragment);state = {signature, words};captionStates.set(element, state);
+    }
+    const inherited = getComputedStyle(element).getPropertyValue('--moviestar-highlight-color').trim();
+    const byId = new Map(cues.map(cue => [cue.id, cue]));
+    for (const word of state.words) {
+      const cue = byId.get(word.cueId), active = cue.active_word === word.index;
+      const color = inherited || cue.highlight_color;
+      if (!CSS.supports('color', color)) throw new Error(path.join('/')+'.highlight_color: invalid CSS color '+JSON.stringify(color));
+      word.span.dataset.active = String(active);word.span.style.color = active ? color : '';
+    }
+    return changed;
+  }
+  function captionWords(element) {
+    return [...element.querySelectorAll('[data-caption-word]')].map(span => {
+      const rect = span.getBoundingClientRect(), rounded = n => Math.round(n * 1000) / 1000;
+      return {cue_id: span.dataset.captionCue, word_index: Number(span.dataset.captionWord),
+        text: span.textContent, active: span.dataset.active === 'true', color: getComputedStyle(span).color,
+        rect: Object.fromEntries(['x','y','width','height'].map(k => [k, rounded(rect[k])]))};
+    });
+  }
+
 
   function addNode(node, parent) {
     const element = document.createElement('div');
@@ -31,12 +78,14 @@ export async function render(input) {
     element.style.minHeight = '0';
     if (node.kind === 'text' || node.kind === 'caption') {
       element.style.whiteSpace = 'pre-line';
-      element.textContent = node.content;
+      if (node.kind === 'text') element.textContent = node.content;
+      element.style.paintOrder = 'stroke fill';
     } else if (!input.paint_dir && (node.kind === 'video' || node.kind === 'image')) {
       element.style.backgroundColor = node.guide_outline ? 'transparent' : '#a9bed0';
     }
     applyStyles(element, node.style, node.path.join('/'));
     parent.append(element);
+    if (node.kind === 'caption') updateCaption(element, node.caption, node.path);
     entries.push({node, element});
     for (const child of node.children) addNode(child, element);
   }
@@ -91,6 +140,11 @@ export async function render(input) {
   }
   applyMotion();
 
+  function refreshLayout() {
+    for (const {node, element} of entries) if (node.motion_transform) element.style.transform = '';
+    for (const {element} of entries) baseRects.set(element, element.getBoundingClientRect());
+    applyMotion();
+  }
   const videoPlanes = [];
   const mediaPlanes = [];
   const mediaElements = [];
@@ -174,9 +228,10 @@ export async function render(input) {
   }) : null;
   function textLines(element) {
     const range = document.createRange();
-    range.selectNodeContents(element);
+    const fragments = [], walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {range.selectNodeContents(walker.currentNode);fragments.push(...range.getClientRects());}
     const lines = [];
-    for (const fragment of range.getClientRects()) {
+    for (const fragment of fragments) {
       if (fragment.width <= 0) continue; // newline caret, not a glyph line
       const line = lines.find(item => Math.abs(item.y - fragment.y) < 0.5);
       if (line) {
@@ -190,6 +245,32 @@ export async function render(input) {
       }
     }
     return lines;
+  }
+  function inspectCaption(element) {
+    // Overflow is a layout constraint. A screen-pixel tolerance would hide it
+    // at small motion scales, making content-only cue validation pose-dependent.
+    // Keep transform containing blocks while measuring their untransformed
+    // geometry, then restore the authored pose before returning to the caller.
+    const transforms = [];
+    for (let ancestor = element; ancestor; ancestor = ancestor.parentElement) {
+      if (ancestor.style.transform && ancestor.style.transform !== 'none') {
+        transforms.push([ancestor, ancestor.style.transform]);
+        ancestor.style.transform = 'translate(0px, 0px) scale(1)';
+      }
+    }
+    try {
+      const rect = element.getBoundingClientRect(), css = getComputedStyle(element);
+      const px = key => parseFloat(css.getPropertyValue(key)) || 0;
+      const left = rect.left + px('border-left-width') + px('padding-left');
+      const top = rect.top + px('border-top-width') + px('padding-top');
+      const right = rect.right - px('border-right-width') - px('padding-right');
+      const bottom = rect.bottom - px('border-bottom-width') - px('padding-bottom');
+      const stroke = px('-webkit-text-stroke-width') / 2;
+      return {overflow: textLines(element).some(line => line.x - stroke < left - 1 || line.y - stroke < top - 1
+        || line.x + line.width + stroke > right + 1 || line.y + line.height + stroke > bottom + 1)};
+    } finally {
+      for (const [ancestor, transform] of transforms) ancestor.style.transform = transform;
+    }
   }
   const boxes = [];
   const diagnostics = [];
@@ -222,16 +303,9 @@ export async function render(input) {
       box.text_lines = lines.map(line => ({x: rounded(line.x), y: rounded(line.y),
                                            width: rounded(line.width), height: rounded(line.height)}));
       if (node.kind === 'caption') {
-        const css = getComputedStyle(element);
-        const worldScale = worldScales.get(element);
-        const px = key => (parseFloat(css.getPropertyValue(key)) || 0) * worldScale;
-        const left = rect.left + px('border-left-width') + px('padding-left');
-        const top = rect.top + px('border-top-width') + px('padding-top');
-        const right = rect.right - px('border-right-width') - px('padding-right');
-        const bottom = rect.bottom - px('border-bottom-width') - px('padding-bottom');
         box.caption = node.caption;
-        box.overflow = lines.some(line => line.x < left - 1 || line.y < top - 1
-          || line.x + line.width > right + 1 || line.y + line.height > bottom + 1);
+        box.caption_words = captionWords(element);
+        box.overflow = inspectCaption(element).overflow;
         if (box.overflow) {
           diagnostics.push({code: 'caption_overflow', severity: 'error', path: node.path,
                             track: node.caption.track, line_count: lines.length,
@@ -254,7 +328,10 @@ export async function render(input) {
     }
     for (const {node, element} of entries) {
       element.style.outline = node.guide_outline ?? '1px solid #ffb000';
-      if (node.kind === 'text' || node.kind === 'caption') element.style.color = 'transparent';
+      if (node.kind === 'text' || node.kind === 'caption') {
+        element.style.color = 'transparent';element.style.webkitTextStrokeColor = 'transparent';
+        for (const span of element.querySelectorAll('[data-caption-word]')) span.style.color = 'transparent';
+      }
       if (node.kind === 'video' || node.kind === 'image') {
         element.style.backgroundColor = node.guide_outline ? 'transparent' : '#a9bed0';
       }
@@ -299,7 +376,7 @@ export async function render(input) {
       document.body.append(label);
     }
   }
-  if (input.live_dom) window.moviestarScene = {scene, entries, applyMotion, textLines};
+  if (input.live_dom) window.moviestarScene = {scene, entries, applyMotion, refreshLayout, updateCaption, captionWords, inspectCaption, textLines};
   window.moviestarLabelView = labelView;
   window.moviestarRepaint = async () => {
     // Partial repaint can reuse rounded-clip edge pixels from a prior capture.

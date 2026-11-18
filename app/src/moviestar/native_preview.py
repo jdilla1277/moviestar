@@ -146,20 +146,16 @@ def _compile_span(snapshot, timeline, start, end, span, *, prepared_audio=False)
     initial = shape = None
     source_start = video_path = None
     clocks = {}
-    highlighted = {o['id'] for o in spec.get('overlays', [])
-                   if (o.get('highlight') or {}).get('mode') == 'spoken-word'}
     for index in range(round((end-start)*fps)):
         at = start+index/fps
         frame = preset(at) if preset else compile_spatial_frame(spec, timeline, at, source_durations=durations)
         if frame.get('kind') in {'transition', 'preset'}:
             fail('this native profile requires a spatial scene without transitions')
         prepared = prepare_layout_frame(frame, timeline.canvas)
-        if any(item.get('severity') != 'warning' for item in prepared['diagnostics']):
-            fail('the canonical frame has unresolved diagnostics')
+        bad = next((item for item in prepared['diagnostics'] if item.get('severity') != 'warning'), None)
+        if bad:
+            fail('the canonical frame has unresolved diagnostics: '+bad.get('code','')+' '+bad.get('message',''))
         expanded = {tuple(node['occurrence_path']): node for node in walk(frame['children'])}
-        if not preset and any(cue['id'] in highlighted for node in expanded.values()
-                if node.get('type') == 'caption' for cue in node.get('caption', {}).get('cues', [])):
-            fail('spoken-word highlighting in spatial caption elements is not implemented; use preset caption overlays for highlighting')
         videos = [node for node in expanded.values() if node.get('type') == 'video']
         if len(videos) > PROFILE['max_videos_per_segment']:
             fail('at most two videos may be visible throughout this review window')

@@ -985,6 +985,9 @@ not supported by these tracks.
 Active caption glyphs must fit even when the authored box has zero width.
 Inspection still reports `caption_overflow` for such text, including under a
 scaled ancestor; preview rejects it before replacing either output artifact.
+Overflow is checked in untransformed layout coordinates with a one-layout-pixel
+tolerance, so shrinking or growing a component cannot hide overflowing text.
+The rendered pose and inspection glyph rectangles retain the authored motion.
 
 Generate a caption track with `moviestar captions generate`, or import cues with
 `moviestar captions import`. Place it in a structured scene with an element:
@@ -1019,9 +1022,9 @@ declare an input such as `{"name": "subtitles", "type": "caption"}` and use
 Different instances can select different tracks.
 
 Placement and typography come from the **element's layout and style**. The
-legacy cue's position, style preset, and spoken-word highlighting are not applied
-by this caption path. This slice displays whole cues; animated word highlighting
-remains later work. Existing preset scenes keep their existing caption renderer.
+legacy cue's position and style preset are not applied by this caption path.
+Spoken-word highlighting uses the track's word timing with the element's own
+layout and typography. Existing preset scenes keep their existing caption renderer.
 Transcript data, project settings, and caption tracks do not inject a caption
 layer into a structured scene without an element. Each authored occurrence
 renders once. An empty caption keeps its authored box and background, allowing
@@ -1034,9 +1037,41 @@ not write cue caches or revisions. Frozen/imported tracks keep their stored
 result-time cues. Direct Python callers of `compile_spatial_frame` supply a spec
 with current cue records, as with other compiler inputs.
 
+For word highlighting, generate with `captions generate --highlight spoken-word`
+or bind a word-timed imported/frozen track. The optional style properties below
+work on the caption element or inherit through its containing components:
+
+```json
+{
+  "highlight_mode": "auto", "highlight_color": "#65ffb2",
+  "stroke_color": "#101010", "stroke_width": 2
+}
+```
+
+`highlight_mode` accepts `auto` (default, follow the cue), `spoken-word` (require
+word timing), or `none` (whole-cue text). A local style or matching format rule
+can override an inherited mode/color. Without an element/component color, a
+highlighted cue uses its stored color, falling back to `#ffe94a`. Numeric stroke
+widths are pixels. Backgrounds, padding, wrapping, opacity and motion use the
+normal layout/style rules; changing the active word changes color without
+reflowing the line. Parent motion carries the entire caption, including strokes
+and highlights. Labeled layout views hide glyph fills and strokes.
+
+Word intervals are half-open on the result clock. Gaps and zero-duration words
+do not light up; overlapping intervals are trimmed to the preceding word's end
+and clipped to the cue. Literal whitespace and Unicode text are preserved.
+Highlighting requires matching text and word tokens; otherwise inspection
+reports `invalid_caption_tokens` for that occurrence and preview/export fail
+with a request to regenerate or correct both text and tokens. Explicit `none`
+allows whole-cue display without valid word timing. Structured scenes use this
+same DOM timing in inspection, native preview and export; preset ASS captions
+retain their existing timing and renderer.
+
 Inspection reports `caption.track`, `caption.text`, `caption.visible`, and active
 `caption.cues` with IDs and result-time bounds. Measured caption boxes also expose
-`text_lines` and `overflow`. The rendered and labeled views measure the same
+`text_lines`, `overflow`, and `caption_words` (cue/word identity, active state,
+computed color and measured glyph bounds). Resolved cues expose `highlight_mode`,
+`active_word`, `word_spans` and clipped `word_windows` when word timing exists. The rendered and labeled views measure the same
 active text before labels hide it. Give the region sufficient height for its
 font, line height, and padding; one- and two-line cues can then share a stable box.
 
