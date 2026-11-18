@@ -51,6 +51,8 @@ The CLI's built-in help is the authoritative command reference. Run
 - [Personal Cloud projects](cloud-projects.md) — explicitly create, list, and reopen owned projects through an approved installation.
 
 - [Sharing and download](sharing.md) — private uploads, unlisted handoffs, retries, link management, and recipient downloads.
+- [Feedback and account contact](feedback.md) — user-approved reports, account
+  linkage, deliberately supplied contact, and anonymous submission.
 
 - [Cloud watch excerpts](cloud-watch.md) — request private bounded video/audio, reopen durable jobs, and retrieve through the CLI.
 - [Cloud visual skims](cloud-skim.md) — timestamped private thumbnails from a ready Cloud video.
