@@ -130,3 +130,24 @@ def test_timecodes_rounding_to_exact_end_do_not_lose_source_duration(at):
     assert len(timeline.scenes[0].segments) == 2
     assert timeline.scenes[0].segments[-1].held
     assert timeline.scenes[0].segments[-1].source_local_from_s == 2
+
+
+def test_previously_saved_tail_can_be_corrected_without_losing_motion(project):
+    runner, root = project
+    document = root / "motion.json"
+    document.write_text(json.dumps(motion(2)))
+    applied = runner.invoke(cli, ["scenes", "motion", "set", str(document)])
+    assert applied.exit_code == 0, applied.output
+    spec_path = root / "moviestar/spec.json"
+    stored = json.loads(spec_path.read_text())
+    stored["motion"]["scenes"][0]["slots"][0]["pacing"][0]["at"] = "0:00:01.999"
+    spec_path.write_text(json.dumps(stored))
+    before = spec_path.read_bytes()
+    rejected = runner.invoke(cli, ["export", "--audio-join-fade", "0.05", "--dry-run"])
+    assert rejected.exit_code == 1
+    assert "2.000" in json.dumps(json.loads(rejected.stdout))
+    assert spec_path.read_bytes() == before
+    corrected = runner.invoke(cli, ["scenes", "motion", "set", str(document)])
+    assert corrected.exit_code == 0, corrected.output
+    preview = runner.invoke(cli, ["export", "--audio-join-fade", "0.05", "--dry-run"])
+    assert preview.exit_code == 0, preview.output

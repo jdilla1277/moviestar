@@ -17664,7 +17664,12 @@ def scenes_motion_set(motion_file: str, dry_run: bool) -> None:
 
     try:
         old_motion = spec.get("motion") or {"version": 1, "scenes": []}
-        old_timeline = resolve_pacing(spec["composition"], old_motion)
+        # A formerly accepted sliver must not prevent saving its correction.
+        # Only the old timeline used for camera rebasing bypasses this check;
+        # the replacement above has already passed strict pacing validation.
+        old_timeline = resolve_pacing(
+            spec["composition"], old_motion, allow_legacy_hold_tails=True
+        )
         motion_document, camera_rebases = rebase_camera_ranges(
             old_motion,
             motion_document,
