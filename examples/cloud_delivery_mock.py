@@ -118,7 +118,7 @@ def submit(ctx, project, revision, kind, idempotency_key, lose_reply):
     job_id = str(uuid5(NAMESPACE_URL, request_id))
     if not previous:
         data['jobs'][job_id] = {'id': job_id, 'project_id': project, **payload,
-                               'state': 'queued', 'phase': 'queued', 'attempt_number': 0,
+                               'state': 'queued', 'phase': 'queued', 'attempt_number': 0, 'attempt_id': None,
                                'artifact_id': None, 'failure_code': None}
         data['requests'][request_id] = {'payload': payload, 'job_id': job_id}
         save(ctx, data)
@@ -242,15 +242,16 @@ def complete(ctx, project, job_id):
         fail('terminal_job', 'A stale worker cannot publish a terminal job.')
     data = load(ctx)
     artifact_id = str(uuid5(NAMESPACE_URL, job['id'] + ':artifact'))
+    attempt_id = str(uuid5(NAMESPACE_URL, job['id'] + ':attempt:1'))
     artifact = data['artifacts'].get(artifact_id) or {
         'id': artifact_id, 'project_id': job['project_id'], 'revision_id': job['revision_id'],
-        'job_id': job['id'], 'kind': job['kind'], 'available': True,
+        'job_id': job['id'], 'attempt_id': attempt_id, 'kind': job['kind'], 'available': True,
         'verification': 'synthetic_fixture_only', 'sha256': ('a' if job['kind'] == 'preview' else 'd')*64, 'size_bytes': 12345,
         'runtime_manifest_sha256': 'b'*64, 'output_profile_sha256': ('c' if job['kind'] == 'preview' else 'e')*64,
         'media': {'duration_ms': 10000, 'width': 854 if job['kind'] == 'preview' else 1920,
                   'height': 480 if job['kind'] == 'preview' else 1080,
                   'container': 'mp4', 'video_codec': 'avc', 'audio_codec': 'aac'}}
-    job.update(state='succeeded', phase='succeeded', attempt_number=1, artifact_id=artifact_id)
+    job.update(state='succeeded', phase='succeeded', attempt_number=1, attempt_id=attempt_id, artifact_id=artifact_id)
     data['jobs'][job['id']] = job
     data['artifacts'][artifact_id] = artifact
     save(ctx, data)

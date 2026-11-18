@@ -32,6 +32,14 @@ The job's revision never follows latest. Follow its `renders show` hint. Use
 immutable promotion; the mock does neither. Terminal reads lead to
 `artifacts show` and `artifacts download`.
 
+Fixture completion binds a synthetic producing `attempt_id` UUID to both the job
+and artifact. Queued jobs/cancellation have no started attempt (`attempt_id: null`,
+ordinal zero). Canonical preview/final keys yield attempt UUIDs
+`1879251c-77b6-54fb-bbc7-6789df0c34fb` and
+`9de1117a-3db2-57da-b61f-82f32d692cac`, matching API/MCP fixtures. These identities
+do not imply measured work, usage, price or provider costs. Use a fresh disposable
+journal after fixture-schema changes; older mock journals are not migrated.
+
 For the revised edit, use revision `00000000-0000-4000-8000-000000000102`, kind
 `final` and a new retained key. Old preview identities remain unchanged.
 `artifacts list PROJECT --revision REVISION` discovers that revision's outputs.

@@ -90,6 +90,8 @@ def test_cancelled_jobs_cannot_publish_fixture_results(tmp_path):
     _, accepted = submit(tmp_path)
     _, cancelled = call(tmp_path, 'renders', 'cancel', P, accepted['job']['id'])
     assert cancelled['job']['state'] == 'cancelled'
+    assert cancelled['job']['attempt_id'] is None
+    assert cancelled['job']['attempt_number'] == 0
     result, body = call(tmp_path, 'fixture', 'complete', P, accepted['job']['id'])
     assert result.exit_code == 1 and body['error']['code'] == 'terminal_job'
 
@@ -134,3 +136,22 @@ def test_canonical_api_mcp_fixture_identity(tmp_path):
     assert final['job']['id'] == 'e8d04da3-4b1a-537a-ac1f-e51549d6b53a'
     _, completed = call(tmp_path, 'fixture', 'complete', P, final['job']['id'])
     assert completed['artifact']['id'] == '0a458ea4-309b-527e-a884-df2dad782a51'
+
+
+def test_artifact_producing_attempt_survives_replay_reopen_and_expiry(tmp_path):
+    from uuid import UUID, uuid5, NAMESPACE_URL
+    _, accepted = submit(tmp_path)
+    assert accepted['job']['attempt_id'] is None
+    _, completed = call(tmp_path, 'fixture', 'complete', P, accepted['job']['id'])
+    artifact = completed['artifact']
+    attempt_id = artifact['attempt_id']
+    assert str(UUID(attempt_id)) == attempt_id
+    assert attempt_id == str(uuid5(NAMESPACE_URL, accepted['job']['id'] + ':attempt:1'))
+    assert completed['job']['attempt_id'] == attempt_id
+    _, replay = submit(tmp_path)
+    assert replay['job']['attempt_id'] == attempt_id
+    _, again = call(tmp_path, 'fixture', 'complete', P, accepted['job']['id'])
+    assert again['artifact']['attempt_id'] == attempt_id
+    call(tmp_path, 'fixture', 'expire', P, artifact['id'])
+    _, reopened = call(tmp_path, 'artifacts', 'show', P, artifact['id'])
+    assert reopened['artifact']['attempt_id'] == attempt_id
