@@ -2773,12 +2773,18 @@ class TestLoad:
     ):
         """test_video has an audio stream; without --no-transcribe, a
         real call would transcribe. Dry-run reports would_transcribe:
-        true and the chosen model.
+        true and the chosen model. Assume an available, cached model here;
+        test_optional_transcription.py covers the real missing-extra response.
         """
         monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(
+            "moviestar.cli.model_download_requirement", lambda model: None
+        )
         result = runner.invoke(cli, [
             "load", test_video, "--model", "tiny", "--dry-run",
         ])
+        assert result.exit_code == 0, result.stdout
+        assert not (tmp_path / "moviestar").exists()
         data = json.loads(result.stdout)
         assert data["would_transcribe"] is True
         assert data["would_use_model"] == "tiny"
@@ -20362,7 +20368,7 @@ class TestThumbnailWidth:
         monkeypatch.chdir(tmp_path)
         result = runner.invoke(
             cli,
-            ["load", test_video, "--dry-run", "--thumb-width", "160"],
+            ["load", test_video, "--no-transcribe", "--dry-run", "--thumb-width", "160"],
         )
         assert result.exit_code == 0, result.output
         data = json.loads(result.stdout)
