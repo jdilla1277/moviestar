@@ -40,6 +40,7 @@ def test_validate_apply_and_mcp_share_request_and_audio_semantics():
     assert values[1]["transport"]["body"] == values[2]["transport"]["arguments"]["request"]
     assert all(not any(v["effects"].values()) for v in values)
     assert values[0]["response"]["changed_fields"] == ["audio_mix"]
+    assert values[0]["response"]["changes"] is True
     assert values[0]["response"]["changed_paths"] == ["audio_mix.source_audio.gain_db"]
     applied = invoke("--surface", "api", "apply", "--request", path, "--idempotency-key", "retained-gain")
     assert applied["response"]["revision"]["spec"]["audio_mix"]["source_audio"]["gain_db"] == -6.0
@@ -104,6 +105,7 @@ def test_errors_and_lost_reply_are_explicit_and_not_acceptance():
         assert response["response"]["error"]["code"] == code
         assert set(response["response"]["error"]) == {"code", "message", "details", "retryable"}
         assert response["response"]["error"]["retryable"] is (scenario == "disabled")
+        assert response["response"]["request_id"]
         assert not any(response["effects"].values())
     lost = invoke("--scenario", "lost-response", "apply", "--request", path, "--idempotency-key", "retained", code=1)
     assert lost["response"]["outcome"] == "unknown"
@@ -122,3 +124,38 @@ def test_unknown_request_is_rejected_as_fixture_limit(tmp_path):
     path.write_text(json.dumps({"operation": {"type": "audio_source", "source_id": "camera"}}))
     response = invoke("validate", "--request", str(path), code=1)
     assert response["response"]["error"]["code"] == "mock_fixture_required"
+
+
+@pytest.mark.parametrize("surface", ["cli", "api", "mcp"])
+def test_noop_validate_apply_and_replay_preserve_original_result(surface):
+    path = str(HERE / "requests" / "noop.json")
+    preview = invoke("--surface", surface, "validate", "--request", path)
+    response = preview["response"]
+    assert response["status"] == "would_apply"
+    assert response["changes"] is False
+    assert response["changed_fields"] == []
+    assert response["current_undo_remaining"] == response["projected_resolved"]["undo_remaining"] == 1
+    assert "revision" not in response
+    assert not any(preview["effects"].values())
+    saved = invoke("--surface", surface, "apply", "--request", path, "--idempotency-key", "retained-noop")
+    recovered = invoke("--surface", surface, "--scenario", "retry", "apply", "--request", path, "--idempotency-key", "retained-noop")
+    for value in (saved, recovered):
+        assert value["http_status"] == 200
+        assert value["response"]["status"] == "unchanged"
+        assert value["response"]["changes"] is False
+        assert value["response"]["changed_fields"] == []
+        assert value["response"]["revision"]["id"].endswith("102")
+        assert value["response"]["revision"]["resolved"]["undo_remaining"] == 1
+        assert not any(value["effects"].values())
+    assert saved["response"]["current_revision"].endswith("102")
+    assert recovered["response"]["current_revision"].endswith("103")
+    assert saved["response"]["replayed"] is False
+    assert recovered["response"]["replayed"] is True
+    assert saved["response"]["request_sha256"] == recovered["response"]["request_sha256"]
+
+
+def test_noop_lost_reply_has_unknown_client_effects_and_zero_expected_writes():
+    value = invoke("--scenario", "lost-response", "apply", "--request", str(HERE / "requests" / "noop.json"), "--idempotency-key", "retained-noop", code=1)
+    assert value["response"]["outcome"] == "unknown"
+    assert value["effects"] is None
+    assert not any(value["fixture_expected_effects"].values())

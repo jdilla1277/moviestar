@@ -22,6 +22,9 @@ ROUTING = [
 ]
 OPERATIONS = [dict(type="audio_source", gain_db=-6.0), dict(type="audio_source", muted=True), dict(type="undo")]
 REQUESTS = [dict(contract_version=CONTRACT, expected_base_revision=REVISIONS[i], operation=op) for i, op in enumerate(OPERATIONS)]
+NOOP_INDEX = 3
+REQUESTS.append(dict(contract_version=CONTRACT, expected_base_revision=REVISIONS[1],
+                     operation=dict(type="audio_source", gain_db=-6.0)))
 
 
 def mix(index):
@@ -89,7 +92,7 @@ def emit(ctx, command, response, status=200, body=None, key=None, selected=None,
 
 
 def failure(ctx, command, code, hint, status=409, error_fields=None, **kwargs):
-    emit(ctx, command, dict(error=dict(code=code, message=hint, details=error_fields or {},
+    emit(ctx, command, dict(request_id="mock-audio-request", error=dict(code=code, message=hint, details=error_fields or {},
                                       retryable=code == "edits_unavailable")), status=status, **kwargs)
 
 
@@ -119,7 +122,7 @@ def read_request(ctx, command, path):
     for index, expected in enumerate(REQUESTS):
         if body == expected:
             return index, body
-    failure(ctx, command, "mock_fixture_required", "Only requests/gain.json, mute.json and undo.json are canned. This is not production validation.", status=422)
+    failure(ctx, command, "mock_fixture_required", "Only requests/gain.json, mute.json, undo.json and noop.json are canned. This is not production validation.", status=422)
 
 
 def changed_paths(index):
@@ -141,10 +144,13 @@ def validate(ctx, path):
         failure(ctx, "validate", "not_found", "Check project access.", status=404, body=body)
     if ctx.obj["scenario"] == "disabled":
         failure(ctx, "validate", "edits_unavailable", "Read saved revisions; new validation/admission is unavailable.", status=503, body=body)
+    noop = index == NOOP_INDEX
+    current_index, candidate_index = (1, 1) if noop else (index, index + 1)
     emit(ctx, "validate", dict(status="would_apply", normalized_request=body,
-                               changed_fields=["audio_mix"], changed_paths=changed_paths(index),
-                               current_undo_remaining=resolved(index)["undo_remaining"],
-                               projected_resolved=resolved(index + 1),
+                               changes=not noop, changed_fields=[] if noop else ["audio_mix"],
+                               changed_paths=[] if noop else changed_paths(index),
+                               current_undo_remaining=resolved(current_index)["undo_remaining"],
+                               projected_resolved=resolved(candidate_index),
                                hint="Apply this exact request with a retained idempotency key. No loudness measurement or render was requested."), body=body)
 
 
@@ -158,6 +164,8 @@ def apply(ctx, path, idempotency_key):
     gain.json: baseline 101 -> 102 at -6 dB; mute.json: 102 -> 103 muted;
     undo.json: 103 -> new revision 104 restores all prior mix fields, retaining
     -6 dB and unmuting. Undo creates a revision; it does not rewind Cloud history.
+    noop.json reasserts -6 dB at 102: unchanged, no new revision/journal/event.
+    Retry recovers that original unchanged revision 102 even when current is 103.
     Saves are unmetered and start no render. Use the shared delivery path after
     saving, then listen to the actual output. This mock cannot render or play.
     """
@@ -165,6 +173,7 @@ def apply(ctx, path, idempotency_key):
         failure(ctx, "apply", "invalid_request", "Use an idempotency key of 1–128 ASCII letters, digits, underscore or hyphen.",
                 status=422, error_fields=dict(field="idempotency_key"))
     index, body = read_request(ctx, "apply", path)
+    noop = index == NOOP_INDEX
     scenario = ctx.obj["scenario"]
     kwargs = dict(body=body, key=idempotency_key)
     errors = dict(stale=("revision_conflict", "Reopen current revision and deliberately rebase; do not silently retry against latest."),
@@ -176,15 +185,17 @@ def apply(ctx, path, idempotency_key):
         fields = dict(expected_base_revision=body["expected_base_revision"], current_revision=REVISIONS[3] if index == 2 else REVISIONS[2]) if scenario == "stale" else None
         failure(ctx, "apply", code, hint, status=404 if scenario == "unauthorized" else 503 if scenario == "disabled" else 409, error_fields=fields, **kwargs)
     if scenario == "lost-response":
-        emit(ctx, "apply", dict(outcome="unknown", idempotency_key=idempotency_key, request=body, hint=RETRY), status=504, saved=1, uncertain=True, **kwargs)
+        emit(ctx, "apply", dict(outcome="unknown", idempotency_key=idempotency_key, request=body, hint=RETRY), status=504, saved=0 if noop else 1, uncertain=True, **kwargs)
     replayed = scenario == "retry"
-    emit(ctx, "apply", dict(status="committed", project_id=PROJECT, idempotency_key=idempotency_key,
+    result_index = 1 if noop else index + 1
+    emit(ctx, "apply", dict(status="unchanged" if noop else "committed", changes=not noop,
+                            project_id=PROJECT, idempotency_key=idempotency_key,
                             request_sha256=hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
                             expected_base_revision=body["expected_base_revision"], replayed=replayed,
-                            revision=revision(index + 1), current_revision=REVISIONS[max(2, index + 1)] if replayed else REVISIONS[index + 1],
-                            changed_fields=["audio_mix"], changed_paths=changed_paths(index),
+                            revision=revision(result_index), current_revision=REVISIONS[max(2, result_index)] if replayed else REVISIONS[result_index],
+                            changed_fields=[] if noop else ["audio_mix"], changed_paths=[] if noop else changed_paths(index),
                             hint="Reopen this exact revision on another surface. Request preview/final through shared delivery, then verify the saved file and listen."),
-         status=200 if replayed else 201, saved=0 if replayed else 1, **kwargs)
+         status=200 if replayed or noop else 201, saved=0 if replayed or noop else 1, **kwargs)
 
 
 if __name__ == "__main__":
