@@ -208,3 +208,32 @@ def test_invalid_asset_display_names_fail_before_auth_or_network(remote, name):
     result, body = invoke('assets', 'rename', A, name)
     assert result.exit_code == 1 and body['status'] == 'invalid_request'
     assert remote['calls'] == []
+
+def test_direct_asset_shared_collection_preserves_nonproject_provenance(remote, monkeypatch):
+    remote['cap']['shared_collection'] = 'accepted_project_assets'
+    original = cloud._request
+    def request(url, credential, **kwargs):
+        if 'collection=shared' in url:
+            return 200, {'contract_version': CONTRACT, 'collection': 'shared', 'items': [{**ASSET, 'shared_via': {'kind': 'asset', 'invitation_id': R, 'shared_by': 'alex'}}], 'next_cursor': None}
+        return original(url, credential, **kwargs)
+    monkeypatch.setattr(cloud, '_request', request)
+    result, body = invoke('assets', 'list', '--shared')
+    assert result.exit_code == 0, body
+    assert body['items'][0]['shared_via'] == {'kind': 'asset', 'invitation_id': R, 'shared_by': 'alex'}
+
+
+def test_get_asset_checks_its_id_and_private_download_path(remote, monkeypatch):
+    remote['cap']['operations'] = [*remote['cap']['operations'], 'assets:read']
+    original = cloud._request
+    wrong = {'value': False}
+    def request(url, credential, **kwargs):
+        if url.endswith('/assets/' + A):
+            return 200, {'asset': ASSET, 'download_path': 'https://foreign.invalid/key' if wrong['value'] else f'/api/v1/account/cloud/assets/{A}/download'}
+        return original(url, credential, **kwargs)
+    monkeypatch.setattr(cloud, '_request', request)
+    result, body = invoke('assets', 'get', A)
+    assert result.exit_code == 0, body
+    assert body['download_url'] == f'https://example.invalid/api/v1/account/cloud/assets/{A}/download'
+    wrong['value'] = True
+    result, body = invoke('assets', 'get', A)
+    assert result.exit_code == 1 and body['status'] == 'invalid_response'
