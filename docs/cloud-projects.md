@@ -729,3 +729,5 @@ that capability need a signed-in browser download or the CLI. Automatic file
 import into ChatGPT and saving onto the user's computer are not established by
 this tool and need separate host-specific acceptance. Never paste a credential
 into chat. Older services may return unavailable for the manifest route.
+
+For pending invitations received by your account, see [Invitations](invitations.md).
