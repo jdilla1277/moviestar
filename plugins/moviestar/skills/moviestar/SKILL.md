@@ -54,6 +54,11 @@ Read [editing workflows](references/editing-workflows.md) when choosing between
 single-source, transcript, multicamera, scene, caption, overlay, or audio
 commands. Before delivery, follow [render verification](references/verification.md).
 
+For wrong names, missing speech, slow transcription, supplied captions or timing
+drift, read [transcription and repair](references/transcription.md). Choose a
+local repair or timed import before abandoning the edit; caption corrections
+and source-transcript replacement affect different consumers.
+
 ## Preserve user control
 
 - Keep source media untouched and write generated media to the task directory
