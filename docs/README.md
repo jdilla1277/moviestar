@@ -58,3 +58,5 @@ The CLI's built-in help is the authoritative command reference. Run
 
 - [Cloud watch excerpts](cloud-watch.md) — request private bounded video/audio, reopen durable jobs, and retrieve through the CLI.
 - [Cloud visual skims](cloud-skim.md) — timestamped private thumbnails from a ready Cloud video.
+
+- [Initial Cloud edit checks](cloud-edits.md) — read an unsaved timeline and validate a trim without saving, when advertised by the service.

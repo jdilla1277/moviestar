@@ -10,6 +10,9 @@ enabled. The client supports project metadata and, when advertised, existing
 account-asset references; inspect capabilities
 for the operations your service currently advertises.
 
+For initial timeline reads and trim dry runs, see [Cloud edit checks](cloud-edits.md).
+Those commands are available only when the service advertises the editing bridge.
+
 ## Install
 
 Use the base package for account and Cloud metadata commands:

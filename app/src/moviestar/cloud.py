@@ -114,7 +114,7 @@ def _capabilities(command: str, endpoint: str, credential: str) -> dict:
         _fail(command, "invalid_response", "The service returned incomplete Cloud capabilities. Retry later.")
     fields = ("contract_version", "operations", "scopes", "project_access", "limits", "source_uploads_enabled",
               "source_imports_enabled", "media_processing_enabled", "saved_edits_enabled", "transcript_imports_enabled",
-              "edit_formats", "source_formats", "transcript_formats", "retention", "project_access_scope", "project_sharing", "asset_sharing", "project_assets", "asset_activity")
+              "edit_formats", "source_formats", "transcript_formats", "retention", "project_access_scope", "project_sharing", "asset_sharing", "project_assets", "asset_activity", "editing")
     return {name: body[name] for name in fields if name in body}
 
 
@@ -434,3 +434,6 @@ register_activity(cloud)
 
 from moviestar.cloud_project_sharing import register_project_sharing
 register_project_sharing(projects)
+
+from moviestar.cloud_edits import register_edits
+register_edits(cloud)
