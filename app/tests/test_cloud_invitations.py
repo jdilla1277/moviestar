@@ -34,3 +34,14 @@ def test_rejects_untrusted_or_nonpending_entries(remote,change):
 
 def test_strips_unexpected_private_fields(remote):
  remote['body']['items'][0]['token_hash']='private';r,b=invoke();assert r.exit_code==0 and 'private' not in r.stdout
+
+def test_preserves_project_editor_permissions_and_browser_review_link(remote):
+ permissions=['projects:read','projects:rename','references:attach','references:detach']
+ remote['body']['items'][0].update(kind='project',role='editor',permissions=permissions,includes_assets=True,
+                                 review_path=f'/account/received-invitations?kind=project&invitation={ID}')
+ result,body=invoke('--kind','project')
+ assert result.exit_code==0,body
+ assert body['items'][0]['role']=='editor' and body['items'][0]['permissions']==permissions
+ assert body['items'][0]['includes_assets'] is True
+ assert body['items'][0]['review_url']==f'https://service.invalid/account/received-invitations?kind=project&invitation={ID}'
+ assert all(not kwargs for _,kwargs in remote['calls'])

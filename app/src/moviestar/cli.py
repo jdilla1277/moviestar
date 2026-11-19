@@ -2002,17 +2002,30 @@ def _refresh_caption_tracks(project: dict, spec: dict) -> dict:
         fingerprint = _caption_cache_fingerprint(project, spec, recipe)
         if fingerprint == recipe.get("cache_fingerprint"):
             continue
+        # No words in this edit is a valid empty result. Unreadable inputs or
+        # other derivation failures must retain their structured error, not
+        # silently export cached captions as if they were current.
+        diagnostic = io.StringIO()
         try:
-            with contextlib.redirect_stdout(io.StringIO()):
+            with contextlib.redirect_stdout(diagnostic):
                 records, _meta = _derive_caption_records(
-                    project, spec, recipe, "captions refresh"
+                    project, spec, recipe, "captions refresh", allow_empty=True
                 )
         except SystemExit:
-            # Derivation failed (e.g. transcript unavailable). Keep the
-            # stale cache; the next successful derivation heals it, and
-            # the owning command reports the real error when run
-            # directly.
-            continue
+            try:
+                problem = json.loads(diagnostic.getvalue())
+            except (ValueError, TypeError):
+                problem = {}
+            if not isinstance(problem, dict):
+                problem = {}
+            _error_exit_with_hint(
+                "captions refresh",
+                f"Caption track {recipe['track']!r} could not refresh. "
+                + str(problem.get("error", "Caption derivation failed.")),
+                problem.get("hint")
+                or "Restore the source transcript and retry; the saved edit "
+                "and caption recipe have not been changed.",
+            )
         track = recipe["track"]
         spec["overlays"] = [
             overlay
@@ -2072,10 +2085,15 @@ def _caption_cache_fingerprint(
     project: dict, spec: dict, recipe: dict
 ) -> str:
     """Cache key for one derived track: the compiled timeline, the
-    recipe itself, and the project caption rules. Any change re-derives
-    the track's cues on the next spec load."""
+    recipe itself, the source transcripts, and the project caption rules.
+    Any change re-derives the track's cues on the next spec load."""
     try:
         resolved = resolve_project(project, spec)
+        transcript_sources = {
+            span.audio.source_id
+            for span in resolved.spans
+            if span.audio.source_id and span.audio.slices and not span.held
+        }
         timeline_repr = [
             (
                 span.scene_name,
@@ -2091,9 +2109,29 @@ def _caption_cache_fingerprint(
         ]
     except (ResolvedProjectError, SpecValidationError):
         timeline_repr = ["unresolved"]
+        transcript_sources = {source["id"] for source in project["sources"]}
+    if recipe.get("source") is not None:
+        transcript_sources = {recipe["source"]}
+    transcript_pins = []
+    for source in project["sources"]:
+        if source["id"] not in transcript_sources:
+            continue
+        info = source.get("transcript")
+        content_hash = None
+        if info:
+            try:
+                content_hash = hashlib.sha256(
+                    (get_project_dir() / info["path"]).read_bytes()
+                ).hexdigest()
+            except OSError:
+                # Invalidated, but derivation remains responsible for its
+                # normal structured missing/unreadable-transcript error.
+                content_hash = "unavailable"
+        transcript_pins.append((source["id"], content_hash))
     payload = {
-        "v": 4,
+        "v": 5,
         "timeline": timeline_repr,
+        "transcripts": sorted(transcript_pins),
         "recipe": {
             key: value
             for key, value in recipe.items()
@@ -20167,13 +20205,15 @@ def captions(ctx: click.Context) -> None:
     )
 
 
-def _caption_track_cues(spec: dict, track: str, command: str) -> list[dict]:
+def _caption_track_cues(
+    spec: dict, track: str, command: str, *, allow_empty: bool = False
+) -> list[dict]:
     cues = [
         overlay
         for overlay in spec.get("overlays", [])
         if overlay.get("kind") == "caption" and overlay.get("track") == track
     ]
-    if not cues:
+    if not cues and not allow_empty:
         tracks = sorted(
             {
                 overlay["track"]
@@ -20748,9 +20788,9 @@ def captions_dump(track: str) -> None:
     """
     command = "captions dump"
     project, spec = _overlay_project_spec(command)
-    cues = _caption_track_cues(spec, track, command)
     recipe = caption_recipe_for_track(spec, track)
     derived = recipe is not None and not recipe.get("frozen")
+    cues = _caption_track_cues(spec, track, command, allow_empty=derived)
     # #412: staleness is queryable state. Derived tracks are never
     # stale (they re-derive at load); frozen recipes compare their
     # freeze fingerprint against the current timeline; recipe-less
@@ -22633,7 +22673,7 @@ def _transcript_items_for_source(
     transcript_path = (get_project_dir() / info["path"]).resolve()
     try:
         data = json.loads(transcript_path.read_text())
-    except (json.JSONDecodeError, FileNotFoundError) as exc:
+    except (json.JSONDecodeError, OSError) as exc:
         _error_exit(
             command,
             f"Could not read transcript for '{source_id}' at "
@@ -22799,7 +22839,8 @@ def _caption_records_from_cues(
 
 
 def _derive_caption_records(
-    project: dict, spec: dict, recipe: dict, command: str
+    project: dict, spec: dict, recipe: dict, command: str,
+    *, allow_empty: bool = False,
 ) -> tuple[list[dict], dict]:
     """Derive one track's cue records from its recipe against the
     current compiled timeline.
@@ -22807,8 +22848,9 @@ def _derive_caption_records(
     The single derivation pipeline behind `captions generate` and the
     spec-load cache refresh: audio windows -> transcript mapping ->
     rules -> grouping -> placement -> canonical overlay records.
-    Errors exit with the calling command's envelope; the refresh path
-    traps them and keeps the stale cache instead.
+    Errors exit with the calling command's envelope. Refresh permits an empty
+    valid derivation, but still rejects failed derivation instead of reusing
+    stale text. Explicit generation keeps its existing no-cues error.
     """
     track = recipe["track"]
     highlight = (recipe.get("highlight") or {}).get("mode", "none")
@@ -22828,7 +22870,7 @@ def _derive_caption_records(
         command=command,
         source_filter=recipe.get("source"),
     )
-    if not windows:
+    if not windows and not allow_empty:
         _error_exit_with_hint(
             command,
             "No audio windows resolved for caption generation."
@@ -22906,7 +22948,7 @@ def _derive_caption_records(
     cues = rebalance_orphan_cues(cues)
     cues = apply_join_edits(apply_break_edits(cues, recipe_edits), recipe_edits)
     cues.sort(key=lambda cue: (cue["from_s"], cue["to_s"]))
-    if not cues:
+    if not cues and not allow_empty:
         _error_exit_with_hint(
             command,
             "The transcript produced no caption cues in the requested range.",

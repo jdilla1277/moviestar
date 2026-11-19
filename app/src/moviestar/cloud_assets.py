@@ -208,7 +208,7 @@ def register_asset_commands(cloud, projects):
     @click.option("--limit", type=click.IntRange(1, 100), default=20, show_default=True)
     @click.option("--cursor")
     def project_assets(project_id, limit, cursor):
-        """List assets in an owned project or an asset-sharing viewer invitation.
+        """List assets in an owned project or an asset-sharing viewer/editor invitation.
 
         Download URLs require the same account in a browser or authenticated
         developer client. Every download checks current access again.
@@ -220,10 +220,10 @@ def register_asset_commands(cloud, projects):
     @click.argument("asset_id")
     @click.option("--idempotency-key", help="Optional retry key; generated and saved when omitted.")
     def add_asset(project_id, asset_id, idempotency_key):
-        """Reference a ready ASSET_ID in owned PROJECT_ID without copying it.
+        """Reference a ready ASSET_ID in a project you own or can edit.
 
-        Retry the same command after an uncertain reply. One asset can belong
-        to several projects; each membership has a distinct reference ID.
+        Retry the same command after an uncertain reply. An original you own or
+        can independently access can belong to several projects; each membership has a distinct reference ID.
         """
         command = "cloud projects add-asset"
         _ids(command, project_id, asset_id)
