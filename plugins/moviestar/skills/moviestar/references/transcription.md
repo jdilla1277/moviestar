@@ -25,6 +25,15 @@ installs follow the user's existing authorization. No model is always best.
 Whisper itself does not consume language-model tokens. Agent review, repeated
 commands and repairs may use additional tokens on the user's agent plan.
 
+**Existing captions limit this workflow.** Replacing a source transcript can
+leave old derived captions cached, and frozen tracks may still report
+`stale: false`. Do not run `captions generate` as an automatic repair: it can
+reset generation settings and break/join/suppress edits. Keep already-captioned
+project replacement outside this guide's verified journey until a separately
+reviewed engine fix lands. Use caption spelling rules, or test the corrected
+transcript in a new working directory before generating captions. Keep the
+original project; a backup alone does not make regeneration safe.
+
 ## 1. Inspect words and audio
 
 Ask for the correct spelling of names or use a supplied speaker list/reference.
@@ -49,7 +58,7 @@ For a new recording, choose a model at load:
 moviestar load recording.mp4 --model medium --vocabulary 'Holden,Kubernetes'
 ```
 
-For an existing project, back up the project first. `retranscribe` preserves
+For a project without generated captions, back up the project first. `retranscribe` preserves
 frames and the edit spec but replaces transcript data; `undo` is not a promised
 transcript backup. Do not use `load --force` to fix an edited project.
 
@@ -89,7 +98,7 @@ Use the original-language transcript for the same recording. New source:
 moviestar load recording.mp4 --captions corrected.vtt
 ```
 
-Existing project, after backing it up:
+Existing project without generated captions, after backing it up:
 
 ```bash
 moviestar retranscribe --captions corrected.vtt
@@ -126,8 +135,8 @@ a hosted operation; if unavailable, use a supported local or supplied path.
 
 Check a known phrase, difficult names, and samples near the beginning, middle
 and end against the audio. Preview corrected captions and word-snapped cuts;
-regenerate derived captions if needed and check existing custom caption edits.
-Do not assume every caption track follows the new source transcript.
+generate captions only in the new test project. Do not regenerate over existing
+custom edits or assume a caption track follows the new source transcript.
 
 SRT/VTT normally times cues, not each spoken word. Word timing may be
 interpolated; inline tags are not independent alignment proof. Keep original
