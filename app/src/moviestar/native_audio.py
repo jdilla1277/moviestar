@@ -36,11 +36,14 @@ def compile_audio(snapshot, timeline, start, end, fail):
         fail('native review supports at most two independent audible tracks in the selected window')
     metadata={s['id']:s for s in snapshot['project']['sources']}
     paths={s['id']:(root/s['path']).resolve() for s in spec['sources']}
+    operated={source['id']for source in spec['sources']if source.get('operations')}
     pieces=[]
     for span in timeline.spans_overlapping(start,end):
         left,right=max(start,span.start_s),min(end,span.end_s)
         route=span.audio
         audible=not mix['source_audio']['muted'] and bool(metadata.get(route.source_id,{}).get('audio_codec'))
+        if audible and route.source_id in operated:
+            fail('routed source operations are not implemented in native review')
         if audible and (len(route.slices)!=1 or abs(route.speed-1)>1e-8):
             fail('routed source audio requires an ordinary unit-speed clock')
         at=route.slices[0][0]+left-span.start_s if len(route.slices)==1 and abs(route.speed-1)<1e-8 else 0
@@ -78,6 +81,12 @@ def prepare_audio(job,directory):
         '-ar','48000','-ac','2','-t',str(job['duration']),'-map_metadata','-1',str(base)]
     try:
         subprocess.run(args,check=True,capture_output=True,timeout=20)
+        # Default export audio is passthrough-equivalent, without the edited
+        # mix limiter. Keep its samples/peaks and avoid a second FFmpeg process.
+        from moviestar.audio_surface import default_audio_mix
+        if not job['mix']['tracks'] and job['mix']['source_audio']==default_audio_mix()['source_audio']:
+            base.replace(output)
+            return output
         command=build_mix_audio_window_command(str(base),str(output),job['mix'],job['result_duration'],
             source_audio_available=any(p['path'] for p in job['source_pieces']),
             window_start=job['window_start'],window_duration=job['duration'])

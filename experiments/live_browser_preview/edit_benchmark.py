@@ -20,7 +20,7 @@ HERE = Path(__file__).resolve().parent
 
 def _static_initial(value):
     if isinstance(value, dict):
-        return {k: _static_initial(v) for k, v in value.items() if k not in ('motion', 'content', 'caption')}
+        return {k: _static_initial(v) for k, v in value.items() if k not in ('motion', 'media_motion', 'content', 'caption')}
     if isinstance(value, list):
         return [_static_initial(v) for v in value]
     return value

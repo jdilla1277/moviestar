@@ -128,3 +128,22 @@ def test_audio_asset_survives_publication_and_expires_without_deleting_sources(p
     with monkeypatch.context() as fake:_fake_workers(fake);session.process.returncode=0;session.tick()
     assert not audio_path.exists() and asset not in session.assets
     assert (root/'dialogue.wav').read_bytes()==original
+
+
+def test_default_source_window_preserves_passthrough_peaks(tmp_path):
+    """Transport must not insert an unrequested limiter into a default edit."""
+    import subprocess
+    import numpy as np
+    from moviestar.audio_surface import resolve_audio_mix,default_audio_mix
+    from moviestar.native_audio import prepare_audio
+    source=tmp_path/'near-full-scale.wav'
+    subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','aevalsrc=0.99|0.99:s=48000:d=1',
+        '-c:a','pcm_f32le',str(source)],check=True,timeout=10)
+    mix=resolve_audio_mix(default_audio_mix(),result_duration=1,base_dir=tmp_path,probe_audio=lambda p:None)
+    job={'mix':mix,'duration':1,'result_duration':1,'window_start':0,
+        'source_pieces':[{'path':str(source),'source_start':0,'duration':1}]}
+    output=prepare_audio(job,tmp_path/'window')
+    raw=subprocess.check_output(['ffmpeg','-v','error','-i',str(output),'-f','f32le','-'],timeout=10)
+    samples=np.frombuffer(raw,dtype='<f4')
+    assert len(samples)==48000*2
+    assert float(np.abs(samples-.99).max())<1e-6

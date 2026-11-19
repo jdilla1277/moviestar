@@ -2,7 +2,7 @@
 export function semanticPacket(p){
  if(p.segments){const r={segments:p.segments.map(s=>({offset:s.offset,packet:semanticPacket(s.packet)})),range:p.range,canvas:p.canvas,fps:p.fps};if(p.audio_plane)r.audio_plane={source_audio:p.audio_plane.source_audio,tracks:p.audio_plane.tracks};return r;}
  const r=Object.fromEntries(['range','canvas','fps','initial','media','samples'].map(k=>[k,p[k]]));
- r.initial=JSON.parse(JSON.stringify(p.initial,(k,v)=>['motion','content','caption'].includes(k)?undefined:v));
+ r.initial=JSON.parse(JSON.stringify(p.initial,(k,v)=>['motion','media_motion','content','caption'].includes(k)?undefined:v));
  if(p.caption_plane)r.caption_plane={frames:p.caption_plane.frames,states:p.caption_plane.states.map(s=>({frame:s.frame,cues:s.cues}))};
  if(p.audio_plane)r.audio_plane={source_audio:p.audio_plane.source_audio,tracks:p.audio_plane.tracks};
  return r;
@@ -17,6 +17,7 @@ export function checkSnapshot(p,s,at){
    if(!actual||!['x','y','width','height'].every(k=>near(actual.rect[k],expected.rect[k])))return false;
    if(expected.media_box){
     const a=actual.media_box,e=expected.media_box;
+    if(e.camera_rect&&(!a?.camera_rect||!['x','y','width','height'].every(k=>near(a.camera_rect[k],e.camera_rect[k]))||Math.abs(a.media_opacity-e.media_opacity)>1e-6))return false;
     if(!a||a.object_fit!==e.object_fit||a.object_position!==e.object_position||!['x','y','width','height'].every(k=>near(a.content_rect[k],e.content_rect[k])))return false;
    }
    if(expected.caption_words){

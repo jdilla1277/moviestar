@@ -99,6 +99,7 @@ export async function render(input) {
   // Derive cumulative uniform scale from motion, not width ratios: a zero-width
   // caption can still paint glyphs, and 0/0 would disable overflow comparisons.
   const worldScales = new Map([[scene, 1]]);
+  const cameraFrames = new Map();
   // Freeze resolved base opacity before modifying any ancestor. Inherited
   // opacity must not re-inherit an already animated multiplier and apply it
   // twice inside a subtree.
@@ -137,6 +138,7 @@ export async function render(input) {
         element.style.transform = `translate(${motion.translate_x}, ${motion.translate_y}) scale(${motion.scale})`;
       }
     }
+    applyMediaMotion();
   }
   applyMotion();
 
@@ -144,6 +146,7 @@ export async function render(input) {
     for (const {node, element} of entries) if (node.motion_transform) element.style.transform = '';
     for (const {element} of entries) baseRects.set(element, element.getBoundingClientRect());
     applyMotion();
+    refreshMediaFrames();
   }
   function contentMetrics(element) {
     const css = getComputedStyle(element), px = key => parseFloat(css.getPropertyValue(key)) || 0;
@@ -211,19 +214,58 @@ export async function render(input) {
       objectFit:asset.object_fit,objectPosition:asset.object_position??css.objectPosition};
     return {frame,media};
   }
+  function applyMediaMotion() {
+    for (const [element, camera] of cameraFrames) {
+      const motion = camera.node.media_motion;
+      worldScales.set(camera.canvas, worldScales.get(element) * motion.scale);
+      camera.canvas.style.transformOrigin = '0 0';
+      camera.canvas.style.transform = `translate(${motion.translate_x}, ${motion.translate_y}) scale(${motion.scale})`;
+      camera.canvas.style.opacity = motion.opacity;
+    }
+  }
+  function refreshMediaFrames() {
+    for (const [element, camera] of cameraFrames) {
+      const styles = mediaStyle(element, {path:camera.node.path,object_fit:'fill',object_position:'50% 50%'});
+      for (const [target, style] of [[camera.frame,styles.frame],[camera.canvas,styles.media]])
+        for (const [name,value] of Object.entries(style)) if(target.style[name]!==value)target.style[name]=value;
+      if (!camera.intrinsic) continue;
+      const {css,width,height} = contentMetrics(element), [nw,nh] = camera.intrinsic;
+      const contain = Math.min(width/nw,height/nh), cover = Math.max(width/nw,height/nh);
+      const factor = css.objectFit==='contain'?contain:css.objectFit==='cover'?cover:
+        css.objectFit==='none'?1:css.objectFit==='scale-down'?Math.min(1,contain):null;
+      const w=factor===null?width:nw*factor,h=factor===null?height:nh*factor;
+      const [x,y]=positionOffset(element,css.objectPosition,width-w,height-h,camera.node.path.join('/'));
+      Object.assign(camera.plane.style,{position:'absolute',boxSizing:'border-box',left:x+'px',top:y+'px',
+        width:w+'px',height:h+'px',objectFit:'fill',objectPosition:'50% 50%'});
+    }
+    applyMediaMotion();
+  }
+  function setMediaIntrinsic(element,width,height) {
+    const camera=cameraFrames.get(element);if(!camera)return;
+    if(!(width>0&&height>0))throw Error(camera.node.path.join('/')+': invalid intrinsic media size');
+    camera.intrinsic=[width,height];refreshMediaFrames();
+  }
+  function mediaTarget(element) {return cameraFrames.get(element)?.plane??element;}
+  function mediaBox(element) {
+    const {css,rect}=contentMetrics(element),camera=cameraFrames.get(element);
+    const roundedRect=r=>Object.fromEntries(['x','y','width','height'].map(k=>[k,Math.round(r[k]*1000)/1000]));
+    return {object_fit:css.objectFit,object_position:css.objectPosition,content_rect:roundedRect(rect),
+      ...(camera?{camera_rect:roundedRect(contentMetrics(camera.canvas).rect),media_opacity:Number(getComputedStyle(camera.canvas).opacity)}:{})};
+  }
+  for(const {node,element} of entries)if(node.media_motion){
+    if(getComputedStyle(element).position==='static')throw Error(node.path.join('/')+'.media_motion: use position relative or absolute for the media viewport');
+    if(!CSS.supports('clip-path','content-box'))throw Error(node.path.join('/')+': media motion needs content-box clipping');
+    const frame=document.createElement('div'),canvas=document.createElement('div'),plane=document.createElement('div');
+    frame.append(canvas);canvas.append(plane);element.prepend(frame);
+    cameraFrames.set(element,{node,frame,canvas,plane});
+  }
+  refreshMediaFrames();
   const videoPlanes = [];
   const mediaPlanes = [];
   const mediaElements = [];
   if (input.paint_dir) {
     for (const {node, element} of entries) {
       if (!node.video && !node.image) continue;
-      const metrics = contentMetrics(element), computed = metrics.css;
-      const {width, height} = metrics;
-      if (node.video && !(width > 0 && height > 0)) {
-        throw new Error(`${node.path.join('/')}: unresolved video geometry`);
-      }
-      const worldScale = worldScales.get(element);
-      const left = metrics.rect.x, top = metrics.rect.y;
       let nativeWidth, nativeHeight;
       if (node.image) {
         const image = new Image();
@@ -240,6 +282,12 @@ export async function render(input) {
         nativeWidth = node.video.width;
         nativeHeight = node.video.height;
       }
+      setMediaIntrinsic(element,nativeWidth,nativeHeight);
+      const target=mediaTarget(element), metrics=contentMetrics(target), computed=metrics.css;
+      const {width,height}=metrics;
+      if(node.video&&!(width>0&&height>0))throw Error(`${node.path.join('/')}: unresolved video geometry`);
+      const worldScale=worldScales.get(cameraFrames.get(element)?.canvas??element);
+      const left=metrics.rect.x,top=metrics.rect.y;
       const fit = computed.objectFit;
       const contain = Math.min(width / nativeWidth, height / nativeHeight);
       const cover = Math.max(width / nativeWidth, height / nativeHeight);
@@ -249,7 +297,7 @@ export async function render(input) {
       let fittedHeight = factor === null ? height : nativeHeight * factor;
       fittedWidth *= worldScale;
       fittedHeight *= worldScale;
-      const offsets = positionOffset(element, computed.objectPosition,
+      const offsets = positionOffset(target, computed.objectPosition,
         width - fittedWidth / worldScale, height - fittedHeight / worldScale, node.path.join('/'));
       let x = left + offsets[0] * worldScale;
       let y = top + offsets[1] * worldScale;
@@ -259,22 +307,22 @@ export async function render(input) {
         if (!(fittedWidth > 0 && fittedHeight > 0)) {
           throw new Error(`${node.path.join('/')}: unresolved video geometry`);
         }
-        const plane = {node, plane: element, rect: {x, y, width: fittedWidth, height: fittedHeight}};
+        const plane = {node, plane: target, rect: {x, y, width: fittedWidth, height: fittedHeight}};
         mediaPlanes.push(plane);
         if (!node.video.raster_image) videoPlanes.push(plane);
       }
       // Paint in the media element's content box. Background paint creates no
       // containing block or flow item, so authored static positioning, z-order,
       // ancestor clips, and normal-flow geometry remain intact.
-      element.style.backgroundImage = `url(${JSON.stringify(node.image || node.video.raster_image || node.video.black_image)}), none`;
+      target.style.backgroundImage = `url(${JSON.stringify(node.image || node.video.raster_image || node.video.black_image)}), none`;
       // The final empty layer keeps the authored background color over the
       // padding/border box while only the media layer is clipped to content.
-      element.style.backgroundOrigin = 'content-box, border-box';
-      element.style.backgroundClip = 'content-box, border-box';
-      element.style.backgroundRepeat = 'no-repeat';
-      element.style.backgroundSize = `${fittedWidth / worldScale}px ${fittedHeight / worldScale}px`;
-      element.style.backgroundPosition = `${(x - left) / worldScale}px ${(y - top) / worldScale}px`;
-      mediaElements.push(element);
+      target.style.backgroundOrigin = 'content-box, border-box';
+      target.style.backgroundClip = 'content-box, border-box';
+      target.style.backgroundRepeat = 'no-repeat';
+      target.style.backgroundSize = `${fittedWidth / worldScale}px ${fittedHeight / worldScale}px`;
+      target.style.backgroundPosition = `${(x - left) / worldScale}px ${(y - top) / worldScale}px`;
+      mediaElements.push(target);
     }
   }
 
@@ -347,15 +395,14 @@ export async function render(input) {
       rect: {x: rounded(rect.x), y: rounded(rect.y),
              width: rounded(rect.width), height: rounded(rect.height)},
       ...(node.kind === 'video' || node.kind === 'image' ? {media_box: (() => {
-        const {css, rect} = contentMetrics(element);
-        return {object_fit: css.objectFit, object_position: css.objectPosition,
-          content_rect: Object.fromEntries(['x','y','width','height'].map(k => [k, rounded(rect[k])]))};
+        return mediaBox(element);
       })()} : {}),
       base_rect: Object.fromEntries(['x', 'y', 'width', 'height'].map(key => [key, rounded(baseRects.get(element)[key])])),
       layout_rule: node.style,
       rule_sources: node.rule_sources, matched_format_rules: node.matched_format_rules,
     };
     if (node.motion) box.motion = node.motion;
+    if (node.media_motion) box.media_motion = node.media_motion;
     let opacity = 1;
     for (let ancestor = element; ancestor; ancestor = ancestor.parentElement) {
       opacity *= Number(getComputedStyle(ancestor).opacity);
@@ -406,8 +453,15 @@ export async function render(input) {
       }
     }
     for (const box of boxes) {
+      if(box.media_box?.camera_rect){
+        const r=box.media_box.camera_rect,guide=document.createElement('div');
+        guide.dataset.mediaCameraGuide=box.path.join('/');
+        guide.style.cssText='position:absolute;box-sizing:border-box;outline:1px dashed #00c8ff;pointer-events:none;z-index:2147483646';
+        Object.assign(guide.style,{left:r.x+'px',top:r.y+'px',width:r.width+'px',height:r.height+'px'});
+        document.body.append(guide);
+      }
       const label = document.createElement('div');
-      label.textContent = `${box.kind}: ${box.path.join('/')} ${entries[box.dom_order].node.guide_label ?? ''}`.trim();
+      label.textContent = `${box.media_motion?'media zoom '+box.media_motion.scale+' ':''}${box.kind}: ${box.path.join('/')} ${entries[box.dom_order].node.guide_label ?? ''}`.trim();
       label.style.cssText = 'position:absolute;z-index:2147483647;background:#13263a;color:white;'
         + 'font:12px monospace;padding:2px 4px;max-width:95%;white-space:nowrap;'
         + 'overflow:hidden;text-overflow:ellipsis;pointer-events:none';
@@ -445,7 +499,7 @@ export async function render(input) {
       document.body.append(label);
     }
   }
-  if (input.live_dom) window.moviestarScene = {scene, entries, applyMotion, refreshLayout, mediaStyle, contentMetrics, updateCaption, captionWords, inspectCaption, textLines};
+  if (input.live_dom) window.moviestarScene = {scene, entries, applyMotion, refreshLayout, mediaStyle, contentMetrics, mediaTarget, mediaBox, setMediaIntrinsic, refreshMediaFrames, updateCaption, captionWords, inspectCaption, textLines};
   window.moviestarLabelView = labelView;
   window.moviestarRepaint = async () => {
     // Partial repaint can reuse rounded-clip edge pixels from a prior capture.

@@ -122,7 +122,8 @@ try{
 
 
 @pytest.mark.skipif(not browser_available(), reason='Chrome and Node required')
-def test_still_image_later_caption_collapse_is_rejected_before_publication(tmp_path,benchmark):
+@pytest.mark.parametrize('camera',[False,True])
+def test_still_image_later_caption_collapse_is_rejected_before_publication(tmp_path,benchmark,camera):
     from spatial_caption_benchmark import prepare
     root=tmp_path/'project';prepare(root,(360,640),'still');spec=load_spec(root)
     spec['spatial']['scenes']['title']['layout']['children']=[{
@@ -132,6 +133,7 @@ def test_still_image_later_caption_collapse_is_rejected_before_publication(tmp_p
             {'id':'words','type':'caption','content':{'track':'captions'},
              'layout':{'width':'max-content','height':'100%','flex':'0 0 auto'},
              'style':{'font_family':'monospace','font_size':4}}]}]
+    if camera:spec['spatial']['scenes']['title']['layout']['children'][0]['children'][0]['media_motion']={'scale':[{'at':0,'value':1},{'at':5,'value':1.5}]}
     for cue in spec['overlays']:
         cue['text']='W';cue['tokens']=[{'text':'W','from':cue['from'],'to':cue['to']}]
     save_spec(spec,cwd=root)

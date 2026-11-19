@@ -127,8 +127,88 @@ jobs:
           pip install -e "./app[url-captions]"
           bin/check-dependency-licenses --extra url-captions
 
-      # Fail quickly on real-time PiP playback; run each test once across these
-      # two steps. The remaining suite retains every fast and slow test.
+      - name: Run full suite (with --run-slow)
+        run: |
+          cd app
+          source .venv/bin/activate
+          pytest --run-slow --ignore=tests/test_native_pip_browser.py --ignore=tests/test_native_cuts_browser.py --basetemp="$RUNNER_TEMP/full-suite"
+
+      - name: Build and check package artifacts
+        run: |
+          source app/.venv/bin/activate
+          python -m pip install build twine
+          python -m build app
+          python -m twine check app/dist/*
+
+  native-playback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      MOVIESTAR_CHROME_NO_SANDBOX: '1'
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # Cache pip downloads (~150MB of wheels: PyAV, CTranslate2, ONNX
+      # Runtime, NumPy) so install time doesn't depend on PyPI throughput;
+      # a slow mirror once stretched install to 18 minutes and timed out
+      # the job. The venv's pip shares this ~/.cache/pip.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: app/pyproject.toml
+
+      # Moviestar shells out to FFmpeg and ffprobe for media operations.
+      - name: Install ffmpeg
+        run: |
+          python bin/install-ci-ffmpeg
+          ffmpeg -version | head -1
+          ffprobe -version | head -1
+
+      # Exercise the supported headless-shell renderer explicitly rather than
+      # whichever desktop Chrome happens to ship in the runner image.
+      - name: Install Chrome for Testing headless shell
+        env:
+          CHROME_FOR_TESTING_VERSION: '156.0.8078.73'
+        run: |
+          archive="$RUNNER_TEMP/moviestar-chrome.zip"
+          curl --fail --location --silent --show-error \
+            "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_FOR_TESTING_VERSION}/linux64/chrome-headless-shell-linux64.zip" \
+            --output "$archive"
+          unzip -q "$archive" -d "$RUNNER_TEMP/moviestar-chrome"
+          chrome_path="$RUNNER_TEMP/moviestar-chrome/chrome-headless-shell-linux64/chrome-headless-shell"
+          "$chrome_path" --version
+          node --version
+          echo "MOVIESTAR_CHROME_PATH=$chrome_path" >> "$GITHUB_ENV"
+
+      - name: Install moviestar
+        run: |
+          cd app
+          python -m venv .venv
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+          pip install -e . pytest
+
+      # Retain the first source-only cut result before any later work. These
+      # tests run once here and are excluded from the remaining full suite.
+      - name: Check source-audio cut playback
+        run: |
+          cd app
+          source .venv/bin/activate
+          pytest tests/test_native_cuts_browser.py -q --basetemp="$RUNNER_TEMP/native-cuts"
+
+      - name: Retain generated source-cut playback evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: native-source-cuts-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/native-cuts/test_actual_native_cuts_keep_*/browser/*.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # Fail quickly on real-time PiP playback; run each test once in this
+      # job. The remaining suite retains every fast and slow test.
       - name: Check native PiP playback
         id: native-pip
         run: |
@@ -148,29 +228,15 @@ jobs:
           source .venv/bin/activate
           pytest tests/test_native_pip_browser.py -s -q --basetemp="$RUNNER_TEMP/native-pip-trace"
 
-      - name: Run full suite (with --run-slow)
-        run: |
-          cd app
-          source .venv/bin/activate
-          pytest --run-slow --ignore=tests/test_native_pip_browser.py --basetemp="$RUNNER_TEMP/full-suite"
-
       - name: Retain generated native playback evidence
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: native-cut-playback-${{ github.run_attempt }}
+          name: native-pip-playback-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/full-suite/test_actual_native_cuts_keep_*/browser/*.json
             ${{ runner.temp }}/native-pip/test_independent_audio_*/browser/*.json
             ${{ runner.temp }}/native-pip/test_independent_audio_*/browser/*.wav
             ${{ runner.temp }}/native-pip/test_two_tracks_*/browser/*.json
             ${{ runner.temp }}/native-pip/test_two_tracks_*/browser/*.wav
           if-no-files-found: ignore
           retention-days: 7
-
-      - name: Build and check package artifacts
-        run: |
-          source app/.venv/bin/activate
-          python -m pip install build twine
-          python -m build app
-          python -m twine check app/dist/*
