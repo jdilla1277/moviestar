@@ -108,11 +108,13 @@ moviestar cloud assets list --shared --limit 20 --cursor NEXT_CURSOR
 ```
 
 The default collection contains your ready originals. `--shared` contains ready
-originals available through accepted project invitations that include assets.
-Each asset appears once even when several shared projects reference it.
-`shared_via` identifies one currently accessible project, its title, the source
-owner's handle and the project reference ID. Open that project to see or download
-the original. This does not grant permission to edit or reshare it.
+originals available through accepted asset invitations or project invitations
+that include assets. Each asset appears once even when several paths grant
+access. `shared_via` identifies one current path: project provenance includes
+the project title and reference ID; direct provenance has `kind: "asset"`, an
+invitation ID and the sender's handle. Open that project or use `cloud assets get`
+to see or download the original. This does not grant permission to edit or
+reshare it.
 
 Follow `next_cursor` unchanged, keeping it with the same collection. Revoked
 invitations, removed references, deleted projects, nonready assets and
@@ -128,5 +130,109 @@ your personal API key or approved installation. Responses include
 
 Hosted MCP uses `moviestar_list_assets` with `collection: "shared"` (or `"owned"`,
 the default), plus optional `limit` and `cursor`. The website exposes the same
-collection under **Assets → Shared with me**. Individual asset invitations are
-not supported yet; this collection discovers access through project shares.
+collection under **Assets → Shared with me**. See the direct sharing journey
+below for individual asset invitations.
+
+## Rename an asset's display name
+
+```sh
+moviestar cloud assets rename ASSET_ID "Interview opening"
+```
+
+The command reads the current owned asset's name before writing. Its ID,
+original filename, bytes, project references and sharing permissions stay the
+same. All project and shared-list views show the new `display_name`.
+Existing assets default to their original filename. Names are trimmed,
+1–240 Unicode characters, and cannot contain control or bidirectional
+formatting characters. Viewers cannot rename an asset.
+
+If the result is uncertain, preserve `expected_display_name` from the response:
+
+```sh
+moviestar cloud assets rename ASSET_ID "Interview opening" --expected-name "Previous name"
+```
+
+Retry the same target and expected names. An `asset_changed` conflict means a
+different name is current; read it and review the change before replacing it.
+The CLI does not automatically retry writes. Older services fail with
+`unsupported_operation` before sending a rename.
+
+API: `PATCH /api/v1/account/cloud/assets/ASSET_ID`, using your API key or approved
+installation, with JSON `{"display_name":"Interview opening","expected_display_name":"Previous name"}`.
+Success returns `status: "renamed"`, `changed` and the updated `asset`.
+Repeating the request confirms success if the desired name is already current;
+it cannot overwrite a different name saved since the first request.
+
+MCP: `moviestar_rename_asset` takes `asset_id`, `display_name` and
+`expected_display_name`. Read `display_name` from an asset listing first (falling
+back to `filename` for older responses). The website offers **Rename asset** in
+an owned asset's detail view and keeps the original filename visible there.
+
+## Share one asset with a viewer
+
+An owner can invite a viewer to one ready original without creating a project.
+The recipient signs in with the invited email verified, explicitly accepts, and
+then finds the original under **Assets → Shared with me**. Accepted access is
+bound to that account; forwarding an invitation does not grant another account
+access. A viewer can read and download, but cannot rename or reshare the asset.
+
+```sh
+moviestar cloud assets share ASSET_ID recipient@example.com
+moviestar cloud assets access ASSET_ID
+moviestar cloud assets list --shared
+moviestar cloud assets get ASSET_ID
+moviestar cloud assets resend-invitation INVITATION_ID
+moviestar cloud assets unshare INVITATION_ID --confirm
+```
+
+Share and resend save a retry key before sending. Repeat the same command after
+an uncertain response, or retain `--idempotency-key KEY`; do not create another
+request simply because the response was lost. `queued` records an email request,
+not inbox delivery or recipient acceptance. `access` lists up to 50 invitations
+per page; pass its unchanged UUID `--cursor` to continue. Old services fail with
+`unsupported_operation` before a sharing mutation.
+
+`get` returns metadata and a private `download_url`. Open it while signed in to
+the recipient account, or GET it using your own API credential. This command
+does not write a local file. Downloaded copies cannot be recalled. Removing a
+direct invitation does not remove independent access through a shared project.
+Recipient leave, editor permissions, and editor resharing are separate work.
+
+### API and hosted MCP
+
+Use an active personal API key as `Authorization: Bearer YOUR_KEY`. Browser
+writes use same-origin signed-in requests. Remote CLI installations use their
+approved installation credential; credentials and account IDs are never request
+body fields.
+
+| Operation | Endpoint |
+| --- | --- |
+| Invite | `POST /api/v1/account/cloud/assets/:id/invitations` |
+| List invitations/access | `GET /api/v1/account/cloud/assets/:id/invitations?cursor=UUID` |
+| Resend | `POST /api/v1/account/asset-invitations/:invitation_id/resend` |
+| Revoke | `POST /api/v1/account/asset-invitations/:invitation_id/revoke` |
+| Read accessible original | `GET /api/v1/account/cloud/assets/:id` |
+| Download accessible original | `GET /api/v1/account/cloud/assets/:id/download` |
+
+Invite accepts exactly `{"email":"recipient@example.com"}`. Resend and revoke
+accept `{}`. Invite/resend require an `Idempotency-Key` header. Recipient
+review/acceptance stays in the browser; a developer credential cannot assert a
+recipient's verified email or accept on their behalf. Downloads recheck current
+access and stream the original without exposing storage keys or signed storage
+URLs.
+
+Hosted MCP exposes `moviestar_invite_asset_viewer`,
+`moviestar_list_asset_access`, `moviestar_resend_asset_invitation`,
+`moviestar_revoke_asset_access`, and `moviestar_get_asset`. Share/resend take an
+optional `idempotency_key`; agents should generate and retain a UUID before the
+first call. Revocation requires the selected ID in both `invitation_id` and
+`confirm_invitation_id`. Only send invitations or remove access on the owner's
+explicit request. Both OAuth account connections and personal API keys use the
+same resource permission checks.
+
+The shared catalog retains existing project provenance. A directly shared item
+instead has `shared_via: {kind: "asset", invitation_id, shared_by}`; it has no
+fabricated project or reference ID. Each asset appears once, even if several
+paths grant access. Follow `next_cursor` unchanged. Capabilities advertise
+`asset_sharing.management.contract_version: native-asset-sharing-v1` and
+`project_assets.operations` includes `assets:read` for direct detail/download.

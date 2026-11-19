@@ -54,6 +54,11 @@ Read [editing workflows](references/editing-workflows.md) when choosing between
 single-source, transcript, multicamera, scene, caption, overlay, or audio
 commands. Before delivery, follow [render verification](references/verification.md).
 
+For wrong names, missing speech, slow transcription, supplied captions or timing
+drift, read [transcription and repair](references/transcription.md). Choose a
+local repair or timed import before abandoning the edit; caption corrections
+and source-transcript replacement affect different consumers.
+
 ## Preserve user control
 
 - Keep source media untouched and write generated media to the task directory
@@ -67,6 +72,9 @@ commands. Before delivery, follow [render verification](references/verification.
 - Do not submit feedback, create accounts, subscribe an email address, download
   large models, or install optional dependencies unless the user requested or
   approved that action.
+- User-approved feedback can use the CLI's existing Moviestar account connection
+  for report follow-up; `feedback --anonymous` omits that connection. Contact is
+  resolved by the service, never by searching device files or browser profiles.
 
 ## Finish with evidence
 

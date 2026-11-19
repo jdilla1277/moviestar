@@ -19,6 +19,9 @@ Choose the smallest workflow that satisfies the request. Run the relevant
 
 ## Work with long recordings
 
+For model/resource choices, wrong words, transcript replacement and timing
+checks, follow [transcription and repair](transcription.md).
+
 Whisper on hours of footage takes hours. When the source has captions, such
 as YouTube captions or a broadcaster's SRT, load them instead with
 `load VIDEO --captions FILE.vtt`. This takes seconds, and the transcript

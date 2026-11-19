@@ -9,6 +9,8 @@ AI agents. Start with the path that matches your task:
   first verified edit.
 - [Agent guide](agent-guide.md) — understand project state, time spaces,
   structured output, composition, and verification.
+- [Transcription and repair](../plugins/moviestar/skills/moviestar/references/transcription.md)
+  — choose a local model, correct names, repair one passage, or import timed captions.
 - [Review exports](review-exports.md) — create a 720p rendition while preserving
   authored composition and typography.
 - [Review evidence](review-evidence.md) — keep artifact-bound technical, source,
@@ -51,6 +53,8 @@ The CLI's built-in help is the authoritative command reference. Run
 - [Personal Cloud projects](cloud-projects.md) — explicitly create, list, and reopen owned projects through an approved installation.
 
 - [Sharing and download](sharing.md) — private uploads, unlisted handoffs, retries, link management, and recipient downloads.
+- [Feedback and account contact](feedback.md) — user-approved reports, account
+  linkage, deliberately supplied contact, and anonymous submission.
 
 - [Cloud watch excerpts](cloud-watch.md) — request private bounded video/audio, reopen durable jobs, and retrieve through the CLI.
 - [Cloud visual skims](cloud-skim.md) — timestamped private thumbnails from a ready Cloud video.
