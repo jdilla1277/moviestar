@@ -21,8 +21,8 @@ AI agents. Start with the path that matches your task:
   Codex plugin or copy the portable skill to another compatible agent.
 - [Skill validation](skill-validation.md) — review the scaffold, installation,
   and source-blind editing evidence.
-- [v0.8.4 release notes](releases/v0.8.4.md) — private account originals from
-  the remote CLI, with safe retries and the base installation.
+- [v0.8.4 release notes](releases/v0.8.4.md) — local editing fixes, expanded
+  Cloud preview inspection and asset workflows, account-linked feedback and agent guidance.
 - [v0.8.2 release notes](releases/v0.8.2.md) — audio timing, scene exports,
   font-aware wrapping, and canvas undo fixes.
 - [v0.8.1 release notes](releases/v0.8.1.md) — audio/font fixes, review exports
