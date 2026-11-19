@@ -192,8 +192,10 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
 }
 
 export async function mountCuts(packet,signal,metrics){
-  const multipleVideos=packet.segments.some(segment=>segment.packet.media.filter(item=>item.kind==='video').length>1);
-  const stages=[],audio=new AudioContext(multipleVideos||packet.audio_plane?{sampleRate:48000}:{}),frames=[];
+  // Sequential sources are multiple media clocks too. Keep their shared
+  // output at the canonical export rate, just like parallel PiP/prepared
+  // audio, rather than choosing a device-dependent rate for one-video cuts.
+  const stages=[],audio=new AudioContext({sampleRate:48000}),frames=[];
   let delegate,output,reviewAudio,outputMixer,closed=false;
   const cleanup=()=>{
     if(closed)return;closed=true;

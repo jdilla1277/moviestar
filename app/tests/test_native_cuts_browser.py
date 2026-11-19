@@ -59,13 +59,14 @@ try{
  await b.wait('window.movieStarPreview.stage.metrics.finished',15000);
  const m=await b.evaluate(`(()=>{
   const root=document.querySelector('iframe:not(.pending)').contentDocument;
-  return {...window.movieStarPreview.stage.metrics,segment_initial_presented:[...root.querySelectorAll('iframe')].map(frame=>{
+  return {...window.movieStarPreview.stage.metrics,child_audio_devices:[...root.querySelectorAll('iframe')].map(frame=>frame.contentWindow.moviestarLiveStage.metrics.audio_device),segment_initial_presented:[...root.querySelectorAll('iframe')].map(frame=>{
    const api=frame.contentWindow.moviestarLiveStage;
    return api.metrics.initial_presented.find(item=>JSON.stringify(item.path)===JSON.stringify(api.packet.video_path));
   })};
  })()`);
  await writeFile(OUT+'/playback.json',JSON.stringify(m));
  assert.deepEqual(exceptions,[],'No uncaught browser exceptions');
+ assert.ok(m.child_audio_devices.every(device=>device.sample_rate===48000),'All cut pictures share the canonical audio clock');
  assert.equal(m.cuts.length,2);assert.ok(Math.abs(m.end_result_time-9)<=.05);
  const first=m.frames[0],zero=first.display_epoch-first.result_time*1000;
  assert.ok(Math.abs(m.finished_at-zero-9000)<=50,'Program clock stays aligned across cuts');
