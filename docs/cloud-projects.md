@@ -729,3 +729,64 @@ that capability need a signed-in browser download or the CLI. Automatic file
 import into ChatGPT and saving onto the user's computer are not established by
 this tool and need separate host-specific acceptance. Never paste a credential
 into chat. Older services may return unavailable for the manifest route.
+
+## Project editors and accessible asset references
+
+Projects have three access levels:
+
+| Action | Viewer | Editor | Owner |
+| --- | --- | --- | --- |
+| Open the project and download assets they can access | Yes | Yes | Yes |
+| Add/remove asset references and rename the project | No | Yes | Yes |
+| Invite people, change roles, revoke access, delete the project | No | No | Yes |
+
+Project editing changes the collection and title. It never grants permission to
+modify or delete another person's original asset. Removing a reference preserves
+the original and its other project memberships. There is no manager role.
+
+Owners can invite editors or change a member's current project role:
+
+```bash
+moviestar cloud projects share PROJECT_ID recipient@example.com --role editor
+moviestar cloud projects access PROJECT_ID
+moviestar cloud projects set-access-role INVITATION_ID editor --expected-role viewer
+moviestar cloud projects set-access-role INVITATION_ID viewer --expected-role editor
+```
+
+`--expected-role` comes from the access list. Preserve it on retry after an
+uncertain reply; stale changes cannot overwrite a different role. Revoked
+invitations cannot be revived by changing role. Existing metadata-only invitations
+must be revoked and replaced before assigning editor access. Invites default to
+viewer. An older server without editor support rejects `--role editor` before
+sending an invitation.
+
+Editors reopen shared projects with the ordinary `list --shared` and `show`
+commands, then use `rename`, `add-asset` and `remove-asset`. Renaming retains the
+existing `--expected-title` precondition. Revocation or demotion takes effect on
+the next operation, including retries.
+
+You may reference an original you own or can independently access:
+
+```bash
+moviestar cloud assets list --shared
+moviestar cloud projects add-asset PROJECT_ID ACCESSIBLE_ASSET_ID
+```
+
+Adding an original you own authorizes project members under that project's
+sharing rules. Referencing someone else's original preserves its audience.
+For example, Alice shares an original with Bob. Bob references it in a project
+shared with Carol. Carol does not gain access merely from Bob's reference: she
+needs an independent grant authorized by Alice. Removing the source grant or
+reference ends access through that path. Other valid paths survive. No original
+is copied, and borrowed references cannot create chains of new access grants.
+Unavailable originals are omitted from each person's project asset list and
+download manifest; their private filenames or storage paths are not disclosed.
+
+The same rules apply to Web, API and hosted MCP. Owners invite with the API's
+`{email, role}` body (viewer is the default). Owner-only role changes use
+`POST /api/v1/account/project-invitations/INVITATION_ID/role` with
+`{role, expected_role}`. Current invitation/list/review results include `role`.
+Hosted MCP adds `moviestar_invite_project_member` with viewer/editor selection and
+`moviestar_set_project_role`; the existing viewer invitation tool remains
+viewer-only. Account-wide scopes never authorize access management on another
+person's project.

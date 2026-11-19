@@ -15,11 +15,13 @@ _HINTS = {
     'account_setup_required': service._HINTS['account_setup_required'],
     'account_consent_required': service._HINTS['account_consent_required'],
     'account_action_required': 'Complete account setup and review current terms on the website.',
-    'not_found': 'This project or invitation is unavailable to the connected owner. Viewers cannot manage sharing.',
+    'not_found': 'This project or invitation is unavailable to the connected owner. Viewers and editors cannot manage sharing.',
     'rate_limited': 'Invitation email limits were reached. Wait before retrying with the same request key.',
     'sending_paused': 'New invitation emails are paused. Existing access can still be listed or revoked.',
     'resend_not_ready': 'An email was recently requested or is still processing. Wait before retrying with the same key.',
     'grant_exists': 'This recipient already accepted access. No additional email was requested.',
+    'invitation_changed': 'Access changed elsewhere. Read the current role before retrying with a reviewed precondition.',
+    'legacy_scope': 'Revoke and invite again with asset access before granting editor rights.',
     'invitation_revoked': 'This invitation was revoked. To deliberately share again, send a new invitation.',
     'project_not_ready': 'Only an active project can be shared.',
     'idempotency_conflict': 'Use the original project, recipient and request key; use a new key only for a deliberate new request.',
@@ -44,6 +46,7 @@ def _supported(command, endpoint, credential, operation):
             or not isinstance(management.get('operations'), list)
             or operation not in management['operations']):
         service._fail(command, 'unsupported_operation', 'Native project sharing is not available on this service. No invitation was sent.')
+    return management
 
 
 def _invitation(raw):
@@ -51,6 +54,7 @@ def _invitation(raw):
         return None
     if (not isinstance(raw.get('email'), str) or len(raw['email']) > 254 or not _EMAIL.fullmatch(raw['email'])
             or not isinstance(raw.get('includes_assets'), bool) or raw.get('state') not in ('pending', 'accepted', 'revoked', 'expired')
+            or raw.get('role', 'viewer') not in ('viewer', 'editor')
             or raw.get('delivery') not in ('queued', 'pending', 'accepted', 'failed', 'unknown', 'cancelled')):
         return None
     for field in ('created_at', 'expires_at', 'accepted_at', 'revoked_at', 'last_requested_at', 'resend_available_at'):
@@ -62,7 +66,7 @@ def _invitation(raw):
                 return None
         except ValueError:
             return None
-    return {field: raw.get(field) for field in ('id', 'email', 'includes_assets', 'state', 'created_at', 'expires_at', 'accepted_at', 'revoked_at', 'last_requested_at', 'resend_available_at', 'delivery')}
+    return {'role': raw.get('role', 'viewer'), **{field: raw.get(field) for field in ('id', 'email', 'includes_assets', 'state', 'created_at', 'expires_at', 'accepted_at', 'revoked_at', 'last_requested_at', 'resend_available_at', 'delivery')}}
 
 
 def _id(command, value):
@@ -71,7 +75,7 @@ def _id(command, value):
     return value.lower()
 
 
-def _send(command, resource_id, email, explicit_key):
+def _send(command, resource_id, email, explicit_key, role='viewer'):
     resource_id = _id(command, resource_id)
     if (email is not None and (len(email) > 254 or not _EMAIL.fullmatch(email))
             or explicit_key is not None and not service._KEY.fullmatch(explicit_key)):
@@ -79,16 +83,18 @@ def _send(command, resource_id, email, explicit_key):
     email = email.lower() if email else None
     endpoint, credential = service._connection(command)
     operation = 'create' if email else 'resend'
-    _supported(command, endpoint, credential, f'invitations:{operation}')
+    management = _supported(command, endpoint, credential, f'invitations:{operation}')
+    if role == 'editor' and 'editor' not in management.get('recipient_roles', []):
+        service._fail(command, 'unsupported_operation', 'This service does not advertise project editor invitations. No invitation was sent.')
     url = (f'{endpoint}/projects/{resource_id}/invitations' if email else
            endpoint.removesuffix('/cloud') + f'/project-invitations/{resource_id}/resend')
     fields = {}
     try:
-        context = json.dumps([operation, resource_id, email], separators=(',', ':'))
+        context = json.dumps([operation, resource_id, email] + ([role] if email and role != 'viewer' else []), separators=(',', ':'))
         with creation_request(endpoint, credential, context, explicit_key, recovery_directory='cloud-project-sharing-requests') as pending:
             fields['idempotency_key'] = pending.key
             pending.save()
-            status, body = service._request(url, credential, payload={'email': email} if email else {}, key=pending.key)
+            status, body = service._request(url, credential, payload={'email': email, **({'role': role} if role != 'viewer' else {})} if email else {}, key=pending.key)
             expected = ('invitation_requested', 'invitation_exists') if email else ('invitation_resent',)
             if status not in (200, 202):
                 rejected = 400 <= status < 500 and not pending.recovering
@@ -97,7 +103,7 @@ def _send(command, resource_id, email, explicit_key):
                 _check(command, status, body, sharing_outcome='rejected' if rejected else 'unknown', **fields)
             invitation = _invitation(body.get('invitation'))
             if (body.get('status') not in expected or invitation is None
-                    or (email is not None and invitation['email'] != email)
+                    or (email is not None and (invitation['email'] != email or invitation['role'] != role))
                     or (email is None and invitation['id'].lower() != resource_id)
                     or body.get('delivery') != ('not_requested' if body.get('status') == 'invitation_exists' else 'queued')):
                 service._fail(command, 'sharing_unconfirmed', 'The request may have succeeded. Rerun the same command to recover its key, or list project access. No automatic retry was sent.', sharing_outcome='unknown', **fields)
@@ -118,20 +124,21 @@ def register_project_sharing(projects):
     @click.argument('project_id')
     @click.argument('email')
     @click.option('--idempotency-key', help='Optional retry key, generated and saved automatically when omitted.')
-    def share_project(project_id, email, idempotency_key):
-        """Invite EMAIL to view PROJECT_ID and its current and future assets.
+    @click.option('--role', type=click.Choice(['viewer', 'editor']), default='viewer', show_default=True, help='Editors can rename and add/remove references; access management stays owner-only.')
+    def share_project(project_id, email, idempotency_key, role):
+        """Invite EMAIL to PROJECT_ID as a viewer or --role editor.
 
         Owner only. Running this command deliberately requests an invitation
         email. Recipient verifies and accepts in their browser. Repeat the same
         command after uncertainty; its saved key prevents duplicate delivery.
         """
-        _send('cloud projects share', project_id, email, idempotency_key)
+        _send('cloud projects share', project_id, email, idempotency_key, role)
 
     @projects.command('access')
     @click.argument('project_id')
     @click.option('--cursor', help='Unchanged next_cursor UUID from the previous page.')
     def access(project_id, cursor):
-        """List viewer invitations/access for an owned PROJECT_ID, 50 per page.
+        """List viewer/editor invitations/access for an owned PROJECT_ID, 50 per page.
 
         Includes pending, accepted, expired and revoked invitations. Email
         delivery accepted means provider acceptance, not recipient acceptance.
@@ -186,3 +193,27 @@ def register_project_sharing(projects):
         Preserves original asset scope. Accepted or revoked offers cannot resend.
         """
         _send('cloud projects resend-invitation', invitation_id, None, idempotency_key)
+
+    @projects.command('set-access-role')
+    @click.argument('invitation_id')
+    @click.argument('role', type=click.Choice(['viewer', 'editor']))
+    @click.option('--expected-role', required=True, type=click.Choice(['viewer', 'editor']), help='Current role from the access list; preserve this precondition on retries.')
+    def set_access_role(invitation_id, role, expected_role):
+        """Change an invitation's project role. Owner only.
+
+        Read project access first. Editors can rename and manage asset references,
+        but cannot invite, revoke, change roles or delete the project/originals.
+        After uncertainty, read access or retry with the same expected role.
+        """
+        command = 'cloud projects set-access-role'
+        invitation_id = _id(command, invitation_id)
+        endpoint, credential = service._connection(command)
+        _supported(command, endpoint, credential, 'invitations:role')
+        status, body = service._request(endpoint.removesuffix('/cloud') + f'/project-invitations/{invitation_id}/role', credential, payload={'role': role, 'expected_role': expected_role})
+        fields = {'invitation_id': invitation_id, 'role': role, 'expected_role': expected_role}
+        if status != 200:
+            _check(command, status, body, sharing_outcome='rejected' if 400 <= status < 500 else 'unknown', **fields)
+        invitation = _invitation(body.get('invitation'))
+        if body.get('status') != 'role_updated' or invitation is None or invitation['id'].lower() != invitation_id or invitation['role'] != role or invitation['state'] == 'revoked':
+            service._fail(command, 'sharing_unconfirmed', 'Read current access before retrying the same expected role. No automatic retry was sent.', sharing_outcome='unknown', **fields)
+        click.echo(json.dumps({'command': command, 'status': 'role_updated', 'invitation': invitation}, indent=2))

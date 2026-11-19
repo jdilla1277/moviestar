@@ -84,7 +84,7 @@ def test_rejects_malformed_or_widened_shared_metadata(remote, changes):
     assert "Highlights" not in result.output
 
 
-@pytest.mark.parametrize("role", ["editor", "admin", None])
+@pytest.mark.parametrize("role", ["manager", "admin", None])
 def test_never_silently_drops_an_unknown_detail_role(remote, role):
     responses, _ = remote
     responses["project"] = {**PROJECT_DATA, "access": {"role": role}}
