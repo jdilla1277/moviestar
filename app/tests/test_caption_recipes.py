@@ -137,6 +137,77 @@ class TestRecipePersistence:
 
 
 class TestLiveDerivation:
+    def test_replacement_outside_scene_clears_captions_in_dump_and_export(
+        self, runner, test_video, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        original = tmp_path / "original.vtt"
+        original.write_text(
+            "WEBVTT\n\n00:00:00.100 --> 00:00:00.900\nOld words\n"
+        )
+        _invoke(
+            runner, "load", test_video, "--as", "src_0", "--no-frames",
+            "--captions", str(original),
+        )
+        _invoke(
+            runner, "scenes", "set", "--canvas", "short",
+            "--scene", "intro=single", "--slot", "intro:main=src_0",
+            "--from", "0", "--to", "1", "--audio-from", "intro=src_0",
+        )
+        _invoke(runner, "captions", "generate")
+        _invoke(runner, "captions", "break", "--at-word", "words")
+        before = _spec_on_disk(tmp_path)
+        old_edits = before["captions"][0]["edits"]
+        assert old_edits
+        corrected = tmp_path / "corrected.vtt"
+        corrected.write_text(
+            "WEBVTT\n\n00:00:01.100 --> 00:00:01.900\nCorrect words\n"
+        )
+
+        _invoke(runner, "retranscribe", "--captions", str(corrected), "--quiet")
+        dump = _invoke(runner, "captions", "dump")
+
+        assert dump["cues"] == []
+        assert dump["cues_count"] == 0
+        assert dump["stale"] is False
+        assert dump["recipe"]["edits"] == old_edits
+        assert _spec_on_disk(tmp_path) == before
+        output = tmp_path / "empty-captions.mp4"
+        exported = _invoke(runner, "export", "--out", str(output), "--review")
+        assert exported["status"] == "exported"
+        assert output.is_file() and output.stat().st_size > 0
+        assert "drawtext" not in " ".join(exported["ffmpeg_command"])
+        assert _spec_on_disk(tmp_path) == before
+        # The refresh exception does not change explicit generation's contract.
+        generated = runner.invoke(cli, ["captions", "generate"])
+        assert generated.exit_code == 1
+        assert _spec_on_disk(tmp_path) == before
+
+    @pytest.mark.parametrize("unreadable", ["missing", "invalid_json"])
+    def test_refresh_failure_blocks_dump_and_export_without_writing(
+        self, runner, test_video, tmp_path, monkeypatch, unreadable
+    ):
+        _project(runner, test_video, tmp_path, monkeypatch)
+        before = _spec_on_disk(tmp_path)
+        transcript = tmp_path / "moviestar" / "transcripts" / "src_0.json"
+        if unreadable == "missing":
+            transcript.unlink()
+        else:
+            transcript.write_text("{invalid")
+        output = tmp_path / "must-not-export.mp4"
+
+        for args in (
+            ["captions", "dump"],
+            ["export", "--out", str(output)],
+        ):
+            result = runner.invoke(cli, args)
+            assert result.exit_code == 1
+            error = json.loads(result.stdout)
+            assert "Could not read transcript" in error["error"]
+            assert error["command"] == "captions refresh"
+            assert not output.exists()
+            assert _spec_on_disk(tmp_path) == before
+
     def test_supplied_transcript_replacement_refreshes_words_without_writing_spec(
         self, runner, test_video, tmp_path, monkeypatch
     ):

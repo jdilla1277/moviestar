@@ -31,6 +31,10 @@ keeping the stored recipe and cue edits. Inspect those edits when the new words
 change their anchors. Materialized captions keep their words and report
 `stale: true`; do not overwrite them automatically.
 
+If no words remain inside the edit, a derived track should have zero cues, not
+old text. Missing or unreadable transcript data stops refresh and export with
+an error; restore the transcript instead of exporting a cached caption track.
+
 Older installations can leave cached words unchanged and report frozen tracks
 as fresh. If you see that behavior, restore your backup or test in a new project.
 Do not run `captions generate` as an automatic repair: it can reset generation
