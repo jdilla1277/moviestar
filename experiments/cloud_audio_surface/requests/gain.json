@@ -1,0 +1,5 @@
+{
+  "contract_version": "cloud-editing-v1",
+  "expected_base_revision": "00000000-0000-4000-8000-000000000101",
+  "operation": {"type": "audio_source", "gain_db": -6.0}
+}
