@@ -103,11 +103,13 @@ def _list(command, project, limit, cursor, shared=False):
                 break
             if shared:
                 via = item.get("shared_via")
-                if (not isinstance(via, dict) or any(not isinstance(via.get(k), str) or not service._UUID.fullmatch(via[k]) for k in ("project_id", "reference_id"))
-                        or not isinstance(via.get("project_title"), str) or not isinstance(via.get("shared_by"), str) or not via["shared_by"]):
+                direct = isinstance(via, dict) and via.get("kind") == "asset"
+                path_valid = (isinstance(via.get("invitation_id"), str) and bool(service._UUID.fullmatch(via["invitation_id"]))) if direct else (
+                    isinstance(via, dict) and all(isinstance(via.get(k), str) and service._UUID.fullmatch(via[k]) for k in ("project_id", "reference_id")) and isinstance(via.get("project_title"), str))
+                if (not path_valid or not isinstance(via.get("shared_by"), str) or not via["shared_by"]):
                     valid = False
                     break
-                asset["shared_via"] = {k: via[k] for k in ("project_id", "project_title", "reference_id", "shared_by")}
+                asset["shared_via"] = {k: via[k] for k in (("kind", "invitation_id", "shared_by") if direct else ("project_id", "project_title", "reference_id", "shared_by"))}
             entry = {"reference_id": item["reference_id"], "asset": asset} if project else asset
             if project and "download_path" in item:
                 expected = f"/api/v1/account/cloud/projects/{project.lower()}/asset-references/{item['reference_id']}/download"
@@ -125,6 +127,30 @@ def register_asset_commands(cloud, projects):
     @cloud.group("assets")
     def assets():
         """Find existing ready account assets. No upload or local editing."""
+
+    from moviestar.cloud_asset_sharing import register_asset_sharing
+    register_asset_sharing(assets)
+
+    @assets.command("get")
+    @click.argument("asset_id")
+    def get_asset(asset_id):
+        """Read an owned asset or an asset available through accepted sharing.
+
+        Returns a private download URL. Open it while signed in to the same
+        account; API callers must send their own credential. Access is checked
+        again on each download. No local file is written by this command.
+        """
+        command = "cloud assets get"
+        _ids(command, asset_id)
+        endpoint, credential = _connection(command, "assets:read")
+        status, body = service._request(f"{endpoint}/assets/{asset_id.lower()}", credential)
+        if status != 200:
+            _fail(command, status, body)
+        asset = _asset(body.get("asset"))
+        expected = f"/api/v1/account/cloud/assets/{asset_id.lower()}/download"
+        if asset is None or asset["id"].lower() != asset_id.lower() or body.get("download_path") != expected:
+            service._fail(command, "invalid_response", "Could not confirm the asset or its private download URL.")
+        click.echo(json.dumps({"command": command, "asset": asset, "download_url": endpoint.removesuffix("/api/v1/account/cloud") + expected}, indent=2))
 
     @assets.command("rename")
     @click.argument("asset_id")
@@ -168,11 +194,11 @@ def register_asset_commands(cloud, projects):
     @assets.command("list")
     @click.option("--limit", type=click.IntRange(1, 100), default=20, show_default=True)
     @click.option("--cursor")
-    @click.option("--shared", is_flag=True, help="List assets available through accepted project shares, once per asset.")
+    @click.option("--shared", is_flag=True, help="List assets available through accepted asset or project shares, once per asset.")
     def list_assets(limit, cursor, shared):
         """List owned video, audio, image and transcript/caption originals.
 
-        Use --shared for assets accessible through accepted project invitations.
+        Use --shared for assets accessible through accepted asset or project invitations.
         Legacy project sources are excluded.
         """
         _list("cloud assets list", None, limit, cursor, shared)
