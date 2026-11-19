@@ -30,6 +30,15 @@ def prepare(root,canvas,mode):
         media=spec['spatial']['definitions']['speaker_card']['children'][0]
         for scene in spec['spatial']['scenes'].values():
             scene['layout']['children'][-1]['media_motion']=tracks(1.2,-10)
+    if mode=='source':
+        from moviestar.audio_surface import default_audio_mix
+        spec['audio_mix']=default_audio_mix()
+        for scene in spec['composition']:
+            scene['slots']=[slot for slot in scene['slots'] if slot['slot']=='main']
+            scene['layout']={'preset':'single'}
+            scene['audio_from']=scene['slots'][0]['source']
+        for scene in spec['spatial']['scenes'].values():
+            scene['layout']['children']=[child for child in scene['layout']['children'] if child.get('instance_id')!='inset']
     media['media_motion']=tracks()
     media['layout']['padding']=8
     media['style'].update(border_width=4,border_style='solid',border_color='#65ffb2',
@@ -67,6 +76,10 @@ def prepare_case(root,folder,depth):
             references[name][str(at)]=str(path)
     try:
         os.chdir(root);initial=wanted(root,folder,painted,poses)
+        from moviestar.audio_surface import default_audio_mix
+        if spec['audio_mix']==default_audio_mix():
+            assert initial['audio_plane']['tracks']==[]
+            assert initial['audio_plane']['source_audio']==spec['audio_mix']['source_audio']
         for name in ('zoom','pan','timing','local','reset'):
             model=load_spec(root);_,video,_=camera_target(model)
             if name=='zoom':video['media_motion']['scale']=tracks(1.6)['scale']
@@ -120,7 +133,7 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out',type=Path,required=True)
     parser.add_argument('--canvas',choices=['360x640','1080x1920'],default='360x640')
-    parser.add_argument('--mode',choices=['pip','still'],action='append')
+    parser.add_argument('--mode',choices=['pip','still','source'],action='append')
     parser.add_argument('--history',type=int,choices=[0,20,50],action='append')
     args=parser.parse_args();out=args.out.resolve()
     if out.exists():parser.error('--out must be new; retain previous failures')

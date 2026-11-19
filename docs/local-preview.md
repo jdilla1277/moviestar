@@ -189,18 +189,19 @@ encoded export.
 The viewer prepares every selected scene’s actual first video frame, images,
 fonts and canonical DOM before the version becomes current. At most three scene
 players with two decoders each are prepared per version, independent of the full project’s
-length. One shared audio context switches source gains at the cut; audio is
-measured after that switch. The output is stereo, using the browser's speaker
-downmix so center-channel dialogue in a surround source is preserved.
+length. One shared 48 kHz audio context plays a continuous canonical audio
+window across cuts, including source-only edits with no extra tracks. Audio is
+measured at that shared output. Stereo speaker downmix preserves center-channel
+dialogue in a surround source.
 A disposable snapshot of each outgoing last valid video frame covers the brief
-decoder/audio handoff. Cut players seek to prepare those pixels, then return to
-their initial frames before the version becomes current. Cut scheduling uses
-the presentation clock even when the browser omits a final-frame callback. The
+picture-decoder handoff; audio does not stop or restart at that edge. Cut players seek to prepare those pixels, then return to
+their initial frames before the version becomes current. Cut scheduling follows
+the continuous audio output clock even when the browser omits a final-frame callback. The
 boundary frames live only in memory for those prepared players and are released
 on disposal; they are not encoded or reusable rendered clips.
 
-Cut and audio/display timing use a 50 ms reference tolerance. Inaudible pictures
-follow the audible video's clock with bounded rate correction; a drift beyond
+Cut and audio/display timing use a 50 ms reference tolerance. Within each span,
+secondary pictures follow the primary picture's clock with bounded rate correction; a drift beyond
 100 ms stops playback with rendered-mode guidance. The program clock
 is also checked across the complete sequence, not reset for each source. These
 are preview tolerances; export owns delivery-quality sample/frame encoding.
@@ -240,8 +241,11 @@ ranges and result-time placement retain their export meaning. Looping,
 ducking and more than two audible independent tracks in the selected window
 remain unsupported and fail explicitly.
 
-An edited mix prepares only the selected window as lossless stereo 48 kHz PCM,
-using the canonical export layer graph and limiter. Pictures still play from
+An edited mix, or any multi-scene cut preview, prepares only the selected
+window as lossless stereo 48 kHz PCM,
+using the canonical export source ranges. An edited mix uses the export layer
+graph and limiter; a default source-only edit stays passthrough-equivalent,
+without adding a limiter or changing peaks. Pictures still play from
 their original files; no preview movie is encoded. One audio buffer continues
 through picture cuts. Play/Pause, seeking, restart and replacement stop or
 replace that buffer; superseded preparations cannot become current. Gain/mute/fade
@@ -353,11 +357,14 @@ samples for the synthetic benchmark. Normal viewing avoids per-frame source
 canvas readback. The audio worklet passes through the sound sent to the output;
 clock estimates still require a physical flash/beep check for acceptance.
 
-At a camera cut with a prepared independent audio mix, the outgoing videos hold
+At a camera cut, the outgoing videos hold
 their canonical final pictures before the incoming scene is revealed. Their
-decoders stop while the independent mix keeps running, so an occluded inset
-does not decode beyond its selected range. Source-audio-only cuts retain their
-running transport until the handoff.
+decoders stop while the continuous audio window keeps running, so an occluded
+inset does not decode beyond its selected range. Parallel incoming decoders
+retain hidden preroll; a single picture already has its first frame prepared
+and starts at the cut boundary so that frame cannot advance while hidden.
+The source-only route retains its existing visible-carrier and unit-speed
+validation. This changes playback transport, not the saved edit or its sound.
 
 Native preview reuses completed caption images when only audio intent changes.
 Every new request still validates and compiles its current saved state and prepares

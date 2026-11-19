@@ -77,7 +77,8 @@ try{
    });
   };
  `});
- await b.send('Page.navigate',{url:URL+(PIXEL_AUDIT?'?audit=1':'')+(INDEPENDENT?'&audit_pcm=1':'')});
+ const page=new globalThis.URL(URL);if(PIXEL_AUDIT)page.searchParams.set('audit','1');if(INDEPENDENT||(CUTS&&PIXEL_AUDIT))page.searchParams.set('audit_pcm','1');
+ await b.send('Page.navigate',{url:page.href});
  await b.wait('window.movieStarPreview?.is_current',20000);
  // Use the authored 360x640 raster at 1x for software-headless playback.
  await b.evaluate(`(async()=>{const s=document.getElementById('stage'),style=document.createElement('style');style.textContent='#stage{max-width:none!important;width:'+(360+s.offsetWidth-s.clientWidth)+'px!important}';document.head.append(style);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));})()`);
@@ -90,9 +91,11 @@ try{
   const s=await b.evaluate(`(async()=>{const api=window.movieStarPreview.stage;await api.seek(${at});return api.snapshot();})()`);
   assert.equal(s.videos.length,2);
   assert.deepEqual(s.videos.map(v=>v.audio_connected),SILENT_LISTENER?[true,false]:[true,true],'Only actual audio streams join the shared output graph');
-  assert.equal(s.videos.filter(v=>v.audio_gain===1).length,INDEPENDENT?0:1);
-  assert.equal(s.videos.filter(v=>v.audio_gain===0).length,INDEPENDENT?2:1);
-  if(INDEPENDENT){assert.equal(s.audio.prepared,true);assert.equal(s.audio.tracks[0].id,'dialogue');}
+  assert.equal(s.videos.filter(v=>v.audio_gain===1).length,INDEPENDENT||CUTS?0:1);
+  assert.equal(s.videos.filter(v=>v.audio_gain===0).length,INDEPENDENT||CUTS?2:1);
+  if(INDEPENDENT||CUTS)assert.equal(s.audio.prepared,true);
+  if(INDEPENDENT)assert.equal(s.audio.tracks[0].id,'dialogue');
+  else if(CUTS){assert.deepEqual(s.audio.tracks,[]);assert.equal(s.audio.source_audio.muted,false);assert.equal(s.audio.source_audio.gain_db,0);}
   assert.deepEqual(s.videos.map(v=>v.source.number),CUTS&&at>=1&&at<3?[(2+at)*30,(1+at)*30]:[(1+at)*30,(2+at)*30]);
   assert.ok(s.videos.every(v=>v.ready_state>=2&&!v.seeking&&v.paused));
  }
@@ -107,7 +110,7 @@ try{
  await checkRaster();
  const m=await b.evaluate('window.movieStarPreview.stage.metrics');
  await writeFile(OUT+'/playback.json',JSON.stringify(m,null,2));
- if(INDEPENDENT){
+ if(INDEPENDENT||(CUTS&&PIXEL_AUDIT)){
   const asset=await b.evaluate('window.movieStarPreview.stage.packet.audio_plane.asset');
   await writeFile(OUT+'/audio-reference.wav',Buffer.from(await(await fetch(URL+'assets/'+asset)).arrayBuffer()));
  }
@@ -228,7 +231,9 @@ try{
     (False, False, True, False, True), (False, True, False, True, True),
     (True, False, False, False, False), (False, True, False, False, False)])
 def test_actual_pip_prepares_both_videos_and_keeps_clocks_and_routing(tmp_path, spatial, cuts, silent_listener, omit_end_callbacks, pixel_audit):
-    return _exercise_pip(tmp_path,spatial,cuts,silent_listener,omit_end_callbacks,pixel_audit)
+    result=_exercise_pip(tmp_path,spatial,cuts,silent_listener,omit_end_callbacks,pixel_audit)
+    if cuts and pixel_audit:_assert_prepared_audio_matches_output(tmp_path)
+    return result
 
 
 @pytest.mark.skipif(not browser_available(), reason='Chrome and Node required')

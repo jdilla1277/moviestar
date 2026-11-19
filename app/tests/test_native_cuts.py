@@ -42,7 +42,8 @@ def test_cut_packet_preserves_each_scene_and_source_clock(cut_project, window, o
     _, _, root = cut_project
     packet, assets = compile_snapshot(read_snapshot(root,*window))
     assert packet['range'] == {'from':window[0], 'to':window[1]}
-    assert len(packet['segments']) == 3 and len(assets) == 2
+    assert len(packet['segments']) == 3 and len(assets) == 3
+    assert assets[packet['audio_plane']['job']]['kind']=='audio_job'
     assert len(packet['media']) == 3
     first=packet['segments'][0]['packet']['media'][0]['asset']
     middle=packet['segments'][1]['packet']['media'][0]['asset']
@@ -99,6 +100,9 @@ def test_segment_packets_are_scoped_to_the_retained_parent_request(cut_project, 
     from tests.test_native_preview import _fake_workers, _complete
     root = cut_project[2]; folder = tmp_path / 'packets'; folder.mkdir()
     _fake_workers(monkeypatch)
+    def fake_audio(job,directory):
+        directory.mkdir();path=directory/'mix.wav';path.write_bytes(b'audio fixture');return path
+    monkeypatch.setattr('moviestar.native_audio.prepare_audio',fake_audio)
     session = PreviewSession(root,0,9,folder,mode='native');_complete(session)
     server = PreviewServer(session.queue,token='a'*48,port=0,mode='native',session=session)
     thread = threading.Thread(target=server.serve_forever,daemon=True);thread.start()
@@ -136,3 +140,38 @@ def test_cuts_do_not_treat_pacing_changes_as_scene_cuts(cut_project):
     save_spec(spec,cwd=root)
     with pytest.raises(NativePreviewUnsupported,match='pacing'):
         compile_snapshot(read_snapshot(root,0,3))
+
+
+@pytest.mark.parametrize('window,starts,durations',[
+    ((0,9),[1,2,4],[3,3,3]),((2,8),[3,2,4],[1,3,2])])
+def test_default_source_cuts_use_one_continuous_canonical_audio_window(cut_project,window,starts,durations):
+    spec,_,root=cut_project
+    before=(root/'moviestar/spec.json').read_bytes()
+    packet,jobs=compile_snapshot(read_snapshot(root,*window))
+    plane=packet['audio_plane'];job=jobs[plane['job']]
+    assert plane['sample_rate']==48000 and plane['channels']==2
+    assert plane['tracks']==[] and plane['source_audio']==spec['audio_mix']['source_audio']
+    assert job['duration']==window[1]-window[0]
+    assert [p['source_id']for p in job['source_pieces']]==['camera','other','camera']
+    assert [p['source_start']for p in job['source_pieces']]==starts
+    assert [p['duration']for p in job['source_pieces']]==durations
+    assert all(s['packet']['prepared_audio'] for s in packet['segments'])
+    assert all('audio_plane' not in s['packet'] for s in packet['segments']), 'Only the parent owns audible audio'
+    assert (root/'moviestar/spec.json').read_bytes()==before
+
+
+@pytest.mark.parametrize('muted',[False,True])
+def test_canonical_cut_audio_does_not_ignore_audible_source_operations(cut_project,muted):
+    from moviestar.native_audio import compile_audio
+    from moviestar.native_preview import fail
+    from moviestar.resolved import resolve_project
+    snapshot=read_snapshot(cut_project[2],0,9)
+    snapshot['spec']['audio_mix']['source_audio']['muted']=muted
+    snapshot['spec']['sources'][0]['operations']=[{'type':'cut','from':'0:00:07.000','to':'0:00:08.000'}]
+    timeline=resolve_project(snapshot['project'],snapshot['spec'])
+    if not muted:
+        with pytest.raises(NativePreviewUnsupported,match='routed source operations'):
+            compile_audio(snapshot,timeline,0,9,fail)
+    else:
+        _,(_,job)=compile_audio(snapshot,timeline,0,9,fail)
+        assert all(p['path']is None for p in job['source_pieces'])

@@ -22,7 +22,7 @@ jobs:
       fail-fast: false
       matrix:
         canvas: ['360x640', '1080x1920']
-        scenario: ['fades', 'two-tracks', 'visual', 'stills', 'spatial-captions', 'framing', 'camera']
+        scenario: ['fades', 'two-tracks', 'visual', 'stills', 'spatial-captions', 'framing', 'camera', 'source-cuts']
     env:
       MOVIESTAR_CHROME_NO_SANDBOX: '1'
     steps:
@@ -84,6 +84,9 @@ jobs:
           if [ '${{ matrix.scenario }}' = visual ]; then
             "$RUNNER_TEMP/native-env/bin/python" experiments/live_browser_preview/edit_benchmark.py \
               --canvas '${{ matrix.canvas }}' --out "$RUNNER_TEMP/native-audio-evidence/matrix"
+          elif [ '${{ matrix.scenario }}' = source-cuts ]; then
+            "$RUNNER_TEMP/native-env/bin/python" experiments/live_browser_preview/camera_benchmark.py \
+              --mode source --canvas '${{ matrix.canvas }}' --out "$RUNNER_TEMP/native-audio-evidence/matrix"
           elif [ '${{ matrix.scenario }}' = camera ]; then
             "$RUNNER_TEMP/native-env/bin/python" experiments/live_browser_preview/camera_benchmark.py \
               --canvas '${{ matrix.canvas }}' --out "$RUNNER_TEMP/native-audio-evidence/matrix"

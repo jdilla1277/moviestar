@@ -16,10 +16,17 @@ def prepare_pip(root, *, spatial=False, sources=None, offsets=(1, 2), cuts=False
     spec, _ = generate(root, portrait=True, pattern=True)
     if sources is None:
         other = root/'other.mp4'
+        camera = root/'camera-stereo.mp4'
+        # Web Audio duplicates mono at unity while canonical stereo conversion
+        # attenuates it. Encode explicit equal stereo channels so the intended
+        # 1:0.25 cue ratio stays comfortably above the unchanged RMS detector.
+        subprocess.run(['ffmpeg','-v','error','-y','-i',str(root/'cues.mp4'),
+            '-af','pan=stereo|c0=c0|c1=c0','-c:a','aac','-c:v','copy',
+            '-movflags','+faststart',str(camera)],check=True,timeout=30)
         subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', str(root/'cues.mp4'),
-            '-vf', 'hue=h=120', *(['-an'] if silent_listener else ['-af', 'volume=0.25', '-c:a', 'aac']),
+            '-vf', 'hue=h=120', *(['-an'] if silent_listener else ['-af', 'volume=0.25,pan=stereo|c0=c0|c1=c0', '-c:a', 'aac']),
             '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', str(other)], check=True, timeout=30)
-        sources = (root/'cues.mp4', other)
+        sources = (camera, other)
     sources = tuple(Path(p).resolve() for p in sources)
     subprocess.run([sys.executable, '-m', 'moviestar.cli', 'load', *(str(p) for p in sources),
         '--as', 'camera', '--as', 'other', '--force', '--no-transcribe', '--no-frames'],

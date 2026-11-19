@@ -36,6 +36,10 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
     return at;
   };
   const pictureLead=1/(2*packet.fps);
+  // A single picture already has its first frame prepared. Starting it before
+  // the cut can advance that frame while hidden. Parallel decoder groups need
+  // the existing hidden warmup; do not move source-only pictures early.
+  const handoffLead=i=>(packet.segments[i+1].packet.media??[]).filter(m=>m.kind==='video').length>1?pictureLead:0;
   async function advancePrepared(i,attempt,expectedAt){
     if(handoff)return;handoff=true;
     const incoming=i+1,boundary=packet.segments[incoming].offset;
@@ -47,7 +51,8 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
       // behind their final-frame canvases before an inset can discard a frame
       // beyond the selected range. Source-audio handoffs keep running below.
       stages[i].api.holdEnd?.();
-      pendingPreroll=incoming;await stages[incoming].api.play();
+      const preroll=handoffLead(i)>0;
+      if(preroll){pendingPreroll=incoming;await stages[incoming].api.play();}
       const deadline=performance.now()+1000;
       while(!disposed&&playing&&attempt===generation&&masterTime()<boundary-1/audio.sampleRate){
         if(performance.now()>deadline)throw Error('Native cut output clock did not advance');
@@ -57,6 +62,13 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
       index=incoming;pendingPreroll=null;reveal(index,false);outputs(index);
       Object.assign(cut,{switched_at:Date.now(),audio_context_time:audio.currentTime,incoming_time:stages[index].api.time,outgoing_time:stages[i].api.time});
       metrics.cuts.push(cut);
+      // A ready single picture becomes visible before play() can advance it.
+      // Its audio is already on the continuous bus, so no source handoff is
+      // waiting for that media pipeline to become audible.
+      if(!preroll){
+        await stages[index].api.play();
+        if(disposed||!playing||attempt!==generation)return;
+      }
       handoffTimer=setTimeout(()=>{if(!disposed&&playing&&attempt===generation)stages[i].api.pause();},1);
       handoff=false;arm(attempt);
     }catch(error){if(attempt===generation)fail(error);}
@@ -98,12 +110,12 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
     const check=()=>{
       if(disposed||!playing||attempt!==generation||index!==i)return;
       try{
-        const remaining=hasMaster()&&i<stages.length-1?packet.segments[i+1].offset-pictureLead-masterTime():length(i)-stages[i].api.time;
+        const remaining=hasMaster()&&i<stages.length-1?packet.segments[i+1].offset-handoffLead(i)-masterTime():length(i)-stages[i].api.time;
         if(remaining>.002){timer=setTimeout(check,Math.max(1,remaining*1000));return;}
         advance(i,attempt,Date.now());
       }catch(error){fail(error);}
     };
-    const remaining=hasMaster()&&i<stages.length-1?packet.segments[i+1].offset-pictureLead-masterTime():length(i)-stages[i].api.time;
+    const remaining=hasMaster()&&i<stages.length-1?packet.segments[i+1].offset-handoffLead(i)-masterTime():length(i)-stages[i].api.time;
     timer=setTimeout(check,Math.max(0,remaining*1000));
   }
   stages.forEach((stage,i)=>{

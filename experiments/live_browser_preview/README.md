@@ -1209,3 +1209,22 @@ poses per selected edit check the inner camera box as well as the fixed frame;
 Edited and restored playback keep the existing audio/display, drift, zero-drop
 and zero-stall gates. Every edit must show the correct fresh state in under
 3,000 ms. Keep every failed output directory; do not retry to replace a failure.
+
+### Default source-audio cuts
+
+```bash
+python experiments/live_browser_preview/camera_benchmark.py \
+  --mode source --canvas 1080x1920 --out /tmp/source-cuts-1080-first
+```
+
+This mode has one visible video per scene, three scenes with two cuts, captions and
+camera tracks, but no independent audio track or authored mix change. It must
+compile one continuous canonical source-audio window without changing the saved
+audio intent. The same shared/local camera edits and undos run at histories
+0/20/50 and both rasters: 60 additional edits, retaining the three-second limit
+and all pixel, clock, drop and stall gates. Together with the existing matrix,
+CI runs 756 edits in 16 fresh-wheel jobs. Source-cut browser tests separately
+require all 90 source frames per three-second span and no pilot-tone gap longer
+than one audio quantum, including cuts at a source's EOF. The native-playback
+CI job retains its first generated source-cut traces on success and failure;
+the remaining full suite excludes those files so every acceptance test runs once.
