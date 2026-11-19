@@ -9,6 +9,8 @@ AI agents. Start with the path that matches your task:
   first verified edit.
 - [Agent guide](agent-guide.md) — understand project state, time spaces,
   structured output, composition, and verification.
+- [Transcription and repair](../plugins/moviestar/skills/moviestar/references/transcription.md)
+  — choose a local model, correct names, repair one passage, or import timed captions.
 - [Review exports](review-exports.md) — create a 720p rendition while preserving
   authored composition and typography.
 - [Review evidence](review-evidence.md) — keep artifact-bound technical, source,

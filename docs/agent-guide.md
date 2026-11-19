@@ -5,6 +5,11 @@ decides what the edit should communicate; Moviestar stores non-destructive
 state, resolves time mappings, renders through FFmpeg, and returns structured
 evidence.
 
+If transcription is slow or inaccurate, follow
+[transcription and repair](../plugins/moviestar/skills/moviestar/references/transcription.md).
+It covers model costs, vocabulary, partial retries, supplied transcripts and
+caption-only corrections. The same guide ships inside the agent skill.
+
 ## Project model
 
 Run commands from a dedicated project directory. `moviestar load` creates a
