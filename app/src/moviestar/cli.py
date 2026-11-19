@@ -2072,10 +2072,15 @@ def _caption_cache_fingerprint(
     project: dict, spec: dict, recipe: dict
 ) -> str:
     """Cache key for one derived track: the compiled timeline, the
-    recipe itself, and the project caption rules. Any change re-derives
-    the track's cues on the next spec load."""
+    recipe itself, the source transcripts, and the project caption rules.
+    Any change re-derives the track's cues on the next spec load."""
     try:
         resolved = resolve_project(project, spec)
+        transcript_sources = {
+            span.audio.source_id
+            for span in resolved.spans
+            if span.audio.source_id and span.audio.slices and not span.held
+        }
         timeline_repr = [
             (
                 span.scene_name,
@@ -2091,9 +2096,29 @@ def _caption_cache_fingerprint(
         ]
     except (ResolvedProjectError, SpecValidationError):
         timeline_repr = ["unresolved"]
+        transcript_sources = {source["id"] for source in project["sources"]}
+    if recipe.get("source") is not None:
+        transcript_sources = {recipe["source"]}
+    transcript_pins = []
+    for source in project["sources"]:
+        if source["id"] not in transcript_sources:
+            continue
+        info = source.get("transcript")
+        content_hash = None
+        if info:
+            try:
+                content_hash = hashlib.sha256(
+                    (get_project_dir() / info["path"]).read_bytes()
+                ).hexdigest()
+            except OSError:
+                # Invalidated, but derivation remains responsible for its
+                # normal structured missing/unreadable-transcript error.
+                content_hash = "unavailable"
+        transcript_pins.append((source["id"], content_hash))
     payload = {
-        "v": 4,
+        "v": 5,
         "timeline": timeline_repr,
+        "transcripts": sorted(transcript_pins),
         "recipe": {
             key: value
             for key, value in recipe.items()

@@ -25,14 +25,17 @@ installs follow the user's existing authorization. No model is always best.
 Whisper itself does not consume language-model tokens. Agent review, repeated
 commands and repairs may use additional tokens on the user's agent plan.
 
-**Existing captions limit this workflow.** Replacing a source transcript can
-leave old derived captions cached, and frozen tracks may still report
-`stale: false`. Do not run `captions generate` as an automatic repair: it can
-reset generation settings and break/join/suppress edits. Keep already-captioned
-project replacement outside this guide's verified journey until a separately
-reviewed engine fix lands. Use caption spelling rules, or test the corrected
-transcript in a new working directory before generating captions. Keep the
-original project; a backup alone does not make regeneration safe.
+**Back up a captioned project before replacing source words.** After import,
+`captions dump` should refresh derived captions from the new words and timing,
+keeping the stored recipe and cue edits. Inspect those edits when the new words
+change their anchors. Materialized captions keep their words and report
+`stale: true`; do not overwrite them automatically.
+
+Older installations can leave cached words unchanged and report frozen tracks
+as fresh. If you see that behavior, restore your backup or test in a new project.
+Do not run `captions generate` as an automatic repair: it can reset generation
+settings and break/join/suppress edits. A backup alone does not make regeneration
+safe. Check the installed version before relying on transcript-aware refresh.
 
 ## 1. Inspect words and audio
 
@@ -58,7 +61,7 @@ For a new recording, choose a model at load:
 moviestar load recording.mp4 --model medium --vocabulary 'Holden,Kubernetes'
 ```
 
-For a project without generated captions, back up the project first. `retranscribe` preserves
+For an existing project, back up the project first. `retranscribe` preserves
 frames and the edit spec but replaces transcript data; `undo` is not a promised
 transcript backup. Do not use `load --force` to fix an edited project.
 
@@ -98,7 +101,7 @@ Use the original-language transcript for the same recording. New source:
 moviestar load recording.mp4 --captions corrected.vtt
 ```
 
-Existing project without generated captions, after backing it up:
+Existing project, after backing it up and checking the refresh behavior above:
 
 ```bash
 moviestar retranscribe --captions corrected.vtt
@@ -135,8 +138,8 @@ a hosted operation; if unavailable, use a supported local or supplied path.
 
 Check a known phrase, difficult names, and samples near the beginning, middle
 and end against the audio. Preview corrected captions and word-snapped cuts;
-generate captions only in the new test project. Do not regenerate over existing
-custom edits or assume a caption track follows the new source transcript.
+read `captions dump` after import to refresh derived tracks. Do not regenerate
+over existing custom edits or assume materialized captions follow the transcript.
 
 SRT/VTT normally times cues, not each spoken word. Word timing may be
 interpolated; inline tags are not independent alignment proof. Keep original
