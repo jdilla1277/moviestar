@@ -164,3 +164,108 @@ def test_workflow_bounds_setup_without_reducing_test_coverage():
     assert "sudo apt-get update" not in job
     assert "suite: [fast, full]" in job
     assert "pytest --run-slow" in job
+
+
+def test_package_cache_is_opt_in_and_only_changes_apt_archive_location(setup, commands, tmp_path, capsys):
+    calls, state = commands
+    state['installed'] = False
+    cache = tmp_path / 'archives with spaces'
+    cache.mkdir()
+    (cache / 'libavcodec.deb').write_bytes(b'cached-package')
+    assert setup.main(['--apt-cache', str(cache)]) == 0
+    apt = [args for args, _ in calls if 'apt-get' in args]
+    assert len(apt) == 2
+    assert all(f'Dir::Cache::archives={cache.resolve()}' in args for args in apt)
+    assert all('APT::Keep-Downloaded-Packages=true' in args for args in apt)
+    assert all('Acquire::Retries=0' in args for args in apt)
+    assert '1 cached .deb' in capsys.readouterr().out
+    assert any('-filter_complex' in args for args, _ in calls)
+
+
+def test_missing_cache_is_created_but_check_only_never_creates_it(setup, commands, tmp_path):
+    calls, state = commands
+    state['installed'] = False
+    cache = tmp_path / 'archives'
+    assert setup.main(['--check-only', '--apt-cache', str(cache)]) == 1
+    assert not cache.exists()
+    assert not any('apt-get' in args for args, _ in calls)
+    assert setup.main(['--apt-cache', str(cache)]) == 0
+    assert cache.is_dir()
+
+
+def test_install_timeout_with_restored_cache_does_not_retry_or_report_success(setup, commands, monkeypatch, tmp_path, capsys):
+    calls, state = commands
+    state['installed'] = False
+    fake_run = setup.subprocess.run
+
+    def fail_install(args, **kwargs):
+        if 'apt-get' in args and 'install' in args:
+            calls.append((args, kwargs))
+            raise subprocess.CalledProcessError(124, args, 'slow package mirror')
+        return fake_run(args, **kwargs)
+
+    monkeypatch.setattr(setup.subprocess, 'run', fail_install)
+    assert setup.main(['--apt-cache', str(tmp_path / 'cache')]) == 1
+    assert sum('install' in args for args, _ in calls) == 1
+    assert not any('-filters' in args for args, _ in calls)
+    message = capsys.readouterr().err
+    assert 'slow package mirror' in message
+    assert 'Package tests were not run' in message
+    assert '#255' in message
+
+
+def test_ci_caches_only_downloads_and_saves_after_setup_before_package_tests():
+    text = (ROOT / '.github/workflows/tests.yml').read_text()
+    job = text.split('\n  test:\n', 1)[1]
+    assert 'actions/cache/restore@v5' in job
+    assert 'actions/cache/save@v5' in job
+    assert 'moviestar-apt/*.deb' in job
+    assert '--apt-cache "$RUNNER_TEMP/moviestar-apt"' in job
+    assert 'steps.ffmpeg-cache.outputs.image' in job
+    assert job.index('actions/cache/save@v5') < job.index('- name: Install moviestar')
+    assert 'suite: [fast, full]' in job
+    assert 'timeout-minutes: 25' in job
+
+
+@pytest.mark.parametrize('kind', ['valid', 'tampered', 'stale', 'symlink', 'no-metadata'])
+def test_restored_archive_must_match_current_package_sha256(setup, tmp_path, kind):
+    import hashlib
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    content = b'ubuntu-deb'
+    archive = cache / 'libexample_7%3a8.0.1-3ubuntu2_amd64.deb'
+    if kind == 'symlink':
+        target = tmp_path / 'outside'
+        target.write_bytes(content)
+        archive.symlink_to(target)
+    else:
+        archive.write_bytes(b'x' * len(content) if kind == 'tampered' else content)
+    metadata = '\n'.join([
+        'Package: libexample', 'Version: ' + ('7:old' if kind == 'stale' else '7:8.0.1-3ubuntu2'),
+        'Architecture: amd64', f'Size: {len(content)}',
+        'SHA256: ' + hashlib.sha256(content).hexdigest(), '',
+    ])
+
+    class MetadataRunner:
+        deadline = time.monotonic() + 30
+
+        def run(self, args, **kwargs):
+            assert args == ['apt-cache', 'show', 'libexample:amd64']
+            if kind == 'no-metadata':
+                raise RuntimeError('no current package record')
+            return metadata
+
+    setup.verify_cached_archives(MetadataRunner(), cache)
+    assert archive.exists() == (kind == 'valid')
+    if kind == 'symlink':
+        assert target.read_bytes() == content
+
+
+def test_optional_cache_service_cannot_consume_the_media_job_budget():
+    text = (ROOT / '.github/workflows/tests.yml').read_text()
+    for title in ['Restore Ubuntu FFmpeg downloads', 'Save verified Ubuntu FFmpeg downloads']:
+        step = text.split(f'- name: {title}\n', 1)[1].split('\n      - ', 1)[0]
+        assert 'timeout-minutes: 1' in step
+        assert 'continue-on-error: true' in step
+    setup_step = text.split('- name: Set up and verify FFmpeg\n', 1)[1].split('\n      - ', 1)[0]
+    assert 'continue-on-error' not in setup_step
