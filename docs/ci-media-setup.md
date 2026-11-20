@@ -24,13 +24,14 @@ saved immediately after successful setup, before unrelated package tests run.
 On an install path the helper refreshes authenticated Ubuntu indexes, validates
 restored archives against current package/version/architecture SHA256 records
 (including Ubuntu 26.04 `Architecture-Variant` filenames such as `amd64v3`),
-then lets apt resolve and install `ffmpeg` normally. Stale, unrecognized, corrupt
+then lets apt resolve and install `ffmpeg` normally. Metadata lookup uses native
+package names: a CPU build variant is not a Debian architecture qualifier. Stale, unrecognized, corrupt
 and symlink archives are removed; absent metadata discards the affected cache
 rather than trusting it. Explicit hashing matters because APT's existing-archive
 fast path can accept a same-size file without rehashing it.
 
 Installed FFmpeg remains Ubuntu's maintained distro build, with its normal
-package licensing/provenance; this change adds no downloaded third-party binary,
+package licensing/provenance; this change adds no alternate binary provider,
 package dependency, vendored executable or wheel/plugin content. Logs record the
 runner image, restored/validated archive counts, installed Ubuntu FFmpeg package
 version, actual executable versions and generated-media smoke outcome.

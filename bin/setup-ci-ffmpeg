@@ -126,7 +126,9 @@ def verify_cached_archives(runner, cache):
             and re.fullmatch(r"[a-z0-9-]+", fields[2])
         ):
             identities[path] = tuple(fields)
-    packages = sorted({f"{p}:{a}" for p, _, a in identities.values()})
+    # Query native package names: amd64v3 is an archive build variant, not
+    # a Debian architecture qualifier accepted by apt-cache show.
+    packages = sorted({p for p, _, _ in identities.values()})
     expected = {}
     if packages:
         try:
@@ -143,7 +145,10 @@ def verify_cached_archives(runner, cache):
                     expected[(fields["Package"], fields["Version"], arch)] = fields["SHA256"]
         except RuntimeError as exc:
             print(f"Cache metadata unavailable; discard cached downloads: {exc}", flush=True)
+    print(f"APT cache lookup: {len(packages)} native package names; "
+          f"{len(expected)} version/architecture records.", flush=True)
     retained = 0
+    rejected = []
     for path in archives:
         digest = hashlib.sha256()
         if not path.is_symlink() and identities.get(path) in expected:
@@ -155,7 +160,20 @@ def verify_cached_archives(runner, cache):
             if digest.hexdigest() == expected[identities[path]]:
                 retained += 1
                 continue
+        if len(rejected) < 3:
+            key = identities.get(path)
+            available = [k for k in expected if key and k[0] == key[0]]
+            rejected.append(f"{path.name}: identity={key}; available={available}")
         path.unlink()
+    if rejected:
+        print("Discarded archive samples: " + "; ".join(rejected), flush=True)
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        notice = (f"{retained}/{len(archives)} restored Ubuntu archives matched current "
+                  f"SHA256 metadata; {len(expected)} native version/architecture records found.")
+        if rejected:
+            notice += " First rejection: " + rejected[0][:300]
+        notice = notice.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        print(f"::notice title=FFmpeg archive validation::{notice}", flush=True)
     print(f"Validated {retained}/{len(archives)} cached Ubuntu archives against current SHA256 records.", flush=True)
 
 

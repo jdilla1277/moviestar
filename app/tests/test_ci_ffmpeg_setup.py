@@ -255,7 +255,12 @@ def test_restored_archive_must_match_current_package_sha256(setup, tmp_path, kin
         deadline = time.monotonic() + 30
 
         def run(self, args, **kwargs):
-            assert args == ['apt-cache', 'show', f'libexample:{archive_arch}']
+            assert args[:2] == ['apt-cache', 'show']
+            # Like APT, a CPU-variant architecture selector supplies no native
+            # package record. Test retention, not one preferred argv spelling.
+            if 'libexample:amd64v3' in args:
+                return ''
+            assert 'libexample' in args or 'libexample:amd64' in args
             if kind == 'no-metadata':
                 raise RuntimeError('no current package record')
             return metadata
