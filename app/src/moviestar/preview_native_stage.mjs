@@ -6,7 +6,7 @@ const controller=new AbortController(),audit=new URLSearchParams(location.search
 const pendingSeeks=new Set();
 let lastIndex=-1, playing=false, readyDone=false, metadataReady=false, imageReady=false,finishing=false,playGeneration=0;
 let videoGroup,reviewAudio,outputMixer,sceneClock;
-let playbackIdentity,speedFrame;
+let playbackIdentity,speedFrame,pictureStartup;
 const playbackRate=()=>packet?.playback_rate??1;
 function animateSpeed(){
   if(disposed||!playing||playbackRate()===1)return;
@@ -154,6 +154,10 @@ async function checkReady(){
       await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
       if(!await videoGroup.seek(0,{presented:playbackRate()!==1})||disposed)return;
     }
+    if(playbackRate()!==1){
+      pictureStartup=await videoGroup.measureStartup();if(!pictureStartup||disposed)return;
+      metrics.picture_startup=pictureStartup;
+    }
     apply(0);
     await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
     if(disposed)return;
@@ -286,7 +290,7 @@ function connectAudioGraph(){
     gain.gain.value=item.primary&&!packet.prepared_audio?1:0;
     // A silent video has no audio pipeline to join to this output clock.
     // Keep its picture on group transport without creating an empty source.
-    if(item.hasAudio){const node=audio.createMediaElementSource(item.video);node.connect(gain);item.audioSource=node;}
+    if(item.hasAudio&&playbackRate()===1){const node=audio.createMediaElementSource(item.video);node.connect(gain);item.audioSource=node;}
     gain.connect(destination);item.audioGain=gain;
   }
 }
@@ -345,6 +349,7 @@ async function initialize(){
       const primary=key(asset.path)===key(packet.video_path),item={video:media,path:asset.path,start:asset.source_start??packet.source_start,end:asset.source_end??packet.source_end,fps:packet.fps,rate:asset.playback_rate??1,primary,hasAudio:asset.has_audio!==false};
       videos.push(item);if(primary)video=media;
       media.playbackRate=item.rate;
+      if(item.rate!==1)media.muted=true;
       media.preload=packet.media.filter(item=>item.kind==='video').length>1?'auto':'metadata';media.playsInline=true;
       media.addEventListener('error',()=>fail(Error('Source video could not load.')));
       media.addEventListener('canplay',checkReady);media.addEventListener('seeked',checkReady);
@@ -549,7 +554,7 @@ window.moviestarLiveStage={ready,metrics,
       metrics.device_ready_at=Date.now();if(packet.cut_segment&&packet.samples.length===1){freezeLastFrame();videos.filter(item=>!item.primary).forEach(freezeFollower);}
       for(const item of videos){item.beforePlay=item.video.getVideoPlaybackQuality();delete item.reportedDrops;}
       metrics.initial_presented=videos.map(item=>({path:item.path,media_time:item.video.currentTime,...item.frame,quality:{totalVideoFrames:item.beforePlay.totalVideoFrames,droppedVideoFrames:item.beforePlay.droppedVideoFrames}}));playing=true;
-      if(reviewAudio?.snapshot().prepared)await reviewAudio.play(this.time,{pictureLead:1/(2*packet.fps)});if(!active())return;
+      if(reviewAudio?.snapshot().prepared)await reviewAudio.play(this.time,pictureStartup?{presentationLead:pictureStartup.lead}:{pictureLead:1/(2*packet.fps)});if(!active())return;
       if(reviewAudio)metrics.prepared_audio=reviewAudio.snapshot();
       if(videoGroup)await videoGroup.play();else await video.play();
       if(active()&&playbackRate()!==1)animateSpeed();

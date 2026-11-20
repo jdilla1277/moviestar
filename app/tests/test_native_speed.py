@@ -251,7 +251,7 @@ def test_actual_speed_preview_frames_sound_seek_and_restart(tmp_path, speed):
             script = r'''
 import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
-const {Browser}=await import(HELPER),b=await Browser.launch(CHROME,OUT);
+const {Browser}=await import(HELPER),{assertReviewQuality}=await import(QUALITY_HELPER),{measureCueClock}=await import(CUE_HELPER),b=await Browser.launch(CHROME,OUT);
 try{
  await b.send('Page.navigate',{url:URL+'?audit=1&audit_pcm=1'});
  await b.wait('window.movieStarPreview?.is_current',15000);
@@ -263,10 +263,11 @@ try{
  }
  await b.click('#play');await b.wait(expr+'.metrics.finished',6000);
  const m=await b.evaluate(expr+'.metrics');await writeFile(OUT+'/playback.json',JSON.stringify(m));
- assert.equal(m.error,null);assert.equal(m.stalls,0);assert.equal(m.quality.droppedVideoFrames,0);
- assert.ok(m.frames.length>10);assert.equal(m.flashes.length,m.beeps.length);
- assert.ok(m.flashes.length>0);
- for(let i=0;i<m.flashes.length;i++)assert.ok(Math.abs(m.flashes[i].display_time-m.beeps[i].display_time)<=50,'Audio/display phase <=50ms');
+ assert.equal(m.error,null);assertReviewQuality(m);
+ assert.ok(m.frames.length>10);
+ const cueTimes=[.2,1.2,2.2].map(t=>t/RATE);
+ const clock=measureCueClock({...m,frames:m.frames.map(f=>({...f,result_time:(f.media_time-1)/RATE}))},{fps:30*RATE,count:cueTimes.length,cueTimes});
+ assert.deepEqual(clock.problems,[]);await writeFile(OUT+'/cue-clock.json',JSON.stringify(clock));
  for(const f of m.frames){assert.equal(f.number,Math.round((f.captured_media_time??f.media_time)*30)%240,'Captured source pixels match their independent frame timestamp');assert.ok(Math.abs((f.captured_media_time??f.media_time)-f.media_time)<=1/30+1e-6,'Capture stays within one source presentation of callback');}
  const origin=await b.evaluate('document.querySelector("iframe:not(.pending)").contentWindow.performance.timeOrigin');
  const zero=origin+m.frames[0].display_time-(m.frames[0].media_time-1)/RATE*1000;
@@ -276,6 +277,8 @@ try{
 }finally{await b.close();}
 '''
             values = {'HELPER':(repo/'experiments/live_browser_preview/browser.mjs').as_uri(),
+                'CUE_HELPER':(repo/'experiments/live_browser_preview/cue_clock.mjs').as_uri(),
+                'QUALITY_HELPER':(repo/'experiments/live_browser_preview/speed_quality.mjs').as_uri(),
                 'CHROME':os.environ.get('MOVIESTAR_CHROME_PATH') or str(_chrome_path()),
                 'OUT':str(tmp_path/'browser'), 'URL':ready['url'], 'RATE':speed}
             prefix = ''.join('const '+key+'='+json.dumps(value)+';\n' for key,value in values.items())
@@ -313,3 +316,94 @@ vm.runInContext(`
     result = subprocess.run(['node','-e','const STAGE='+json.dumps(stage_script())+';\n'+script],
         capture_output=True,text=True,timeout=10)
     assert result.returncode == 0, result.stdout+result.stderr
+
+
+def test_speed_picture_uses_only_the_prepared_pcm_audio_pipeline():
+    from tests.native_stage_harness import stage_script
+    script = r'''
+const vm=require('node:vm'),assert=require('node:assert/strict');
+const context={window:{},document:{createElement:()=>({getContext:()=>({})})},location:{search:''},
+ URLSearchParams,AbortController,performance:{now:()=>1},Date,fetch:()=>new Promise(()=>{}),setTimeout,clearTimeout};
+vm.createContext(context);vm.runInContext(STAGE,context);
+vm.runInContext(`packet={playback_rate:1.5,prepared_audio:true};shared={destinations:[{}]};
+ audio={createGain:()=>({gain:{},connect(){}}),createMediaElementSource(){throw Error('Prepared speed sound must not start a second media-audio pipeline');}};
+ videos.push({video:{},primary:true,hasAudio:true});connectAudioGraph();`,context);
+assert.equal(vm.runInContext('videos[0].audioGain.gain.value',context),0);
+'''
+    result = subprocess.run(['node','-e','const STAGE='+json.dumps(stage_script())+';\n'+script],
+        capture_output=True,text=True,timeout=10)
+    assert result.returncode == 0, result.stdout+result.stderr
+
+
+def test_prepared_audio_launch_uses_measured_picture_latency_without_skipping_samples():
+    module = (Path(__file__).parents[1]/'src/moviestar/preview_native_audio.mjs').as_uri()
+    script = r'''
+import assert from 'node:assert/strict';
+const {createPreparedAudio}=await import(MODULE);let output=2,started;
+const context={sampleRate:48000,currentTime:2.04,resume:async()=>{},
+ getOutputTimestamp(){output+=.001;return{contextTime:output,performanceTime:1};},
+ decodeAudioData:async()=>({numberOfChannels:2,sampleRate:48000,duration:2}),
+ createBufferSource:()=>({connect(){},disconnect(){},start(at,offset){started={at,offset};},stop(){}})};
+globalThis.fetch=async()=>({ok:true,arrayBuffer:async()=>new ArrayBuffer(1)});
+const api=createPreparedAudio(context,{},new AbortController().signal);
+(await api.prepare({asset:'test',duration:2,sample_rate:48000,channels:2})).commit();
+await api.play(0,{presentationLead:.08});
+assert.equal(started.offset,0,'No authored audio is skipped');
+assert.ok(output+.08>=started.at-1/48000,'Dispatch matches measured picture startup');
+assert.ok(output+.079<started.at,'Do not substitute a fixed half-frame lead');
+api.dispose();
+'''
+    result=subprocess.run(['node','--input-type=module','-e','const MODULE='+json.dumps(module)+';\n'+script],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stdout+result.stderr
+
+
+def test_speed_review_quality_rejects_real_drops_and_counter_resets():
+    module=(Path(__file__).parents[2]/'experiments/live_browser_preview/speed_quality.mjs').as_uri()
+    script=r'''
+import assert from 'node:assert/strict';
+const {assertReviewQuality}=await import(MODULE);
+const sample=(before,after,delta)=>({stalls:0,initial_presented:[{quality:{droppedVideoFrames:before}}],
+ quality:{droppedVideoFrames:after},video_quality:[{dropped_frames:delta}]});
+assert.deepEqual(assertReviewQuality(sample(1,1,0)),{raw_before_review:1,raw_after_review:1,playback_drops:0});
+assert.throws(()=>assertReviewQuality(sample(0,1,1)),/Zero decoder drops/,'The first Linux failure still fails');
+assert.throws(()=>assertReviewQuality(sample(2,3,1)),/Zero decoder drops/,'Preparation cannot hide a later dropped frame');
+assert.throws(()=>assertReviewQuality(sample(2,1,0)),/never reset/);
+assert.throws(()=>assertReviewQuality(sample(0,0,1)),/Every review decoder/);
+'''
+    result=subprocess.run(['node','--input-type=module','-e','const MODULE='+json.dumps(module)+';\n'+script],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stdout+result.stderr
+
+
+
+@pytest.mark.parametrize('action', ['complete', 'pause', 'dispose'])
+def test_picture_startup_measurement_is_owned_and_returns_to_first_pixels(action):
+    module=(Path(__file__).parents[1]/'src/moviestar/preview_native_videos.mjs').as_uri()
+    script=r'''
+import assert from 'node:assert/strict';
+const {createVideoGroup}=await import(MODULE);
+Object.defineProperty(globalThis,'performance',{value:{timeOrigin:1000,now:()=>100}});
+const callbacks=new Map(),listeners=new Map();let next=0,frames=0;
+const video={currentTime:1,paused:true,playbackRate:1.5,seeking:false,
+ getVideoPlaybackQuality:()=>({totalVideoFrames:frames,droppedVideoFrames:0}),
+ play(){this.paused=false;return Promise.resolve();},pause(){this.paused=true;},
+ requestVideoFrameCallback(fn){callbacks.set(++next,fn);return next;},cancelVideoFrameCallback(id){callbacks.delete(id);},
+ addEventListener(k,fn){listeners.set(k,fn);},removeEventListener(k){listeners.delete(k);},removeAttribute(){},load(){}};
+const group=createVideoGroup([{video,start:1,rate:1.5,fps:30}]);
+let settled=false;const measured=group.measureStartup().then(value=>{settled=true;return value;});
+await new Promise(r=>setImmediate(r));
+if(ACTION!=='complete'){
+ group[ACTION]();assert.equal(await measured,null);assert.equal(video.paused,true);assert.equal(callbacks.size,0);
+}else{
+ const emit=point=>{const [id,fn]=callbacks.entries().next().value;callbacks.delete(id);frames++;fn(0,point);};
+ video.currentTime=1+1/30;
+ emit({mediaTime:1+1/30,expectedDisplayTime:100+70+1000/45});
+ await new Promise(r=>setImmediate(r));assert.equal(settled,false,'Reset to authored first pixels before readiness');
+ listeners.get('seeked')();emit({mediaTime:1,expectedDisplayTime:250});
+ const point=await measured;assert.ok(Math.abs(point.lead-.07)<1e-9,'Measured from presentation and source/result slope');
+ assert.equal(point.preparation_frames,1);assert.equal(point.preparation_drops,0);
+ assert.ok(Math.abs(video.currentTime-1)<.0001);assert.equal(video.paused,true);assert.equal(callbacks.size,0);
+ group.dispose();
+}
+'''
+    result=subprocess.run(['node','--input-type=module','-e','const MODULE='+json.dumps(module)+';const ACTION='+json.dumps(action)+';\n'+script],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stdout+result.stderr

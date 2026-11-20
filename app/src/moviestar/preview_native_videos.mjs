@@ -1,9 +1,45 @@
 // A bounded scene's decoders share transport operations and cancellation.
 export function createVideoGroup(entries){
-  let generation=0,seekGeneration=0,disposed=false,pendingSeek;
+  let generation=0,seekGeneration=0,disposed=false,pendingSeek,preparingCancel;
   const cancels=new Set();
   const stop=()=>entries.forEach(({video,rate=1})=>{video.pause();if(video.playbackRate!==rate)video.playbackRate=rate;});
   const api={
+    async measureStartup(){
+      if(entries.length!==1)throw Error('Picture startup measurement needs one video');
+      const {video,start,rate=1,fps}=entries[0],requested=performance.now();
+      const before=video.getVideoPlaybackQuality();let cancel;
+      const moving=new Promise((resolve,reject)=>{
+        let callback,timer,settled=false;
+        const finish=(point,error)=>{
+          if(settled)return;settled=true;clearTimeout(timer);cancels.delete(cancel);
+          if(preparingCancel===cancel)preparingCancel=null;
+          if(callback!==undefined)video.cancelVideoFrameCallback(callback);
+          error?reject(error):resolve(point);
+        };
+        cancel=()=>finish(null);preparingCancel=cancel;cancels.add(cancel);
+        const observe=(now,frame)=>{
+          const delta=frame.mediaTime-start;
+          if(delta>1e-6&&delta<4/fps+1e-6)finish(frame);
+          else callback=video.requestVideoFrameCallback(observe);
+        };
+        callback=video.requestVideoFrameCallback(observe);
+        timer=setTimeout(()=>finish(null,Error('Native picture startup measurement timed out')),2000);
+      });
+      moving.catch(()=>{});
+      try{
+        const starting=api.play(),attempt=generation;
+        if(!await starting){cancel();return null;}
+        const frame=await moving;
+        if(!frame||disposed||attempt!==generation)return null;
+        const lead=Math.max(0,(frame.expectedDisplayTime-requested-(frame.mediaTime-start)/rate*1000)/1000);
+        if(!Number.isFinite(lead)||lead>.25)throw Error('Native picture startup exceeds its bounded preparation profile');
+        const after=video.getVideoPlaybackQuality();
+        api.pause();if(!await api.seek(0,{presented:true}))return null;
+        return{lead,requested_at:performance.timeOrigin+requested,media_time:frame.mediaTime,
+          display_time:frame.expectedDisplayTime,preparation_frames:after.totalVideoFrames-before.totalVideoFrames,
+          preparation_drops:after.droppedVideoFrames-before.droppedVideoFrames};
+      }catch(error){cancel();api.pause();throw error;}
+    },
     async play(){
       const attempt=++generation;
       if(pendingSeek)await pendingSeek;
@@ -17,7 +53,7 @@ export function createVideoGroup(entries){
         return true;
       }catch(error){if(!disposed&&attempt===generation){api.pause();throw error;}}
     },
-    pause(){++generation;stop();},
+    pause(){++generation;preparingCancel?.();stop();},
     synchronize(clock){
       if(clock.video.paused)return;
       const at=clock.video.currentTime-clock.start;

@@ -197,7 +197,11 @@ window selects only part of it. Review boundaries remain frame aligned.
 Existing duration-based pacing that resolves to this same profile follows the
 same time map; no new saved fields or authoring commands are introduced.
 
-The browser seeks and plays the original video at its authored rate. A bounded
+The browser seeks and plays the original video at its authored rate. Before
+publication, it briefly prepares the muted picture, measures presentation startup
+and returns to the exact first frame. Playback reserves that measured lead against
+the audio output clock; sound still starts only after Play. This preparation
+counts toward edit-to-ready time. A bounded
 48 kHz PCM window uses export's pitch-preserving source-audio graph: retime from
 the resolved span origin, then select the requested result window. At most fifteen
 source seconds are decoded for this profile. Independent audio tracks, captions,
