@@ -437,3 +437,37 @@ assert.equal(vm.runInContext('lastIndex',context),30,'A seek position holds unti
 '''
     result=subprocess.run(['node','-e','const STAGE='+json.dumps(stage_script())+';\n'+script],capture_output=True,text=True,timeout=10)
     assert result.returncode==0,result.stdout+result.stderr
+
+
+@pytest.mark.parametrize('action', ['play', 'pause', 'dispose'])
+def test_speed_play_waits_for_the_stage_seek_before_starting_pcm(action):
+    from tests.native_stage_harness import stage_script
+    script=r'''
+const vm=require('node:vm'),assert=require('node:assert/strict');let releaseSeek,resumes=0,starts=[],plays=0;
+const video={currentTime:1,paused:true,pause(){this.paused=true;},cancelVideoFrameCallback(){}};
+const group={pause(){video.pause();},dispose(){video.pause();},
+ seek(at){video.currentTime=1+at*1.25;return new Promise(r=>releaseSeek=()=>r(true));},
+ async play(){plays++;video.paused=false;return true;}};
+const audio={state:'running',currentTime:1,resume:async()=>{resumes++;},close:async()=>{},
+ getOutputTimestamp:()=>({contextTime:1,performanceTime:1})};
+const review={pause(){},seek(){},dispose(){},snapshot:()=>({prepared:true,started_offset:1}),outputTimeAt:()=>1,
+ async play(at){starts.push(at);}};
+const context={window:{moviestarScene:{entries:[],applyMotion(){}}},document:{createElement:()=>({getContext:()=>({})})},
+ location:{search:''},URLSearchParams,AbortController,performance:{timeOrigin:1000,now:()=>100},Date,
+ fetch:()=>new Promise(()=>{}),setTimeout:()=>1,clearTimeout(){},cancelAnimationFrame(){},
+ requestAnimationFrame:fn=>{if(fn.name!=='animateSpeed')fn();return 1;}};
+vm.createContext(context);vm.runInContext(STAGE,context);Object.assign(context,{testVideo:video,testGroup:group,testAudio:audio,testReview:review});
+vm.runInContext(`packet={playback_rate:1.25,fps:30,source_start:1,source_end:3.5,samples:Array.from({length:60},()=>({nodes:[]}))};
+ video=testVideo;videoGroup=testGroup;audio=testAudio;reviewAudio=testReview;resolveReady(true);`,context);
+const api=context.window.moviestarLiveStage,flush=()=>new Promise(r=>setImmediate(r));
+(async()=>{
+ const seeking=api.seek(1);await flush();const play=api.play();await flush();
+ assert.equal(starts.length,0,'PCM cannot start while destination pixels are still pending');
+ assert.equal(resumes,0,'Do not start the output transport ahead of the seek');
+ if(ACTION!=='play')api[ACTION]();releaseSeek();await seeking;await play;
+ if(ACTION==='play'){assert.deepEqual(starts,[1]);assert.equal(plays,1);api.pause();}
+ else{assert.deepEqual(starts,[]);assert.equal(plays,0);}
+})().catch(error=>{console.error(error);process.exitCode=1;});
+'''
+    result=subprocess.run(['node','-e','const STAGE='+json.dumps(stage_script())+';const ACTION='+json.dumps(action)+';\n'+script],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stdout+result.stderr

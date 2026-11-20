@@ -6,7 +6,7 @@ const controller=new AbortController(),audit=new URLSearchParams(location.search
 const pendingSeeks=new Set();
 let lastIndex=-1, playing=false, readyDone=false, metadataReady=false, imageReady=false,finishing=false,playGeneration=0;
 let videoGroup,reviewAudio,outputMixer,sceneClock;
-let playbackIdentity,speedFrame,pictureStartup;
+let playbackIdentity,speedFrame,pictureStartup,pendingStageSeek;
 const playbackRate=()=>packet?.playback_rate??1;
 function animateSpeed(){
   if(disposed||!playing||playbackRate()===1)return;
@@ -538,6 +538,8 @@ window.moviestarLiveStage={ready,metrics,
     const attempt=playGeneration;
     const active=()=>!disposed&&attempt===playGeneration;
     try{
+      await pendingStageSeek;
+      if(!active())return;
       if(!packet.cut_segment&&(metrics.finished||this.time>=(packet.samples.length-1)/packet.fps-1e-6))await seekTo(0);
       if(!active())return;
       metrics.frames=[];metrics.flashes=[];metrics.beeps=[];metrics.video_frames=[];metrics.waiting_events=[];metrics.quality_events=[];metrics.stalls=0;metrics.finished=false;metrics.previous_white=false;delete metrics.first_presented_at;
@@ -563,7 +565,7 @@ window.moviestarLiveStage={ready,metrics,
     }catch(error){if(active()){fail(error);throw error;}}
   },
   pause(){if(cuts){cuts.pause();return;}if(sceneClock){sceneClock.pause();return;}if(playing&&outputMixer)metrics.pause_context_time=audio.currentTime;reviewAudio?.pause();if(playing&&videos.length){videos.forEach(item=>recordVideoQuality(item,'before-pause'));recordQuality();}++playGeneration;playing=false;if(speedFrame!==undefined)cancelAnimationFrame(speedFrame);clearTimeout(stopTimer);stopTimer=null;videoGroup?.pause();video?.pause();},
-  async seek(at){if(cuts)return cuts.seek(at);if(sceneClock){await sceneClock.seek(at);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return;}this.pause();try{if(await seekTo(at))metrics.finished=false;}catch(error){fail(error);throw error;}},
+  async seek(at){if(cuts)return cuts.seek(at);if(sceneClock){await sceneClock.seek(at);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return;}this.pause();const operation=seekTo(at);pendingStageSeek=operation;try{if(await operation)metrics.finished=false;}catch(error){fail(error);throw error;}finally{if(pendingStageSeek===operation)pendingStageSeek=null;}},
   sourceSnapshot(){return cuts?cuts.sourceSnapshot():packet.clock==='scene'?null:sourceFrame();},
   snapshot(){
     if(cuts)return cuts.snapshot();
