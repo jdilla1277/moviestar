@@ -10,7 +10,9 @@ let playbackIdentity,speedFrame,pictureStartup;
 const playbackRate=()=>packet?.playback_rate??1;
 function animateSpeed(){
   if(disposed||!playing||playbackRate()===1)return;
-  apply(Math.max(0,(video.currentTime-packet.source_start)/playbackRate()));
+  const at=reviewAudio?.outputTimeAt(performance.timeOrigin+performance.now());
+  const first=reviewAudio?.snapshot().started_offset??0;
+  apply(Math.max(first,Number.isFinite(at)?at:(video.currentTime-packet.source_start)/playbackRate()));
   speedFrame=requestAnimationFrame(animateSpeed);
 }
 let captionLayer,captionImages=[],captionState=-1;
@@ -199,7 +201,7 @@ function onFrame(now,metadata){
     frameCallback=video.requestVideoFrameCallback(onFrame);return;
   }
   if(packet.cut_segment&&running&&metadata.mediaTime>=packet.source_end-1/packet.fps-1e-6)freezeLastFrame();
-  apply(local);
+  if(playbackRate()===1||!running)apply(local);
   if(!running&&metrics.initial_frame===undefined&&Math.abs(local)<1/packet.fps)metrics.initial_frame=metadata.mediaTime;
   if(running){
     if(metrics.first_presented_at===undefined)metrics.first_presented_at=performance.timeOrigin+metadata.expectedDisplayTime;

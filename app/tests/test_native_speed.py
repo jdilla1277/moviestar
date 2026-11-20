@@ -272,6 +272,15 @@ try{
  const origin=await b.evaluate('document.querySelector("iframe:not(.pending)").contentWindow.performance.timeOrigin');
  const zero=origin+m.frames[0].display_time-(m.frames[0].media_time-1)/RATE*1000;
  assert.ok(Math.abs(m.paused_at-zero-2000)<=50,'Program clock <=50ms');
+ // Resume from a result-time seek, retaining the same measured picture clock.
+ await b.evaluate(`(async()=>{await ${expr}.seek(.5);})()`);
+ await b.click('#play');await b.wait(expr+'.metrics.finished',6000);
+ const resumed=await b.evaluate(expr+'.metrics');
+ await writeFile(OUT+'/resume-playback.json',JSON.stringify(resumed));assertReviewQuality(resumed);
+ const remaining=cueTimes.filter(t=>t>=.5);
+ const resumedClock=measureCueClock({...resumed,frames:resumed.frames.map(f=>({...f,result_time:(f.media_time-1)/RATE}))},
+  {fps:30*RATE,count:remaining.length,cueTimes:remaining});
+ assert.deepEqual(resumedClock.problems,[]);await writeFile(OUT+'/resume-cue-clock.json',JSON.stringify(resumedClock));
  await b.click('#restart');await b.click('#play');await b.click('#pause');
  assert.equal(await b.evaluate(expr+'.paused'),true);
 }finally{await b.close();}
@@ -406,4 +415,25 @@ if(ACTION!=='complete'){
 }
 '''
     result=subprocess.run(['node','--input-type=module','-e','const MODULE='+json.dumps(module)+';const ACTION='+json.dumps(action)+';\n'+script],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stdout+result.stderr
+
+
+def test_speed_dom_uses_one_result_clock_instead_of_alternating_video_callbacks():
+    from tests.native_stage_harness import stage_script
+    script=r'''
+const vm=require('node:vm'),assert=require('node:assert/strict');
+const context={window:{moviestarScene:{entries:[],applyMotion(){}}},document:{createElement:()=>({getContext:()=>({})})},
+ location:{search:''},URLSearchParams,AbortController,performance:{timeOrigin:1000,now:()=>100},Date,
+ fetch:()=>new Promise(()=>{}),setTimeout:()=>1,clearTimeout(){},requestAnimationFrame:()=>1};
+vm.createContext(context);vm.runInContext(STAGE,context);
+vm.runInContext(`packet={playback_rate:1.25,fps:30,source_start:1,source_end:3.5,samples:Array.from({length:60},()=>({nodes:[]}))};
+ video={currentTime:2.25,paused:false,requestVideoFrameCallback:()=>1};playing=true;
+ reviewAudio={outputTimeAt:()=>.5,snapshot:()=>({started_offset:0})};animateSpeed();`,context);
+assert.equal(vm.runInContext('lastIndex',context),15,'Caption and camera poses follow the audible result clock');
+vm.runInContext('onFrame(100,{mediaTime:1.2,expectedDisplayTime:100,presentedFrames:1})',context);
+assert.equal(vm.runInContext('lastIndex',context),15,'A source callback cannot rewind the result pose');
+vm.runInContext('reviewAudio={outputTimeAt:()=>.9,snapshot:()=>({started_offset:1})};animateSpeed()',context);
+assert.equal(vm.runInContext('lastIndex',context),30,'A seek position holds until its audio start reaches output');
+'''
+    result=subprocess.run(['node','-e','const STAGE='+json.dumps(stage_script())+';\n'+script],capture_output=True,text=True,timeout=10)
     assert result.returncode==0,result.stdout+result.stderr
