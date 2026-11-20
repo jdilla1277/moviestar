@@ -55,3 +55,32 @@ def test_unsupported_and_foreign_responses_fail_closed(remote,monkeypatch):
     result=CliRunner().invoke(cli,['cloud','edits','show',P])
     assert result.exit_code!=0
     assert json.loads(result.output)['error']['code']=='invalid_response'
+
+@pytest.mark.parametrize('status,code',[(401,'credential_invalid'),(403,'account_consent_required'),(503,'cloud_unavailable')])
+@pytest.mark.parametrize('action',['show','validate','capabilities'])
+def test_capability_errors_preserve_resource_error_envelope(remote,monkeypatch,tmp_path,status,code,action):
+    envelope={'error':{'code':code,'message':'Service diagnostic','details':{},'retryable':status==503},'request_id':'synthetic-request'}
+    monkeypatch.setattr(cloud,'_request',lambda *a,**k:(status,envelope))
+    args=['cloud','edits',action]
+    if action!='capabilities': args.append(P)
+    if action=='validate':
+        file=tmp_path/'request.json';file.write_text(json.dumps(REQUEST));args+=['--request',str(file)]
+    result=CliRunner().invoke(cli,args)
+    assert result.exit_code==1
+    assert json.loads(result.output)==envelope
+    # Legacy clients retain their existing preflight envelope.
+    legacy=CliRunner().invoke(cli,['cloud','projects','show',P])
+    assert json.loads(legacy.output)['status']==code
+
+@pytest.mark.parametrize('status,code',[(401,'credential_invalid'),(403,'account_consent_required'),(503,'cloud_unavailable')])
+@pytest.mark.parametrize('action',['show','validate'])
+def test_resource_errors_use_same_envelope_after_successful_capabilities(remote,monkeypatch,tmp_path,status,code,action):
+    _,_,capability=remote
+    envelope={'error':{'code':code,'message':'Service diagnostic','details':{},'retryable':status==503},'request_id':'synthetic-resource'}
+    monkeypatch.setattr(cloud,'_request',lambda url,*a,**k:(200,capability) if url.endswith('/capabilities') else (status,envelope))
+    args=['cloud','edits',action,P]
+    if action=='validate':
+        file=tmp_path/'request.json';file.write_text(json.dumps(REQUEST));args+=['--request',str(file)]
+    result=CliRunner().invoke(cli,args)
+    assert result.exit_code==1
+    assert json.loads(result.output)==envelope

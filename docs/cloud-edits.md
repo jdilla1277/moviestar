@@ -81,3 +81,7 @@ reservation, and leaves the original assets unchanged. It does not provide
 apply, save/reopen, history, undo, preview or final rendering. A successful dry
 run is neither a save nor a render grant. Hosted deployment and real-account
 acceptance depend on the service's configured, pinned metadata engine bridge.
+
+A missing audio codec in historical ready-video metadata remains unreported,
+not inferred silence. Timeline reads/trim validation need only measured duration
+and dimensions; they do not establish audio-track presence or routing.

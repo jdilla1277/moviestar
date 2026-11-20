@@ -22,8 +22,14 @@ def _fail(code, message=None):
 
 
 def _capability(command, endpoint, credential, action):
-    from moviestar.cloud import _capabilities
-    value = _capabilities(command, endpoint, credential).get('editing')
+    from moviestar.cloud import _request, _CONTRACT as projects_contract
+    status, body = _request(endpoint + '/capabilities', credential)
+    if status != 200:
+        _service_error(body)
+    if (body.get('contract_version') != projects_contract or body.get('project_access') != 'owner_only'
+            or not isinstance(body.get('operations'), list) or not all(isinstance(x, str) for x in body['operations'])):
+        _fail('invalid_response')
+    value = body.get('editing')
     if not isinstance(value, dict) or value.get('contract_version') != _CONTRACT:
         _fail('edits_unavailable')
     if action and value.get(action + '_available') is not True:
@@ -31,19 +37,23 @@ def _capability(command, endpoint, credential, action):
     return value
 
 
+def _service_error(body):
+    error = body.get('error')
+    allowed = {'edits_unavailable', 'personal_cloud_unavailable', 'engine_unavailable', 'cloud_unavailable', 'credential_invalid',
+               'account_setup_required', 'account_consent_required', 'not_found', 'invalid_request', 'request_too_large',
+               'invalid_edit', 'unsupported_feature', 'unsupported_edit_state', 'unsupported_edit_inputs',
+               'edit_limit_exceeded', 'source_metadata_unavailable', 'revision_conflict', 'edit_inputs_changed'}
+    if (isinstance(error, dict) and set(error) == {'code','message','details','retryable'} and error['code'] in allowed
+            and isinstance(error['message'], str) and isinstance(error['details'], dict) and type(error['retryable']) is bool):
+        # Preserve the service's common error envelope across CLI/API/MCP.
+        click.echo(json.dumps({**({'request_id':body['request_id']} if isinstance(body.get('request_id'),str) else {}), 'error':error}, indent=2))
+        raise click.exceptions.Exit(1)
+    _fail('cloud_unavailable')
+
+
 def _response(status, body, project, validate):
     if status != 200:
-        error = body.get('error')
-        allowed = {'edits_unavailable', 'personal_cloud_unavailable', 'engine_unavailable', 'cloud_unavailable', 'credential_invalid',
-                   'account_setup_required', 'account_consent_required', 'not_found', 'invalid_request', 'request_too_large',
-                   'invalid_edit', 'unsupported_feature', 'unsupported_edit_state', 'unsupported_edit_inputs',
-                   'edit_limit_exceeded', 'source_metadata_unavailable', 'revision_conflict', 'edit_inputs_changed'}
-        if (isinstance(error, dict) and set(error) == {'code','message','details','retryable'} and error['code'] in allowed
-                and isinstance(error['message'], str) and isinstance(error['details'], dict) and type(error['retryable']) is bool):
-            # Preserve the service's common error envelope across CLI/API/MCP.
-            click.echo(json.dumps({**({'request_id':body['request_id']} if isinstance(body.get('request_id'),str) else {}), 'error':error}, indent=2))
-            raise click.exceptions.Exit(1)
-        _fail('cloud_unavailable')
+        _service_error(body)
     if (body.get('contract_version') != _CONTRACT or body.get('project_id') != project or body.get('current_revision', 'missing') is not None
             or body.get('status') != ('would_apply' if validate else 'no_saved_edit')):
         _fail('invalid_response')

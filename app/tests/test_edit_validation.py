@@ -69,3 +69,12 @@ def test_multiple_sources_do_not_imply_a_composition_or_choose_a_camera():
 def test_source_context_must_be_bounded_unique_and_portable(sources):
     with pytest.raises(EditValidationError):
         prepare_initial_edit(sources)
+
+
+def test_unreported_audio_codec_stays_unknown_and_does_not_block_timeline():
+    sources=copy.deepcopy(SOURCES)
+    del sources[0]['media']['audio_codec']
+    original=copy.deepcopy(sources)
+    result=prepare_initial_edit(sources,OP)
+    assert result['projected_resolved']['result_duration_ms']==30000
+    assert sources==original

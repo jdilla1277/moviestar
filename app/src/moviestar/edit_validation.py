@@ -44,16 +44,16 @@ def _sources(values):
         except (ValueError, TypeError, AttributeError):
             raise EditValidationError("invalid_edit", "Use an asset UUID, not a path or URL.", "asset_id") from None
         media = value["media"]
-        if not isinstance(media, dict) or set(media) != {"duration_ms", "width", "height", "audio_codec"}:
+        if not isinstance(media, dict) or not {"duration_ms", "width", "height"} <= set(media) <= {"duration_ms", "width", "height", "audio_codec"}:
             raise EditValidationError("invalid_edit", "Measured video metadata is required.", "media")
         duration = _integer(media["duration_ms"], 1, 86400000, "media.duration_ms")
         width = _integer(media["width"], 1, 65536, "media.width")
         height = _integer(media["height"], 1, 65536, "media.height")
-        audio = media["audio_codec"]
+        audio = media.get("audio_codec")
         if audio is not None and (not isinstance(audio, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", audio)):
             raise EditValidationError("invalid_edit", "Use a measured codec or null.", "media.audio_codec")
         sources.append(dict(id=source, path=f"asset:{asset}", duration_ms=duration,
-                            width=width, height=height, audio_codec=audio))
+                            width=width, height=height, **({"audio_codec": audio} if "audio_codec" in media else {})))
     return sources
 
 
