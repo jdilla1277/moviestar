@@ -53,7 +53,7 @@ python -m pip install --upgrade 'moviestar[transcribe]'
 moviestar doctor
 ```
 
-For account and Cloud metadata commands, use the smaller base installation
+For account and Cloud preview commands, use the smaller base installation
 with `python -m pip install --upgrade moviestar`; FFmpeg and Whisper are not
 required. See [installation profiles](docs/installation.md) for supplied-caption
 workflows and upgrading an existing installation.

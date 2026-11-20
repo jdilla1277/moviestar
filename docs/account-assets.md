@@ -236,3 +236,5 @@ fabricated project or reference ID. Each asset appears once, even if several
 paths grant access. Follow `next_cursor` unchanged. Capabilities advertise
 `asset_sharing.management.contract_version: native-asset-sharing-v1` and
 `project_assets.operations` includes `assets:read` for direct detail/download.
+
+For pending invitations received by your account, see [Invitations](invitations.md).
