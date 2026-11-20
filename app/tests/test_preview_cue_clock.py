@@ -40,3 +40,26 @@ if(CASE==='sparse'){
 '''
     result = subprocess.run(['node', '--input-type=module', '-e', f'const MODULE={json.dumps(module)},CASE={json.dumps(case)};\n'+script], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stdout+result.stderr
+
+
+@pytest.mark.parametrize('rate', [1.25,1.5])
+@pytest.mark.parametrize('late', [False,True])
+def test_uniform_speed_cue_instants_keep_the_existing_presentation_gate(rate, late):
+    module=(Path(__file__).parents[2]/'experiments/live_browser_preview/cue_clock.mjs').as_uri()
+    script=r'''
+import assert from 'node:assert/strict';
+const {measureCueClock}=await import(MODULE);
+const cueTimes=[.2,1.2,2.2].map(t=>t/RATE);
+const metrics={frames:[],flashes:[{},{}],beeps:[],video_quality:[{dropped_frames:0}]};
+for(let i=0;i<60*RATE;i++){
+ if(i===6||i===7)continue; // Keep the known sparse observation explicit.
+ const local=i/(30*RATE);metrics.frames.push({media_time:1+i/30,result_time:local,display_time:1000+local*1000});
+}
+for(const [i,time] of cueTimes.entries())metrics.beeps.push({display_time:1000+time*1000+20+(LATE&&i===1?31:0),timestamp_available:true});
+const result=measureCueClock(metrics,{fps:30*RATE,count:3,cueTimes});
+assert.equal(result.observed_flashes,2);
+if(LATE)assert.ok(result.problems.some(p=>p.includes('exceeds 50')),'A real 51ms error still fails');
+else{assert.deepEqual(result.problems,[]);assert.equal(result.cues.length,3);assert.ok(result.cues.every(c=>Math.abs(c.phase_ms-20)<1e-6));}
+'''
+    result=subprocess.run(['node','--input-type=module','-e',f'const MODULE={json.dumps(module)},RATE={rate},LATE={json.dumps(late)};\n'+script],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stdout+result.stderr

@@ -87,7 +87,15 @@ def compile_snapshot(snapshot):
     # Keep one bounded canonical PCM window audible across all picture spans,
     # including default source-only edits; the existing prepared-audio output
     # clock owns startup and handoff while source pictures remain native.
-    prepared_audio = len(spans) > 1 or spec['audio_mix'] != default_audio_mix()
+    paced_spans = [span for span in spans if any(slot.held or abs((slot.speed or 0)-1)>1e-8 for slot in span.slots)]
+    if paced_spans:
+        if len(spans) != 1:
+            fail('speed review currently requires one spatial span without cuts')
+        if len(spans[0].slots)!=1:
+            fail('speed review currently requires one reference footage slot')
+        if any(slot.held or not 1 <= (slot.speed or 0) <= 1.5 for slot in spans[0].slots):
+            fail('speed review requires non-held source clocks from 1 to 1.5 times speed (slow motion remains unsupported)')
+    prepared_audio = bool(paced_spans) or len(spans) > 1 or spec['audio_mix'] != default_audio_mix()
     # A still scene can keep a routed soundtrack without a visible carrier.
     # Prepare the canonical window mix when that source is audible.
     metadata = {source['id']: source for source in project['sources']}
@@ -130,6 +138,13 @@ def compile_snapshot(snapshot):
 def _compile_span(snapshot, timeline, start, end, span, *, prepared_audio=False, validate_source_route=False):
     spec, project, root = snapshot['spec'], snapshot['project'], Path(snapshot['root'])
     fps = timeline.output_fps
+    rate = span.slots[0].speed if span.slots else 1
+    if rate is not None and abs(rate-1)>1e-8 and fps*rate>60+1e-6:
+        fail('speed review requires a source presentation cadence of at most 60 frames per second')
+    if rate is None:
+        fail('held media requires an ordinary unit-speed source clock')
+    if abs(rate-1)>1e-8 and span.scene_id not in (spec.get('spatial') or {}).get('scenes', {}):
+        fail('speed review currently requires a spatial scene')
     scene = spec['composition'][span.scene_index]
     # Inside a single span, scene/edge transition windows can intersect the
     # review only at its ends. Check the half-open interval, including the
@@ -162,6 +177,8 @@ def _compile_span(snapshot, timeline, start, end, span, *, prepared_audio=False,
             fail('the canonical frame has unresolved diagnostics: '+bad.get('code','')+' '+bad.get('message',''))
         expanded = {tuple(node['occurrence_path']): node for node in walk(frame['children'])}
         videos = [node for node in expanded.values() if node.get('type') == 'video']
+        if abs(rate-1)>1e-8 and len(videos)!=1:
+            fail('speed review currently requires exactly one visible video')
         if len(videos) > PROFILE['max_videos_per_segment']:
             fail('at most two videos may be visible throughout this review window')
         if any(not (v.get('media') or {}).get('visible') for v in videos):
@@ -179,21 +196,21 @@ def _compile_span(snapshot, timeline, start, end, span, *, prepared_audio=False,
                 if source_paths[asset].suffix.lower() != '.mp4':
                     fail('use native-compatible MP4 sources')
                 clock = video['media']['source_time_s']
-                if clock < 0 or clock+end-start > durations[asset]+1e-6:
+                if clock < 0 or clock+(end-start)*rate > durations[asset]+1e-6:
                     fail('the review window exceeds a video source duration')
                 clocks[tuple(video['occurrence_path'])] = clock
-            if not prepared_audio or validate_source_route:
+            if not prepared_audio or validate_source_route or abs(rate-1)>1e-8:
                 audio = span.audio
-                if (len(audio.slices) != 1 or abs(audio.speed-1) > 1e-8
+                if (len(audio.slices) != 1 or abs(audio.speed-rate) > 1e-8
                         or not metadata.get(audio.source_id, {}).get('audio_codec')):
                     fail('audio must follow one visible video with embedded audio')
                 audio_start, audio_end = audio.slices[0]
                 selected = [v for v in videos if v['media']['asset_id'] == audio.source_id
-                            and abs(v['media']['source_time_s']-(audio_start+start-span.start_s)) < 1e-6]
+                            and abs(v['media']['source_time_s']-(audio_start+(start-span.start_s)*rate)) < 1e-6]
                 carriers = [span.slot(s['slot']) for s in scene['slots'] if s['source'] == audio.source_id]
-                if (not selected or not any(s is not None and not s.held and abs(s.speed-1) < 1e-8
+                if (not selected or not any(s is not None and not s.held and abs(s.speed-rate) < 1e-8
                         and abs(s.source_from_s-audio_start) < 1e-6 for s in carriers)
-                        or audio_end+1e-6 < audio_start+end-span.start_s):
+                        or audio_end+1e-6 < audio_start+(end-span.start_s)*rate):
                     fail('audio and video must share an ordinary unit-speed source clock')
                 if not prepared_audio:
                     video_path = selected[0]['occurrence_path']
@@ -202,7 +219,7 @@ def _compile_span(snapshot, timeline, start, end, span, *, prepared_audio=False,
                 video_path = videos[0]['occurrence_path']
                 source_start = videos[0]['media']['source_time_s']
         if ({tuple(v['occurrence_path']) for v in videos} != set(clocks) or any(
-                abs(v['media']['source_time_s']-(clocks[tuple(v['occurrence_path'])]+index/fps)) > 1e-5 for v in videos)):
+                abs(v['media']['source_time_s']-(clocks[tuple(v['occurrence_path'])]+index/fps*rate)) > 1e-5 for v in videos)):
             fail('all videos require stable paths and ordinary unit-speed source clocks')
         current_shape = [(node['path'], node['kind'], node['style']) for node in walk(prepared['nodes'])]
         if shape is not None and current_shape != shape:
@@ -235,15 +252,18 @@ def _compile_span(snapshot, timeline, start, end, span, *, prepared_audio=False,
                               'object_position': '50% 50%' if 'media_motion' in node else original.get('native_object_position', style.get('object-position', '50% 50%')),
                               **({'has_audio': bool(metadata[asset].get('audio_codec')),
                                   'source_start': clocks[tuple(node['path'])],
-                                  'source_end': clocks[tuple(node['path'])]+end-start} if kind == 'video' else {})})
+                                  'source_end': clocks[tuple(node['path'])]+(end-start)*rate,
+                                  **({'playback_rate':rate} if abs(rate-1)>1e-8 else {})} if kind == 'video' else {})})
         def dynamic(nodes):
             return [{'path': node['path'], 'content': node['content'],
                      'motion': node.get('motion'), 'media_motion': node.get('media_motion'), 'caption': node.get('caption'),
                      'children': dynamic(node['children'])} for node in nodes]
         samples.append({'nodes': dynamic(prepared['nodes'])})
     packet = {'state_id': snapshot['state_id'], 'canvas': initial['canvas'], 'fps': fps,
-            'range': {'from': start, 'to': end}, 'source_start': source_start, 'source_end': source_start+end-start,
+            'range': {'from': start, 'to': end}, 'source_start': source_start, 'source_end': source_start+(end-start)*rate,
             'video_path': video_path, 'initial': initial, 'media': media, 'samples': samples}
+    if abs(rate-1)>1e-8:
+        packet['playback_rate'] = rate
     if video_path is None:
         packet['clock'] = 'scene'
     if prepared_audio:

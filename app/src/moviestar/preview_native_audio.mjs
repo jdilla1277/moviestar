@@ -26,7 +26,7 @@ export function createPreparedAudio(context,destination,signal,duration){
         cancel(){if(!settled){prepared=null;settled=true;}}
       };
     },
-    async play(at,{pictureLead=0}={}){
+    async play(at,{pictureLead=0,presentationLead}={}){
       api.pause();if(!buffer||disposed)return;
       const attempt=generation,active=()=>!disposed&&!signal?.aborted&&attempt===generation;
       await context.resume();if(!active())return;
@@ -36,19 +36,22 @@ export function createPreparedAudio(context,destination,signal,duration){
         await new Promise(resolve=>setTimeout(resolve,10));
       }
       if(!active())return;
+      if(presentationLead!==undefined&&(!Number.isFinite(presentationLead)||presentationLead<0||presentationLead>.25))
+        throw Error('Unsupported measured picture startup');
+      const lead=presentationLead??Math.max(0,Math.min(1/24,pictureLead));
       offset=Math.max(0,Math.min(buffer.duration,at));if(offset>=buffer.duration)return;
       source=context.createBufferSource();source.buffer=buffer;source.connect(destination);
       const playing=source;source.onended=()=>{if(source===playing){source.disconnect();source=null;offset=buffer.duration;}};
       destination.port?.postMessage({kind:'capture'});
       // Schedule ahead of the rendering thread: starting at currentTime can
       // reach it one quantum late, while the master clock records the earlier
-      // requested time. Keep the authored offset; allow 50 ms for dispatch.
-      startedAt=context.currentTime+.05;lastStart={context_time:startedAt,offset};
+      // requested time. Keep the authored offset and reserve dispatch time.
+      startedAt=context.currentTime+(presentationLead===undefined ? .05 : Math.max(.05,lead+.01));
+      lastStart={context_time:startedAt,offset};
       source.start(startedAt,offset);
-      // Starting HTML media also incurs presentation latency. Reserve one
-      // half-frame interval before the audible edge for picture launch;
-      // neither the audio samples nor picture playback rate are changed.
-      const lead=Math.max(0,Math.min(1/24,pictureLead));
+      // Ordinary playback keeps its existing half-frame allowance. A silent
+      // speed picture instead uses its measured presentation startup. Samples,
+      // offsets and the authored playback rate are unchanged.
       while(context.getOutputTimestamp().contextTime+lead+1/context.sampleRate<startedAt){
         if(!active())return;
         if(performance.now()>deadline)throw Error('Prepared audio did not reach the output clock');
