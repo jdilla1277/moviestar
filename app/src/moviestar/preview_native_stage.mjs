@@ -6,7 +6,13 @@ const controller=new AbortController(),audit=new URLSearchParams(location.search
 const pendingSeeks=new Set();
 let lastIndex=-1, playing=false, readyDone=false, metadataReady=false, imageReady=false,finishing=false,playGeneration=0;
 let videoGroup,reviewAudio,outputMixer,sceneClock;
-let playbackIdentity;
+let playbackIdentity,speedFrame;
+const playbackRate=()=>packet?.playback_rate??1;
+function animateSpeed(){
+  if(disposed||!playing||playbackRate()===1)return;
+  apply(Math.max(0,(video.currentTime-packet.source_start)/playbackRate()));
+  speedFrame=requestAnimationFrame(animateSpeed);
+}
 let captionLayer,captionImages=[],captionState=-1;
 const videos=[],mediaFrames=[];
 let mediaResize;
@@ -117,12 +123,18 @@ function sourceFrame(item){
   const x=(image.videoWidth??image.width)/640,y=(image.videoHeight??image.height)/360;
   // Audit only needs the barcode strip and center cue. Read back one small
   // tile, rather than a full frame plus nine separate GPU readbacks per video.
-  pixels.drawImage(image,0,0,128*x,16*y,0,0,128,16);
-  pixels.drawImage(image,320*x,180*y,x,y,0,16,1,1);
+  // Pin sped-up decoder pixels during GPU readback; drawing a live element
+  // twice can otherwise sample different presentations at elevated source cadence.
+  const captured=playbackRate()!==1&&image.tagName==='VIDEO'?new VideoFrame(image):null;
+  const capturedTime=captured?.timestamp/1e6;
+  try{
+    pixels.drawImage(captured??image,0,0,128*x,16*y,0,0,128,16);
+    pixels.drawImage(captured??image,320*x,180*y,x,y,0,16,1,1);
+  }finally{captured?.close();}
   const data=pixels.getImageData(0,0,128,17).data;
   let number=0;
   for(let bit=0;bit<8;bit++)if(data[(8*128+bit*16+8)*4]>128)number|=1<<bit;
-  return {number,white:data[16*128*4]>230};
+  return {number,white:data[16*128*4]>230,...(captured?{captured_media_time:capturedTime}:{})};
 }
 async function checkReady(){
   if(readyDone||disposed||!metadataReady||!imageReady||video.readyState<2||video.seeking||Math.abs(video.currentTime-packet.source_start)>1/packet.fps)return;
@@ -132,7 +144,7 @@ async function checkReady(){
     // rVFC may omit the last valid presentation even with zero decoder drops.
     // Prepare its pixels before publishing a cut scene, then return both
     // decoders to their first frames. No output clip or persistent cache.
-    if(packet.cut_segment){
+    if(packet.cut_segment||playbackRate()!==1){
       if(!await videoGroup.seek((packet.samples.length-1)/packet.fps,{presented:true})||disposed)return;
       for(const item of videos){
         const frame=document.createElement('canvas');frame.width=item.video.videoWidth;frame.height=item.video.videoHeight;
@@ -140,7 +152,7 @@ async function checkReady(){
       }
       if(!await videoGroup.seek(1/packet.fps)||disposed)return;
       await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-      if(!await videoGroup.seek(0)||disposed)return;
+      if(!await videoGroup.seek(0,{presented:playbackRate()!==1})||disposed)return;
     }
     apply(0);
     await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
@@ -159,7 +171,15 @@ function onFrame(now,metadata){
   if(primary){primary.firstFrame=true;primary.frame={media_time:metadata.mediaTime,display_time:metadata.expectedDisplayTime,presented_frames:metadata.presentedFrames};}
   if(running&&primary)recordVideoQuality(primary,'frame');
   if(playing&&videoGroup){try{videoGroup.synchronize(videos.find(item=>item.primary));}catch(error){fail(error);return;}}
-  const local=metadata.mediaTime-packet.source_start;
+  const local=(metadata.mediaTime-packet.source_start)/playbackRate();
+  if(playbackRate()!==1&&running&&!stopTimer){
+    const remaining=(packet.source_end-metadata.mediaTime)/playbackRate();
+    stopTimer=setTimeout(()=>finishScene().catch(fail),Math.max(0,metadata.expectedDisplayTime-performance.now()+remaining*1000));
+  }
+  if(playbackRate()!==1&&running&&metadata.mediaTime>packet.source_end-playbackRate()/packet.fps+1e-6){
+    freezeLastFrame();frameCallback=video.requestVideoFrameCallback(onFrame);return;
+  }
+  if(playbackRate()!==1&&running&&metadata.mediaTime>=packet.source_end-playbackRate()/packet.fps-1e-6)freezeLastFrame();
   if(packet.cut_segment&&running&&!stopTimer){
     // Schedule from the first presentation's clock, independently of whether
     // JS receives the final-frame callback. The prepared final pixels cover
@@ -181,7 +201,7 @@ function onFrame(now,metadata){
     if(metrics.first_presented_at===undefined)metrics.first_presented_at=performance.timeOrigin+metadata.expectedDisplayTime;
     const sampled=audit?(callbackPixels??sourceFrame()):{};
     if(audit&&primary){metrics.video_frames??=[];metrics.video_frames.push({path:primary.path,...primary.frame,number:sampled.number});}
-    metrics.frames.push({media_time:metadata.mediaTime,number:sampled.number,display_time:metadata.expectedDisplayTime,presented_frames:metadata.presentedFrames,
+    metrics.frames.push({media_time:metadata.mediaTime,...(sampled.captured_media_time!==undefined?{captured_media_time:sampled.captured_media_time}:{}),number:sampled.number,display_time:metadata.expectedDisplayTime,presented_frames:metadata.presentedFrames,
       ...captionAudit(),
       ...(audit?{callback_time:performance.now(),current_time:video.currentTime,frozen:Boolean(frozenFrame)}:{}),
       ...(audit&&packet.caption_plane?{caption_state:captionState,caption_asset:captionLayer.firstElementChild?.getAttribute('src'),caption_applied_at:performance.now()}:{} )});
@@ -202,7 +222,9 @@ async function finishScene(){
   videos.forEach(item=>recordVideoQuality(item,'before-finish'));
   recordQuality();
   finishing=true;const attempt=playGeneration;
+  if(playbackRate()!==1)metrics.paused_at=performance.timeOrigin+performance.now();
   if(playing&&outputMixer)metrics.pause_context_time=audio.currentTime;
+  if(speedFrame!==undefined)cancelAnimationFrame(speedFrame);
   reviewAudio?.pause();playing=false;videoGroup?.pause();video.pause();
   metrics.paused_quality=quality();
   try{
@@ -317,8 +339,9 @@ async function initialize(){
     if(asset.kind==='image'){
       media.src='assets/'+asset.asset;const decoded=media.decode().then(()=>scene.setMediaIntrinsic(element,media.naturalWidth,media.naturalHeight));decoded.catch(()=>{});images.push(decoded);
     }else{
-      const primary=key(asset.path)===key(packet.video_path),item={video:media,path:asset.path,start:asset.source_start??packet.source_start,end:asset.source_end??packet.source_end,fps:packet.fps,primary,hasAudio:asset.has_audio!==false};
+      const primary=key(asset.path)===key(packet.video_path),item={video:media,path:asset.path,start:asset.source_start??packet.source_start,end:asset.source_end??packet.source_end,fps:packet.fps,rate:asset.playback_rate??1,primary,hasAudio:asset.has_audio!==false};
       videos.push(item);if(primary)video=media;
+      media.playbackRate=item.rate;
       media.preload=packet.media.filter(item=>item.kind==='video').length>1?'auto':'metadata';media.playsInline=true;
       media.addEventListener('error',()=>fail(Error('Source video could not load.')));
       media.addEventListener('canplay',checkReady);media.addEventListener('seeked',checkReady);
@@ -420,7 +443,7 @@ async function seekTo(at){
   for(const cancel of pendingSeeks)cancel();
   const local=Math.max(0,Math.min((packet.samples.length-1)/packet.fps,Math.round(at*packet.fps)/packet.fps));
   if(videoGroup){
-    if(!await videoGroup.seek(local)||disposed)return false;
+    if(!await videoGroup.seek(local,{presented:playbackRate()!==1})||disposed)return false;
     clearFrozenFrame();apply(local);reviewAudio?.seek(local);
     await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
     return true;
@@ -450,7 +473,7 @@ async function seekTo(at){
 }
 window.moviestarLiveStage={ready,metrics,
   get packet(){return packet;},
-  get time(){if(cuts)return cuts.time;if(sceneClock)return sceneClock.time;return video?Math.max(0,video.currentTime-packet.source_start):0;},
+  get time(){if(cuts)return cuts.time;if(sceneClock)return sceneClock.time;return video?Math.max(0,(video.currentTime-packet.source_start)/playbackRate()):0;},
   get paused(){return cuts?cuts.paused:sceneClock?sceneClock.paused:video?.paused??true;},
   get audioState(){return cuts?cuts.audioState:audio?.state;},
   get error(){return metrics.error;},
@@ -526,9 +549,10 @@ window.moviestarLiveStage={ready,metrics,
       if(reviewAudio?.snapshot().prepared)await reviewAudio.play(this.time,{pictureLead:1/(2*packet.fps)});if(!active())return;
       if(reviewAudio)metrics.prepared_audio=reviewAudio.snapshot();
       if(videoGroup)await videoGroup.play();else await video.play();
+      if(active()&&playbackRate()!==1)animateSpeed();
     }catch(error){if(active()){fail(error);throw error;}}
   },
-  pause(){if(cuts){cuts.pause();return;}if(sceneClock){sceneClock.pause();return;}if(playing&&outputMixer)metrics.pause_context_time=audio.currentTime;reviewAudio?.pause();if(playing&&videos.length){videos.forEach(item=>recordVideoQuality(item,'before-pause'));recordQuality();}++playGeneration;playing=false;clearTimeout(stopTimer);stopTimer=null;videoGroup?.pause();video?.pause();},
+  pause(){if(cuts){cuts.pause();return;}if(sceneClock){sceneClock.pause();return;}if(playing&&outputMixer)metrics.pause_context_time=audio.currentTime;reviewAudio?.pause();if(playing&&videos.length){videos.forEach(item=>recordVideoQuality(item,'before-pause'));recordQuality();}++playGeneration;playing=false;if(speedFrame!==undefined)cancelAnimationFrame(speedFrame);clearTimeout(stopTimer);stopTimer=null;videoGroup?.pause();video?.pause();},
   async seek(at){if(cuts)return cuts.seek(at);if(sceneClock){await sceneClock.seek(at);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));return;}this.pause();try{if(await seekTo(at))metrics.finished=false;}catch(error){fail(error);throw error;}},
   sourceSnapshot(){return cuts?cuts.sourceSnapshot():packet.clock==='scene'?null:sourceFrame();},
   snapshot(){

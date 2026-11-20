@@ -13,11 +13,15 @@ MAX_AUDIBLE_TRACKS = 2
 
 
 def compile_audio(snapshot, timeline, start, end, fail):
-    from moviestar.cli import _audio_probe_file
+    def probe_audio(path):
+        # Source metadata is already resolved. Load command-owned probing only
+        # when an independent track actually needs it.
+        from moviestar.cli import _audio_probe_file
+        return _audio_probe_file(path)
     root=Path(snapshot['root']);spec=snapshot['spec']
     try:
         mix=resolve_audio_mix(spec['audio_mix'],result_duration=timeline.duration_s,
-            base_dir=root,probe_audio=_audio_probe_file)
+            base_dir=root,probe_audio=probe_audio)
     except ValueError as exc:
         fail(str(exc))
     selected=[]
@@ -44,15 +48,24 @@ def compile_audio(snapshot, timeline, start, end, fail):
         audible=not mix['source_audio']['muted'] and bool(metadata.get(route.source_id,{}).get('audio_codec'))
         if audible and route.source_id in operated:
             fail('routed source operations are not implemented in native review')
-        if audible and (len(route.slices)!=1 or abs(route.speed-1)>1e-8):
-            fail('routed source audio requires an ordinary unit-speed clock')
-        at=route.slices[0][0]+left-span.start_s if len(route.slices)==1 and abs(route.speed-1)<1e-8 else 0
-        if audible and route.slices[0][1]+1e-6<at+right-left:
+        if audible and (len(route.slices)!=1 or not 1<=route.speed<=1.5):
+            fail('routed source audio requires one non-held clock from 1 to 1.5 times speed')
+        at=route.slices[0][0]+(left-span.start_s)*route.speed if len(route.slices)==1 and 1<=route.speed<=1.5 else 0
+        if audible and route.slices[0][1]+1e-6<at+(right-left)*route.speed:
             fail('routed source audio does not cover the review window')
         path=paths.get(route.source_id) if audible else None
         if audible and (path is None or not path.is_file()):fail('unavailable routed audio source')
-        pieces.append({'source_id':route.source_id,'path':str(path) if path else None,
-            'source_start':at,'duration':right-left,'result_from':left})
+        pacing={}
+        if audible and abs(route.speed-1)>1e-8:
+            if span.end_s-span.start_s>10:
+                fail('retimed source audio requires a resolved span of at most ten seconds')
+            # Export retimes the resolved span before selecting a result window.
+            # Start at the same origin to preserve atempo phase and tail samples.
+            pacing={'decode_start':route.slices[0][0], 'decode_duration':route.slices[0][1]-route.slices[0][0],
+                'span_duration':span.end_s-span.start_s,'trim_start':left-span.start_s}
+        pieces.append({**pacing,'source_id':route.source_id,'path':str(path) if path else None,
+            'source_start':at,**({'speed':route.speed} if audible and abs(route.speed-1)>1e-8 else {}),
+            'duration':right-left,'result_from':left})
     job={'kind':'audio_job','mix':mix,'source_pieces':pieces,'duration':end-start,
         'result_duration':timeline.duration_s,'window_start':start}
     identity=sha256(json.dumps(job,sort_keys=True).encode()).hexdigest()[:24]
@@ -63,20 +76,32 @@ def compile_audio(snapshot, timeline, start, end, fail):
 
 
 def prepare_audio(job,directory):
-    """Decode only <=10 seconds of audio, using the export mix and limiter."""
+    """Prepare a <=10s result window (<=15s source for 1.5x), using export audio."""
     directory=Path(directory);directory.mkdir()
     base=directory/'routed.wav';output=directory/'mix.wav'
     args=['ffmpeg','-v','error','-y','-nostdin','-filter_complex_threads','1']
     slices=[]
+    retimed=any(abs(p.get('speed',1)-1)>1e-8 for p in job['source_pieces'])
+    if retimed and len(job['source_pieces'])!=1:
+        raise ValueError('Retimed native audio requires one resolved span')
     for piece in job['source_pieces']:
-        at,duration=piece['source_start'],piece['duration']
+        at=piece.get('decode_start',piece['source_start'])
+        duration=piece.get('decode_duration',piece['duration'])
         if piece['path']:
             args+=['-ss',str(at),'-t',str(duration),'-i',piece['path']]
         else:
             args+=['-f','lavfi','-t',str(duration),'-i','anullsrc=r=48000:cl=stereo']
         slices.append((at,at+duration))
     normalize=f'aresample={AUDIO_MIX_SAMPLE_RATE},aformat=sample_fmts={AUDIO_MIX_SAMPLE_FORMAT}:channel_layouts={AUDIO_MIX_CHANNEL_LAYOUT}'
-    parts,label=_audio_from_filter_parts(start_index=0,audio_from_input=('',slices),audio_format=normalize)
+    piece=job['source_pieces'][0]
+    parts,label=_audio_from_filter_parts(start_index=0,audio_from_input=('',slices),
+        audio_speed=piece.get('speed',1) if retimed else 1,audio_format=normalize)
+    if retimed:
+        # Export retimes the entire bounded span before window selection. Using
+        # its filter graph and origin preserves atempo phase and finite tails.
+        parts.append(f"{label}apad,atrim=duration={piece['span_duration']},"
+            f"atrim=start={piece['trim_start']}:duration={piece['duration']},asetpts=PTS-STARTPTS[window]")
+        label='[window]'
     args+=['-filter_complex',';'.join(parts),'-map',label,'-vn','-c:a','pcm_f32le',
         '-ar','48000','-ac','2','-t',str(job['duration']),'-map_metadata','-1',str(base)]
     try:

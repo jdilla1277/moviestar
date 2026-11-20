@@ -1155,7 +1155,10 @@ def preview(from_tc, to_tc, port, open_browser, mode):
     support plain text; use preset overlays for spoken-word highlighting.
     Up to two independently placed audio tracks and source/track gain, mute and fades are
     supported through a bounded, lossless audio-only mix beneath native video.
-    Audio continues through camera cuts. Looping, ducking and rotated
+    Audio continues through camera cuts. Uniform 1–1.5× spatial speed-ups support
+    one footage slot and one visible video within one paced span. Routed
+    source-audio spans are limited to ten result seconds in that profile.
+    Looping, ducking and rotated
     preset text still require rendered mode.
     Unsupported native projects fail explicitly; retry with --mode rendered.
     No account, upload, or cloud render is required. The URL works on this

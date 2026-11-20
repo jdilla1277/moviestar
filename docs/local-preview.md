@@ -83,8 +83,8 @@ scenes without footage slots still need a declared duration in a loaded project;
 this does not add a new source-free project creation command. The ten-second,
 three-span limit and frame-aligned boundaries remain unchanged.
 
-Every source clock must be unit speed, matching the indexed output rate
-(24–60 fps). Reusable components, text, shapes, images, placed caption tracks and
+Source rates must match the indexed output rate (24–60 fps). Source clocks
+are normally unit speed; the bounded uniform speed-up profile below also works. Reusable components, text, shapes, images, placed caption tracks and
 canonical sampled translation/scale/opacity are supported. Media wrappers must
 be relative/absolute and have no authored children. Video/image elements support
 `object_fit`, `object_position`, padding, borders, rounded corners and background
@@ -154,7 +154,8 @@ project do not block an otherwise supported window. The chosen sources must have
 no source edit operations. Edits on unrelated sources and unplaced live caption tracks do not block
 this window. Up to two independent audio tracks and source/track gain, mute and edge fades are
 supported as described below. Looping, ducking, more than two audible
-independent tracks and held/speed-changed media remain unsupported in this profile. Ordinary unit-speed spans after
+independent tracks, held media and speed changes outside the bounded profile below
+remain unsupported. Ordinary unit-speed spans after
 a hold elsewhere in the scene can be reviewed with their original scene clock.
 Other codecs, VFR, HDR/color parity and general large-project behavior have not
 passed acceptance for this initial profile. The benchmark fixture uses H.264/AAC at 30 fps.
@@ -183,6 +184,33 @@ export still owns final frame/audio encoding. The player uses the same canonical
 scene DOM as inspection/export. Its native video pixels and color handling are
 separately subject to fidelity testing, rather than assumed identical to an
 encoded export.
+
+### Uniform spatial speed-ups
+
+Existing `scenes motion set` pacing can be reviewed natively when the selected
+range stays within one resolved spatial span, has one reference footage slot
+and one visible video, and uses a uniform speed between **1× and 1.5×**.
+The source rate multiplied by playback speed must not exceed 60 frames per second.
+The routed source sound must follow that visible video and the same clock.
+The resolved source-audio span must be at most ten seconds, even when the review
+window selects only part of it. Review boundaries remain frame aligned.
+Existing duration-based pacing that resolves to this same profile follows the
+same time map; no new saved fields or authoring commands are introduced.
+
+The browser seeks and plays the original video at its authored rate. A bounded
+48 kHz PCM window uses export's pitch-preserving source-audio graph: retime from
+the resolved span origin, then select the requested result window. At most fifteen
+source seconds are decoded for this profile. Independent audio tracks, captions,
+whole-element motion and media camera motion retain their result-time clocks.
+Changing pacing rebuilds playback; saved intent, undo and source files are preserved.
+Pause, restart and seek retain the authored rate, and the final picture holds the
+canonical last output frame. Speed seeks wait for destination presentation.
+
+Slow motion, speeds above 1.5×, speed changes across cuts or pacing boundaries,
+multiple visible videos and preset pacing still return explicit rendered-mode
+guidance. They are unqualified extensions, rather than silently approximated
+operations. Generated checks do not establish private large-project latency or
+physical listening/lip-sync acceptance for this new profile.
 
 ### Cuts and playback resources
 

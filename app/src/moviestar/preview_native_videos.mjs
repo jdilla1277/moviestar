@@ -2,13 +2,14 @@
 export function createVideoGroup(entries){
   let generation=0,seekGeneration=0,disposed=false,pendingSeek;
   const cancels=new Set();
-  const stop=()=>entries.forEach(({video})=>{video.pause();if(video.playbackRate!==1)video.playbackRate=1;});
+  const stop=()=>entries.forEach(({video,rate=1})=>{video.pause();if(video.playbackRate!==rate)video.playbackRate=rate;});
   const api={
     async play(){
       const attempt=++generation;
       if(pendingSeek)await pendingSeek;
       if(disposed||attempt!==generation)return;
       try{
+        for(const {video,rate=1} of entries)if(video.playbackRate!==rate)video.playbackRate=rate;
         // Start both transports together. Audio-bearing elements feed the shared
         // output clock; genuinely silent pictures retain group synchronization.
         await Promise.all(entries.map(({video})=>video.play()));
@@ -34,12 +35,13 @@ export function createVideoGroup(entries){
       }
     },
     async seek(at,{presented=false}={}){
+      const replacingSeek=Boolean(pendingSeek);
       api.pause();const attempt=++seekGeneration;
       for(const cancel of cancels)cancel();
       if(disposed)return false;
-      const operation=Promise.all(entries.map(({video,start,fps})=>{
-        const target=start+at,seekTarget=target+1e-5;
-        if(!video.seeking&&Math.abs(video.currentTime-target)<1e-6)return true;
+      const operation=Promise.all(entries.map(({video,start,fps,rate=1})=>{
+        const target=start+at*rate,seekTarget=target+1e-5;
+        if((!presented||!replacingSeek)&&!video.seeking&&(Math.abs(video.currentTime-target)<1e-6||Math.abs(video.currentTime-seekTarget)<1e-6))return true;
         return new Promise((resolve,reject)=>{
           let settled=false,timer,frameCallback,seeked=false,frameReady=!presented;
           const finish=(value,error)=>{
