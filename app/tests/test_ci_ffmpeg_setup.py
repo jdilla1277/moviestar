@@ -227,13 +227,15 @@ def test_ci_caches_only_downloads_and_saves_after_setup_before_package_tests():
     assert 'timeout-minutes: 25' in job
 
 
+@pytest.mark.parametrize('variant', [None, 'amd64v3'])
 @pytest.mark.parametrize('kind', ['valid', 'tampered', 'stale', 'symlink', 'no-metadata'])
-def test_restored_archive_must_match_current_package_sha256(setup, tmp_path, kind):
+def test_restored_archive_must_match_current_package_sha256(setup, tmp_path, kind, variant):
     import hashlib
     cache = tmp_path / 'cache'
     cache.mkdir()
     content = b'ubuntu-deb'
-    archive = cache / 'libexample_7%3a8.0.1-3ubuntu2_amd64.deb'
+    archive_arch = variant or 'amd64'
+    archive = cache / f'libexample_7%3a8.0.1-3ubuntu2_{archive_arch}.deb'
     if kind == 'symlink':
         target = tmp_path / 'outside'
         target.write_bytes(content)
@@ -246,11 +248,14 @@ def test_restored_archive_must_match_current_package_sha256(setup, tmp_path, kin
         'SHA256: ' + hashlib.sha256(content).hexdigest(), '',
     ])
 
+    if variant:
+        metadata += f'Architecture-Variant: {variant}\n'
+
     class MetadataRunner:
         deadline = time.monotonic() + 30
 
         def run(self, args, **kwargs):
-            assert args == ['apt-cache', 'show', 'libexample:amd64']
+            assert args == ['apt-cache', 'show', f'libexample:{archive_arch}']
             if kind == 'no-metadata':
                 raise RuntimeError('no current package record')
             return metadata

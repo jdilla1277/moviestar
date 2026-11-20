@@ -137,7 +137,10 @@ def verify_cached_archives(runner, cache):
                     if ": " in line and not line.startswith(" ")
                 )
                 if all(k in fields for k in ("Package", "Version", "Architecture", "SHA256")):
-                    expected[(fields["Package"], fields["Version"], fields["Architecture"])] = fields["SHA256"]
+                    # Ubuntu 26.04 uses amd64v3 in archive filenames while
+                    # keeping Architecture: amd64 in the package record.
+                    arch = fields.get("Architecture-Variant", fields["Architecture"])
+                    expected[(fields["Package"], fields["Version"], arch)] = fields["SHA256"]
         except RuntimeError as exc:
             print(f"Cache metadata unavailable; discard cached downloads: {exc}", flush=True)
     retained = 0

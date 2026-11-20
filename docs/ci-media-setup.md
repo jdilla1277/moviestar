@@ -22,7 +22,8 @@ supply candidates, but cannot pin package versions. The verified downloads are
 saved immediately after successful setup, before unrelated package tests run.
 
 On an install path the helper refreshes authenticated Ubuntu indexes, validates
-restored archives against current package/version/architecture SHA256 records,
+restored archives against current package/version/architecture SHA256 records
+(including Ubuntu 26.04 `Architecture-Variant` filenames such as `amd64v3`),
 then lets apt resolve and install `ffmpeg` normally. Stale, unrecognized, corrupt
 and symlink archives are removed; absent metadata discards the affected cache
 rather than trusting it. Explicit hashing matters because APT's existing-archive
@@ -45,7 +46,9 @@ kill escalation. Network/lock waits remain bounded, and setup does not retry
 product tests or bypass media coverage.
 
 A cache miss or a package/image update can still require downloads and can fail
-when mirrors are unavailable. The cache reduces repeated bulk downloads; it does
+when mirrors are unavailable. GitHub scopes PR-created caches to that PR, so
+the first run on main must seed its own cache; later PRs can reuse main caches.
+The cache reduces repeated bulk downloads; it does
 not claim to make cold network installation infallible. A failed update/install,
 missing capability or bad smoke output stops the job before package tests.
 
@@ -69,4 +72,5 @@ passing install retry alone do not establish the cache reduced network work.
 
 References: [runner image manifest](https://github.com/actions/runner-images/blob/ubuntu26/20261111.196/images/ubuntu/Ubuntu2604-Readme.md),
 [APT command contract](https://manpages.ubuntu.com/manpages/resolute/man8/apt-get.8.html),
-and [APT archive acquisition implementation](https://github.com/Debian/apt/blob/main/apt-pkg/acquire-item.cc).
+and [APT archive acquisition implementation](https://github.com/Debian/apt/blob/main/apt-pkg/acquire-item.cc),
+and [GitHub cache access scope](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache).
