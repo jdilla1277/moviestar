@@ -76,10 +76,11 @@ def register_invitations(cloud):
         if actions != {'contract_version': 'received-invitation-actions-v1', 'path': '/api/v1/account/cloud/invitations/:kind/:id'}:
             service._fail(command, 'unsupported_operation', 'This service does not support native invitation actions. Use the inbox review_url in your browser.')
         url = f'{endpoint}/invitations/{kind}/{invitation_id}'
+        recovery_context = {'invitation_id': invitation_id, 'kind': kind, **({'expected_revision': revision} if revision else {})}
         status, body = service._request(url + ('/accept' if revision else ''), credential, **({'payload': {'expected_revision': revision}} if revision else {}))
         if status != 200:
-            if revision and status >= 500:
-                service._fail(command, 'acceptance_unconfirmed', 'The reply is uncertain. Review this invitation to recover, or retry with the same expected_revision. Do not send another invitation.', invitation_id=invitation_id, kind=kind, expected_revision=revision)
+            if revision and (status == 0 or status >= 500):
+                service._fail(command, 'acceptance_unconfirmed', 'The reply is uncertain. Review this invitation to recover, or retry with the same expected_revision. Do not send another invitation.', **recovery_context)
             code = body.get('error', {}).get('code', '')
             if code == 'invitation_changed':
                 service._fail(command, code, 'Review the invitation again and explicitly approve its current permissions before accepting.')
@@ -94,7 +95,7 @@ def register_invitations(cloud):
                 or not isinstance(obj, dict) or not isinstance(obj.get('id'), str) or not service._UUID.fullmatch(obj['id'])
                 or kind == 'asset' and (not isinstance(obj.get('filename'), str) or 'display_name' in obj and not isinstance(obj['display_name'], str))
                 or kind == 'project' and (not isinstance(obj.get('title'), str) or type(body.get('includes_assets')) is not bool)):
-            service._fail(command, 'acceptance_unconfirmed' if revision else 'invalid_response', 'Review the same invitation to check current access. Do not send another invitation.', invitation_id=invitation_id)
+            service._fail(command, 'acceptance_unconfirmed' if revision else 'invalid_response', 'Review the same invitation to check current access. Do not send another invitation.', **recovery_context)
         receipt = {key: body[key] for key in ('status', 'kind', 'id', 'revision', 'role', 'permissions')}
         receipt[kind] = {key: obj[key] for key in ('id', 'filename', 'display_name') if key in obj} if kind == 'asset' else {'id': obj['id'], 'title': obj['title']}
         if kind == 'project':
