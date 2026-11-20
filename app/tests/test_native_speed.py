@@ -286,3 +286,30 @@ try{
             try:server.wait(timeout=9)
             except subprocess.TimeoutExpired:server.kill();server.wait()
             server.stdout.close()
+
+
+def test_speed_completion_installs_the_canonical_hold_without_a_final_callback():
+    from tests.native_stage_harness import stage_script
+    script = r'''
+const vm=require('node:vm'),assert=require('node:assert/strict');
+const makeCanvas=()=>{const canvas={width:0,height:0,style:{},remove(){}};
+ canvas.getContext=()=>({drawImage(image){canvas.copied=image;}});return canvas;};
+const context={window:{moviestarScene:{entries:[],applyMotion(){}}},document:{createElement:makeCanvas},
+ location:{search:''},URLSearchParams,AbortController,performance:{timeOrigin:1000,now:()=>1},Date,
+ fetch:()=>new Promise(()=>{}),setTimeout,clearTimeout,console};
+vm.createContext(context);vm.runInContext(STAGE,context);
+vm.runInContext(`
+ const media={currentTime:3.99,videoWidth:640,videoHeight:360,style:{cssText:''},
+  parentElement:{append(){}},pause(){},getVideoPlaybackQuality(){return{totalVideoFrames:90,droppedVideoFrames:0};}};
+ video=media;videos.push({video:media,path:['main'],primary:true,endFrame:{number:118}});
+ packet={playback_rate:1.5,fps:30,source_start:1,source_end:4,samples:Array.from({length:60},()=>({nodes:[]}))};
+ playing=true;videoGroup={pause(){}};
+`,context);
+(async()=>{await vm.runInContext('finishScene()',context);
+ assert.equal(vm.runInContext('frozenFrame?.copied.number',context),118,'Completion owns the canonical hold even without the final callback');
+ assert.equal(vm.runInContext('lastIndex',context),59,'The final canonical layout/caption pose is applied');
+})().catch(error=>{console.error(error);process.exitCode=1;});
+'''
+    result = subprocess.run(['node','-e','const STAGE='+json.dumps(stage_script())+';\n'+script],
+        capture_output=True,text=True,timeout=10)
+    assert result.returncode == 0, result.stdout+result.stderr

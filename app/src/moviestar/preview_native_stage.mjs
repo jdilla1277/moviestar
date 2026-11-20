@@ -221,6 +221,9 @@ async function finishScene(){
   // before that control work, while retaining the raw post-settle counters.
   videos.forEach(item=>recordVideoQuality(item,'before-finish'));
   recordQuality();
+  // Completion owns the final output pose even when rVFC omits its last
+  // presentation. The prepared snapshot uses the canonical output frame grid.
+  if(playbackRate()!==1){freezeLastFrame();apply((packet.samples.length-1)/packet.fps);}
   finishing=true;const attempt=playGeneration;
   if(playbackRate()!==1)metrics.paused_at=performance.timeOrigin+performance.now();
   if(playing&&outputMixer)metrics.pause_context_time=audio.currentTime;
