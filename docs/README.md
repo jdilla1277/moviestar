@@ -58,3 +58,8 @@ The CLI's built-in help is the authoritative command reference. Run
 
 - [Cloud watch excerpts](cloud-watch.md) — request private bounded video/audio, reopen durable jobs, and retrieve through the CLI.
 - [Cloud visual skims](cloud-skim.md) — timestamped private thumbnails from a ready Cloud video.
+
+## Developer checks
+
+- [CI media setup](ci-media-setup.md) — Ubuntu FFmpeg package provenance,
+  verified download caching, setup deadlines and failure-path checks.

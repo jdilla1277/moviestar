@@ -71,10 +71,39 @@ jobs:
           cache: pip
           cache-dependency-path: app/pyproject.toml
 
-      # Moviestar shells out to FFmpeg and ffprobe for media operations.
+      # Keep Ubuntu's package provenance, but avoid downloading the complete
+      # FFmpeg dependency set for every job. Image changes get a fresh cache;
+      # older image archives are hints only: apt resolves current versions.
+      - name: Identify FFmpeg package cache
+        id: ffmpeg-cache
+        run: echo "image=$ImageVersion" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Ubuntu FFmpeg downloads
+        timeout-minutes: 1
+        continue-on-error: true
+        id: ffmpeg-downloads
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/moviestar-apt/*.deb
+          key: ffmpeg-ubuntu26-${{ runner.arch }}-${{ steps.ffmpeg-cache.outputs.image }}-${{ hashFiles('bin/setup-ci-ffmpeg') }}
+          restore-keys: |
+            ffmpeg-ubuntu26-${{ runner.arch }}-${{ steps.ffmpeg-cache.outputs.image }}-
+            ffmpeg-ubuntu26-${{ runner.arch }}-
+
       - name: Set up and verify FFmpeg
         timeout-minutes: 4
-        run: python bin/setup-ci-ffmpeg
+        run: python bin/setup-ci-ffmpeg --apt-cache "$RUNNER_TEMP/moviestar-apt"
+
+      # Save before package tests, so an unrelated test failure cannot discard
+      # a successful setup. Exclude partial downloads, locks and installed state.
+      - name: Save verified Ubuntu FFmpeg downloads
+        timeout-minutes: 1
+        continue-on-error: true
+        if: steps.ffmpeg-downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/moviestar-apt/*.deb
+          key: ${{ steps.ffmpeg-downloads.outputs.cache-primary-key }}
 
       # Cache the faster-whisper tiny model so CI doesn't re-download ~75MB
       # on every run. Key includes the model name; bump to invalidate.
