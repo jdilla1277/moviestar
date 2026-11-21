@@ -75,6 +75,36 @@ def _response(status, body, project, validate, selected=None):
     click.echo(json.dumps(body, indent=2))
 
 
+def _confirmed_mutation(body, project, key, proposal):
+    """Do not acknowledge/forget a write on a partial or unrelated HTTP 200."""
+    from moviestar.cloud import _UUID
+    revision, current = body.get('revision'), body.get('current_revision')
+    status, proof, effects = body.get('status'), body.get('verification'), body.get('effects')
+    normalized = {**proposal, 'expected_base_revision': (proposal['expected_base_revision'].lower()
+                  if isinstance(proposal['expected_base_revision'],str) else None)}
+    if ('revision' not in body or 'current_revision' not in body
+        or body.get('contract_version') != _CONTRACT or body.get('project_id') != project
+        or status not in ('committed','unchanged') or body.get('idempotency_key') != key
+        or type(body.get('replayed')) is not bool or body.get('changes') is not (status=='committed')
+        or body.get('normalized_request') != normalized
+        or not isinstance(body.get('request_sha256'),str) or not re.fullmatch(r'[a-f0-9]{64}',body['request_sha256'])
+        or body.get('canonical_format') != 'postgres-jsonb-text-v1'
+        or (current is not None and (not isinstance(current,str) or not _UUID.fullmatch(current)))
+        or not isinstance(proof,dict) or proof.get('format') != 'cloud-edit-state-proof-1'
+        or proof.get('saved_state') != ('read_back_match' if status=='committed' else 'unchanged')
+        or not isinstance(effects,dict) or set(effects)!={'saved_revisions','activity_events','processing_jobs','customer_usage'}):
+        return False
+    count = 1 if status=='committed' and not body['replayed'] else 0
+    if any(type(effects[k]) is not int or effects[k] != v for k,v in
+           {'saved_revisions':count,'activity_events':count,'processing_jobs':0,'customer_usage':0}.items()):
+        return False
+    if revision is None:
+        return status=='unchanged'
+    return (isinstance(revision,dict) and isinstance(revision.get('id'),str) and bool(_UUID.fullmatch(revision['id']))
+            and isinstance(revision.get('spec'),dict) and isinstance(revision.get('resolved'),dict)
+            and (body['replayed'] or revision['id']==current))
+
+
 def register_edits(cloud):
     @cloud.group('edits')
     def edits():
@@ -182,8 +212,7 @@ def register_edits(cloud):
                 pending.record['request']=proposal
                 pending.save()  # Includes exact body; fsync precedes network IO.
                 status,body=_request(endpoint+'/projects/'+project+'/edit/mutations',credential,payload=proposal,key=pending.key)
-                valid=(status==200 and body.get('contract_version')==_CONTRACT and body.get('project_id')==project
-                       and body.get('status') in ('committed','unchanged') and isinstance(body.get('verification'),dict))
+                valid=status==200 and _confirmed_mutation(body,project,pending.key,proposal)
                 if not valid:
                     if status in (400,401,403,404,409,413,422,429,503) and isinstance(body.get('error'),dict):
                         # Retain pending state on rejection too: retry may have

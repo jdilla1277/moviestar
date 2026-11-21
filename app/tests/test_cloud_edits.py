@@ -115,7 +115,10 @@ def test_apply_retains_exact_request_before_lost_reply_and_fresh_recovery(remote
         mutation_calls.append(kwargs)
         if len(mutation_calls)==1:return 0,{}
         return 200,{'contract_version':'cloud-editing-v1','project_id':P,'status':'committed','current_revision':'00000000-0000-4000-8000-000000000099',
-                    'revision':{'id':'00000000-0000-4000-8000-000000000099','spec':{}},'replayed':True,'verification':{'output':'not_checked'}}
+                    'revision':{'id':'00000000-0000-4000-8000-000000000099','spec':{},'resolved':{}},'replayed':True,
+                    'changes':True,'normalized_request':REQUEST,'idempotency_key':kwargs['key'],'request_sha256':'a'*64,'canonical_format':'postgres-jsonb-text-v1',
+                    'effects':{'saved_revisions':0,'activity_events':0,'processing_jobs':0,'customer_usage':0},
+                    'verification':{'format':'cloud-edit-state-proof-1','saved_state':'read_back_match','output':'not_checked'}}
     monkeypatch.setattr(cloud,'_request',request)
     lost=CliRunner().invoke(cli,['cloud','edits','apply',P,'--request',str(file)])
     assert lost.exit_code==1
@@ -137,3 +140,17 @@ def test_exact_show_does_not_conflate_selected_and_current(remote):
     result=CliRunner().invoke(cli,['cloud','edits','show',P,'--revision',old])
     assert result.exit_code==0,result.output
     assert calls[-1][0].endswith('/revisions/'+old)
+
+
+def test_incomplete_success_never_clears_pending_edit(remote,tmp_path,monkeypatch):
+    from moviestar import cloud_creation_state
+    monkeypatch.setattr(cloud_creation_state,'_account_state_path',lambda:tmp_path/'account.json')
+    _,_,capability=remote
+    file=tmp_path/'trim.json';file.write_text(json.dumps(REQUEST))
+    monkeypatch.setattr(cloud,'_request',lambda url,*a,**k:(200,capability) if url.endswith('/capabilities') else
+        (200,{'contract_version':'cloud-editing-v1','project_id':P,'status':'committed','verification':{}}))
+    result=CliRunner().invoke(cli,['cloud','edits','apply',P,'--request',str(file)])
+    assert result.exit_code==1,result.output
+    assert json.loads(result.output)['error']['code']=='mutation_unconfirmed'
+    records=list((tmp_path/'cloud-edit-requests').rglob('*.json'))
+    assert len(records)==1 and json.loads(records[0].read_text())['state']=='pending'
