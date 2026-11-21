@@ -273,9 +273,144 @@ def test_restored_archive_must_match_current_package_sha256(setup, tmp_path, kin
 
 def test_optional_cache_service_cannot_consume_the_media_job_budget():
     text = (ROOT / '.github/workflows/tests.yml').read_text()
-    for title in ['Restore Ubuntu FFmpeg downloads', 'Save verified Ubuntu FFmpeg downloads']:
+    for title in [
+        'Restore Ubuntu FFmpeg downloads', 'Save verified Ubuntu FFmpeg downloads',
+        'Fingerprint restored FFmpeg downloads', 'Fingerprint verified FFmpeg downloads',
+    ]:
         step = text.split(f'- name: {title}\n', 1)[1].split('\n      - ', 1)[0]
         assert 'timeout-minutes: 1' in step
         assert 'continue-on-error: true' in step
     setup_step = text.split('- name: Set up and verify FFmpeg\n', 1)[1].split('\n      - ', 1)[0]
     assert 'continue-on-error' not in setup_step
+
+
+def test_dangling_archive_link_cannot_prevent_installation_through_main(setup, commands, tmp_path):
+    calls, state = commands
+    state['installed'] = False
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    link = cache / 'libexample_1_amd64.deb'
+    link.symlink_to(tmp_path / 'missing-target')
+    assert setup.main(['--apt-cache', str(cache)]) == 0
+    assert not link.is_symlink()
+    assert sum('install' in args for args, _ in calls) == 1
+    assert any('-filter_complex' in args for args, _ in calls)
+
+
+def test_archive_fingerprint_tracks_bytes_and_names_not_path_or_mtime(setup, commands, tmp_path, capsys):
+    calls, _ = commands
+    first = tmp_path / 'first'
+    second = tmp_path / 'second'
+    first.mkdir()
+    second.mkdir()
+    for directory in [first, second]:
+        (directory / 'libexample_1_all.deb').write_bytes(b'valid-package')
+    os.utime(second / 'libexample_1_all.deb', (1, 1))
+    assert setup.main(['--archive-fingerprint', str(first)]) == 0
+    output = capsys.readouterr().out.strip()
+    assert output == 'digest=' + setup.archive_fingerprint(second)
+    assert not calls
+    original = setup.archive_fingerprint(first)
+    (first / 'libexample_1_all.deb').write_bytes(b'other-package')
+    assert setup.archive_fingerprint(first) != original
+    (first / 'libexample_1_all.deb').write_bytes(b'valid-package')
+    (first / 'libexample_1_all.deb').rename(first / 'libexample_2_all.deb')
+    assert setup.archive_fingerprint(first) != original
+
+
+def test_fingerprint_empty_or_invalid_cache_does_not_offer_a_save_key(setup, tmp_path, capsys):
+    assert setup.main(['--archive-fingerprint', str(tmp_path / 'absent')]) == 0
+    assert capsys.readouterr().out.strip() == 'digest='
+    (tmp_path / 'bad.deb').symlink_to(tmp_path / 'absent')
+    assert setup.main(['--archive-fingerprint', str(tmp_path)]) == 1
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert 'symlink' in captured.err
+
+
+@pytest.mark.parametrize('change', ['repair', 'update'])
+def test_immutable_exact_hit_can_be_repaired_and_restored_next_run(
+    setup, commands, monkeypatch, tmp_path, change,
+):
+    import hashlib
+    # The remote key can still contain the original good digest even when its
+    # restored payload is corrupt. A digest-only immutable key cannot heal it.
+    calls, state = commands
+    cache = tmp_path / 'cache'
+    cache.mkdir()
+    old_name = 'libexample_1_all.deb'
+    (cache / old_name).write_bytes(b'valid-package')
+    original_digest = setup.archive_fingerprint(cache)
+    prefix = 'ffmpeg-ubuntu26-X64-image-helper'
+    old_key = f'{prefix}-content-{original_digest}-run1-1'
+    stored = {old_key: {old_name: b'broken-cache!' if change == 'repair' else b'valid-package'}}
+    current_version = '1' if change == 'repair' else '2'
+    current_name = f'libexample_{current_version}_all.deb'
+    current_bytes = b'valid-package' if change == 'repair' else b'updated-build'
+    metadata = '\n'.join([
+        'Package: libexample', f'Version: {current_version}', 'Architecture: all',
+        'SHA256: ' + hashlib.sha256(current_bytes).hexdigest(), '',
+    ])
+    downloads = []
+    fake_run = setup.subprocess.run
+
+    def apt_with_downloads(args, **kwargs):
+        if args[:2] == ['apt-cache', 'show']:
+            return subprocess.CompletedProcess(args, 0, metadata)
+        result = fake_run(args, **kwargs)
+        if 'apt-get' in args and 'install' in args:
+            destination = cache / current_name
+            if not destination.exists():
+                downloads.append(current_name)
+                destination.write_bytes(current_bytes)
+        return result
+
+    monkeypatch.setattr(setup.subprocess, 'run', apt_with_downloads)
+
+    def restore(key):
+        for file in cache.glob('*.deb'):
+            file.unlink()
+        for name, content in stored[key].items():
+            (cache / name).write_bytes(content)
+        state['installed'] = False
+
+    matched_key = old_key  # exact cache hit does not suppress the save decision
+    restore(matched_key)
+    before = setup.archive_fingerprint(cache)
+    assert setup.main(['--apt-cache', str(cache)]) == 0
+    after = setup.archive_fingerprint(cache)
+    assert downloads == [current_name]
+    refresh = before != after or not matched_key.startswith(f'{prefix}-content-{after}-')
+    assert refresh
+    if change == 'repair':
+        assert after == original_digest
+    new_key = f'{prefix}-content-{after}-run2-1'
+    assert new_key != old_key
+    stored.setdefault(new_key, {p.name: p.read_bytes() for p in cache.glob('*.deb')})
+    # Prefix restore chooses the newest generation rather than the old exact
+    # key. A second complete setup needs no replacement download or save.
+    selected = next(k for k in reversed(stored) if k.startswith(f'{prefix}-content-'))
+    restore(selected)
+    next_before = setup.archive_fingerprint(cache)
+    assert setup.main(['--apt-cache', str(cache)]) == 0
+    next_after = setup.archive_fingerprint(cache)
+    assert downloads == [current_name]
+    assert (cache / current_name).read_bytes() == current_bytes
+    assert next_before == next_after == after
+    assert not (next_before != next_after or not selected.startswith(f'{prefix}-content-{next_after}-'))
+
+
+def test_workflow_refreshes_changed_content_even_if_restore_was_an_exact_hit():
+    job = (ROOT / '.github/workflows/tests.yml').read_text().split('\n  test:\n', 1)[1]
+    restore = job.split('- name: Restore Ubuntu FFmpeg downloads\n', 1)[1].split('\n      - ', 1)[0]
+    save = job.split('- name: Save verified Ubuntu FFmpeg downloads\n', 1)[1].split('\n      - ', 1)[0]
+    assert 'github.run_id' in restore and 'github.run_attempt' in restore
+    first_prefix = restore.split('restore-keys: |', 1)[1].strip().splitlines()[0].strip()
+    assert first_prefix == '${{ steps.ffmpeg-cache.outputs.prefix }}-content-'
+    assert 'cache-hit' not in save
+    assert "steps.ffmpeg-after.outputs.digest != ''" in save
+    assert 'steps.ffmpeg-before.outputs.digest != steps.ffmpeg-after.outputs.digest' in save
+    assert 'cache-matched-key' in save
+    assert 'outputs.digest }}-${{ github.run_id }}-${{ github.run_attempt }}' in save
+    assert job.index('Fingerprint restored FFmpeg downloads') < job.index('- name: Set up and verify FFmpeg')
+    assert job.index('Fingerprint verified FFmpeg downloads') < job.index('actions/cache/save@v5')

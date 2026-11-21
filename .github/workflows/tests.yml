@@ -76,7 +76,11 @@ jobs:
       # older image archives are hints only: apt resolves current versions.
       - name: Identify FFmpeg package cache
         id: ffmpeg-cache
-        run: echo "image=$ImageVersion" >> "$GITHUB_OUTPUT"
+        env:
+          SETUP_HASH: ${{ hashFiles('bin/setup-ci-ffmpeg') }}
+        run: |
+          echo "image=$ImageVersion" >> "$GITHUB_OUTPUT"
+          echo "prefix=ffmpeg-ubuntu26-${RUNNER_ARCH}-${ImageVersion}-${SETUP_HASH}" >> "$GITHUB_OUTPUT"
 
       - name: Restore Ubuntu FFmpeg downloads
         timeout-minutes: 1
@@ -85,25 +89,46 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/moviestar-apt/*.deb
-          key: ffmpeg-ubuntu26-${{ runner.arch }}-${{ steps.ffmpeg-cache.outputs.image }}-${{ hashFiles('bin/setup-ci-ffmpeg') }}
+          # This lookup key is never saved: old exact hits cannot shadow a
+          # newer repaired generation selected by the first restore prefix.
+          key: ${{ steps.ffmpeg-cache.outputs.prefix }}-lookup-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
+            ${{ steps.ffmpeg-cache.outputs.prefix }}-content-
             ffmpeg-ubuntu26-${{ runner.arch }}-${{ steps.ffmpeg-cache.outputs.image }}-
             ffmpeg-ubuntu26-${{ runner.arch }}-
+
+      - name: Fingerprint restored FFmpeg downloads
+        id: ffmpeg-before
+        timeout-minutes: 1
+        continue-on-error: true
+        run: python bin/setup-ci-ffmpeg --archive-fingerprint "$RUNNER_TEMP/moviestar-apt" >> "$GITHUB_OUTPUT"
 
       - name: Set up and verify FFmpeg
         timeout-minutes: 4
         run: python bin/setup-ci-ffmpeg --apt-cache "$RUNNER_TEMP/moviestar-apt"
+
+      - name: Fingerprint verified FFmpeg downloads
+        id: ffmpeg-after
+        timeout-minutes: 1
+        continue-on-error: true
+        run: python bin/setup-ci-ffmpeg --archive-fingerprint "$RUNNER_TEMP/moviestar-apt" >> "$GITHUB_OUTPUT"
 
       # Save before package tests, so an unrelated test failure cannot discard
       # a successful setup. Exclude partial downloads, locks and installed state.
       - name: Save verified Ubuntu FFmpeg downloads
         timeout-minutes: 1
         continue-on-error: true
-        if: steps.ffmpeg-downloads.outputs.cache-hit != 'true'
+        # Content changes (including repair back to the original digest) need
+        # a new immutable generation. Unchanged current-format caches are reused.
+        if: >-
+          steps.ffmpeg-after.outputs.digest != '' &&
+          (steps.ffmpeg-before.outputs.digest != steps.ffmpeg-after.outputs.digest ||
+           !startsWith(steps.ffmpeg-downloads.outputs.cache-matched-key,
+             format('{0}-content-{1}-', steps.ffmpeg-cache.outputs.prefix, steps.ffmpeg-after.outputs.digest)))
         uses: actions/cache/save@v5
         with:
           path: ${{ runner.temp }}/moviestar-apt/*.deb
-          key: ${{ steps.ffmpeg-downloads.outputs.cache-primary-key }}
+          key: ${{ steps.ffmpeg-cache.outputs.prefix }}-content-${{ steps.ffmpeg-after.outputs.digest }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # Cache the faster-whisper tiny model so CI doesn't re-download ~75MB
       # on every run. Key includes the model name; bump to invalidate.

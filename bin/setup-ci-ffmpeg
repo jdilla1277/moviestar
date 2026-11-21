@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -177,6 +178,25 @@ def verify_cached_archives(runner, cache):
     print(f"Validated {retained}/{len(archives)} cached Ubuntu archives against current SHA256 records.", flush=True)
 
 
+def archive_fingerprint(cache):
+    """Identify completed archive bytes/names, independently of path or mtime."""
+    digest = hashlib.sha256()
+    archives = sorted(cache.glob("*.deb"))
+    deadline = time.monotonic() + 20
+    for path in archives:
+        if not stat.S_ISREG(path.lstat().st_mode):
+            raise RuntimeError(f"Not a regular archive (possibly a symlink): {path.name}")
+        content = hashlib.sha256()
+        with path.open("rb") as source:
+            while block := source.read(1024 * 1024):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("Archive fingerprint exceeded its 20-second budget")
+                content.update(block)
+        digest.update(path.name.encode("utf-8") + b"\0")
+        digest.update(content.digest())
+    return digest.hexdigest() if archives else ""
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check-only", action="store_true", help="Verify tools without installing anything")
@@ -184,7 +204,20 @@ def main(argv=None):
         "--apt-cache", type=Path,
         help="Reuse downloaded Ubuntu .deb archives; apt still resolves current authenticated packages",
     )
+    parser.add_argument(
+        "--archive-fingerprint", type=Path,
+        help="Emit a digest= output for completed archive contents without installing anything",
+    )
     args = parser.parse_args(argv)
+    if args.archive_fingerprint is not None:
+        if args.check_only or args.apt_cache is not None:
+            parser.error("--archive-fingerprint cannot be combined with installation/check options")
+        try:
+            print("digest=" + archive_fingerprint(args.archive_fingerprint))
+            return 0
+        except (OSError, RuntimeError) as exc:
+            print(f"FFmpeg archive fingerprint failed: {exc}", file=sys.stderr)
+            return 1
     runner = Runner()
     try:
         print(f"Runner image: {os.environ.get('ImageOS', 'unknown')} "
@@ -205,7 +238,7 @@ def main(argv=None):
             cache.mkdir(parents=True, exist_ok=True)
             archives = list(cache.glob("*.deb"))
             print(f"APT archive cache: {cache}; {len(archives)} cached .deb files, "
-                  f"{sum(p.stat().st_size for p in archives)} bytes. "
+                  f"{sum(p.lstat().st_size for p in archives)} bytes. "
                   "APT resolves package versions from refreshed Ubuntu indexes.", flush=True)
             # Cache downloads, never installed libraries or dpkg state. Let apt
             # select/check archives against its current authenticated indexes.
