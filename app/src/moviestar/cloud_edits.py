@@ -78,7 +78,7 @@ def _response(status, body, project, validate, selected=None):
 def register_edits(cloud):
     @cloud.group('edits')
     def edits():
-        """Read a Cloud edit and validate supported changes without saving.
+        """Read, validate, save and undo a Cloud trim.
 
         Owned personal projects with ready owned video references only. An
         unsaved baseline is labelled explicitly; it is not a saved revision.
