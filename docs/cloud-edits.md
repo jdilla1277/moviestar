@@ -1,5 +1,10 @@
 # Check an initial Cloud edit without saving
 
+Services can separately advertise [saved-mix inspection and audio dry runs](cloud-saved-audio.md)
+through the same commands. That capability reads an authoritative existing
+revision; it does not add a save/import path. The initial timeline journey below
+continues to use null saved revision and trim-only validation.
+
 These commands require a service that advertises `editing` with
 `contract_version: cloud-editing-v1`. They use your existing approved personal
 account connection and do not select a local project, download media or require
@@ -8,9 +13,10 @@ editing is unavailable.
 
 The first supported journey is an **unsaved baseline** for an owned personal
 project whose active inputs are ready video account-asset references owned by
-the same account. Saved personal edits, project-source uploads, borrowed inputs
-and other asset types are not supported in this slice; the service rejects them
-rather than silently dropping state. Create a project and attach existing assets
+the same account. This initial-state trim path does not accept saved edits,
+project-source uploads, borrowed inputs or other asset types; it never silently
+drops state. Saved audio-mix reads require the separately advertised capability
+above. Create a project and attach existing assets
 through [Cloud projects](cloud-projects.md).
 
 ```sh
@@ -78,7 +84,7 @@ have no server request ID.
 
 This journey creates no saved revision, Activity event, processing job or usage
 reservation, and leaves the original assets unchanged. It does not provide
-apply, save/reopen, history, undo, preview or final rendering. A successful dry
+apply, saving, history, undo, preview or final rendering. A successful dry
 run is neither a save nor a render grant. Hosted deployment and real-account
 acceptance depend on the service's configured, pinned metadata engine bridge.
 

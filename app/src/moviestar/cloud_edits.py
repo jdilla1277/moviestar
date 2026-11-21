@@ -52,13 +52,22 @@ def _service_error(body):
 
 
 def _response(status, body, project, validate):
+    from moviestar.cloud import _UUID
     if status != 200:
         _service_error(body)
-    if (body.get('contract_version') != _CONTRACT or body.get('project_id') != project or body.get('current_revision', 'missing') is not None
-            or body.get('status') != ('would_apply' if validate else 'no_saved_edit')):
+    current = body.get('current_revision', 'missing')
+    saved = isinstance(current, str) and bool(_UUID.fullmatch(current))
+    if (body.get('contract_version') != _CONTRACT or body.get('project_id') != project
+            or (current is not None and not saved)
+            or body.get('status') != ('would_apply' if validate else 'opened' if saved else 'no_saved_edit')):
         _fail('invalid_response')
     if validate:
-        if type(body.get('changes')) is not bool or body.get('current_undo_remaining') != 0 or not isinstance(body.get('projected_resolved'),dict) or 'revision' in body:
+        depth = body.get('current_undo_remaining')
+        if type(body.get('changes')) is not bool or type(depth) is not int or depth < 0 or (not saved and depth != 0) or not isinstance(body.get('projected_resolved'),dict) or 'revision' in body:
+            _fail('invalid_response')
+    elif saved:
+        revision = body.get('revision')
+        if not isinstance(revision, dict) or revision.get('id') != current or not isinstance(revision.get('spec'), dict):
             _fail('invalid_response')
     elif body.get('revision', 'missing') is not None or 'baseline' not in body:
         _fail('invalid_response')
@@ -68,11 +77,12 @@ def _response(status, body, project, validate):
 def register_edits(cloud):
     @cloud.group('edits')
     def edits():
-        """Read an initial Cloud edit and validate a trim without saving.
+        """Read a Cloud edit and validate supported changes without saving.
 
         Owned personal projects with ready owned video references only. An
         unsaved baseline is labelled explicitly; it is not a saved revision.
-        Saved edits, apply, history, undo and rendering are not available yet.
+        Saved audio mixes support gain/mute dry runs. Apply, history, undo and
+        rendering are not available; an existing saved revision is required.
         These commands do not select or modify a local project.
         """
 
@@ -98,10 +108,12 @@ def register_edits(cloud):
     @edits.command('show')
     @click.argument('project_id')
     def show(project_id):
-        """Read PROJECT_ID's initial timeline, stable source IDs and durations.
+        """Read PROJECT_ID's timeline or authoritative saved mix.
 
         no_saved_edit and null revision mean nothing has been saved. Multiple
         sources do not imply a composition or dialogue/camera selection.
+        opened returns revision.spec and revision.resolved.audio_mix/routing for
+        a saved mix; reading does not create or update a revision.
         """
         run(project_id)
 
@@ -109,7 +121,7 @@ def register_edits(cloud):
     @click.argument('project_id')
     @click.option('--request','request_file',required=True,type=click.Path(path_type=Path),help='JSON body, at most 4096 bytes; use source IDs from edits show.')
     def validate(project_id,request_file):
-        """Check a proposed trim without saving or rendering.
+        """Check a proposed trim or saved-mix gain/mute without saving.
 
         Body: {"contract_version":"cloud-editing-v1",
         "expected_base_revision":null,"operation":{"type":"trim",
@@ -119,6 +131,11 @@ def register_edits(cloud):
         Times are integer milliseconds on the edited source clock, initially
         the full source. projected_resolved is a candidate; current_undo_remaining
         describes the unchanged current edit. No revision or Activity is saved.
+        For a saved mix, use its current_revision as expected_base_revision and
+        operation {"type":"audio_source","gain_db":-6} or muted:true/false.
+        Source controls affect routed dialogue, not camera selection; omitted
+        controls, tracks, fades and timing are preserved. Inspect candidate
+        audio_mix and routing, then show again to confirm unchanged saved state.
         """
         try:
             with request_file.open('rb') as stream:
