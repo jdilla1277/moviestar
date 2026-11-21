@@ -45,3 +45,43 @@ def test_preserves_project_editor_permissions_and_browser_review_link(remote):
  assert body['items'][0]['includes_assets'] is True
  assert body['items'][0]['review_url']==f'https://service.invalid/account/received-invitations?kind=project&invitation={ID}'
  assert all(not kwargs for _,kwargs in remote['calls'])
+
+@pytest.mark.parametrize('kind',['asset','project'])
+def test_native_review_and_explicit_accept_use_same_revision_and_no_browser(remote,monkeypatch,kind):
+ revision='a'*64
+ calls=[]
+ def request(url,credential,**kwargs):
+  calls.append((url,kwargs))
+  if url.endswith('/capabilities'):
+   return 200,{'contract_version':'m33.3-personal-projects-1','project_access':'owner_only','operations':[], 'received_invitations':{'native_actions':{'contract_version':'received-invitation-actions-v1','path':'/api/v1/account/cloud/invitations/:kind/:id'}}}
+  return 200,{'status':'accepted' if kwargs else 'acceptance_required','kind':kind,'id':ID,'revision':revision,'role':'viewer','includes_assets':True,'permissions':['projects:read'] if kind=='project' else ['assets:read','assets:download'],kind:{'id':ID,'title':'Project','filename':'image.png'}}
+ monkeypatch.setattr(cloud,'_request',request)
+ for action,args in [('review',[]),('accept',['--expected-revision',revision])]:
+  result=CliRunner().invoke(cli,['cloud','invitations',action,ID,'--kind',kind,*args])
+  assert result.exit_code==0,result.stdout
+  body=json.loads(result.stdout);assert body['invitation']['id']==ID and body['invitation']['kind']==kind
+ assert calls[-1][1]=={'payload':{'expected_revision':revision}}
+ assert all('/invitations/' in url for url,_ in calls if not url.endswith('/capabilities'))
+
+def test_old_service_never_sends_accept_write(remote):
+ result=CliRunner().invoke(cli,['cloud','invitations','accept',ID,'--kind','asset','--expected-revision','a'*64])
+ assert result.exit_code==1 and json.loads(result.stdout)['status']=='unsupported_operation'
+ assert len(remote['calls'])==1 and not remote['calls'][0][1]
+
+@pytest.mark.parametrize('kind',['asset','project'])
+@pytest.mark.parametrize('status,body',[(0,{}),(503,{'error':{'code':'cloud_unavailable'}}),(200,{'status':'accepted','kind':'asset','id':'wrong'})])
+def test_uncertain_acceptance_does_not_report_success_or_retry_automatically(remote,monkeypatch,status,body,kind):
+ calls=[]
+ def request(url,credential,**kwargs):
+  calls.append((url,kwargs))
+  if url.endswith('/capabilities'):return 200,{'contract_version':'m33.3-personal-projects-1','project_access':'owner_only','operations':[], 'received_invitations':{'native_actions':{'contract_version':'received-invitation-actions-v1','path':'/api/v1/account/cloud/invitations/:kind/:id'}}}
+  return status,body
+ monkeypatch.setattr(cloud,'_request',request)
+ revision='a'*64
+ result=CliRunner().invoke(cli,['cloud','invitations','accept',ID,'--kind',kind,'--expected-revision',revision])
+ assert result.exit_code==1
+ receipt=json.loads(result.stdout)
+ assert receipt['status']=='acceptance_unconfirmed'
+ assert receipt['invitation_id']==ID and receipt['kind']==kind and receipt['expected_revision']==revision
+ assert len(calls)==2
+ assert calls[-1]==(f'https://service.invalid/api/v1/account/cloud/invitations/{kind}/{ID}/accept',{'payload':{'expected_revision':revision}})
