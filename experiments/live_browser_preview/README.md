@@ -48,7 +48,11 @@ one remotely requires a separate delivery/security integration.
 Edit the generated project's spatial model using the actual CLI (run commands
 from the project directory), or use a coding agent. Undo uses the existing CLI.
 
-## Supported subset
+## Original probe subset
+
+This section records the original feasibility probe. The current installed
+profile, including three-picture single-scene review, is documented in
+[Local preview viewer](../../docs/local-preview.md#native-profile-and-explicit-fallback).
 
 The probe fails explicitly outside this subset:
 
@@ -1228,3 +1232,35 @@ require all 90 source frames per three-second span and no pilot-tone gap longer
 than one audio quantum, including cuts at a source's EOF. The native-playback
 CI job retains its first generated source-cut traces on success and failure;
 the remaining full suite excludes those files so every acceptance test runs once.
+
+## Three-person interview journey
+
+`interview.py` creates a two-scene project using real CLI commands: a speaker
+plus a shared nested `ListenerPair`, three independent source offsets, sample
+captions, responsive portrait/landscape rules and local/shared/reset edits.
+Follow [the complete editing walkthrough](../../docs/spatial-interview.md).
+
+```sh
+python experiments/live_browser_preview/interview_benchmark.py \
+  --out /tmp/interview-intro --canvas 360x640 --scene intro --capture-pcm
+python experiments/live_browser_preview/interview_benchmark.py \
+  --out /tmp/interview-reply --canvas 1080x1920 --scene reply --capture-pcm
+```
+
+Each command retains first results for histories 0/20/50, with ten edits and ten
+individual undos per history. Every revision must reach the expected borders,
+source frames, captions and portrait/landscape arrangement within three seconds.
+Play from fresh readiness and again after undo; require zero review-frame drops
+on every decoder, source identity within the existing one-frame live readback
+bound, and audio/picture phase and program drift within 50 ms. Startup preparation
+frames/drops remain separate from review counters. Tests compare captured PCM
+with the canonical mix at 1e-5 sample error, geometry within .2 pixels, and picture
+interiors against canonical rendering at the existing eight-level RGB budget.
+A short rendered window also checks both sides of the actual speaker cut.
+
+Three-picture native windows are deliberately limited to one scene. Continuous
+three-picture cuts require rendered review. The initial cut investigation found
+startup drops; longer preroll and re-priming did not reliably solve them. No cut
+support, relaxed fidelity threshold or real-speech acceptance is implied by this
+journey. Existing one/two-picture cut support is unchanged. Use a new `--out`
+directory for each run; do not replace a failed first result with a rerun.

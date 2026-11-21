@@ -39,14 +39,18 @@ export function createPreparedAudio(context,destination,signal,duration){
       if(presentationLead!==undefined&&(!Number.isFinite(presentationLead)||presentationLead<0||presentationLead>.25))
         throw Error('Unsupported measured picture startup');
       const lead=presentationLead??Math.max(0,Math.min(1/24,pictureLead));
-      offset=Math.max(0,Math.min(buffer.duration,at));if(offset>=buffer.duration)return;
+      // Video seeks use a tiny epsilon to select the intended image. PCM has
+      // an exact sample grid: fractional offsets/start times interpolate the
+      // otherwise lossless mix, including measured picture-startup leads.
+      offset=Math.round(Math.max(0,Math.min(buffer.duration,at))*context.sampleRate)/context.sampleRate;
+      if(offset>=buffer.duration)return;
       source=context.createBufferSource();source.buffer=buffer;source.connect(destination);
       const playing=source;source.onended=()=>{if(source===playing){source.disconnect();source=null;offset=buffer.duration;}};
       destination.port?.postMessage({kind:'capture'});
       // Schedule ahead of the rendering thread: starting at currentTime can
       // reach it one quantum late, while the master clock records the earlier
       // requested time. Keep the authored offset and reserve dispatch time.
-      startedAt=context.currentTime+(presentationLead===undefined ? .05 : Math.max(.05,lead+.01));
+      startedAt=Math.round((context.currentTime+(presentationLead===undefined ? .05 : Math.max(.05,lead+.01)))*context.sampleRate)/context.sampleRate;
       lastStart={context_time:startedAt,offset};
       source.start(startedAt,offset);
       // Ordinary playback keeps its existing half-frame allowance. A silent

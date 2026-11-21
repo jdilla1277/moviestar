@@ -8,6 +8,7 @@ let lastIndex=-1, playing=false, readyDone=false, metadataReady=false, imageRead
 let videoGroup,reviewAudio,outputMixer,sceneClock;
 let playbackIdentity,speedFrame,pictureStartup,pendingStageSeek;
 const playbackRate=()=>packet?.playback_rate??1;
+const measuredPictures=()=>playbackRate()!==1||(packet?.prepared_audio&&(packet.media??[]).filter(m=>m.kind==='video').length===3);
 function animateSpeed(){
   if(disposed||!playing||playbackRate()===1)return;
   const at=reviewAudio?.outputTimeAt(performance.timeOrigin+performance.now());
@@ -156,7 +157,7 @@ async function checkReady(){
       await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
       if(!await videoGroup.seek(0,{presented:playbackRate()!==1})||disposed)return;
     }
-    if(playbackRate()!==1){
+    if(measuredPictures()){
       pictureStartup=await videoGroup.measureStartup();if(!pictureStartup||disposed)return;
       metrics.picture_startup=pictureStartup;
     }
@@ -292,15 +293,14 @@ function connectAudioGraph(){
   }
 
   for(const item of videos){
-    // Both media pipelines use the same audio output clock. Silence the
-    // listener in the graph: element.muted would select a different video
-    // scheduling path and require startup priming at every scene handoff.
+    // Ordinary pictures share the output clock through their media sources.
+    // Measured speed/three-picture groups stay muted and use prepared PCM.
     const gain=audio.createGain();
     gain.channelCount=2;gain.channelCountMode='explicit';gain.channelInterpretation='speakers';
     gain.gain.value=item.primary&&!packet.prepared_audio?1:0;
     // A silent video has no audio pipeline to join to this output clock.
     // Keep its picture on group transport without creating an empty source.
-    if(item.hasAudio&&playbackRate()===1){const node=audio.createMediaElementSource(item.video);node.connect(gain);item.audioSource=node;}
+    if(item.hasAudio&&!measuredPictures()){const node=audio.createMediaElementSource(item.video);node.connect(gain);item.audioSource=node;}
     gain.connect(destination);item.audioGain=gain;
   }
 }
@@ -359,7 +359,7 @@ async function initialize(){
       const primary=key(asset.path)===key(packet.video_path),item={video:media,path:asset.path,start:asset.source_start??packet.source_start,end:asset.source_end??packet.source_end,fps:packet.fps,rate:asset.playback_rate??1,primary,hasAudio:asset.has_audio!==false};
       videos.push(item);if(primary)video=media;
       media.playbackRate=item.rate;
-      if(item.rate!==1)media.muted=true;
+      if(measuredPictures())media.muted=true;
       media.preload=packet.media.filter(item=>item.kind==='video').length>1?'auto':'metadata';media.playsInline=true;
       media.addEventListener('error',()=>fail(Error('Source video could not load.')));
       media.addEventListener('canplay',checkReady);media.addEventListener('seeked',checkReady);

@@ -26,7 +26,8 @@ def walk(nodes):
 
 PROFILE = {"name": "native", "transport": "native-browser", "max_window_s": 10,
            "clip_end_tolerance_ms": 50, "clip_end": "approximate",
-           "min_fps": 24, "max_fps": 60, "max_segments": 3, "min_videos_per_segment": 0, "max_videos_per_segment": 2,
+           "min_fps": 24, "max_fps": 60, "max_segments": 3, "min_videos_per_segment": 0, "max_videos_per_segment": 3,
+           "max_videos_per_cut_segment": 2,
            "max_independent_audio_tracks": MAX_AUDIBLE_TRACKS,
            "fallback_mode": "rendered"}
 
@@ -100,19 +101,24 @@ def compile_snapshot(snapshot):
     # Prepare the canonical window mix when that source is audible.
     metadata = {source['id']: source for source in project['sources']}
     durations = {key: source['duration']['seconds'] for key, source in metadata.items()}
-    has_scene_clock = False
+    has_scene_clock = has_three_pictures = False
     for span in spans:
         if span.scene_id not in (spec.get('spatial') or {}).get('scenes', {}):
             continue
         frame = compile_spatial_frame(spec, timeline, max(start, span.start_s), source_durations=durations)
-        if not any(n.get('type') == 'video' for n in walk(frame.get('children', []))):
+        picture_count = sum(n.get('type') == 'video' for n in walk(frame.get('children', [])))
+        if not picture_count:
             has_scene_clock = True
+        if picture_count == 3:
+            has_three_pictures = prepared_audio = True
+    if has_three_pictures and len(spans) > 1:
+        fail('three-picture native review requires a single scene span; review each scene separately')
     if has_scene_clock and any(metadata.get(span.audio.source_id, {}).get('audio_codec') for span in spans):
         prepared_audio = True
         routed = {span.audio.source_id for span in spans}
         if any(source.get('operations') for source in spec['sources'] if source['id'] in routed):
             fail('routed source operations are not implemented in native review')
-    validate_source_route = len(spans)>1 and not has_scene_clock and spec['audio_mix']==default_audio_mix()
+    validate_source_route = (len(spans)>1 or has_three_pictures) and not has_scene_clock and spec['audio_mix']==default_audio_mix()
     packets, assets = [], {}
     for span in spans:
         left, right = max(start, span.start_s), min(end, span.end_s)
@@ -180,7 +186,7 @@ def _compile_span(snapshot, timeline, start, end, span, *, prepared_audio=False,
         if abs(rate-1)>1e-8 and len(videos)!=1:
             fail('speed review currently requires exactly one visible video')
         if len(videos) > PROFILE['max_videos_per_segment']:
-            fail('at most two videos may be visible throughout this review window')
+            fail('at most three videos may be visible throughout this review window')
         if any(not (v.get('media') or {}).get('visible') for v in videos):
             fail('every video must remain visible with an ordinary unit-speed source clock')
         if index == 0 and not videos:

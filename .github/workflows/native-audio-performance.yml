@@ -22,7 +22,7 @@ jobs:
       fail-fast: false
       matrix:
         canvas: ['360x640', '1080x1920']
-        scenario: ['fades', 'two-tracks', 'visual', 'stills', 'spatial-captions', 'framing', 'camera', 'source-cuts', 'speed']
+        scenario: ['fades', 'two-tracks', 'visual', 'stills', 'spatial-captions', 'framing', 'camera', 'source-cuts', 'speed', 'interview']
     env:
       MOVIESTAR_CHROME_NO_SANDBOX: '1'
     steps:
@@ -81,7 +81,12 @@ jobs:
           PY
       - name: Measure existing edits and reversals at histories 0/20/50
         run: |
-          if [ '${{ matrix.scenario }}' = speed ]; then
+          if [ '${{ matrix.scenario }}' = interview ]; then
+            for scene in intro reply; do
+              "$RUNNER_TEMP/native-env/bin/python" experiments/live_browser_preview/interview_benchmark.py \
+                --scene "$scene" --canvas '${{ matrix.canvas }}' --out "$RUNNER_TEMP/native-audio-evidence/$scene"
+            done
+          elif [ '${{ matrix.scenario }}' = speed ]; then
             "$RUNNER_TEMP/native-env/bin/python" experiments/live_browser_preview/speed_benchmark.py \
               --canvas '${{ matrix.canvas }}' --out "$RUNNER_TEMP/native-audio-evidence/matrix"
           elif [ '${{ matrix.scenario }}' = visual ]; then

@@ -79,6 +79,8 @@ def test_live_packet_rejects_unimplemented_behavior(live_project, mutation):
         spec['spatial']['scenes']['scene']['layout']['children'].append(extra)
         third = deepcopy(extra); third['instance_id'] = 'third'
         spec['spatial']['scenes']['scene']['layout']['children'].append(third)
+        fourth = deepcopy(extra); fourth['instance_id'] = 'fourth'
+        spec['spatial']['scenes']['scene']['layout']['children'].append(fourth)
     elif mutation == 'no_audio':
         project['sources'][0]['audio_codec'] = None
         project['sources'][0]['has_audio'] = True  # A noncanonical flag cannot invent audio.
