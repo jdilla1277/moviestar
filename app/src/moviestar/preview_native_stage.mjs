@@ -174,7 +174,7 @@ function onFrame(now,metadata){
   // image advance. At a cut's final frame, sample the held canonical pixels
   // after installing them below, rather than reading beyond the edit.
   const callbackPixels=running&&audit&&(!packet.cut_segment||metadata.mediaTime<packet.source_end-1/packet.fps-1e-6)?sourceFrame():null;
-  const sourceReadbackFinished=audit?performance.now():null;
+  let sourceReadbackFinished=audit?performance.now():null;
   const primary=videos.find(item=>item.primary);
   if(primary){primary.firstFrame=true;primary.frame={media_time:metadata.mediaTime,display_time:metadata.expectedDisplayTime,presented_frames:metadata.presentedFrames};}
   if(running&&primary)recordVideoQuality(primary,'frame');
@@ -208,6 +208,8 @@ function onFrame(now,metadata){
   if(running){
     if(metrics.first_presented_at===undefined)metrics.first_presented_at=performance.timeOrigin+metadata.expectedDisplayTime;
     const sampled=audit?(callbackPixels??sourceFrame()):{};
+    // Final cut pixels are read only after installing the canonical hold.
+    if(audit&&!callbackPixels)sourceReadbackFinished=performance.now();
     if(audit&&primary){metrics.video_frames??=[];metrics.video_frames.push({path:primary.path,...primary.frame,number:sampled.number});}
     metrics.frames.push({media_time:metadata.mediaTime,...(sampled.captured_media_time!==undefined?{captured_media_time:sampled.captured_media_time}:{}),number:sampled.number,display_time:metadata.expectedDisplayTime,presented_frames:metadata.presentedFrames,
       ...captionAudit(),
