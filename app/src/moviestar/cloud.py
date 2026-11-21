@@ -439,3 +439,6 @@ from moviestar.cloud_edits import register_edits
 register_edits(cloud)
 from moviestar.cloud_invitations import register_invitations
 register_invitations(cloud)
+
+from moviestar.cloud_transcripts import register_transcripts
+register_transcripts(projects)
