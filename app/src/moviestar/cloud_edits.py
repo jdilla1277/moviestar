@@ -38,7 +38,7 @@ def _capability(command, endpoint, credential, action):
     return value
 
 
-def _service_error(body):
+def _service_error(body, **extra):
     error = body.get('error')
     allowed = {'edits_unavailable', 'personal_cloud_unavailable', 'engine_unavailable', 'cloud_unavailable', 'credential_invalid',
                'account_setup_required', 'account_consent_required', 'not_found', 'invalid_request', 'request_too_large',
@@ -47,7 +47,7 @@ def _service_error(body):
     if (isinstance(error, dict) and set(error) == {'code','message','details','retryable'} and error['code'] in allowed
             and isinstance(error['message'], str) and isinstance(error['details'], dict) and type(error['retryable']) is bool):
         # Preserve the service's common error envelope across CLI/API/MCP.
-        click.echo(json.dumps({**({'request_id':body['request_id']} if isinstance(body.get('request_id'),str) else {}), 'error':error}, indent=2))
+        click.echo(json.dumps({**({'request_id':body['request_id']} if isinstance(body.get('request_id'),str) else {}), 'error':error,**extra}, indent=2))
         raise click.exceptions.Exit(1)
     _fail('cloud_unavailable')
 
@@ -185,10 +185,10 @@ def register_edits(cloud):
                 valid=(status==200 and body.get('contract_version')==_CONTRACT and body.get('project_id')==project
                        and body.get('status') in ('committed','unchanged') and isinstance(body.get('verification'),dict))
                 if not valid:
-                    if status in (400,401,403,404,409,413,422,429) and isinstance(body.get('error'),dict):
+                    if status in (400,401,403,404,409,413,422,429,503) and isinstance(body.get('error'),dict):
                         # Retain pending state on rejection too: retry may have
                         # discovered withdrawal after an earlier successful commit.
-                        _service_error(body)
+                        _service_error(body,recovery={'idempotency_key':pending.key,'request_retained':True,'command':['moviestar','cloud','edits','apply',project,'--recover']})
                     click.echo(json.dumps({'error':{'code':'mutation_unconfirmed','message':'Save outcome is unknown. Retry the exact retained request with --recover; do not change its base or key.',
                         'details':{'idempotency_key':pending.key,'recovery_command':['moviestar','cloud','edits','apply',project,'--recover']},'retryable':True}},indent=2))
                     raise click.exceptions.Exit(1)

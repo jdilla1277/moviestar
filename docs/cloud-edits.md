@@ -1,8 +1,8 @@
-# Check an initial Cloud edit without saving
+# Read, check, save and undo a Cloud trim
 
 Services can separately advertise [saved-mix inspection and audio dry runs](cloud-saved-audio.md)
-through the same commands. That capability reads an authoritative existing
-revision; it does not add a save/import path. The initial timeline journey below
+through the same commands. Audio patches remain validation-only; the one-video
+trim/undo save path is described below. The initial timeline journey below
 continues to use null saved revision and trim-only validation.
 
 These commands require a service that advertises `editing` with
@@ -13,7 +13,7 @@ editing is unavailable.
 
 The first supported journey is an **unsaved baseline** for an owned personal
 project whose active inputs are ready video account-asset references owned by
-the same account. This initial-state trim path does not accept saved edits,
+the same account. This initial-state path does not accept caller-supplied saved specs,
 project-source uploads, borrowed inputs or other asset types; it never silently
 drops state. Saved audio-mix reads require the separately advertised capability
 above. Create a project and attach existing assets

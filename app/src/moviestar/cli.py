@@ -8546,7 +8546,7 @@ def trim(
         new_spec = append_trim(spec, source_id, from_s, to_s, source_duration)
         candidate = append_revision(spec,new_spec,"trim")
         validate_spec(candidate)
-        if not dry_run:
+        if not dry_run and new_spec!=spec:
             save_spec(new_spec, command="trim")
     except SpecValidationError as exc:
         _error_exit("trim", str(exc))
