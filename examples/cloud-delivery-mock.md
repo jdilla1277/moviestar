@@ -5,6 +5,13 @@ This **mock only** surface explores proposed `moviestar cloud renders` and
 is not registered in `moviestar`, and makes no network or media-processing calls.
 No credentials are needed. Production availability is not established here.
 
+The merged initial-edit commands from public #260 provide real unsaved timeline
+reads and trim validation through the existing Cloud connection. They do not
+save a revision, render the candidate or download media. Future Delivery commands
+must reuse that connection/transport foundation and consume an authoritative saved
+revision once available. This standalone mock remains synthetic and is not wired
+into those real commands.
+
 ```sh
 app/.venv/bin/python examples/cloud_delivery_mock.py --help
 app/.venv/bin/python examples/cloud_delivery_mock.py --state /tmp/delivery-design.json capabilities
