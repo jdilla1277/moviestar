@@ -36,6 +36,23 @@ def test_show_and_validate_use_same_canonical_envelopes_and_never_mutate(remote,
     assert calls[-1]==('https://service.invalid/api/v1/account/cloud/projects/'+P+'/edit/validate',{'payload':REQUEST})
     assert all('/mutations' not in url for url,_ in calls)
 
+
+def test_saved_mix_reads_and_candidate_keep_same_revision_and_transport(remote,tmp_path):
+    calls,response,_=remote
+    revision='00000000-0000-4000-8000-000000000099'
+    response.update(status='opened',current_revision=revision,revision={'id':revision,'spec':{'audio_mix':{'source_audio':{'gain_db':-2},'tracks':[]}}})
+    read=CliRunner().invoke(cli,['cloud','edits','show',P])
+    assert read.exit_code==0, read.output
+    assert json.loads(read.output)==response
+    response.update(status='would_apply',current_undo_remaining=3,changes=True,projected_resolved={'undo_remaining':4})
+    response.pop('revision')
+    request={'contract_version':'cloud-editing-v1','expected_base_revision':revision,'operation':{'type':'audio_source','gain_db':-6}}
+    file=tmp_path/'audio.json';file.write_text(json.dumps(request))
+    checked=CliRunner().invoke(cli,['cloud','edits','validate',P,'--request',str(file)])
+    assert checked.exit_code==0,checked.output
+    assert json.loads(checked.output)==response
+    assert calls[-1][1]=={'payload':request}
+
 @pytest.mark.parametrize('raw',['[]','null','{','{"owner_id":"untrusted"}','x'*4097])
 def test_malformed_or_oversized_request_is_rejected_before_connection(remote,tmp_path,raw):
     calls,_,_=remote
