@@ -168,11 +168,13 @@ async function checkReady(){
 }
 function onFrame(now,metadata){
   if(disposed)return;
+  const callbackStarted=audit?performance.now():null;
   const running=playing&&!video.paused;
   // Read the callback image before motion/layout work can let the live video
   // image advance. At a cut's final frame, sample the held canonical pixels
   // after installing them below, rather than reading beyond the edit.
   const callbackPixels=running&&audit&&(!packet.cut_segment||metadata.mediaTime<packet.source_end-1/packet.fps-1e-6)?sourceFrame():null;
+  const sourceReadbackFinished=audit?performance.now():null;
   const primary=videos.find(item=>item.primary);
   if(primary){primary.firstFrame=true;primary.frame={media_time:metadata.mediaTime,display_time:metadata.expectedDisplayTime,presented_frames:metadata.presentedFrames};}
   if(running&&primary)recordVideoQuality(primary,'frame');
@@ -209,7 +211,11 @@ function onFrame(now,metadata){
     if(audit&&primary){metrics.video_frames??=[];metrics.video_frames.push({path:primary.path,...primary.frame,number:sampled.number});}
     metrics.frames.push({media_time:metadata.mediaTime,...(sampled.captured_media_time!==undefined?{captured_media_time:sampled.captured_media_time}:{}),number:sampled.number,display_time:metadata.expectedDisplayTime,presented_frames:metadata.presentedFrames,
       ...captionAudit(),
-      ...(audit?{callback_time:performance.now(),current_time:video.currentTime,frozen:Boolean(frozenFrame)}:{}),
+      ...(audit?{callback_time:performance.now(),current_time:video.currentTime,frozen:Boolean(frozenFrame),
+        callback_started_at:callbackStarted,source_readback_ms:sourceReadbackFinished-callbackStarted,
+        callback_elapsed_ms:performance.now()-callbackStarted,
+        ...(Number.isFinite(metadata.presentationTime)?{presentation_time:metadata.presentationTime}:{}),
+        ...(Number.isFinite(metadata.processingDuration)?{decode_processing_ms:metadata.processingDuration*1000}:{})}:{}),
       ...(audit&&packet.caption_plane?{caption_state:captionState,caption_asset:captionLayer.firstElementChild?.getAttribute('src'),caption_applied_at:performance.now()}:{} )});
     if(sampled.white&&!metrics.previous_white)metrics.flashes.push({media_time:metadata.mediaTime,display_time:metadata.expectedDisplayTime,presented_frames:metadata.presentedFrames});
     metrics.previous_white=sampled.white;
