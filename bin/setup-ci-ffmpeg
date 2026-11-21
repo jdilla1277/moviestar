@@ -2,15 +2,19 @@
 """Bound FFmpeg setup on the Ubuntu media-test runner; no extra dependencies."""
 
 import argparse
+import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
 import time
+from urllib.parse import unquote
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -109,12 +113,115 @@ Dialogue: 0,0:00:00.00,0:00:00.25,Default,,0,0,0,,CI
     print("FFmpeg filters, encoders, and generated-media smoke check passed.", flush=True)
 
 
+def verify_cached_archives(runner, cache):
+    # APT can accept an existing archive on size alone. A restored cache is
+    # only a download hint: check SHA256 against freshly authenticated indexes
+    # before allowing apt to reuse any file (including same-size corruption).
+    archives = list(cache.glob("*.deb"))
+    identities = {}
+    for path in archives:
+        fields = unquote(path.stem).split("_")
+        if (
+            len(fields) == 3
+            and re.fullmatch(r"[a-z0-9][a-z0-9+.-]*", fields[0])
+            and re.fullmatch(r"[a-z0-9-]+", fields[2])
+        ):
+            identities[path] = tuple(fields)
+    # Query native package names: amd64v3 is an archive build variant, not
+    # a Debian architecture qualifier accepted by apt-cache show.
+    packages = sorted({p for p, _, _ in identities.values()})
+    expected = {}
+    if packages:
+        try:
+            metadata = runner.run(["apt-cache", "show", *packages])
+            for paragraph in metadata.split("\n\n"):
+                fields = dict(
+                    line.split(": ", 1) for line in paragraph.splitlines()
+                    if ": " in line and not line.startswith(" ")
+                )
+                if all(k in fields for k in ("Package", "Version", "Architecture", "SHA256")):
+                    # Ubuntu 26.04 uses amd64v3 in archive filenames while
+                    # keeping Architecture: amd64 in the package record.
+                    arch = fields.get("Architecture-Variant", fields["Architecture"])
+                    expected[(fields["Package"], fields["Version"], arch)] = fields["SHA256"]
+        except RuntimeError as exc:
+            print(f"Cache metadata unavailable; discard cached downloads: {exc}", flush=True)
+    print(f"APT cache lookup: {len(packages)} native package names; "
+          f"{len(expected)} version/architecture records.", flush=True)
+    retained = 0
+    rejected = []
+    for path in archives:
+        digest = hashlib.sha256()
+        if not path.is_symlink() and identities.get(path) in expected:
+            with path.open("rb") as source:
+                while block := source.read(1024 * 1024):
+                    if time.monotonic() >= runner.deadline:
+                        raise RuntimeError("FFmpeg setup exhausted its budget checking cached archives")
+                    digest.update(block)
+            if digest.hexdigest() == expected[identities[path]]:
+                retained += 1
+                continue
+        if len(rejected) < 3:
+            key = identities.get(path)
+            available = [k for k in expected if key and k[0] == key[0]]
+            rejected.append(f"{path.name}: identity={key}; available={available}")
+        path.unlink()
+    if rejected:
+        print("Discarded archive samples: " + "; ".join(rejected), flush=True)
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        notice = (f"{retained}/{len(archives)} restored Ubuntu archives matched current "
+                  f"SHA256 metadata; {len(expected)} native version/architecture records found.")
+        if rejected:
+            notice += " First rejection: " + rejected[0][:300]
+        notice = notice.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        print(f"::notice title=FFmpeg archive validation::{notice}", flush=True)
+    print(f"Validated {retained}/{len(archives)} cached Ubuntu archives against current SHA256 records.", flush=True)
+
+
+def archive_fingerprint(cache):
+    """Identify completed archive bytes/names, independently of path or mtime."""
+    digest = hashlib.sha256()
+    archives = sorted(cache.glob("*.deb"))
+    deadline = time.monotonic() + 20
+    for path in archives:
+        if not stat.S_ISREG(path.lstat().st_mode):
+            raise RuntimeError(f"Not a regular archive (possibly a symlink): {path.name}")
+        content = hashlib.sha256()
+        with path.open("rb") as source:
+            while block := source.read(1024 * 1024):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("Archive fingerprint exceeded its 20-second budget")
+                content.update(block)
+        digest.update(path.name.encode("utf-8") + b"\0")
+        digest.update(content.digest())
+    return digest.hexdigest() if archives else ""
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check-only", action="store_true", help="Verify tools without installing anything")
+    parser.add_argument(
+        "--apt-cache", type=Path,
+        help="Reuse downloaded Ubuntu .deb archives; apt still resolves current authenticated packages",
+    )
+    parser.add_argument(
+        "--archive-fingerprint", type=Path,
+        help="Emit a digest= output for completed archive contents without installing anything",
+    )
     args = parser.parse_args(argv)
+    if args.archive_fingerprint is not None:
+        if args.check_only or args.apt_cache is not None:
+            parser.error("--archive-fingerprint cannot be combined with installation/check options")
+        try:
+            print("digest=" + archive_fingerprint(args.archive_fingerprint))
+            return 0
+        except (OSError, RuntimeError) as exc:
+            print(f"FFmpeg archive fingerprint failed: {exc}", file=sys.stderr)
+            return 1
     runner = Runner()
     try:
+        print(f"Runner image: {os.environ.get('ImageOS', 'unknown')} "
+              f"{os.environ.get('ImageVersion', 'unknown')}", flush=True)
         try:
             verify(runner)
             print("Reusing capable preinstalled FFmpeg; no apt network access needed.", flush=True)
@@ -126,16 +233,30 @@ def main(argv=None):
         print("Installing Ubuntu's FFmpeg package with bounded apt waits (update 45s, install 120s).", flush=True)
         apt = ["apt-get", "-o", "Acquire::Retries=0", "-o", "Acquire::http::Timeout=15",
                "-o", "Acquire::https::Timeout=15", "-o", "DPkg::Lock::Timeout=15"]
+        if args.apt_cache is not None:
+            cache = args.apt_cache.resolve()
+            cache.mkdir(parents=True, exist_ok=True)
+            archives = list(cache.glob("*.deb"))
+            print(f"APT archive cache: {cache}; {len(archives)} cached .deb files, "
+                  f"{sum(p.lstat().st_size for p in archives)} bytes. "
+                  "APT resolves package versions from refreshed Ubuntu indexes.", flush=True)
+            # Cache downloads, never installed libraries or dpkg state. Let apt
+            # select/check archives against its current authenticated indexes.
+            apt += ["-o", f"Dir::Cache::archives={cache}",
+                    "-o", "APT::Keep-Downloaded-Packages=true"]
         print(runner.run(
             [*apt, "-o", "APT::Update::Error-Mode=any", "update"], seconds=45, root=True,
         ), flush=True)
+        if args.apt_cache is not None:
+            verify_cached_archives(runner, cache)
         print(runner.run(
             [*apt, "install", "-y", "--no-install-recommends", "ffmpeg"], seconds=120, root=True,
         ), flush=True)
+        print(runner.run(["dpkg-query", "-W", "ffmpeg"]), flush=True)
         verify(runner)
         return 0
-    except (RuntimeError, ValueError, KeyError, IndexError) as exc:
-        print(f"FFmpeg setup failed: {exc}\nCheck the runner image, PATH, and Ubuntu mirror health; see #135. "
+    except (RuntimeError, ValueError, KeyError, IndexError, OSError) as exc:
+        print(f"FFmpeg setup failed: {exc}\nCheck the runner image, PATH, and Ubuntu mirror health; see #135 and #255. "
               "Package tests were not run. Fix setup before retrying; do not skip the media suite.", file=sys.stderr)
         return 1
 

@@ -21,6 +21,8 @@ AI agents. Start with the path that matches your task:
   Codex plugin or copy the portable skill to another compatible agent.
 - [Skill validation](skill-validation.md) — review the scaffold, installation,
   and source-blind editing evidence.
+- [CI media setup](ci-media-setup.md) — Ubuntu FFmpeg package provenance,
+  verified download caching, setup deadlines and failure-path checks.
 - [v0.8.4 release notes](releases/v0.8.4.md) — local editing fixes, expanded
   Cloud preview inspection and asset workflows, account-linked feedback and agent guidance.
 - [v0.8.2 release notes](releases/v0.8.2.md) — audio timing, scene exports,
