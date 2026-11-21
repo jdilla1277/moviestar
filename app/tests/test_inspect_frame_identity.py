@@ -212,3 +212,18 @@ def test_warm_cache_does_not_run_media_tools(counter, tmp_path, monkeypatch):
     second = inspect(runner)
     assert second['extraction']['cached'] is True
     assert second['thumbnails'] == first['thumbnails']
+
+
+def test_fractional_interval_labels_match_the_actual_pixels(counter, tmp_path, monkeypatch):
+    # Do not infer frame identity from a rounded ffprobe timestamp at a sample
+    # only picoseconds before a frame boundary. Match decoded image content.
+    times, means = decoded_source(counter)
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    runner.invoke(cli, ['load', str(counter), '--no-transcribe', '--no-frames'])
+    result = inspect(runner, 0, 1, .0333333333)
+    for thumb in result['thumbnails']:
+        actual_mean = sum(gray(thumb['path'])) / 4096
+        index = min(range(len(means)), key=lambda i: abs(means[i] - actual_mean))
+        assert abs(means[index] - actual_mean) < 1
+        assert thumb['timecode']['seconds'] == pytest.approx(round(times[index], 3), abs=.001)
