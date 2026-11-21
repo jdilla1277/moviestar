@@ -27,9 +27,9 @@ def _read(path: Path, title: str) -> dict | None:
         if path.is_symlink():
             raise CreationStateError("Unsafe creation recovery file")
         with path.open(encoding="utf-8") as stream:
-            text = stream.read(4097)
+            text = stream.read(65537)
         record = json.loads(text)
-        if (len(text) > 4096 or not isinstance(record, dict) or record.get("title") != title
+        if (len(text) > 65536 or not isinstance(record, dict) or record.get("title") != title
                 or record.get("state") not in ("pending", "resolved")
                 or not isinstance(record.get("idempotency_key"), str)
                 or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", record["idempotency_key"])):
@@ -90,7 +90,7 @@ class Creation:
 
 @contextmanager
 def creation_request(endpoint: str, credential: str, title: str, explicit_key: str | None, *, recovery_directory: str = "cloud-project-requests"):
-    if recovery_directory not in ("cloud-project-requests", "cloud-probe-requests", "cloud-activity-requests", "cloud-project-sharing-requests", "cloud-asset-sharing-requests"):
+    if recovery_directory not in ("cloud-edit-requests", "cloud-project-requests", "cloud-probe-requests", "cloud-activity-requests", "cloud-project-sharing-requests", "cloud-asset-sharing-requests"):
         raise CreationStateError("Invalid recovery directory")
     # A new installation credential cannot inherit another account's pending
     # request. Neither the credential nor its hash is stored in the record.

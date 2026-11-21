@@ -91,3 +91,40 @@ acceptance depend on the service's configured, pinned metadata engine bridge.
 A missing audio codec in historical ready-video metadata remains unreported,
 not inferred silence. Timeline reads/trim validation need only measured duration
 and dimensions; they do not establish audio-track presence or routing.
+
+## Save one trim and undo
+
+On an explicitly enrolled service/account, `cloud edits apply PROJECT --request
+trim.json` saves one owned video trim. Read and validate first, then use exactly
+the returned current revision as `expected_base_revision` (null before any save).
+`operation` remains `{ "type":"trim", "source_id":"ID_FROM_SHOW",
+"time_space":"source_result", "from_ms":10000, "to_ms":40000 }`.
+A second trim uses the edited source clock: 5–20 seconds after 10–40 selects
+original seconds 15–30.
+
+The CLI saves a generated retry key AND the exact request privately before
+sending. If the response is lost, use `cloud edits apply PROJECT --recover` in a
+fresh process using the same account profile. Do not change the base or key.
+An explicit `--idempotency-key KEY` plus the original request can recover across
+credential renewal for the same authorized account; automatic profile recovery
+is scoped to the original credential. A changed pending request is rejected.
+
+`cloud edits show PROJECT --revision REVISION` reopens that exact version;
+`current_revision` separately identifies the current pointer. Undo uses the same
+apply command with a JSON body whose operation is `{ "type":"undo" }` and whose
+base is the current revision. It saves a new immutable version, popping one
+complete engine journal entry. Repeated undo walks backwards, without toggling.
+Old versions remain readable. A full-current-range trim is unchanged and adds no
+journal, revision or Activity event; its retry receipt remains recoverable.
+
+Check `revision.resolved.sources` for selected source ranges and result duration,
+and `undo_remaining` for available commands. `verification.saved_state` records
+server read-back of the saved instructions; document/manifest SHA-256 identifies
+those instructions, **not media correctness**. `input_bytes` and `output` remain
+`not_checked`, and `execution_ready` is false. This path does not render, download,
+or establish verified media dependency pins. Each real change creates one
+unmetered saved-edit Activity record; replay, read and validation create none.
+Writes are disabled by default. Audio gain/mute remains validation-only.
+
+Local `moviestar trim --dry-run ...` and `moviestar undo --dry-run` show proposed
+ranges without writing the spec. Ordinary local commands stay local.

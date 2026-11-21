@@ -9,8 +9,8 @@ import math
 from pathlib import Path
 from uuid import UUID
 
-from moviestar.edit_validation import EditValidationError, _sources
-from moviestar.spec import validate_spec, set_audio_mix, append_revision, SpecValidationError
+from moviestar.edit_validation import EditValidationError, _sources, _integer, _resolved
+from moviestar.spec import validate_spec, set_audio_mix, append_revision, append_trim, pop_revision, REVISION_FIELDS, SpecValidationError
 from moviestar.resolved import resolve_project, ResolvedProjectError
 from moviestar.audio_surface import resolve_audio_mix, AudioSurfaceValidationError
 
@@ -93,28 +93,58 @@ def prepare_saved_edit(sources, spec, operation=None, *, audio_assets=None):
                 if asset not in assets:
                     raise ValueError('Audio dependency metadata is unavailable.')
                 return copy.deepcopy(assets[asset])
-            mix = resolve_audio_mix(value['audio_mix'], result_duration=timeline.duration_s,
+            active = {s['id'] for s in value['sources']}
+            state_project = {'sources': [dict(s, duration={'seconds':s['duration_ms']/1000}) for s in sources if s['id'] in active]}
+            state_timeline = resolve_project(state_project, value)
+            mix = resolve_audio_mix(value['audio_mix'], result_duration=state_timeline.duration_s,
                                     base_dir=Path('/'), probe_audio=probe)
             for track in mix['tracks']:
                 track['path'] = 'asset:' + _asset(Path(track['path']).name)
             return dict(audio_mix=mix, track_count=len(mix['tracks']),
                         routing=[dict(scene_id=span.scene_id, result_range_ms=[round(span.start_s*1000),round(span.end_s*1000)],
                                       source_id=span.audio.source_id, routing=span.audio.routing,
-                                      source_slices_ms=[[round(a*1000),round(b*1000)] for a,b in span.audio.slices]) for span in timeline.spans],
-                        result_duration_ms=round(timeline.duration_s*1000), undo_remaining=len(value['revisions']),
+                                      source_slices_ms=[[round(a*1000),round(b*1000)] for a,b in span.audio.slices]) for span in state_timeline.spans],
+                        sources=_resolved(value,[s for s in sources if s['id'] in active])['sources'],
+                        result_duration_ms=round(state_timeline.duration_s*1000), undo_remaining=len(value['revisions']),
                         source_audio_availability={s['id']:('unreported' if 'audio_codec' not in s else 'stream_reported' if s['audio_codec'] else 'no_stream_in_metadata') for s in sources if s['id'] in active_ids},
                         loudness=None, loudness_status='not_measured')
+        prior = spec
+        while prior.get('revisions'):
+            prior, _ = pop_revision(prior)
+            summarize(prior)
         result = dict(origin='saved_revision', spec=spec, resolved=summarize(spec))
         if operation is None:
             return result
-        patch = parse_audio_source(operation)
-        mix = copy.deepcopy(spec['audio_mix'])
-        mix['source_audio'].update(patch)
-        candidate = set_audio_mix(spec, mix)
+        if not isinstance(operation, dict):
+            raise EditValidationError('invalid_edit', 'Supply an operation object.')
+        kind = operation.get('type')
+        if kind == 'trim':
+            if set(operation) != {'type','source_id','time_space','from_ms','to_ms'} or operation['time_space'] != 'source_result':
+                raise EditValidationError('invalid_edit', 'Trim requires source_id, source_result time_space and integer from_ms/to_ms.')
+            source = source_by_id.get(operation['source_id']) if isinstance(operation['source_id'],str) else None
+            if source is None or source['id'] not in active_ids:
+                raise EditValidationError('invalid_edit', 'Select a source in the current edit.', 'operation.source_id')
+            start = _integer(operation['from_ms'],0,86400000,'operation.from_ms')
+            end = _integer(operation['to_ms'],1,86400000,'operation.to_ms')
+            candidate = append_trim(spec,source['id'],start/1000,end/1000,source['duration_ms']/1000)
+            candidate = append_revision(spec,candidate,'trim')
+        elif kind == 'undo':
+            if set(operation) != {'type'}:
+                raise EditValidationError('invalid_edit', 'Undo accepts type only.')
+            if not spec['revisions']:
+                raise EditValidationError('nothing_to_undo','There is no accepted command to undo.')
+            candidate, _ = pop_revision(spec)
+        elif kind == 'audio_source':
+            patch = parse_audio_source(operation)
+            mix = copy.deepcopy(spec['audio_mix'])
+            mix['source_audio'].update(patch)
+            candidate = set_audio_mix(spec, mix)
+            candidate = append_revision(spec,candidate,'audio source')
+        else:
+            raise EditValidationError('unsupported_feature','Supported operations: trim, undo, audio_source.')
         changes = candidate != spec
-        if changes:
-            candidate = append_revision(spec, candidate, 'audio source')
-        result.update(changes=changes, changed_fields=['audio_mix'] if changes else [],
+        validate_spec(candidate)
+        result.update(changes=changes, changed_fields=[f for f in REVISION_FIELDS if spec.get(f) != candidate.get(f)],
                       current_undo_remaining=len(spec['revisions']), candidate_spec=candidate,
                       projected_resolved=summarize(candidate), warnings=[])
         return result

@@ -101,3 +101,39 @@ def test_resource_errors_use_same_envelope_after_successful_capabilities(remote,
     result=CliRunner().invoke(cli,args)
     assert result.exit_code==1
     assert json.loads(result.output)==envelope
+
+def test_apply_retains_exact_request_before_lost_reply_and_fresh_recovery(remote,tmp_path,monkeypatch):
+    calls,response,capability=remote
+    from moviestar import account
+    monkeypatch.setattr(account,'_account_state_path',lambda:tmp_path/'account.json')
+    from moviestar import cloud_creation_state
+    monkeypatch.setattr(cloud_creation_state,'_account_state_path',lambda:tmp_path/'account.json')
+    file=tmp_path/'trim.json';file.write_text(json.dumps(REQUEST))
+    mutation_calls=[]
+    def request(url,credential,**kwargs):
+        if url.endswith('/capabilities'):return 200,capability
+        mutation_calls.append(kwargs)
+        if len(mutation_calls)==1:return 0,{}
+        return 200,{'contract_version':'cloud-editing-v1','project_id':P,'status':'committed','current_revision':'00000000-0000-4000-8000-000000000099',
+                    'revision':{'id':'00000000-0000-4000-8000-000000000099','spec':{}},'replayed':True,'verification':{'output':'not_checked'}}
+    monkeypatch.setattr(cloud,'_request',request)
+    lost=CliRunner().invoke(cli,['cloud','edits','apply',P,'--request',str(file)])
+    assert lost.exit_code==1
+    assert json.loads(lost.output)['error']['code']=='mutation_unconfirmed'
+    # A changed file must never replace an uncertain command under the retained key.
+    file.write_text(json.dumps({**REQUEST,'operation':{'type':'undo'}}))
+    blocked=CliRunner().invoke(cli,['cloud','edits','apply',P,'--request',str(file)])
+    assert blocked.exit_code==1 and len(mutation_calls)==1
+    recovered=CliRunner().invoke(cli,['cloud','edits','apply',P,'--recover'])
+    assert recovered.exit_code==0,recovered.output
+    assert mutation_calls[0]==mutation_calls[1]
+    assert mutation_calls[0]['payload']==REQUEST
+
+
+def test_exact_show_does_not_conflate_selected_and_current(remote):
+    calls,response,_=remote
+    old='00000000-0000-4000-8000-000000000098';current='00000000-0000-4000-8000-000000000099'
+    response.update(status='opened',current_revision=current,revision={'id':old,'spec':{}})
+    result=CliRunner().invoke(cli,['cloud','edits','show',P,'--revision',old])
+    assert result.exit_code==0,result.output
+    assert calls[-1][0].endswith('/revisions/'+old)
