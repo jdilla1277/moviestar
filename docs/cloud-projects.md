@@ -795,3 +795,11 @@ Hosted MCP adds `moviestar_invite_project_member` with viewer/editor selection a
 `moviestar_set_project_role`; the existing viewer invitation tool remains
 viewer-only. Account-wide scopes never authorize access management on another
 person's project.
+
+## Supplied transcripts for project media
+
+A compatible, enrolled service can retain supplied SRT/VTT for an exact project
+media membership through `cloud projects transcripts import/list/show`. Import
+creates an immutable version without selecting it in any saved edit. See the
+[Cloud transcript workflow](cloud-transcripts.md) for exact reads, correction,
+recovery, timing quality and access limits.
