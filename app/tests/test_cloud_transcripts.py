@@ -103,3 +103,15 @@ def test_list_metadata_and_cursor_are_forwarded(remote,monkeypatch):
     result=invoke('list',P,'--reference',R,'--limit','1','--cursor','Mg')
     assert result.exit_code==0,result.output
     assert json.loads(result.output)['next_cursor']=='MQ'
+
+
+def test_cloud_capabilities_preserves_transcript_admission_projection(remote,monkeypatch):
+    _,_,_,_=remote
+    projection={'contract_version':'project-transcripts-v1','imports_enabled':True,'formats':['srt','vtt'],'bounds':{'text_bytes':10000}}
+    monkeypatch.setattr(cloud,'_request',lambda *a,**kw:(200,{
+        'contract_version':'m33.3-personal-projects-1','project_access':'owner_only',
+        'operations':['projects:read'],'project_transcripts':projection,
+    }))
+    result=CliRunner().invoke(cli,['cloud','capabilities'])
+    assert result.exit_code==0,result.output
+    assert json.loads(result.output)['project_transcripts']==projection
