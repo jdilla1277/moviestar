@@ -1059,6 +1059,8 @@ ACCOUNT COMMANDS
   account connect EMAIL  Ask Moviestar to email the human an account claim.
   cloud                 Work with Cloud projects, private assets and developer guides.
   account status         Show approval or connection state for this install.
+  account usage          Read storage and monthly Cloud allowance.
+  account activity       Read tasks and their allowance consumption.
   account disconnect     Revoke this install; local editing keeps working.
   account keys           Open the website to create or manage API keys.
   account open           Open the human's account page; --email-link EMAIL requests sign-in mail.

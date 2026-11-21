@@ -44,6 +44,8 @@ The CLI's built-in help is the authoritative command reference. Run
 
 - [Accounts from the CLI](accounts.md) — terminal email verification, signup, age and terms consent, and revocable installation approval.
 - [Personal API keys and remote MCP](api-keys.md) — create a key on the website and authenticate a developer-controlled MCP client.
+- [Account usage and Activity](account-usage.md) — storage, monthly Cloud allowance,
+  task history and support links through CLI, HTTP and hosted MCP.
 - [Account assets](account-assets.md) — upload private video, audio, image and
   caption/transcript originals with your approved CLI installation.
 - [Cloud asset storyboards](cloud-storyboard.md) — labeled contact sheets and durable private image retrieval.

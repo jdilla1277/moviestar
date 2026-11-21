@@ -196,6 +196,17 @@ approval exchange, a subsequent status read may be needed to obtain the plan.
 Plan snapshots are not saved in the local connection file; ordinary upload/share
 dry-runs stay offline and do not claim live capacity.
 
+## Storage and monthly Cloud usage
+
+```sh
+moviestar account usage
+moviestar account activity --cloud --limit 10
+```
+
+Read the Web Usage meter and the tasks behind it without executing work. See
+[Account usage and Activity](account-usage.md) for units, pagination, MCP tools,
+support handoffs and unavailable-data handling. Local jobs are free.
+
 ## Existing accounts and hosted consent
 
 Review the current account-wide age affirmation and policies:
