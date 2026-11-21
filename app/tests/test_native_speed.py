@@ -471,3 +471,36 @@ const api=context.window.moviestarLiveStage,flush=()=>new Promise(r=>setImmediat
 '''
     result=subprocess.run(['node','-e','const STAGE='+json.dumps(stage_script())+';const ACTION='+json.dumps(action)+';\n'+script],capture_output=True,text=True,timeout=10)
     assert result.returncode==0,result.stdout+result.stderr
+
+
+@pytest.mark.parametrize('audit', [True, False])
+@pytest.mark.parametrize('cut', [True, False])
+def test_speed_frame_audit_retains_readback_and_decode_timing_without_changing_clocks(audit, cut):
+    from tests.native_stage_harness import stage_script
+    script=r'''
+const vm=require('node:vm'),assert=require('node:assert/strict');let now=100;
+const context={window:{moviestarScene:{entries:[],applyMotion(){}}},
+ document:{createElement:()=>({getContext:()=>({})})},location:{search:AUDIT?'?audit=1':''},cut:CUT,
+ URLSearchParams,AbortController,Date,performance:{timeOrigin:1000,now:()=>now},
+ fetch:()=>new Promise(()=>{}),setTimeout:()=>1,clearTimeout(){},advance:()=>{now+=20;}};
+vm.createContext(context);vm.runInContext(STAGE,context);
+vm.runInContext(`packet={cut_segment:cut,playback_rate:cut?1:1.5,fps:30,source_start:1,source_end:cut?3:4,samples:Array.from({length:60},()=>({nodes:[]}))};
+video={currentTime:1.18,paused:false,requestVideoFrameCallback:()=>1};playing=true;
+freezeLastFrame=()=>{frozenFrame={};};
+sourceFrame=()=>{if(cut&&!frozenFrame)throw Error('Read the held final pixels');advance();return{number:cut?89:36,captured_media_time:cut?2.966667:1.2,white:true};};
+onFrame(99,{mediaTime:cut?2.966667:1.2,expectedDisplayTime:108,presentationTime:98,processingDuration:.002,presentedFrames:8});`,context);
+const frame=vm.runInContext('metrics.frames[0]',context);
+assert.equal(frame.media_time,CUT?2.966667:1.2);assert.equal(frame.display_time,108);
+assert.equal(frame.presented_frames,8);
+if(AUDIT){
+ assert.equal(frame.number,CUT?89:36);assert.equal(frame.captured_media_time,CUT?2.966667:1.2);
+ assert.equal(frame.callback_started_at,100,'Capture entry before a delayed pixel readback');
+ assert.equal(frame.source_readback_ms,20);assert.equal(frame.callback_elapsed_ms,20);
+ assert.equal(frame.presentation_time,98);assert.equal(frame.decode_processing_ms,2,'rVFC decode duration is seconds');
+}else{
+ assert.equal(frame.number,undefined);assert.equal(frame.callback_started_at,undefined);
+ assert.equal(frame.source_readback_ms,undefined);assert.equal(now,100,'Ordinary playback performs no audit pixel readback');
+}
+'''
+    result=subprocess.run(['node','-e','const STAGE='+json.dumps(stage_script())+';const AUDIT='+json.dumps(audit)+';const CUT='+json.dumps(cut)+';\n'+script],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stdout+result.stderr

@@ -442,6 +442,25 @@ publication is not browser visibility: use the command trace and viewer's
 request/version readiness event to measure the complete feedback loop. A new
 worker is launched for every request; a repeat edit is not a warm Python process.
 
+For browser-side diagnosis, open the native viewer with `?audit=1`. Its stage
+`metrics.frames` retains `callback_started_at` (actual JavaScript entry),
+`source_readback_ms` (entry through the source-pixel readback), and
+`callback_elapsed_ms` (entry through metrics assembly). These use the same
+browser performance clock as `display_time`; elapsed values are wall time,
+not CPU time. When the browser supplies them, `presentation_time` preserves
+rVFC's compositor-submission timestamp and `decode_processing_ms` converts its
+`processingDuration` from seconds to milliseconds. Missing browser metadata is
+omitted rather than replaced with zero. Ordinary playback adds none of these
+audit fields or pixel readbacks.
+
+The speed benchmark retains these observations in each playback report. Compare
+callback entry with expected display time, readback cost and decode duration
+alongside raw preparation/review counters when diagnosing a dropped frame.
+These are diagnostics, not revised clocks or acceptance tolerances: a late
+callback does not alone prove a dropped picture, and a clean diagnostic run does
+not explain an earlier failure. Retain the first failed report and use a new
+output directory for every subsequent run.
+
 In native mode, the local `state` endpoint also reports `native_video_delivery`:
 successful validated HEAD requests, video GET requests, active GETs and completed
 body bytes written to sockets. The byte count excludes headers and any partial
