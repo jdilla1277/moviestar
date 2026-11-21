@@ -133,6 +133,14 @@ jobs:
           source .venv/bin/activate
           pytest --run-slow --ignore=tests/test_native_pip_browser.py --ignore=tests/test_native_cuts_browser.py --basetemp="$RUNNER_TEMP/full-suite"
 
+      - name: Retain first speed playback evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: native-speed-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/full-suite/test_actual_speed_preview_*/browser/*.json
+          if-no-files-found: warn
+
       - name: Build and check package artifacts
         run: |
           source app/.venv/bin/activate
