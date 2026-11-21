@@ -76,6 +76,7 @@ from moviestar.ffmpeg import (
     render_segments,
     extract_frame,
     extract_frames,
+    extract_inspection_frames,
     measure_region_stability,
     render_selection_frame,
     render_target_grid_frame,
@@ -4606,6 +4607,27 @@ INSPECT_DEFAULT_INTERVAL_SECONDS = 0.5
 INSPECT_SCALE_WIDTH = 640
 
 
+def _inspect_cached_times(frames_out: Path, source_id: str, identity: dict) -> list[float] | None:
+    """An image-only or incomplete cache cannot establish frame identity."""
+    try:
+        manifest = json.loads((frames_out / "source-times.json").read_text())
+        paths = sorted(frames_out.glob(f"{source_id}_inspect_*.jpg"))
+        entries = manifest["frames"]
+        if (
+            manifest["identity"] != identity
+            or not entries
+            or [entry["file"] for entry in entries] != [path.name for path in paths]
+            or any(not path.is_file() or path.stat().st_size == 0 for path in paths)
+        ):
+            return None
+        times = [entry["seconds"] for entry in entries]
+        if not all(type(value) in (int, float) and math.isfinite(value) and value >= 0 for value in times):
+            return None
+        return times if times == sorted(times) else None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 @cli.command()
 @project_workspace_option
 @click.option("--from", "from_tc", required=True, help="Start timecode of the range.")
@@ -4666,7 +4688,7 @@ INSPECT_SCALE_WIDTH = 640
     "envelope with status: 'would_extract', dry_run: true, "
     "would_write_to (deterministic frames subdir), "
     "would_reuse_cache (true if a real call would hit cache, false "
-    "if it would extract fresh — detected by subdir-existence), "
+    "if it would extract fresh — requires complete images and source timing), "
     "and would_extract_frames_count. --inline has no effect "
     "(no frames to embed).",
 )
@@ -4698,10 +4720,15 @@ def inspect(
     already 240 frames per call without scene-boundary resets. Scene
     compositions may return more. Wider overviews are skim's job.
 
-    Without scenes, thumbnails land at from_s, from_s+interval, ...,
+    Without scenes, sample requests land at from_s, from_s+interval, ...,
     stopping strictly before to_s. So a 10s range at 0.5s interval
     returns 20 frames (5.0, 5.5, ..., 14.5), not 21 — the upper bound
-    is exclusive.
+    is exclusive. Each thumbnail's requested_timecode identifies that sample;
+    timecode identifies the displayed source frame's presentation time (rounded
+    to milliseconds). Sampling uses the frame on screen at the requested time:
+    the last decoded frame at or before it. Fractional cadence or held VFR
+    frames can therefore have earlier, repeated timecodes. If the video starts
+    later than the first request, its first available frame is used.
 
     For scene compositions, sampling restarts at each overlapping scene:
     one thumbnail at the beginning of the scene's requested window, then
@@ -4740,9 +4767,9 @@ def inspect(
     same envelope shape with ``dry_run: true``, ``status:
     "would_extract"``, top-level ``would_write_to`` (the deterministic
     frames subdir), ``would_reuse_cache`` (true if a real call would
-    hit cache, false if it would extract fresh — detected by
-    subdir-existence + 1+ frames, the same signal the real call
-    uses), and ``would_extract_frames_count`` (the exact selected count;
+    hit cache, false if it would extract fresh — requires complete images and
+    source-timestamp metadata matching the source and sampling arguments),
+    and ``would_extract_frames_count`` (the scheduled sample count;
     for scenes this is the sum of the per-scene counts). Drops ``thumbnails``,
     ``thumbnails_returned`` (don't exist until extraction); drops
     ``extraction.frames_dir`` and ``extraction.cached`` (now top-
@@ -4857,8 +4884,8 @@ def inspect(
             f"--interval must be at least {INSPECT_MIN_INTERVAL_SECONDS} seconds",
         )
 
-    # Guardrail: interval too coarse for the requested range. ffmpeg's
-    # fps=1/interval filter yields the first frame at t=0 and the next at
+    # Guardrail: interval too coarse for the requested range. Sampling
+    # yields the first frame at t=0 and the next at
     # t=interval — if the range is shorter, you only get a single frame,
     # which surprises users ("--from 20 --to 20.5 --interval 0.5 = 1 frame").
     # Refuse and suggest a concrete interval.
@@ -4874,18 +4901,8 @@ def inspect(
             "range with --from/--to.",
         )
 
-    # Deterministic output path — repeat calls with identical args land here.
-    # Round-to-ms in the subdir name so "20.0" and "20" hit the same cache
-    # and so float noise like "43.300000000000004" doesn't leak into paths.
-    inspect_root = get_project_dir() / INSPECT_FRAMES_DIR
-    subdir_name = (
-        f"{source_id}_{round(from_s, 3)}_{round(to_s, 3)}_"
-        f"{round(interval, 3)}_{width}"
-    )
-    frames_out = inspect_root / subdir_name
-
-    # Frame count for the range. ffmpeg's `fps=1/interval` filter
-    # samples at t=0, interval, 2*interval, ... while t < range_duration
+    # Scheduled frame count for the range: t=0, interval, 2*interval, ...
+    # while t < range_duration
     # (the upper bound is exclusive, per the docstring). math.ceil(D/I)
     # produces the right count for both the aligned case (D == k*I →
     # k frames at 0, I, ..., (k-1)*I) and the unaligned case
@@ -4896,13 +4913,29 @@ def inspect(
     # claimed 4 frames for the 1.5/0.5 case where the real call
     # extracts 3).
     expected_frame_count = math.ceil(round(range_duration / interval, 9))
-    cached = (
-        frames_out.exists()
-        and len(sorted(frames_out.glob(f"{source_id}_inspect_*.jpg"))) >= 1
+    try:
+        source_stat = Path(source_path).stat()
+        source_signature = [source_stat.st_size, source_stat.st_mtime_ns, source_stat.st_ctime_ns]
+    except OSError:
+        source_signature = None
+    cache_identity = {
+        "version": 1, "source": source_path, "signature": source_signature,
+        "from": from_s, "to": to_s, "interval": interval, "width": width,
+    }
+    # Readable milliseconds plus exact identity: nearby requests and replaced
+    # sources must not overwrite images returned by an earlier response.
+    fingerprint = hashlib.sha256(json.dumps(cache_identity, sort_keys=True).encode()).hexdigest()[:16]
+    inspect_root = get_project_dir() / INSPECT_FRAMES_DIR
+    subdir_name = (
+        f"{source_id}_{round(from_s, 3)}_{round(to_s, 3)}_"
+        f"{round(interval, 3)}_{width}_pts_v1_{fingerprint}"
     )
+    frames_out = inspect_root / subdir_name
+    frame_times = _inspect_cached_times(frames_out, source_id, cache_identity)
+    cached = source_signature is not None and frame_times is not None
 
     # Issue #36 stage 2: dry-run forks at the side-effect boundary.
-    # Validation, cache detection (subdir-existence + 1+ frames), and
+    # Validation, complete-image/timestamp cache detection, and
     # frame-count prediction all run identically. Below, dry-run
     # builds the would-be ffmpeg argv via the pure builder, slices
     # the transcript (pure read), and emits the envelope without
@@ -4911,7 +4944,7 @@ def inspect(
         # Pure ffmpeg argv — same args the real call would use.
         # `output_pattern` mirrors what extract_frames builds internally
         # so the agent sees the actual would-be argv, not a placeholder.
-        output_pattern = str(frames_out / f"{source_id}_inspect_%04d.jpg")
+        output_pattern = str(frames_out / f"{source_id}_inspect_%06d.jpg")
         ffmpeg_cmd = build_extract_frames_command(
             source_path,
             interval,
@@ -4919,6 +4952,7 @@ def inspect(
             scale_width=width,
             start_time=from_s,
             duration=range_duration,
+            source_timestamps=True,
         )
         transcript_out, skip_reason, words_unavailable_reason = (
             _slice_transcript_for_response(source, from_s, to_s, words)
@@ -4982,7 +5016,7 @@ def inspect(
             import shutil as _shutil
             _shutil.rmtree(frames_out)
         try:
-            frame_paths, _argv = extract_frames(
+            frame_paths, frame_times, _argv = extract_inspection_frames(
                 source_path,
                 interval,
                 frames_out,
@@ -4991,6 +5025,11 @@ def inspect(
                 start_time=from_s,
                 duration=range_duration,
             )
+            (frames_out / "source-times.json").write_text(json.dumps({
+                "identity": cache_identity,
+                "frames": [{"file": path.name, "seconds": seconds}
+                           for path, seconds in zip(frame_paths, frame_times)],
+            }))
         except FFmpegNotFoundError as exc:
             _error_exit("inspect", str(exc))
         except FileNotFoundError as exc:
@@ -4998,11 +5037,12 @@ def inspect(
         except RuntimeError as exc:
             _error_exit("inspect", f"Frame extraction failed: {exc}")
 
-    # Frame N (1-indexed) → from_s + (N-1) * interval
+    # Output-grid positions are requests; the decoded source clock is separate.
     thumbnails = [
         {
             "path": str(p.resolve()),
-            "timecode": format_timecode(from_s + i * interval),
+            "timecode": format_timecode(frame_times[i]),
+            "requested_timecode": format_timecode(from_s + i * interval),
         }
         for i, p in enumerate(frame_paths)
     ]
