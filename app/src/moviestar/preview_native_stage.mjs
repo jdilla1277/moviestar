@@ -8,6 +8,7 @@ let lastIndex=-1, playing=false, readyDone=false, metadataReady=false, imageRead
 let videoGroup,reviewAudio,outputMixer,sceneClock;
 let playbackIdentity,speedFrame,pictureStartup,pendingStageSeek;
 const playbackRate=()=>packet?.playback_rate??1;
+const measuredPictures=()=>playbackRate()!==1||(packet?.prepared_audio&&(packet.media??[]).filter(m=>m.kind==='video').length===3);
 function animateSpeed(){
   if(disposed||!playing||playbackRate()===1)return;
   const at=reviewAudio?.outputTimeAt(performance.timeOrigin+performance.now());
@@ -156,8 +157,15 @@ async function checkReady(){
       await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
       if(!await videoGroup.seek(0,{presented:playbackRate()!==1})||disposed)return;
     }
-    if(playbackRate()!==1){
-      pictureStartup=await videoGroup.measureStartup();if(!pictureStartup||disposed)return;
+    if(measuredPictures()){
+      // A one-frame review already has every required picture presented.
+      // A source may be on its final decoded frame, so asking it for an
+      // advancing presentation would wait forever. No moving-picture startup
+      // lead is needed for this static result window.
+      pictureStartup=packet.samples.length===1&&playbackRate()===1
+        ? {lead:0,prepared_frame_only:true}
+        : await videoGroup.measureStartup();
+      if(!pictureStartup||disposed)return;
       metrics.picture_startup=pictureStartup;
     }
     apply(0);
@@ -292,17 +300,29 @@ function connectAudioGraph(){
   }
 
   for(const item of videos){
-    // Both media pipelines use the same audio output clock. Silence the
-    // listener in the graph: element.muted would select a different video
-    // scheduling path and require startup priming at every scene handoff.
+    // Ordinary pictures share the output clock through their media sources.
+    // Measured speed/three-picture groups stay muted and use prepared PCM.
     const gain=audio.createGain();
     gain.channelCount=2;gain.channelCountMode='explicit';gain.channelInterpretation='speakers';
     gain.gain.value=item.primary&&!packet.prepared_audio?1:0;
     // A silent video has no audio pipeline to join to this output clock.
     // Keep its picture on group transport without creating an empty source.
-    if(item.hasAudio&&playbackRate()===1){const node=audio.createMediaElementSource(item.video);node.connect(gain);item.audioSource=node;}
+    if(item.hasAudio&&!measuredPictures()){const node=audio.createMediaElementSource(item.video);node.connect(gain);item.audioSource=node;}
     gain.connect(destination);item.audioGain=gain;
   }
+}
+function joinInterviewOutputClock(){
+  if(playbackRate()!==1||videos.length!==3||pictureStartup?.prepared_frame_only)return;
+  // Preparation uses muted elements so readiness never needs an autoplay
+  // gesture. Once Play has resumed the device, real audio pipelines can keep
+  // the pictures on that output clock, just as in the two-picture player.
+  // Zero gains leave the canonical PCM as the only audible signal.
+  for(const item of videos){
+    if(!item.hasAudio||item.audioSource)continue;
+    item.video.muted=false;
+    const node=audio.createMediaElementSource(item.video);node.connect(item.audioGain);item.audioSource=node;
+  }
+  return Boolean(videos.find(item=>item.primary)?.audioSource);
 }
 async function initialize(){
   const params=new URLSearchParams(location.search),request=params.get('request');
@@ -359,7 +379,7 @@ async function initialize(){
       const primary=key(asset.path)===key(packet.video_path),item={video:media,path:asset.path,start:asset.source_start??packet.source_start,end:asset.source_end??packet.source_end,fps:packet.fps,rate:asset.playback_rate??1,primary,hasAudio:asset.has_audio!==false};
       videos.push(item);if(primary)video=media;
       media.playbackRate=item.rate;
-      if(item.rate!==1)media.muted=true;
+      if(measuredPictures())media.muted=true;
       media.preload=packet.media.filter(item=>item.kind==='video').length>1?'auto':'metadata';media.playsInline=true;
       media.addEventListener('error',()=>fail(Error('Source video could not load.')));
       media.addEventListener('canplay',checkReady);media.addEventListener('seeked',checkReady);
@@ -492,7 +512,7 @@ async function seekTo(at){
 window.moviestarLiveStage={ready,metrics,
   get packet(){return packet;},
   get time(){if(cuts)return cuts.time;if(sceneClock)return sceneClock.time;return video?Math.max(0,(video.currentTime-packet.source_start)/playbackRate()):0;},
-  get paused(){return cuts?cuts.paused:sceneClock?sceneClock.paused:video?.paused??true;},
+  get paused(){return cuts?cuts.paused:sceneClock?sceneClock.paused:pictureStartup?.prepared_frame_only?!playing:video?.paused??true;},
   get audioState(){return cuts?cuts.audioState:audio?.state;},
   get error(){return metrics.error;},
   get audioOutputTimestamp(){return cuts?cuts.audioOutputTimestamp:audio?.getOutputTimestamp?.();},
@@ -563,11 +583,24 @@ window.moviestarLiveStage={ready,metrics,
         await new Promise(resolve=>setTimeout(resolve,10));
       }
       if(!active())return;
+      const interviewClock=joinInterviewOutputClock();
       metrics.device_ready_at=Date.now();if(packet.cut_segment&&packet.samples.length===1){freezeLastFrame();videos.filter(item=>!item.primary).forEach(freezeFollower);}
       for(const item of videos){item.beforePlay=item.video.getVideoPlaybackQuality();delete item.reportedDrops;}
       metrics.initial_presented=videos.map(item=>({path:item.path,media_time:item.video.currentTime,...item.frame,quality:{totalVideoFrames:item.beforePlay.totalVideoFrames,droppedVideoFrames:item.beforePlay.droppedVideoFrames}}));playing=true;
-      if(reviewAudio?.snapshot().prepared)await reviewAudio.play(this.time,pictureStartup?{presentationLead:pictureStartup.lead}:{pictureLead:1/(2*packet.fps)});if(!active())return;
+      if(reviewAudio?.snapshot().prepared)await reviewAudio.play(this.time,!interviewClock&&pictureStartup?{presentationLead:pictureStartup.lead}:{pictureLead:1/(2*packet.fps)});if(!active())return;
       if(reviewAudio)metrics.prepared_audio=reviewAudio.snapshot();
+      if(pictureStartup?.prepared_frame_only){
+        // Keep the sole authored image visible. Advancing the decoders could
+        // show an out-of-window frame or require an EOF callback to finish.
+        const end=metrics.prepared_audio.started_context_time+packet.range.to-packet.range.from;
+        const complete=()=>{
+          if(!active())return;
+          const remaining=end-audio.currentTime;
+          if(remaining>1/audio.sampleRate){stopTimer=setTimeout(complete,Math.max(1,remaining*1000));return;}
+          stopTimer=null;finishScene().catch(fail);
+        };
+        complete();return;
+      }
       if(videoGroup)await videoGroup.play();else await video.play();
       if(active()&&playbackRate()!==1)animateSpeed();
     }catch(error){if(active()){fail(error);throw error;}}

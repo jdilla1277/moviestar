@@ -112,3 +112,25 @@ transport.dispose();
 '''.replace('MODULE',repr(module))
     result=subprocess.run(['node','--input-type=module','-e',script],capture_output=True,text=True,timeout=10)
     assert result.returncode==0,result.stdout+result.stderr
+
+
+def test_measured_start_and_seek_epsilon_do_not_interpolate_canonical_pcm():
+    module=(Path(__file__).parents[1]/'src/moviestar/preview_native_audio.mjs').as_uri()
+    script=r'''
+import assert from 'node:assert/strict';
+const {createPreparedAudio}=await import(MODULE);let output=2,started;
+const context={sampleRate:48000,currentTime:2.04,resume:async()=>{},
+ getOutputTimestamp(){output+=.001;return{contextTime:output,performanceTime:1};},
+ decodeAudioData:async()=>({numberOfChannels:2,sampleRate:48000,duration:3}),
+ createBufferSource:()=>({connect(){},disconnect(){},start(at,offset){started={at,offset};},stop(){}})};
+globalThis.fetch=async()=>({ok:true,arrayBuffer:async()=>new ArrayBuffer(1)});
+const api=createPreparedAudio(context,{},new AbortController().signal);
+(await api.prepare({asset:'test',duration:3,sample_rate:48000,channels:2})).commit();
+await api.play(.5+1e-5,{presentationLead:.057039});
+assert.equal(started.offset,.5,'The video seek epsilon must not shift/interpolate PCM');
+assert.ok(Math.abs(started.at*48000-Math.round(started.at*48000))<1e-8,'Start on the PCM sample grid');
+assert.equal(api.snapshot().started_context_time,started.at);
+assert.equal(api.snapshot().started_offset,started.offset);api.dispose();
+'''.replace('MODULE',repr(module))
+    result=subprocess.run(['node','--input-type=module','-e',script],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stdout+result.stderr

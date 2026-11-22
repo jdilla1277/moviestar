@@ -131,7 +131,7 @@ jobs:
         run: |
           cd app
           source .venv/bin/activate
-          pytest --run-slow --ignore=tests/test_native_pip_browser.py --ignore=tests/test_native_cuts_browser.py --basetemp="$RUNNER_TEMP/full-suite"
+          pytest --run-slow --ignore=tests/test_native_pip_browser.py --ignore=tests/test_native_cuts_browser.py --ignore=tests/test_native_interview_browser.py --basetemp="$RUNNER_TEMP/full-suite"
 
       - name: Retain first speed playback evidence
         if: always()
@@ -197,6 +197,23 @@ jobs:
           source .venv/bin/activate
           python -m pip install --upgrade pip
           pip install -e . pytest
+
+      - name: Check three-person edits, per-scene playback and rendered cuts
+        run: |
+          cd app
+          source .venv/bin/activate
+          pytest tests/test_native_interview_browser.py -q --basetemp="$RUNNER_TEMP/native-interview"
+
+      - name: Retain generated interview evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: native-interview-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/native-interview/test_actual_interview_*/browser
+            ${{ runner.temp }}/native-interview/test_terminal_interview_*/browser
+          if-no-files-found: ignore
+          retention-days: 7
 
       # Retain the first source-only cut result before any later work. These
       # tests run once here and are excluded from the remaining full suite.

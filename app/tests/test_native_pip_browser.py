@@ -158,7 +158,7 @@ try{
   assert.ok(Math.abs(fadeAt-.1)<1/30,'Seek lands within the existing frame tolerance');await b.click('#play');
   await b.wait('window.movieStarPreview.stage.time>.35',3000);await b.click('#pause');
   const seeked=await b.evaluate('window.movieStarPreview.stage.snapshot()');
-  assert.ok(Math.abs(seeked.audio.started_offset-fadeAt)<1e-6,'Seek inside fade preserves its position');
+  assert.equal(seeked.audio.started_offset,.1,'Seek inside fade starts on the requested PCM sample, without the video seek epsilon');
   assert.equal(seeked.audio.playing,false);
   await b.evaluate('window.movieStarPreview.stage.seek(5-1/30)');
  }

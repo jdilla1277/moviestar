@@ -22,7 +22,7 @@ jobs:
       fail-fast: false
       matrix:
         canvas: ['360x640', '1080x1920']
-        scenario: ['fades', 'two-tracks', 'visual', 'stills', 'spatial-captions', 'framing', 'camera', 'source-cuts', 'speed']
+        scenario: ['fades', 'two-tracks', 'visual', 'stills', 'spatial-captions', 'framing', 'camera', 'source-cuts', 'speed', 'interview']
     env:
       MOVIESTAR_CHROME_NO_SANDBOX: '1'
     steps:
@@ -81,7 +81,12 @@ jobs:
           PY
       - name: Measure existing edits and reversals at histories 0/20/50
         run: |
-          if [ '${{ matrix.scenario }}' = speed ]; then
+          if [ '${{ matrix.scenario }}' = interview ]; then
+            for scene in intro reply; do
+              "$RUNNER_TEMP/native-env/bin/python" experiments/live_browser_preview/interview_benchmark.py \
+                --scene "$scene" --canvas '${{ matrix.canvas }}' --out "$RUNNER_TEMP/native-audio-evidence/$scene"
+            done
+          elif [ '${{ matrix.scenario }}' = speed ]; then
             "$RUNNER_TEMP/native-env/bin/python" experiments/live_browser_preview/speed_benchmark.py \
               --canvas '${{ matrix.canvas }}' --out "$RUNNER_TEMP/native-audio-evidence/matrix"
           elif [ '${{ matrix.scenario }}' = visual ]; then
@@ -115,5 +120,53 @@ jobs:
         with:
           name: native-audio-${{ matrix.scenario }}-${{ matrix.canvas }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/native-audio-evidence
+          if-no-files-found: warn
+          retention-days: 7
+
+  # Diagnostic comparison, never a substitute for the ordinary acceptance job.
+  # Fixed ABBA order retains failures on both revisions rather than rerunning
+  # the candidate until it passes. Base failures must not fail unrelated PRs.
+  visual-base-head:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    env:
+      MOVIESTAR_CHROME_NO_SANDBOX: '1'
+      COMPARISON_BASE: ${{ github.event.pull_request.base.sha }}
+      COMPARISON_HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: app/pyproject.toml
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.5.0'
+      - name: Install the reference browser, FFmpeg and common dependencies
+        env:
+          CHROME_FOR_TESTING_VERSION: '156.0.8078.73'
+        run: |
+          python bin/install-ci-ffmpeg
+          curl --fail --location --silent --show-error \
+            "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_FOR_TESTING_VERSION}/linux64/chrome-headless-shell-linux64.zip" \
+            --output "$RUNNER_TEMP/comparison-chrome.zip"
+          unzip -q "$RUNNER_TEMP/comparison-chrome.zip" -d "$RUNNER_TEMP/comparison-chrome"
+          echo "MOVIESTAR_CHROME_PATH=$RUNNER_TEMP/comparison-chrome/chrome-headless-shell-linux64/chrome-headless-shell" >> "$GITHUB_ENV"
+          python -m pip install build ./app
+      - name: Compare immutable base and head wheels on identical media
+        run: |
+          python experiments/live_browser_preview/compare_visual.py \
+            --base "$COMPARISON_BASE" --head "$COMPARISON_HEAD" \
+            --out "$RUNNER_TEMP/visual-comparison"
+      - name: Retain every comparison trial
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: native-visual-base-head-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/visual-comparison
           if-no-files-found: warn
           retention-days: 7

@@ -126,3 +126,44 @@ assert.equal(video.listeners.size,0);
     prefix=f'const MODULE={json.dumps(module)},CANCEL={json.dumps(cancel)},SOURCE_OFFSET={json.dumps(source_offset)};\n'
     result=subprocess.run(['node','--input-type=module','-e',prefix+script],capture_output=True,text=True,timeout=10)
     assert result.returncode==0,result.stdout+result.stderr
+
+
+@pytest.mark.parametrize('action', ['complete', 'pause', 'dispose'])
+def test_three_picture_startup_waits_for_all_presentations_and_restores_first_pixels(action):
+    module = (Path(__file__).parents[1] / 'src/moviestar/preview_native_videos.mjs').as_uri()
+    script = r'''
+import assert from 'node:assert/strict';
+const {createVideoGroup}=await import(MODULE);
+Object.defineProperty(globalThis,'performance',{value:{timeOrigin:1000,now:()=>100}});
+const entries=Array.from({length:3},(_,index)=>{
+ const callbacks=new Map(),listeners=new Map();let next=0,frames=0;
+ const video={currentTime:index+1,paused:true,playbackRate:1,seeking:false,
+  getVideoPlaybackQuality:()=>({totalVideoFrames:frames,droppedVideoFrames:0}),
+  play(){this.paused=false;return Promise.resolve();},pause(){this.paused=true;},
+  requestVideoFrameCallback(fn){callbacks.set(++next,fn);return next;},cancelVideoFrameCallback(id){callbacks.delete(id);},
+  addEventListener(k,fn){listeners.set(k,fn);},removeEventListener(k){listeners.delete(k);},removeAttribute(){},load(){}};
+ return{video,start:index+1,fps:30,rate:1,path:['scene',String(index)],callbacks,listeners,
+  emit(point){const [id,fn]=callbacks.entries().next().value;callbacks.delete(id);video.currentTime=point.mediaTime;frames++;fn(0,point);}};
+});
+const group=createVideoGroup(entries);let settled=false;
+const measuring=group.measureStartup().then(result=>{settled=true;return result;});measuring.catch(()=>{});
+await new Promise(r=>setImmediate(r));
+assert.deepEqual(entries.map(e=>e.callbacks.size),[1,1,1],'Every decoder must produce its own presentation evidence');
+for(let i=0;i<2;i++)entries[i].emit({mediaTime:entries[i].start+1/30,expectedDisplayTime:100+[20,50][i]+1000/30});
+await new Promise(r=>setImmediate(r));assert.equal(settled,false,'A fast primary cannot publish readiness for two listeners');
+if(ACTION!=='complete'){
+ group[ACTION]();assert.equal(await measuring,null);assert.ok(entries.every(e=>e.video.paused&&e.callbacks.size===0));
+}else{
+ entries[2].emit({mediaTime:entries[2].start+1/30,expectedDisplayTime:100+80+1000/30});
+ await new Promise(r=>setImmediate(r));assert.equal(settled,false,'Restore all three first pictures before readiness');
+ for(const entry of entries){entry.listeners.get('seeked')();entry.emit({mediaTime:entry.start,expectedDisplayTime:250});}
+ const measured=await measuring;assert.ok(Math.abs(measured.lead-.08)<1e-9,'Reserve the slowest actual presentation lead');
+ assert.equal(measured.pictures.length,3);assert.equal(measured.preparation_frames,3);assert.equal(measured.preparation_drops,0);
+ assert.ok(entries.every(e=>e.video.paused&&Math.abs(e.video.currentTime-e.start)<.0001&&e.callbacks.size===0));
+ group.dispose();
+}
+'''
+    result = subprocess.run(['node', '--input-type=module', '-e',
+        'const MODULE=' + json.dumps(module) + ';const ACTION=' + json.dumps(action) + ';\n' + script],
+        capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stdout + result.stderr

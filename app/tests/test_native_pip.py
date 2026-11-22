@@ -53,14 +53,15 @@ def test_silent_listener_is_allowed_but_selected_speaker_needs_audio(pip_project
         compile_snapshot(read_snapshot(root, 0, 5))
 
 
-@pytest.mark.parametrize('change,reason', [('third', 'two'), ('rate', 'rate'),
+@pytest.mark.parametrize('change,reason', [('fourth', 'three'), ('rate', 'rate'),
     ('operations', 'source operations'), ('clock', 'audio'), ('held', 'unit-speed')])
 def test_all_pip_media_and_audio_clocks_are_validated(pip_project, change, reason):
     spec, project, root = pip_project
-    if change == 'third':
-        child = deepcopy(spec['spatial']['scenes']['scene']['layout']['children'][-1])
-        child['instance_id'] = 'third'
-        spec['spatial']['scenes']['scene']['layout']['children'].append(child)
+    if change == 'fourth':
+        for identity in ('third', 'fourth'):
+            child = deepcopy(spec['spatial']['scenes']['scene']['layout']['children'][-1])
+            child['instance_id'] = identity
+            spec['spatial']['scenes']['scene']['layout']['children'].append(child)
     elif change == 'rate':
         project['sources'][1]['fps'] = 24
     elif change == 'operations':

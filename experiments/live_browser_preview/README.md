@@ -48,7 +48,11 @@ one remotely requires a separate delivery/security integration.
 Edit the generated project's spatial model using the actual CLI (run commands
 from the project directory), or use a coding agent. Undo uses the existing CLI.
 
-## Supported subset
+## Original probe subset
+
+This section records the original feasibility probe. The current installed
+profile, including three-picture single-scene review, is documented in
+[Local preview viewer](../../docs/local-preview.md#native-profile-and-explicit-fallback).
 
 The probe fails explicitly outside this subset:
 
@@ -1228,3 +1232,68 @@ require all 90 source frames per three-second span and no pilot-tone gap longer
 than one audio quantum, including cuts at a source's EOF. The native-playback
 CI job retains its first generated source-cut traces on success and failure;
 the remaining full suite excludes those files so every acceptance test runs once.
+
+## Three-person interview journey
+
+`interview.py` creates a two-scene project using real CLI commands: a speaker
+plus a shared nested `ListenerPair`, three independent source offsets, sample
+captions, responsive portrait/landscape rules and local/shared/reset edits.
+Follow [the complete editing walkthrough](../../docs/spatial-interview.md).
+
+```sh
+python experiments/live_browser_preview/interview_benchmark.py \
+  --out /tmp/interview-intro --canvas 360x640 --scene intro --capture-pcm
+python experiments/live_browser_preview/interview_benchmark.py \
+  --out /tmp/interview-reply --canvas 1080x1920 --scene reply --capture-pcm
+```
+
+Each command retains first results for histories 0/20/50, with ten edits and ten
+individual undos per history. Every revision must reach the expected borders,
+source frames, captions and portrait/landscape arrangement within three seconds.
+Play from fresh readiness and again after undo; require zero review-frame drops
+on every decoder, source identity within the existing one-frame live readback
+bound, and audio/picture phase and program drift within 50 ms. Startup preparation
+frames/drops remain separate from review counters. Tests compare captured PCM
+with the canonical mix at 1e-5 sample error, geometry within .2 pixels, and picture
+interiors against canonical rendering at the existing eight-level RGB budget.
+A short rendered window also checks both sides of the actual speaker cut.
+
+Three-picture preparation remains muted until a user starts playback. On Play,
+real embedded audio pipelines join the resumed output clock through zero gains;
+the prepared PCM remains the only audible output. The primary picture is chosen
+from an audio-bearing source, including when the first DOM picture is a silent
+listener. All-silent three-picture groups require rendered mode. Playback uses
+the established half-frame device-clock launch, not the startup lead measured
+on the earlier muted pipelines. Restart reuses connections. This addresses the
+single-scene presentation slip retained in #215; first failing CI artifacts
+remain evidence and the zero-drop/50 ms/PCM gates are unchanged.
+
+Three-picture native windows are deliberately limited to one scene. Continuous
+three-picture cuts require rendered review. The initial cut investigation found
+startup drops; longer preroll and re-priming did not reliably solve them. No cut
+support, relaxed fidelity threshold or real-speech acceptance is implied by this
+journey. Existing one/two-picture cut support is unchanged. Use a new `--out`
+directory for each run; do not replace a failed first result with a rerun.
+
+### Matched visual-drop investigation
+
+`compare_visual.py` diagnoses a visual-edit failure using immutable base/head
+wheel builds, one interpreter/dependency set, a shared generated media fixture
+and the same driver/browser/FFmpeg. It runs the HD history-0 case in a fixed
+**base, head, head, base** order. Each trial gets a new directory; all results,
+source/wheel/producer/media hashes and per-decoder counters are retained in
+`comparison.json` and the individual browser reports. This tests the existing
+seek-before-Play editing path, not the separate cold incoming-cut symptom.
+
+```sh
+python -m pip install build
+python experiments/live_browser_preview/compare_visual.py \
+  --base FULL_BASE_SHA --head FULL_HEAD_SHA --out /tmp/visual-comparison
+```
+
+Use Python 3.12+ with Moviestar's dependencies. The CI comparison uses the same
+pinned Linux browser as acceptance. Its job is diagnostic/advisory because the
+base can fail too; the ordinary candidate acceptance job remains mandatory and
+keeps its zero-drop/50 ms gates. A clean comparison is a non-reproduction, not
+proof that an earlier failure was harmless or pre-existing. A failure on both
+revisions establishes the symptom on both, without proving a shared root cause.

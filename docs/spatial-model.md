@@ -22,6 +22,10 @@ without assigning any footage slot.
 Mixed compositions retain the preset renderer for scenes without a spatial tree.
 The existing `--source` option still selects an individual source's edit.
 
+For a complete example using three source videos, one shared `ListenerPair`,
+local and shared edits, portrait/landscape rules, captions and undo, follow the
+[three-person interview walkthrough](spatial-interview.md).
+
 ## Editable starting layouts
 
 Discover built-in starting points without loading a project:

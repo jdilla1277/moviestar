@@ -6,7 +6,7 @@ including `moviestar undo`, and need no account, upload or cloud render.
 
 | Mode | How review works | Use it for |
 | --- | --- | --- |
-| `--mode native` | The browser plays source media directly with the canonical scene layout. No preview MP4 is encoded. | Fast review of the supported one/two-video subset described below. |
+| `--mode native` | The browser plays source media directly with the canonical scene layout. No preview MP4 is encoded. | Fast review of the bounded subset described below, including a three-person scene. |
 | `--mode rendered` (default) | The shared spatial renderer produces a completed short MP4 with audio. | Projects outside the native subset, or review through the export renderer. Generation remains slow. |
 
 The viewer uses moviestar's gold star, serif wordmark and blue palette in a
@@ -57,13 +57,27 @@ scenes before and after it; `--from`/`--to` stay on the full composition's resul
 clock. For example, `--from 1801 --to 1806` reviews that section without preparing
 the preceding thirty minutes. Restart the viewer to select another range.
 
-Each selected span can have **zero, one or two visible MP4s**. In scenes with
-video, one visible video carries the resolved speaker audio; the other stays muted. Each video keeps its
-own source offset. Play, Pause, seek and revision replacement operate on both
-pictures. Both first frames must be prepared before the version becomes current.
-Both video elements feed the same Web Audio clock. The selected speaker's gain
+Each selected span can have **zero, one or two visible MP4s**. A window within
+**one scene** can also have **three visible MP4s**, for a speaker and two
+listeners. Review each three-picture scene separately; a window crossing its
+cut requires rendered mode. See the [editable interview walkthrough](spatial-interview.md).
+In scenes with video, one visible video carries the resolved speaker audio. Each video keeps its
+own source offset. Play, Pause, seek and revision replacement operate on all
+pictures. All first frames must be prepared before the version becomes current.
+Two-video elements feed the same Web Audio clock. The selected speaker's gain
 is one and the listener's gain is zero; both transport starts are submitted
 together. Pause, seek and replacement cancel pending startup too.
+Three-picture scenes use the canonical prepared PCM mix. Muted startup
+preparation checks every picture and returns to the exact first frames before
+publishing the revision; no preview video is encoded. On Play, videos with real
+embedded audio join the resumed Web Audio clock through zero-gain connections,
+so they do not double the prepared mix. The primary picture must have embedded
+audio to supply that clock; genuinely silent listeners follow group transport.
+If all three pictures lack embedded audio, use rendered mode. Preparation never
+requires an audio autoplay gesture, and Restart reuses the same connections.
+A one-frame three-picture window keeps its already prepared images paused and
+plays only that frame’s audio window. It does not require a nonexistent next
+frame when a source is positioned on its final decoded image.
 A cut switches the composition and its selected speaker audio together. A → B → A can return to
 the same recording at a different source position, with a different layout,
 caption state or component arrangement in each scene.
@@ -148,8 +162,8 @@ includes the current caption text, lines, font size, active word and estimated
 bounds; preset glyphs themselves come from the export renderer, not browser fonts.
 
 Windows containing more than three spans, crossing pacing boundaries inside
-one scene, overlapping any transition, or needing more than two visible videos
-at once are rejected. Transitions elsewhere in the
+one scene, overlapping any transition, needing more than three visible videos,
+or crossing a cut with three pictures are rejected. Transitions elsewhere in the
 project do not block an otherwise supported window. The chosen sources must have
 no source edit operations. Edits on unrelated sources and unplaced live caption tracks do not block
 this window. Up to two independent audio tracks and source/track gain, mute and edge fades are
