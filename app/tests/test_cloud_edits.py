@@ -154,3 +154,31 @@ def test_incomplete_success_never_clears_pending_edit(remote,tmp_path,monkeypatc
     assert json.loads(result.output)['error']['code']=='mutation_unconfirmed'
     records=list((tmp_path/'cloud-edit-requests').rglob('*.json'))
     assert len(records)==1 and json.loads(records[0].read_text())['state']=='pending'
+
+
+def test_new_explicit_key_cannot_bypass_pending_edit_storage(remote,tmp_path,monkeypatch):
+    from moviestar import cloud_creation_state
+    monkeypatch.setattr(cloud_creation_state,'_account_state_path',lambda:tmp_path/'account.json')
+    _,_,capability=remote
+    file=tmp_path/'trim.json';file.write_text(json.dumps(REQUEST))
+    writes=[]
+    def request(url,credential,**kwargs):
+        if url.endswith('/capabilities'):return 200,capability
+        writes.append(kwargs)
+        return 0,{}
+    monkeypatch.setattr(cloud,'_request',request)
+    runner=CliRunner()
+    assert runner.invoke(cli,['cloud','edits','apply',P,'--request',str(file),'--idempotency-key','first']).exit_code==1
+    record=next((tmp_path/'cloud-edit-requests').rglob('*.json'));original=record.read_bytes()
+    blocked=runner.invoke(cli,['cloud','edits','apply',P,'--request',str(file),'--idempotency-key','second'])
+    assert blocked.exit_code==1
+    assert json.loads(blocked.output)['error']['code']=='invalid_request'
+    assert len(writes)==1  # Key B is never sent without a durable record.
+    assert record.read_bytes()==original
+    blocked_recovery=runner.invoke(cli,['cloud','edits','apply',P,'--recover','--idempotency-key','second'])
+    assert blocked_recovery.exit_code==1 and len(writes)==1
+    # New invocation/process state recovers only A with A's exact retained body.
+    recovered=CliRunner().invoke(cli,['cloud','edits','apply',P,'--recover'])
+    assert recovered.exit_code==1  # second simulated response loss
+    assert writes==[{'payload':REQUEST,'key':'first'}]*2
+    assert record.read_bytes()==original

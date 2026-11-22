@@ -202,6 +202,8 @@ def register_edits(cloud):
         _capability('cloud edits apply',endpoint,credential,None)
         try:
             with creation_request(endpoint,credential,project,idempotency_key,recovery_directory='cloud-edit-requests') as pending:
+                if not pending.managed:
+                    raise CreationStateError('An earlier edit still has an uncertain outcome. Run apply PROJECT_ID --recover with its original key before submitting another key.')
                 previous=_read(pending.path,project)
                 original=previous.get('request') if pending.recovering and previous else None
                 if recover:

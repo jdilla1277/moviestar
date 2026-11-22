@@ -107,7 +107,8 @@ sending. If the response is lost, use `cloud edits apply PROJECT --recover` in a
 fresh process using the same account profile. Do not change the base or key.
 An explicit `--idempotency-key KEY` plus the original request can recover across
 credential renewal for the same authorized account; automatic profile recovery
-is scoped to the original credential. A changed pending request is rejected.
+is scoped to the original credential. A changed pending request or different explicit key is rejected before sending
+while the original outcome is uncertain. Recover that original request first.
 
 `cloud edits show PROJECT --revision REVISION` reopens that exact version;
 `current_revision` separately identifies the current pointer. Undo uses the same
