@@ -117,8 +117,10 @@ to inspect raw or exported file pixels without applying project edits or text.
 For dense source inspection, use `moviestar inspect --from X --to Y`. Each
 thumbnail's `requested_timecode` is a sample on the interval grid; its `timecode`
 is the displayed source frame's presentation time, rounded to milliseconds.
-The sampler uses the last frame at or before each request, preserving frames
-held across variable-frame-rate gaps. Actual frame times can precede the window
+The sampler uses the last frame at or before each FFmpeg sample tick, preserving frames
+held across variable-frame-rate gaps. FFmpeg quantizes the requested grid to its
+representable output time base; labels use observed timing rather than a decimal
+interval reconstruction. Actual frame times can precede the window
 start or repeat across samples; if video begins after the first request, the
 first available frame is used. Source inspection keeps its source clock even
 when a flat project has trims. Scene-composition inspection continues to report

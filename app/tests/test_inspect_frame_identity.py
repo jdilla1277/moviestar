@@ -204,14 +204,15 @@ def test_warm_cache_does_not_run_media_tools(counter, tmp_path, monkeypatch):
     assert second['thumbnails'] == first['thumbnails']
 
 
-def test_fractional_interval_labels_match_the_actual_pixels(counter, tmp_path, monkeypatch):
+@pytest.mark.parametrize('interval', [.0333333333, 1/30, .099999999999])
+def test_fractional_interval_labels_match_the_actual_pixels(counter, tmp_path, monkeypatch, interval):
     # Do not infer frame identity from a rounded ffprobe timestamp at a sample
     # only picoseconds before a frame boundary. Match decoded image content.
     times, means = decoded_source(counter)
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
     runner.invoke(cli, ['load', str(counter), '--no-transcribe', '--no-frames'])
-    result = inspect(runner, 0, 1, .0333333333)
+    result = inspect(runner, 0, 1, interval)
     for thumb in result['thumbnails']:
         actual_mean = sum(gray(thumb['path'])) / 4096
         index = min(range(len(means)), key=lambda i: abs(means[i] - actual_mean))
@@ -241,8 +242,51 @@ def test_decoded_times_round_before_minute_boundary_formatting(counter, tmp_path
     trace = ('[showinfo@source @ 0x0] config in time_base: 1/10000\n'
              '[showinfo@source @ 0x0] n: 0 pts: 599996 pts_time:59.9996\n'
              '[showinfo@sample @ 0x0] config in time_base: 1/10000\n'
-             '[showinfo@sample @ 0x0] n: 0 pts: 0 pts_time:0\n')
+             '[showinfo@sample @ 0x0] n: 0 pts: 0 pts_time:0\n'
+             '[showinfo@output @ 0x0] config in time_base: 1/2\n'
+             '[showinfo@output @ 0x0] n: 0 pts: 0 pts_time:0\n')
     monkeypatch.setattr(subprocess, 'run', lambda *a, **kw: SimpleNamespace(
         returncode=0, stderr=trace, stdout=''))
     _, times, _ = extract_inspection_frames(str(counter), .5, tmp_path, 'sample', 64, 59.9996, 1)
     assert format_timecode(times[0]) == {'text': '0:01:00.000', 'seconds': 60.0}
+
+
+def test_old_reconstructed_timing_cache_is_not_reused(counter, tmp_path, monkeypatch):
+    import hashlib
+    import shutil
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    runner.invoke(cli, ['load', str(counter), '--no-transcribe', '--no-frames'])
+    first = inspect(runner, 0, .4, 1/30)
+    folder = Path(first['extraction']['frames_dir'])
+    manifest = json.loads((folder / 'source-times.json').read_text())
+    files = [(p.name, p.read_bytes()) for p in folder.glob('*.jpg')]
+    shutil.rmtree(folder)
+    identity = manifest['identity']
+    identity['version'] = 1
+    digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:16]
+    legacy = folder.parent / f"counter_0.0_0.4_0.033_64_pts_v1_{digest}"
+    legacy.mkdir(exist_ok=True)
+    for name, data in files:
+        (legacy / name).write_bytes(data)
+    for entry in manifest['frames']:
+        entry['seconds'] = 0.0
+    (legacy / 'source-times.json').write_text(json.dumps(manifest))
+    assert inspect(runner, 0, .4, 1/30, '--dry-run')['would_reuse_cache'] is False
+    fresh = inspect(runner, 0, .4, 1/30)
+    assert fresh['extraction']['cached'] is False
+    assert fresh['thumbnails'][1]['timecode']['seconds'] == .033
+    assert inspect(runner, 0, .4, 1/30)['thumbnails'] == fresh['thumbnails']
+
+
+def test_missing_output_clock_fails_instead_of_guessing_ticks(counter, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from moviestar.ffmpeg import extract_inspection_frames
+    (tmp_path / 'sample_000001.jpg').write_bytes(b'jpeg')
+    trace = ''.join(f'[showinfo@{stage} @ 0x0] config in time_base: 1/30\n'
+                    f'[showinfo@{stage} @ 0x0] n: 0 pts: 0 pts_time:0\n'
+                    for stage in ('source', 'sample'))
+    monkeypatch.setattr(subprocess, 'run', lambda *a, **kw: SimpleNamespace(
+        returncode=0, stderr=trace, stdout=''))
+    with pytest.raises(RuntimeError, match='timestamp'):
+        extract_inspection_frames(str(counter), 1/30, tmp_path, 'sample', 64, 0, .4)

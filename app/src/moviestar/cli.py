@@ -4725,8 +4725,8 @@ def inspect(
     returns 20 frames (5.0, 5.5, ..., 14.5), not 21 — the upper bound
     is exclusive. Each thumbnail's requested_timecode identifies that sample;
     timecode identifies the displayed source frame's presentation time (rounded
-    to milliseconds). Sampling uses the frame on screen at the requested time:
-    the last decoded frame at or before it. Fractional cadence or held VFR
+    to milliseconds). Sampling uses the last decoded frame at or before each FFmpeg sample tick;
+    FFmpeg quantizes the requested grid to its representable output time base. Fractional cadence or held VFR
     frames can therefore have earlier, repeated timecodes. If the video starts
     later than the first request, its first available frame is used.
 
@@ -4919,7 +4919,7 @@ def inspect(
     except OSError:
         source_signature = None
     cache_identity = {
-        "version": 1, "source": source_path, "signature": source_signature,
+        "version": 2, "source": source_path, "signature": source_signature,
         "from": from_s, "to": to_s, "interval": interval, "width": width,
     }
     # Readable milliseconds plus exact identity: nearby requests and replaced
@@ -4928,7 +4928,7 @@ def inspect(
     inspect_root = get_project_dir() / INSPECT_FRAMES_DIR
     subdir_name = (
         f"{source_id}_{round(from_s, 3)}_{round(to_s, 3)}_"
-        f"{round(interval, 3)}_{width}_pts_v1_{fingerprint}"
+        f"{round(interval, 3)}_{width}_pts_v2_{fingerprint}"
     )
     frames_out = inspect_root / subdir_name
     frame_times = _inspect_cached_times(frames_out, source_id, cache_identity)

@@ -36,6 +36,8 @@ has nominal samples at 5.0, 5.5, …, 14.5 seconds. New results use the same hel
 `requested_at_ms` identifies the nominal sample request. Sampling reports
 `time_basis: decoded_source_time` and `strategy: source_frame_at_or_before`.
 Actual frame times may precede the requested start or repeat across VFR holds.
+The engine observes the actual sampling time base chosen by FFmpeg; it does not
+reconstruct frame identity from the requested decimal interval.
 Retained older jobs still report `nominal_source_time`; their times are nominal
 samples and must not be treated as decoded PTS. Reopening does not relabel or
 reprocess them. Downloads preserve the job's time basis and requested time

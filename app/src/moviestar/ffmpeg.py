@@ -2114,7 +2114,7 @@ def build_extract_frames_command(
         vf = (
             f"showinfo@source=checksum=0,setpts=ceil(PTS-{start_time or 0}/TB),"
             f"showinfo@sample=checksum=0,fps=1/{interval}:start_time=0:"
-            f"round=up:eof_action=pass,scale={scale_width}:-1"
+            f"round=up:eof_action=pass,showinfo@output=checksum=0,scale={scale_width}:-1"
         )
         cmd += ["-map", "0:v:0", "-fps_mode", "passthrough"]
     cmd += [
@@ -2205,9 +2205,10 @@ def extract_inspection_frames(
 ) -> tuple[list[Path], list[float], list[str]]:
     """Sample held source frames and retain millisecond source presentation times.
 
-    One seek/decode serves the whole window. Paired traces record source PTS
-    (relative to container start) and the rebased PTS that fps rounds. Keeping
-    both avoids reconstructing source PTS from a quantized seek offset.
+    One seek/decode serves the whole window. Traces record source PTS
+    (relative to container start), rebased input PTS and actual fps output PTS.
+    This avoids reconstructing timestamps from either a quantized seek offset
+    or the requested decimal interval.
     No nominal frame rate or output-sequence position is treated as source PTS.
     """
     if not os.path.exists(video_path):
@@ -2230,11 +2231,14 @@ def extract_inspection_frames(
         return [], [], cmd
     source_times = _inspection_timestamps(result.stderr, "source")
     decoded = _inspection_timestamps(result.stderr, "sample")
-    if len(source_times) != len(decoded):
+    output_times = _inspection_timestamps(result.stderr, "output")
+    if len(source_times) != len(decoded) or len(output_times) < len(paths):
         raise RuntimeError("Could not establish source timestamps for inspection frames")
     times = []
-    for index in range(len(paths)):
-        tick = index * Fraction(str(interval))
+    # fps rationalizes its output rate; reconstructing ticks from a decimal
+    # interval (e.g. 1/30) can choose the preceding source frame. Use the
+    # timestamps actually emitted by the filter, before encoder/muxer limits.
+    for tick in output_times[:len(paths)]:
         selected = max(0, bisect.bisect_right(decoded, tick) - 1)
         # Normalize once at the shared boundary, before either client formats
         # the clock (59.9996 must carry to 1:00.000, not display 0:60.000).
