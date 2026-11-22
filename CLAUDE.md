@@ -24,6 +24,11 @@ suite. Run `bin/preflight` before every push.
 - Work on a feature branch. Never commit directly to `main`.
 - Check open pull requests before editing shared code.
 - Preserve structured JSON output and deterministic, non-destructive behavior.
+- Keep local and Cloud behavior contracts in sync. Before changing clocks,
+  frame selection or response meaning, check the Cloud worker/service, remote
+  CLI and hosted MCP counterparts. Reuse fixture expectations and verify both
+  paths; track unfinished counterparts and keep parity explicitly pending.
+  Distinguish local tests from installed-worker/deployment and live acceptance.
 - Send progress narration to stderr; keep stdout machine-readable.
 - Do not commit generated media, environments, secrets, credentials, user data,
   or material copied from private repositories.

@@ -58,17 +58,7 @@ def decoded_source(path):
     return times, means
 
 
-@pytest.mark.parametrize('rate,vfr,start,end,interval,offset', [
-    ('30', False, 0, 2, .5, 0),
-    ('30', False, .51, 1.99, .37, 0),
-    ('30', False, .0333, 1.0333, .5, 0),
-    ('30000/1001', False, .11, 2.11, .23, 0),
-    ('30', False, 2.51, 3.99, .37, 0),
-    ('30', False, 3.8, 4, .07, 0),
-    ('30', False, 0, 1, .01, 0),
-    ('30', True, .2, 2.7, .4, 0),
-    ('30', False, .51, 1.99, .37, 5),
-])
+@pytest.mark.parametrize('rate,vfr,start,end,interval,offset', json.loads((Path(__file__).parent / 'fixtures' / 'inspection-clock-cases.json').read_text()))
 def test_labels_identify_decoded_frames(tmp_path, monkeypatch, rate, vfr, start, end, interval, offset):
     path = tmp_path / 'identity.mp4'
     vf = "nullsrc=s=64x64:r=" + rate + ":d=4,geq=lum='16+N':cb=128:cr=128"

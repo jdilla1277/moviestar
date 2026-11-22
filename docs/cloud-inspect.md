@@ -31,10 +31,25 @@ and 16 MiB of images per job. Input is limited to 1 GiB. Increase the interval,
 reduce the width, or choose a shorter section if the job exceeds a limit.
 
 Sampling uses a half-open range: a 5–15 second section at a 0.5-second interval
-has nominal samples at 5.0, 5.5, …, 14.5 seconds. These are the local extractor's
-nominal times, not exact decoded presentation timestamps. Actual video coverage
+has nominal samples at 5.0, 5.5, …, 14.5 seconds. New results use the same held-frame sampler as local inspection: `at_ms` and
+`timecode` identify the decoded source frame (rounded to milliseconds), while
+`requested_at_ms` identifies the nominal sample request. Sampling reports
+`time_basis: decoded_source_time` and `strategy: source_frame_at_or_before`.
+Actual frame times may precede the requested start or repeat across VFR holds.
+Retained older jobs still report `nominal_source_time`; their times are nominal
+samples and must not be treated as decoded PTS. Reopening does not relabel or
+reprocess them. Downloads preserve the job's time basis and requested time
+when available. Actual video coverage
 can produce fewer frames; an empty result explicitly reports
 `no_frames_in_range`.
+
+The new local and Cloud fields carry the same meaning:
+
+| Meaning | Local `inspect` | Cloud inspection |
+| --- | --- | --- |
+| Requested source sample | `requested_timecode.seconds` | `requested_at_ms / 1000` |
+| Displayed source frame | `timecode.seconds` | `at_ms / 1000` |
+| Displayed frame label | `timecode.text` | `timecode` |
 
 No transcript is generated or inferred. Results explicitly report
 `transcript: null` and `transcript_status: unavailable`. Local inspection can
