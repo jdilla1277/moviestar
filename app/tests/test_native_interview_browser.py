@@ -182,6 +182,11 @@ try{
   await b.evaluate(api+'.seek(0)');await check();
  }
  await writeFile(OUT+'/terminal.json',JSON.stringify({snapshot:await check(),metrics:await b.evaluate(api+'.metrics')}));
+}catch(error){
+ const failure=await b.evaluate(`(()=>{const stage=window.movieStarPreview?.stage??document.querySelector('iframe')?.contentWindow.moviestarLiveStage;
+  let snapshot;try{snapshot=stage?.snapshot();}catch(error){snapshot={error:String(error)};}
+  return{error:document.getElementById('error').textContent,current:window.movieStarPreview?.is_current,snapshot,metrics:stage?.metrics};})()`).catch(()=>null);
+ await writeFile(OUT+'/failure.json',JSON.stringify({exception:String(error.stack??error),state:failure}));throw error;
 }finally{await b.close();}
 '''
             values = {'HELPER': (Path(__file__).parents[2]/'experiments/live_browser_preview/browser.mjs').as_uri(),

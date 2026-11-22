@@ -209,7 +209,9 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: native-interview-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/native-interview/test_actual_interview_*/browser
+          path: |
+            ${{ runner.temp }}/native-interview/test_actual_interview_*/browser
+            ${{ runner.temp }}/native-interview/test_terminal_interview_*/browser
           if-no-files-found: ignore
           retention-days: 7
 
