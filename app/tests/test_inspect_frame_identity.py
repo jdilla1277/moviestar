@@ -231,3 +231,18 @@ def test_audio_only_tail_keeps_an_empty_inspection_result(tmp_path, monkeypatch)
     result = inspect(runner, 3, 4, .2)
     assert result['thumbnails'] == []
     assert result['thumbnails_returned'] == 0
+
+
+def test_decoded_times_round_before_minute_boundary_formatting(counter, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from moviestar.ffmpeg import extract_inspection_frames
+    from moviestar.timecodes import format_timecode
+    (tmp_path / 'sample_000001.jpg').write_bytes(b'jpeg')
+    trace = ('[showinfo@source @ 0x0] config in time_base: 1/10000\n'
+             '[showinfo@source @ 0x0] n: 0 pts: 599996 pts_time:59.9996\n'
+             '[showinfo@sample @ 0x0] config in time_base: 1/10000\n'
+             '[showinfo@sample @ 0x0] n: 0 pts: 0 pts_time:0\n')
+    monkeypatch.setattr(subprocess, 'run', lambda *a, **kw: SimpleNamespace(
+        returncode=0, stderr=trace, stdout=''))
+    _, times, _ = extract_inspection_frames(str(counter), .5, tmp_path, 'sample', 64, 59.9996, 1)
+    assert format_timecode(times[0]) == {'text': '0:01:00.000', 'seconds': 60.0}

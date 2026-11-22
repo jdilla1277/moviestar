@@ -2203,7 +2203,7 @@ def extract_inspection_frames(
     start_time: float,
     duration: float,
 ) -> tuple[list[Path], list[float], list[str]]:
-    """Sample held source frames and retain their decoded presentation times.
+    """Sample held source frames and retain millisecond source presentation times.
 
     One seek/decode serves the whole window. Paired traces record source PTS
     (relative to container start) and the rebased PTS that fps rounds. Keeping
@@ -2236,7 +2236,9 @@ def extract_inspection_frames(
     for index in range(len(paths)):
         tick = index * Fraction(str(interval))
         selected = max(0, bisect.bisect_right(decoded, tick) - 1)
-        times.append(float(source_times[selected]))
+        # Normalize once at the shared boundary, before either client formats
+        # the clock (59.9996 must carry to 1:00.000, not display 0:60.000).
+        times.append(round(float(source_times[selected]), 3))
     return paths, times, cmd
 
 

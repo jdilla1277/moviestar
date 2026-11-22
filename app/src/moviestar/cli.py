@@ -5041,8 +5041,8 @@ def inspect(
     thumbnails = [
         {
             "path": str(p.resolve()),
-            "timecode": format_timecode(frame_times[i]),
-            "requested_timecode": format_timecode(from_s + i * interval),
+            "timecode": format_timecode(round(frame_times[i], 3)),
+            "requested_timecode": format_timecode(round(from_s + i * interval, 3)),
         }
         for i, p in enumerate(frame_paths)
     ]
