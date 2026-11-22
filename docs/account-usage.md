@@ -114,3 +114,28 @@ usage is unavailable, never a Free plan or a zero balance.
 - `account_unavailable`: retry later. Keep the existing connection.
 - `invalid_response`: use compatible client/service versions; no balance was
   inferred from the incomplete response.
+
+## Estimated compute cost
+
+On compatible services, screenshot Activity has `estimated_compute` on the job
+and its attempts. `status: estimated` includes `amount_usd` (with the configured
+adjustment) and `base_usd` (before adjustment), as exact USD strings. Attempts
+include their pinned `policy_version` and `adjustment_multiplier`; the job sums
+all its attempts, including failures and retries, once. Do not add that total
+and the attempt amounts together.
+
+Pending or unavailable estimates have null amounts and an explicit `reason`.
+Missing worker pricing does not mean zero. Other job families are not covered
+by this first integration. Local reads and metadata edits remain unmetered.
+
+The method is single-slot worker occupancy, measured from attempt claim to its
+terminal timestamp, not video duration or weighted allowance milliseconds.
+This is an estimate of compute only: storage, transfer, database/API, idle host
+cost and billing minimums/credits/discounts outside the configured rate are not
+included. It is not an AWS invoice or a customer charge. Actual provider costs
+remain in their separate receipt fields and may arrive later.
+
+Estimates persist at completion; polling does not calculate new work or change
+money. A newly configured price applies to new attempts; existing estimates
+retain their original rate and adjustment. Future reconciliation can compare
+these original estimates with provider evidence without issuing a new charge.

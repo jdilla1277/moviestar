@@ -94,6 +94,30 @@ def _usage(value):
     return result
 
 
+def _compute_estimate(value):
+    if value is None:
+        return None
+    money = lambda v: isinstance(v, str) and re.fullmatch(r"\d{1,20}(?:\.\d{1,12})?", v) is not None
+    result = _fields(value, {
+        "status": lambda v: v in ("estimated", "pending", "unavailable"),
+        "amount_usd": _optional(money), "base_usd": _optional(money),
+        "reason": lambda v: v in (None, "pricing_missing", "missing_timing", "running", "awaiting_attempt", "incomplete_pricing"),
+        "scope": lambda v: v == "compute", "method": lambda v: v == "attempt_occupancy_v1",
+        "policy_version": _optional(_id),
+        "adjustment_multiplier": _optional(lambda v: isinstance(v, str) and re.fullmatch(r"\d+(?:\.\d+)?", v) is not None),
+    })
+    if result is None:
+        return False
+    valid = (result["amount_usd"] is not None and result["base_usd"] is not None and result["reason"] is None) if result["status"] == "estimated" else (result["amount_usd"] is None and result["base_usd"] is None and result["reason"] is not None)
+    if not valid:
+        return False
+    if "attempt_count" in value:
+        if not _count(value["attempt_count"]):
+            return False
+        result["attempt_count"] = value["attempt_count"]
+    return result
+
+
 def _entry(value, *, task=False):
     result = _fields(value, {
         "id": _id, "operation_id": _id, "kind": lambda v: _text(v) and 0 < len(v) <= 64,
@@ -106,6 +130,11 @@ def _entry(value, *, task=False):
     })
     if result is None:
         return None
+    if "estimated_compute" in value:
+        estimate = _compute_estimate(value["estimated_compute"])
+        if estimate is False:
+            return None
+        result["estimated_compute"] = estimate
     if "cost_status" in value:
         if value["cost_status"] not in ("unmapped", "pending", "missing", "partial", "compute_reconciled", "needs_reconciliation"):
             return None
@@ -209,6 +238,10 @@ def register_account_reads(account):
     @click.option("--cloud", "cloud_only", is_flag=True, help="Show Cloud jobs only.")
     def activity(limit, cursor, cloud_only):
         """Read task history, allowance and nested attempts without executing work.
+
+        Screenshot estimated_compute is a compute-only estimate, separate from
+        actual provider receipts. Read its status/reason and never add the job
+        total to its nested attempt amounts.
 
         Provider costs are diagnostic operating costs, never customer charges;
         null means unknown, not zero. Attempts do not duplicate task usage.

@@ -79,6 +79,8 @@ def test_tasks_keep_nested_attempts_pagination_and_exact_unknown_costs(remote):
             "processing_ms": 1000, "output_bytes": 100,
             "reserved_processing_ms": 0, "reserved_output_bytes": 0},
         "responsible_account_id": "private"}
+    estimate = {"status":"estimated","amount_usd":"0.002000000000","base_usd":"0.001000000000","reason":None,"scope":"compute","method":"attempt_occupancy_v1","policy_version":None,"adjustment_multiplier":None,"attempt_count":1}
+    task["estimated_compute"] = {**estimate,"provider_resource":"private"}
     body.clear()
     body.update(items=[task], next_cursor="opaque_cursor", **context(),
                 provider_costs_are_customer_charges=False)
@@ -89,6 +91,15 @@ def test_tasks_keep_nested_attempts_pagination_and_exact_unknown_costs(remote):
     assert value["items"][0]["actual_cost_usd"] is None
     assert value["items"][0]["attempts"][0]["actual_cost_usd"] == "0.000123"
     assert value["next_cursor"] == "opaque_cursor"
+    assert value["items"][0]["estimated_compute"] == estimate
     assert calls[-1][0].endswith("?limit=1&cursor=opaque_cursor")
     body.pop("next_cursor")
     assert json.loads(invoke("activity").output)["error"]["code"] == "invalid_response"
+
+@pytest.mark.parametrize('amount', ['NaN', None, '-1', '0.0000000000001'])
+def test_invalid_estimates_are_unavailable_not_zero(amount):
+    from moviestar.account_reads import _compute_estimate
+    value = {'status':'estimated', 'amount_usd':amount, 'base_usd':'0.001',
+             'reason':None, 'scope':'compute', 'method':'attempt_occupancy_v1',
+             'policy_version':None, 'adjustment_multiplier':None}
+    assert _compute_estimate(value) is False
