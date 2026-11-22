@@ -158,7 +158,14 @@ async function checkReady(){
       if(!await videoGroup.seek(0,{presented:playbackRate()!==1})||disposed)return;
     }
     if(measuredPictures()){
-      pictureStartup=await videoGroup.measureStartup();if(!pictureStartup||disposed)return;
+      // A one-frame review already has every required picture presented.
+      // A source may be on its final decoded frame, so asking it for an
+      // advancing presentation would wait forever. No moving-picture startup
+      // lead is needed for this static result window.
+      pictureStartup=packet.samples.length===1&&playbackRate()===1
+        ? {lead:0,prepared_frame_only:true}
+        : await videoGroup.measureStartup();
+      if(!pictureStartup||disposed)return;
       metrics.picture_startup=pictureStartup;
     }
     apply(0);
@@ -492,7 +499,7 @@ async function seekTo(at){
 window.moviestarLiveStage={ready,metrics,
   get packet(){return packet;},
   get time(){if(cuts)return cuts.time;if(sceneClock)return sceneClock.time;return video?Math.max(0,(video.currentTime-packet.source_start)/playbackRate()):0;},
-  get paused(){return cuts?cuts.paused:sceneClock?sceneClock.paused:video?.paused??true;},
+  get paused(){return cuts?cuts.paused:sceneClock?sceneClock.paused:pictureStartup?.prepared_frame_only?!playing:video?.paused??true;},
   get audioState(){return cuts?cuts.audioState:audio?.state;},
   get error(){return metrics.error;},
   get audioOutputTimestamp(){return cuts?cuts.audioOutputTimestamp:audio?.getOutputTimestamp?.();},
@@ -568,6 +575,18 @@ window.moviestarLiveStage={ready,metrics,
       metrics.initial_presented=videos.map(item=>({path:item.path,media_time:item.video.currentTime,...item.frame,quality:{totalVideoFrames:item.beforePlay.totalVideoFrames,droppedVideoFrames:item.beforePlay.droppedVideoFrames}}));playing=true;
       if(reviewAudio?.snapshot().prepared)await reviewAudio.play(this.time,pictureStartup?{presentationLead:pictureStartup.lead}:{pictureLead:1/(2*packet.fps)});if(!active())return;
       if(reviewAudio)metrics.prepared_audio=reviewAudio.snapshot();
+      if(pictureStartup?.prepared_frame_only){
+        // Keep the sole authored image visible. Advancing the decoders could
+        // show an out-of-window frame or require an EOF callback to finish.
+        const end=metrics.prepared_audio.started_context_time+packet.range.to-packet.range.from;
+        const complete=()=>{
+          if(!active())return;
+          const remaining=end-audio.currentTime;
+          if(remaining>1/audio.sampleRate){stopTimer=setTimeout(complete,Math.max(1,remaining*1000));return;}
+          stopTimer=null;finishScene().catch(fail);
+        };
+        complete();return;
+      }
       if(videoGroup)await videoGroup.play();else await video.play();
       if(active()&&playbackRate()!==1)animateSpeed();
     }catch(error){if(active()){fail(error);throw error;}}

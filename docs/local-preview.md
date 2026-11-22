@@ -70,6 +70,9 @@ together. Pause, seek and replacement cancel pending startup too.
 Three-picture scenes use the canonical prepared PCM mix and muted video elements.
 Their startup preparation measures every picture and returns to the exact first
 frames before publishing the revision; no preview video is encoded.
+A one-frame three-picture window keeps its already prepared images paused and
+plays only that frame’s audio window. It does not require a nonexistent next
+frame when a source is positioned on its final decoded image.
 A cut switches the composition and its selected speaker audio together. A → B → A can return to
 the same recording at a different source position, with a different layout,
 caption state or component arrangement in each scene.

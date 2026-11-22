@@ -112,3 +112,46 @@ def test_three_picture_cut_windows_require_explicit_rendered_fallback(interview_
         compile_snapshot(read_snapshot(root, 0, 2*scenes))
     packet, _ = compile_snapshot(read_snapshot(root, 0, 2))
     assert len(packet['media']) == 3, 'Review each scene independently without flattening'
+
+
+@pytest.mark.parametrize('action', ['finish', 'pause', 'seek', 'dispose'])
+def test_static_interview_completion_is_owned_by_current_play(action):
+    import json
+    import subprocess
+    from tests.native_stage_harness import stage_script
+    script = r'''
+const vm=require('node:vm'),assert=require('node:assert/strict');
+let clock=10,next=0;const timers=new Map();
+const media=()=>({currentTime:1,paused:true,pause(){},getVideoPlaybackQuality:()=>({totalVideoFrames:0,droppedVideoFrames:0})});
+const pictures=Array.from({length:3},(_,i)=>({video:media(),path:[String(i)],primary:i===0}));
+const group={pause(){},seek:async()=>true,play(){throw Error('Static review must not advance decoders');},dispose(){}};
+const audio={sampleRate:48000,state:'running',get currentTime(){return clock;},resume:async()=>{},close:async()=>{},getOutputTimestamp:()=>({contextTime:clock,performanceTime:1})};
+let audible=false;const review={pause(){audible=false;},seek(){},dispose(){},async play(){audible=true;},snapshot:()=>({prepared:true,playing:audible,started_context_time:10})};
+const context={window:{moviestarScene:{entries:[],applyMotion(){}}},document:{createElement:()=>({getContext:()=>({})})},
+ location:{search:''},URLSearchParams,AbortController,performance:{timeOrigin:1000,now:()=>100},Date,
+ fetch:()=>new Promise(()=>{}),requestAnimationFrame:fn=>{fn();return 1;},
+ setTimeout(fn,ms){timers.set(++next,{fn,due:clock+ms/1000});return next;},clearTimeout:id=>timers.delete(id)};
+vm.createContext(context);vm.runInContext(STAGE,context);Object.assign(context,{pictures,group,audio,review});
+vm.runInContext(`packet={fps:30,range:{from:0,to:1/30},source_start:1,source_end:1+1/30,samples:[{nodes:[]}]};
+ video=pictures[0].video;videos.push(...pictures);videoGroup=group;reviewAudio=review;pictureStartup={prepared_frame_only:true,lead:0};resolveReady(true);`,context);
+// Assign the module's lexical audio separately from the fixture's global name.
+context.audioFixture=audio;vm.runInContext('audio=audioFixture;',context);
+const api=context.window.moviestarLiveStage,flush=()=>new Promise(r=>setImmediate(r));
+(async()=>{
+ await api.play();assert.equal(api.paused,false);assert.equal(audible,true);assert.equal(timers.size,1);
+ const stale=[...timers.values()][0].fn;
+ if(ACTION==='finish'){
+  clock+=1/30;for(const[id,t]of [...timers])if(t.due<=clock+1e-8){timers.delete(id);t.fn();}
+  await flush();assert.equal(api.metrics.finished,true);assert.equal(api.paused,true);assert.equal(audible,false);
+ }else{
+  if(ACTION==='seek')await api.seek(0);else api[ACTION]();
+  assert.equal(timers.size,0);clock+=1;stale();await flush();
+  assert.equal(api.metrics.finished,false,'A stale timer cannot finish paused, sought or disposed playback');
+  assert.equal(api.paused,true);assert.equal(audible,false);
+ }
+ if(ACTION!=='dispose')api.dispose();
+})().catch(error=>{console.error(error);process.exitCode=1;});
+'''
+    result = subprocess.run(['node', '-e', 'const STAGE='+json.dumps(stage_script())+';const ACTION='+json.dumps(action)+';'+script],
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stdout + result.stderr

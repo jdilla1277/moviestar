@@ -125,3 +125,73 @@ def test_actual_interview_edits_undo_playback_and_export(tmp_path, benchmark, ca
     for at, low, high in ((.11, .14, .22), (1.11, .07, .12)):
         samples = audio[:, round(at*48000):round((at+.04)*48000)]
         assert low < np.sqrt(np.mean(samples*samples)) < high, 'Export selects the speaker across the cut'
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node required')
+@pytest.mark.parametrize('terminal_count', [0, 1, 3])
+@pytest.mark.parametrize('window_frames', [1, 2])
+def test_terminal_interview_window_is_ready_and_replayable(tmp_path, benchmark, terminal_count, window_frames):
+    import selectors
+    from interview import prepare_interview
+    from moviestar.spec import save_spec
+    from moviestar.spatial_layout import _chrome_path
+    root = tmp_path / 'project'; prepare_interview(root)
+    spec = load_spec(root)
+    children = spec['spatial']['scenes']['intro']['layout']['children']
+    expected = [119, 149, 179]
+    if terminal_count:
+        children[2]['bindings']['right']['source'] = {'start': 5, 'end': 8}
+        expected[2] = 239
+    if terminal_count == 3:
+        children[1]['bindings']['clip']['source'] = {'start': 5, 'end': 8}
+        children[2]['bindings']['left']['source'] = {'start': 5, 'end': 8}
+        spec['composition'][0]['slots'][0].update(source_from='0:00:05.000', source_to='0:00:08.000')
+        expected = [239] * 3
+    expected = [n - (window_frames - 1) for n in expected]
+    save_spec(spec, cwd=root)
+    with (tmp_path / 'server.log').open('w') as log:
+        server = subprocess.Popen([sys.executable, '-m', 'moviestar.cli', 'preview', '--workspace', str(root),
+            '--mode', 'native', '--from', str((90-window_frames)/30), '--to', '3', '--port', '0', '--no-open'],
+            stdout=subprocess.PIPE, stderr=log, text=True)
+        try:
+            with selectors.DefaultSelector() as selector:
+                selector.register(server.stdout, selectors.EVENT_READ)
+                assert selector.select(20)
+                ready = json.loads(server.stdout.readline()); assert ready.get('url'), ready
+            script = r'''
+import assert from 'node:assert/strict';import{writeFile}from'node:fs/promises';
+const {Browser}=await import(HELPER),b=await Browser.launch(CHROME,OUT),api='window.movieStarPreview.stage';
+try{
+ await b.send('Page.navigate',{url:URL+'?audit=1'});
+ await b.wait('window.movieStarPreview?.is_current||document.getElementById("error").textContent',12000);
+ const error=await b.evaluate('document.getElementById("error").textContent');assert.equal(error,'');
+ assert.equal(await b.evaluate('window.movieStarPreview.is_current'),true);
+ const check=async(expected=EXPECTED)=>{const s=await b.evaluate(api+'.snapshot()');
+  assert.deepEqual(s.videos.map(v=>v.source.number),expected);
+  assert.ok(s.videos.every(v=>v.paused&&!v.seeking&&v.ready_state>=2));return s;};
+ await check();assert.equal(await b.evaluate(api+'.packet.samples.length'),WINDOW_FRAMES);
+ assert.equal(await b.evaluate('Boolean('+api+'.metrics.picture_startup.prepared_frame_only)'),WINDOW_FRAMES===1);
+ for(let i=0;i<2;i++){
+  await b.click('#play');await b.wait(api+'.metrics.finished||'+api+'.error',5000);
+  assert.equal(await b.evaluate(api+'.error'),null);await check(EXPECTED.map(n=>n+WINDOW_FRAMES-1));
+  if(WINDOW_FRAMES===1){const m=await b.evaluate(api+'.metrics');
+   assert.ok(m.video_quality.every(q=>q.total_frames===0&&q.dropped_frames===0),'A static window must not advance beyond its selected image');
+   assert.ok(m.pause_context_time-m.prepared_audio.started_context_time-1/30<=.05,'Static completion retains the existing 50ms end tolerance');}
+
+  await b.click('#restart');await b.wait(api+'.metrics.finished===false');
+  await b.evaluate(api+'.seek(0)');await check();
+ }
+ await writeFile(OUT+'/terminal.json',JSON.stringify({snapshot:await check(),metrics:await b.evaluate(api+'.metrics')}));
+}finally{await b.close();}
+'''
+            values = {'HELPER': (Path(__file__).parents[2]/'experiments/live_browser_preview/browser.mjs').as_uri(),
+                'CHROME': str(_chrome_path()), 'OUT': str(tmp_path/'browser'), 'URL': ready['url'], 'EXPECTED': expected, 'WINDOW_FRAMES': window_frames}
+            result = subprocess.run(['node', '--input-type=module', '-e',
+                ''.join('const '+k+'='+json.dumps(v)+';' for k,v in values.items())+script],
+                capture_output=True, text=True, timeout=35)
+            assert result.returncode == 0, result.stdout + result.stderr
+        finally:
+            server.terminate()
+            try: server.wait(timeout=9)
+            except subprocess.TimeoutExpired: server.kill(); server.wait()
+            server.stdout.close()

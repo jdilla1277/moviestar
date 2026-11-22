@@ -1264,3 +1264,26 @@ startup drops; longer preroll and re-priming did not reliably solve them. No cut
 support, relaxed fidelity threshold or real-speech acceptance is implied by this
 journey. Existing one/two-picture cut support is unchanged. Use a new `--out`
 directory for each run; do not replace a failed first result with a rerun.
+
+### Matched visual-drop investigation
+
+`compare_visual.py` diagnoses a visual-edit failure using immutable base/head
+wheel builds, one interpreter/dependency set, a shared generated media fixture
+and the same driver/browser/FFmpeg. It runs the HD history-0 case in a fixed
+**base, head, head, base** order. Each trial gets a new directory; all results,
+source/wheel/producer/media hashes and per-decoder counters are retained in
+`comparison.json` and the individual browser reports. This tests the existing
+seek-before-Play editing path, not the separate cold incoming-cut symptom.
+
+```sh
+python -m pip install build
+python experiments/live_browser_preview/compare_visual.py \
+  --base FULL_BASE_SHA --head FULL_HEAD_SHA --out /tmp/visual-comparison
+```
+
+Use Python 3.12+ with Moviestar's dependencies. The CI comparison uses the same
+pinned Linux browser as acceptance. Its job is diagnostic/advisory because the
+base can fail too; the ordinary candidate acceptance job remains mandatory and
+keeps its zero-drop/50 ms gates. A clean comparison is a non-reproduction, not
+proof that an earlier failure was harmless or pre-existing. A failure on both
+revisions establishes the symptom on both, without proving a shared root cause.
