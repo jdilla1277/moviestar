@@ -10,7 +10,7 @@ import click
 from moviestar import cloud as service
 from moviestar.account import _CLIENT_MARKER, _NoRedirectHandler
 from moviestar.cloud_creation_state import creation_request, CreationBusy, CreationStateError
-from moviestar.timecodes import parse_timecode
+from moviestar.timecodes import parse_timecode, format_timecode
 
 COMMAND = 'cloud inspect'
 
@@ -60,12 +60,25 @@ def _frames(job):
                 or result['sampling']['returned_frames'] != len(frames)
                 or result['sampling']['interval_ms'] != interval or result['sampling']['scale_width'] != width):
             raise ValueError()
-        total = 0
+        basis = result['sampling'].get('time_basis', 'nominal_source_time')
+        if basis not in ('nominal_source_time', 'decoded_source_time'):
+            raise ValueError()
+        decoded = basis == 'decoded_source_time'
+        if not decoded and result['sampling'].get('strategy') not in (None, 'local_inspect_fps'):
+            raise ValueError()
+        if decoded and result['sampling'].get('strategy') != 'source_frame_at_or_before':
+            raise ValueError()
+        total, previous = 0, -1
         for index, frame in enumerate(frames):
-            if (frame['index'] != index or frame['at_ms'] != start + index*interval or frame['at_ms'] >= end
+            requested = frame.get('requested_at_ms') if decoded else frame['at_ms']
+            if (frame['index'] != index or type(requested) is not int or requested != start + index*interval or requested >= end
+                    or type(frame['at_ms']) is not int or not 0 <= frame['at_ms'] <= 86400000 or frame['at_ms'] < previous
+                    or (not decoded and 'requested_at_ms' in frame)
+                    or (decoded and frame.get('timecode') != format_timecode(frame['at_ms']/1000)['text'])
                     or frame['width'] != width or frame['mime_type'] != 'image/jpeg'
                     or type(frame['file_size_bytes']) is not int or not 4 <= frame['file_size_bytes'] <= 262144):
                 raise ValueError()
+            previous = frame['at_ms']
             total += frame['file_size_bytes']
         if total > 16777216:
             raise ValueError()
@@ -154,7 +167,10 @@ def register_inspect_commands(cloud):
                     else:
                         with path.open('xb') as output:
                             output.write(image)
-                    saved.append({'index': frame['index'], 'at_ms': frame['at_ms'], 'path': str(path.resolve())})
+                    saved.append({'index': frame['index'], 'at_ms': frame['at_ms'],
+                                  **({'requested_at_ms': frame['requested_at_ms']} if 'requested_at_ms' in frame else {}),
+                                  'time_basis': job['result']['sampling'].get('time_basis', 'nominal_source_time'),
+                                  'path': str(path.resolve())})
             except (HTTPError, URLError, HTTPException, OSError, ValueError):
                 _fail('images_unavailable', 'Retained server result and completed local files are safe. Retry these IDs; use a new folder if existing files differ.', job=job, saved=saved)
             result['saved'] = saved

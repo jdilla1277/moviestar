@@ -114,6 +114,25 @@ without writing an image or highlight assets. Trims and cuts still map the
 result timecode to the correct source frame. Use `screenshot --file VIDEO`
 to inspect raw or exported file pixels without applying project edits or text.
 
+For dense source inspection, use `moviestar inspect --from X --to Y`. Each
+thumbnail's `requested_timecode` is a sample on the interval grid; its `timecode`
+is the displayed source frame's presentation time, rounded to milliseconds.
+The sampler uses the last frame at or before each FFmpeg sample tick, preserving frames
+held across variable-frame-rate gaps. FFmpeg quantizes the requested grid to its
+representable output time base; labels use observed timing rather than a decimal
+interval reconstruction. Actual frame times can precede the window
+start or repeat across samples; if video begins after the first request, the
+first available frame is used. Source inspection keeps its source clock even
+when a flat project has trims. Scene-composition inspection continues to report
+the rendered composition's result time and scene-local time. `--source ID`
+explicitly selects source inspection for a scene project.
+
+Repeated source inspections reuse only complete images with matching source
+timing metadata. Existing image-only caches are regenerated. `--dry-run` plans
+the same sampling without decoding or writing images; its frame count describes
+the requested grid, so a source that ends before the requested range may return
+fewer frames.
+
 New manual text overlays use canvas-relative preset defaults. Font sizes,
 strokes, and lower-third padding scale with the shorter canvas side, using
 1080 pixels as the reference. Position margins scale with width and height
