@@ -217,3 +217,17 @@ def test_fractional_interval_labels_match_the_actual_pixels(counter, tmp_path, m
         index = min(range(len(means)), key=lambda i: abs(means[i] - actual_mean))
         assert abs(means[index] - actual_mean) < 1
         assert thumb['timecode']['seconds'] == pytest.approx(round(times[index], 3), abs=.001)
+
+
+def test_audio_only_tail_keeps_an_empty_inspection_result(tmp_path, monkeypatch):
+    path = tmp_path / 'audio-tail.mp4'
+    run('ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i',
+        'color=blue:s=64x64:r=30:d=1', '-f', 'lavfi', '-i',
+        'anullsrc=r=48000:cl=stereo', '-t', '4', '-c:v', 'libx264', '-c:a', 'aac', str(path))
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    loaded = runner.invoke(cli, ['load', str(path), '--no-transcribe', '--no-frames'])
+    assert loaded.exit_code == 0, loaded.output
+    result = inspect(runner, 3, 4, .2)
+    assert result['thumbnails'] == []
+    assert result['thumbnails_returned'] == 0

@@ -2223,9 +2223,14 @@ def extract_inspection_frames(
     if result.returncode != 0:
         raise RuntimeError(_failure_message("ffmpeg", result))
     paths = sorted(output_dir.glob(f"{source_id}_*.jpg"))
+    # An audio-only tail can be inside the container range but beyond every
+    # video frame. Preserve the existing empty-result contract without
+    # inventing timestamps (nonempty images still require a valid trace).
+    if not paths:
+        return [], [], cmd
     source_times = _inspection_timestamps(result.stderr, "source")
     decoded = _inspection_timestamps(result.stderr, "sample")
-    if not paths or len(source_times) != len(decoded):
+    if len(source_times) != len(decoded):
         raise RuntimeError("Could not establish source timestamps for inspection frames")
     times = []
     for index in range(len(paths)):
