@@ -40,6 +40,11 @@ For a product demo, `scenes geometry` resizes, places, shapes, borders, or bounc
 
 ## What's in Moviestar
 
+**Account usage:** `moviestar account usage` reads storage and monthly Cloud
+allowance; `moviestar account activity --cloud` explains the tasks behind it.
+Local jobs are free. See [Account usage and Activity](../docs/account-usage.md)
+for the matching hosted MCP tools and support links.
+
 **Browse:**
 - `moviestar load` — index one or more videos, transcribe with local Whisper. `--as <name>` names sources; `--add` appends to an existing project; `--no-download` guarantees a hermetic run. Before transcribing, Moviestar checks the audio: stereo channels that are out of phase (which cancel in a mono mix) are transcribed from the louder channel, and audio with no detected speech skips Whisper instead of receiving invented words. Both report as structured warnings; `--channel auto|mix|left|right` and `--no-speech-check` override them on `load` and `retranscribe`. For long recordings, `--captions FILE.vtt` (or `.srt`) imports existing captions as the transcript in seconds, and `--transcribe-range START END` (`retranscribe --range`) runs Whisper only on that window.
 - `moviestar skim` — fast browse: thumbnails + transcript over a range (`--text-only` for transcript alone).

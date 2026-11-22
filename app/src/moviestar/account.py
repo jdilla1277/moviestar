@@ -979,3 +979,8 @@ from moviestar.account_terminal import resend, terms, verify
 account.add_command(verify)
 account.add_command(resend)
 account.add_command(terms)
+
+
+# Read-only parity with Web Usage/Activity; no account or Cloud write path.
+from moviestar.account_reads import register_account_reads
+register_account_reads(account)
