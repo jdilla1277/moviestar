@@ -67,9 +67,14 @@ pictures. All first frames must be prepared before the version becomes current.
 Two-video elements feed the same Web Audio clock. The selected speaker's gain
 is one and the listener's gain is zero; both transport starts are submitted
 together. Pause, seek and replacement cancel pending startup too.
-Three-picture scenes use the canonical prepared PCM mix and muted video elements.
-Their startup preparation measures every picture and returns to the exact first
-frames before publishing the revision; no preview video is encoded.
+Three-picture scenes use the canonical prepared PCM mix. Muted startup
+preparation checks every picture and returns to the exact first frames before
+publishing the revision; no preview video is encoded. On Play, videos with real
+embedded audio join the resumed Web Audio clock through zero-gain connections,
+so they do not double the prepared mix. The primary picture must have embedded
+audio to supply that clock; genuinely silent listeners follow group transport.
+If all three pictures lack embedded audio, use rendered mode. Preparation never
+requires an audio autoplay gesture, and Restart reuses the same connections.
 A one-frame three-picture window keeps its already prepared images paused and
 plays only that frame’s audio window. It does not require a nonexistent next
 frame when a source is positioned on its final decoded image.

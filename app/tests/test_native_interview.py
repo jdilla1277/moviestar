@@ -52,9 +52,10 @@ def test_three_person_packet_selects_any_visible_speaker_without_flattening(inte
     assert len(videos) == 3 and len(assets) == 4
     assert [(m['source_start'], m['source_end']) for m in videos] == [(2, 5), (3, 6), (4, 7)]
     assert packet['prepared_audio'] is True
-    # Prepared PCM owns the voice; the first picture supplies the group clock.
-    assert packet['video_path'] == ['scene', 'card', 'video']
-    assert (packet['source_start'], packet['source_end']) == (2, 5)
+    # The real embedded audio pipeline of the routed speaker supplies the
+    # picture clock, even if an earlier listener in DOM order is silent.
+    assert packet['video_path'] == path
+    assert (packet['source_start'], packet['source_end']) == (origin + 1, origin + 4)
     job = assets[packet['audio_plane']['job']]
     assert [(p['source_id'], p['source_start']) for p in job['source_pieces']] == [(speaker, origin + 1)]
     assert path in [m['path'] for m in videos]
@@ -83,6 +84,31 @@ def test_three_person_scene_allows_listeners_without_embedded_audio(interview_pr
     packet, _ = compile_snapshot(read_snapshot(root, 0, 5))
     assert [m['has_audio'] for m in packet['media']] == [True, False, False]
     assert packet['prepared_audio'] is True
+
+
+@pytest.mark.parametrize('mixed', [False, True])
+def test_silent_first_picture_cannot_become_interview_master_clock(interview_project, mixed):
+    spec, project, root = interview_project
+    project['sources'][0]['audio_codec'] = None
+    spec['composition'][0]['audio_from'] = 'bob'
+    spec['composition'][0]['slots'][0].update(source='bob', source_from='0:00:02.000', source_to='0:00:07.000')
+    if mixed:
+        spec['audio_mix']['source_audio']['gain_db'] = -6
+    save_spec(spec, cwd=root); save_project(project, cwd=root)
+    packet, _ = compile_snapshot(read_snapshot(root, 0, 5))
+    assert packet['video_path'] == ['scene', 'listeners', 'left', 'video']
+    assert packet['source_start'] == 2
+    assert packet['media'][0]['has_audio'] is False
+
+
+def test_three_silent_pictures_require_rendered_review_with_a_prepared_mix(interview_project):
+    spec, project, root = interview_project
+    for source in project['sources']:
+        source['audio_codec'] = None
+    spec['audio_mix']['source_audio']['muted'] = True
+    save_spec(spec, cwd=root); save_project(project, cwd=root)
+    with pytest.raises(NativePreviewUnsupported, match='embedded audio for the output clock'):
+        compile_snapshot(read_snapshot(root, 0, 5))
 
 
 def test_three_person_audio_must_match_a_visible_picture_clock(interview_project):
@@ -153,5 +179,49 @@ const api=context.window.moviestarLiveStage,flush=()=>new Promise(r=>setImmediat
 })().catch(error=>{console.error(error);process.exitCode=1;});
 '''
     result = subprocess.run(['node', '-e', 'const STAGE='+json.dumps(stage_script())+';const ACTION='+json.dumps(action)+';'+script],
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize('silent_listener', [False, True])
+def test_moving_interview_joins_output_clock_on_play_without_doubling_pcm(silent_listener):
+    import json
+    import subprocess
+    from tests.native_stage_harness import stage_script
+    script = r'''
+const vm=require('node:vm'),assert=require('node:assert/strict');
+const sources=[],gains=[];
+const audio={sampleRate:48000,currentTime:10,state:'running',resume:async()=>{},
+ getOutputTimestamp:()=>({contextTime:10,performanceTime:1}),
+ createGain(){const node={gain:{value:1},connect(){}};gains.push(node);return node;},
+ createMediaElementSource(video){assert.equal(video.paused,true,'Join while paused');
+  assert.equal(video.muted,false,'A muted element cannot supply the audio clock');
+  const node={video,connect(gain){assert.equal(gain.gain.value,0,'Only prepared PCM may be audible');}};
+  sources.push(node);return node;}};
+const pictures=Array.from({length:3},(_,i)=>({path:[String(i)],primary:i===0,hasAudio:i!==2||!SILENT,
+ video:{muted:true,paused:true,currentTime:i+1,playbackRate:1,pause(){this.paused=true;},
+  getVideoPlaybackQuality:()=>({totalVideoFrames:0,droppedVideoFrames:0})}}));
+const review={pause(){},snapshot:()=>({prepared:true}),async play(at,options){
+ assert.equal(options.presentationLead,undefined,'Muted preparation cannot calibrate the device-clock pipeline');
+ assert.equal(options.pictureLead,1/60,'Use the established half-frame audio-clock launch');}};
+const group={pause(){pictures.forEach(p=>p.video.pause());},async play(){
+ assert.equal(sources.length,SILENT?2:3,'Real audio streams share the output clock before motion');
+ pictures.forEach(p=>p.video.paused=false);return true;}};
+const context={window:{moviestarScene:{entries:[],applyMotion(){}}},document:{createElement:()=>({getContext:()=>({})})},
+ location:{search:'?request=unit'},URLSearchParams,AbortController,performance:{now:()=>1},Date,
+ fetch:()=>new Promise(()=>{}),setTimeout,clearTimeout,requestAnimationFrame:()=>1,console,
+ pictures,testAudio:audio,review,group};
+vm.createContext(context);vm.runInContext(STAGE,context);
+vm.runInContext(`packet={fps:30,source_start:1,prepared_audio:true,media:Array(3).fill({kind:'video'}),samples:Array(90).fill({nodes:[]})};
+ audio=testAudio;outputMixer={node:{}};video=pictures[0].video;videos.push(...pictures);
+ videoGroup=group;reviewAudio=review;pictureStartup={lead:.032};connectAudioGraph();resolveReady(true);`,context);
+assert.equal(sources.length,0,'Readiness must not wait on an autoplay-blocked AudioContext');
+(async()=>{const api=context.window.moviestarLiveStage;
+ await api.play();api.pause();await api.play();api.pause();
+ assert.equal(sources.length,SILENT?2:3,'Restart reuses each MediaElementAudioSourceNode');
+ assert.ok(gains.every(g=>g.gain.value===0),'Embedded tracks never double the canonical PCM');
+})().catch(error=>{console.error(error);process.exitCode=1;});
+'''
+    result = subprocess.run(['node', '-e', 'const STAGE='+json.dumps(stage_script())+';const SILENT='+json.dumps(silent_listener)+';'+script],
                             capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stdout + result.stderr

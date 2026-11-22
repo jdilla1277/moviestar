@@ -311,6 +311,19 @@ function connectAudioGraph(){
     gain.connect(destination);item.audioGain=gain;
   }
 }
+function joinInterviewOutputClock(){
+  if(playbackRate()!==1||videos.length!==3||pictureStartup?.prepared_frame_only)return;
+  // Preparation uses muted elements so readiness never needs an autoplay
+  // gesture. Once Play has resumed the device, real audio pipelines can keep
+  // the pictures on that output clock, just as in the two-picture player.
+  // Zero gains leave the canonical PCM as the only audible signal.
+  for(const item of videos){
+    if(!item.hasAudio||item.audioSource)continue;
+    item.video.muted=false;
+    const node=audio.createMediaElementSource(item.video);node.connect(item.audioGain);item.audioSource=node;
+  }
+  return Boolean(videos.find(item=>item.primary)?.audioSource);
+}
 async function initialize(){
   const params=new URLSearchParams(location.search),request=params.get('request');
   const response=await fetch('packet?request='+encodeURIComponent(request)+(params.has('segment')?'&segment='+encodeURIComponent(params.get('segment')):''),{cache:'no-store',signal:controller.signal});
@@ -570,10 +583,11 @@ window.moviestarLiveStage={ready,metrics,
         await new Promise(resolve=>setTimeout(resolve,10));
       }
       if(!active())return;
+      const interviewClock=joinInterviewOutputClock();
       metrics.device_ready_at=Date.now();if(packet.cut_segment&&packet.samples.length===1){freezeLastFrame();videos.filter(item=>!item.primary).forEach(freezeFollower);}
       for(const item of videos){item.beforePlay=item.video.getVideoPlaybackQuality();delete item.reportedDrops;}
       metrics.initial_presented=videos.map(item=>({path:item.path,media_time:item.video.currentTime,...item.frame,quality:{totalVideoFrames:item.beforePlay.totalVideoFrames,droppedVideoFrames:item.beforePlay.droppedVideoFrames}}));playing=true;
-      if(reviewAudio?.snapshot().prepared)await reviewAudio.play(this.time,pictureStartup?{presentationLead:pictureStartup.lead}:{pictureLead:1/(2*packet.fps)});if(!active())return;
+      if(reviewAudio?.snapshot().prepared)await reviewAudio.play(this.time,!interviewClock&&pictureStartup?{presentationLead:pictureStartup.lead}:{pictureLead:1/(2*packet.fps)});if(!active())return;
       if(reviewAudio)metrics.prepared_audio=reviewAudio.snapshot();
       if(pictureStartup?.prepared_frame_only){
         // Keep the sole authored image visible. Advancing the decoders could

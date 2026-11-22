@@ -34,7 +34,7 @@ async function checkState(wanted){
  if(styles.some((s,i)=>!s||s.color!==rgb(wanted.colors[i+(fixture.scene==='intro'?0:3)])||s.width!=='2px'||s.style!=='solid'))return false;
  for(const [i,s]of value.scenes.entries()){
   const starts=fixture.scene==='intro'?[1,2,3]:[2,3,4];
-  if(s.snapshot.videos.some((v,k)=>v.source.number!==starts[k]*30||v.ready_state<2||v.seeking||!v.paused||v.audio_gain!==0||v.audio_connected))return false;
+  if(s.snapshot.videos.some((v,k)=>v.source.number!==starts[k]*30||v.ready_state<2||v.seeking||!v.paused||v.audio_gain!==0))return false;
   const scene=fixture.scene,box=path=>s.snapshot.boxes.find(b=>b.path.join('/')===scene+'/'+path);
   const speaker=box('speaker/video')?.rect,left=box('listeners/left/video')?.rect,right=box('listeners/right/video')?.rect;
   if(!speaker||!left||!right)return false;
@@ -58,6 +58,8 @@ async function playback(label){
  // First playback is from published readiness, without a preparatory transport seek.
  await b.click('#play');await b.wait(api+'.metrics.finished||'+api+'.error',12000);
  const m=await b.evaluate(api+'.metrics');
+ const routing=await b.evaluate(api+'.snapshot().videos');
+ assert.ok(routing.every(v=>v.audio_connected&&v.audio_gain===0),'Pictures share the device clock without doubling prepared PCM');
  const children=[m];
  const item={label,metrics:m,children};report.playback.push(item);await persist();
  assert.equal(m.error,null);assert.equal(m.stalls,0);

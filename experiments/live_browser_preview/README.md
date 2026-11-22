@@ -1258,6 +1258,16 @@ with the canonical mix at 1e-5 sample error, geometry within .2 pixels, and pict
 interiors against canonical rendering at the existing eight-level RGB budget.
 A short rendered window also checks both sides of the actual speaker cut.
 
+Three-picture preparation remains muted until a user starts playback. On Play,
+real embedded audio pipelines join the resumed output clock through zero gains;
+the prepared PCM remains the only audible output. The primary picture is chosen
+from an audio-bearing source, including when the first DOM picture is a silent
+listener. All-silent three-picture groups require rendered mode. Playback uses
+the established half-frame device-clock launch, not the startup lead measured
+on the earlier muted pipelines. Restart reuses connections. This addresses the
+single-scene presentation slip retained in #215; first failing CI artifacts
+remain evidence and the zero-drop/50 ms/PCM gates are unchanged.
+
 Three-picture native windows are deliberately limited to one scene. Continuous
 three-picture cuts require rendered review. The initial cut investigation found
 startup drops; longer preroll and re-priming did not reliably solve them. No cut

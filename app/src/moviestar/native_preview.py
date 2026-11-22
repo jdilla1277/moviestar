@@ -222,8 +222,14 @@ def _compile_span(snapshot, timeline, start, end, span, *, prepared_audio=False,
                     video_path = selected[0]['occurrence_path']
                     source_start = selected[0]['media']['source_time_s']
             if prepared_audio:
-                video_path = videos[0]['occurrence_path']
-                source_start = videos[0]['media']['source_time_s']
+                clock_video = videos[0]
+                if len(videos) == 3:
+                    audible = [v for v in videos if metadata[v['media']['asset_id']].get('audio_codec')]
+                    if not audible:
+                        fail('three-picture review needs a visible video with embedded audio for the output clock')
+                    clock_video = selected[0] if validate_source_route else audible[0]
+                video_path = clock_video['occurrence_path']
+                source_start = clock_video['media']['source_time_s']
         if ({tuple(v['occurrence_path']) for v in videos} != set(clocks) or any(
                 abs(v['media']['source_time_s']-(clocks[tuple(v['occurrence_path'])]+index/fps*rate)) > 1e-5 for v in videos)):
             fail('all videos require stable paths and ordinary unit-speed source clocks')
