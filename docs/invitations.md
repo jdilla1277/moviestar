@@ -88,3 +88,5 @@ rechecked for each action. No caller-supplied recipient email is accepted.
 Services advertise `received_invitations.native_actions` with
 `contract_version: received-invitation-actions-v1`; older services retain browser
 review links and return `unsupported_operation` for native commands.
+
+To remove accepted access, see [Leave a received share](leaving-shares.md).
