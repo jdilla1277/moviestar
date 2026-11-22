@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import tempfile
 from pathlib import Path
 
 import click
@@ -178,7 +180,8 @@ def register_edits(cloud):
     @click.option('--request','request_file',type=click.Path(path_type=Path),help='Exact cloud-editing-v1 body; trim or undo only.')
     @click.option('--recover',is_flag=True,help='Resend the exact pending request and retained key after an uncertain response.')
     @click.option('--idempotency-key',help='Optional explicit retained key; normally generated and saved before sending.')
-    def apply(project_id,request_file,recover,idempotency_key):
+    @click.option('--abandon-pending',is_flag=True,help='Archive the pending key/body and stop automatic retry locally. Does not undo/cancel a possible server commit.')
+    def apply(project_id,request_file,recover,idempotency_key,abandon_pending):
         """Save one trim, or undo one complete command, without rendering.
 
         Read and validate first. Use the current revision as expected_base_revision,
@@ -188,29 +191,60 @@ def register_edits(cloud):
         A confirmed command reports saved ranges and exact revision. Its
         verification.output remains not_checked until a separate render check.
         Another normal invocation after success is a NEW command.
+        If a rejected request cannot be corrected while pending, explicitly run
+        apply PROJECT_ID --abandon-pending. This archives its exact body/key and
+        stops local retries only; a previous server save is NOT cancelled or
+        undone. Inspect the current edit, then submit a corrected request/new
+        base as a new command. The returned recovery command can recover the
+        archived original, after resolving any later pending command.
         """
         from moviestar.cloud import _connection,_request,_UUID
-        from moviestar.cloud_creation_state import creation_request,CreationStateError,_read
+        from moviestar.cloud_creation_state import creation_request,CreationStateError,_read,_write
         if (not _UUID.fullmatch(project_id) or (idempotency_key is not None and not re.fullmatch(r'[A-Za-z0-9_-]{1,128}',idempotency_key))
-                or (recover and request_file is not None) or (not recover and request_file is None)):
+                or (abandon_pending and (recover or request_file is not None or idempotency_key is not None))
+                or (recover and request_file is not None) or (not recover and not abandon_pending and request_file is None)):
             _fail('invalid_request')
         project=project_id.lower()
-        proposal=None if recover else _read_request(request_file)
+        proposal=None if recover or abandon_pending else _read_request(request_file)
         endpoint,credential=_connection('cloud edits apply')
         # Availability must not block recovery: the service checks receipts before
         # writer enrollment/engine availability and before new-write base checks.
-        _capability('cloud edits apply',endpoint,credential,None)
+        if not abandon_pending:
+            _capability('cloud edits apply',endpoint,credential,None)
         try:
             with creation_request(endpoint,credential,project,idempotency_key,recovery_directory='cloud-edit-requests') as pending:
                 if not pending.managed:
-                    raise CreationStateError('An earlier edit still has an uncertain outcome. Run apply PROJECT_ID --recover with its original key before submitting another key.')
+                    raise CreationStateError('An earlier edit still has a pending retry record. Run apply PROJECT_ID --recover with its original key, or deliberately use --abandon-pending to archive it before submitting a new command.')
                 previous=_read(pending.path,project)
+                if abandon_pending:
+                    if not previous or previous['state']!='pending' or not isinstance(previous.get('request'),dict):
+                        raise CreationStateError('No pending edit to abandon.')
+                    # Archive durably before changing the active record. Never
+                    # interpret a rejection as proof an earlier call rolled back.
+                    try:directory=Path(tempfile.mkdtemp(prefix='abandoned-',dir=pending.path.parent))
+                    except OSError as error:raise CreationStateError('Could not create a private archive; the pending request is unchanged.') from error
+                    record_file=directory/'record.json';request_path=directory/'request.json'
+                    _write(record_file,previous);_write(request_path,previous['request'])
+                    # Persist the new archive directory's parent entry BEFORE
+                    # marking the active request resolved (not just its files).
+                    if os.name!='nt':
+                        try:
+                            fd=os.open(directory.parent,os.O_RDONLY)
+                            try:os.fsync(fd)
+                            finally:os.close(fd)
+                        except OSError as error:raise CreationStateError('Could not durably archive the request; the pending record is unchanged.') from error
+                    _write(pending.path,{**previous,'state':'resolved','abandoned':True,'archive_directory':str(directory)})
+                    click.echo(json.dumps({'status':'pending_abandoned','project_id':project,'server_outcome':'unknown',
+                        'message':'Stopped local retry only. This does not cancel or undo any server save. Read the current edit before submitting a new command.',
+                        'recovery':{'idempotency_key':previous['idempotency_key'],'request_file':str(request_path),'record_file':str(record_file),
+                            'command':['moviestar','cloud','edits','apply',project,'--request',str(request_path),'--idempotency-key',previous['idempotency_key']]}},indent=2))
+                    return
                 original=previous.get('request') if pending.recovering and previous else None
                 if recover:
                     if not original:raise CreationStateError('No pending edit to recover.')
                     proposal=original
                 elif original is not None and original!=proposal:
-                    raise CreationStateError('A different edit has an uncertain outcome. Run apply PROJECT_ID --recover before submitting another request.')
+                    raise CreationStateError('A different edit already has a pending retry record. Run apply PROJECT_ID --recover before submitting another request, or explicitly archive it with --abandon-pending.')
                 pending.record['request']=proposal
                 pending.save()  # Includes exact body; fsync precedes network IO.
                 status,body=_request(endpoint+'/projects/'+project+'/edit/mutations',credential,payload=proposal,key=pending.key)

@@ -108,7 +108,17 @@ fresh process using the same account profile. Do not change the base or key.
 An explicit `--idempotency-key KEY` plus the original request can recover across
 credential renewal for the same authorized account; automatic profile recovery
 is scoped to the original credential. A changed pending request or different explicit key is rejected before sending
-while the original outcome is uncertain. Recover that original request first.
+while the original outcome is uncertain. Recover that original request first. If it is rejected and you deliberately
+want to move on, use `cloud edits apply PROJECT --abandon-pending`.
+
+Abandonment is local and works without contacting the service. It durably
+archives the original exact body/key and returns an explicit recovery command;
+it stops automatic retries, **not a possible server save**. `server_outcome`
+remains `unknown`. Read the current edit, then correct the bounds or deliberately
+rebase with its current revision and submit a new command/key. The archived
+request remains recoverable with its original key/body after resolving any
+later pending request. No deletion of recovery files or credential change is
+needed. Do not combine `--abandon-pending` with another apply/recover intent.
 
 `cloud edits show PROJECT --revision REVISION` reopens that exact version;
 `current_revision` separately identifies the current pointer. Undo uses the same

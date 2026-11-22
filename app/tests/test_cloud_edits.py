@@ -1,5 +1,6 @@
 """Read/validate CLI contracts; transport examples use synthetic responses."""
 import json
+from pathlib import Path
 from click.testing import CliRunner
 import pytest
 from moviestar import cloud
@@ -182,3 +183,79 @@ def test_new_explicit_key_cannot_bypass_pending_edit_storage(remote,tmp_path,mon
     assert recovered.exit_code==1  # second simulated response loss
     assert writes==[{'payload':REQUEST,'key':'first'}]*2
     assert record.read_bytes()==original
+
+
+@pytest.mark.parametrize('rejected_status,code',[(422,'invalid_edit'),(409,'revision_conflict'),(0,None)])
+def test_deliberate_abandon_preserves_recovery_and_allows_corrected_request(remote,tmp_path,monkeypatch,rejected_status,code):
+    from moviestar import cloud_creation_state
+    monkeypatch.setattr(cloud_creation_state,'_account_state_path',lambda:tmp_path/'account.json')
+    _,_,capability=remote
+    rejected={**REQUEST,'operation':{**REQUEST['operation'],'from_ms':200,'to_ms':100}} if code=='invalid_edit' else REQUEST
+    corrected=REQUEST if code=='invalid_edit' else {**REQUEST,'expected_base_revision':'00000000-0000-4000-8000-000000000099'}
+    file=tmp_path/'trim.json';file.write_text(json.dumps(rejected))
+    writes=[];calls=[]
+    def request(url,credential,**kwargs):
+        calls.append(url)
+        if url.endswith('/capabilities'):return 200,capability
+        writes.append(kwargs)
+        if len(writes)==1:return rejected_status,({'error':{'code':code,'message':'Rejected','details':{},'retryable':False}} if code else {})
+        return 0,{}  # retain the new command after a simulated lost reply
+    monkeypatch.setattr(cloud,'_request',request)
+    runner=CliRunner();first=runner.invoke(cli,['cloud','edits','apply',P,'--request',str(file)])
+    assert first.exit_code==1
+    active=next((tmp_path/'cloud-edit-requests').rglob('*.json'));old=active.read_bytes();old_record=json.loads(old)
+    file.write_text(json.dumps(corrected))
+    blocked=runner.invoke(cli,['cloud','edits','apply',P,'--request',str(file)])
+    assert blocked.exit_code==1 and len(writes)==1
+    before=len(calls)
+    abandoned=runner.invoke(cli,['cloud','edits','apply',P,'--abandon-pending'])
+    assert abandoned.exit_code==0,abandoned.output
+    value=json.loads(abandoned.output)
+    assert value['status']=='pending_abandoned' and value['server_outcome']=='unknown'
+    assert len(calls)==before  # purely local, including when service is offline
+    recovery=value['recovery']
+    assert recovery['idempotency_key']==old_record['idempotency_key']
+    assert json.loads(Path(recovery['request_file']).read_text())==rejected
+    assert json.loads(Path(recovery['record_file']).read_text())==old_record
+    next_result=CliRunner().invoke(cli,['cloud','edits','apply',P,'--request',str(file)])
+    assert next_result.exit_code==1
+    assert writes[1]['payload']==corrected and writes[1]['key']!=writes[0]['key']
+    recovered=CliRunner().invoke(cli,['cloud','edits','apply',P,'--recover'])
+    assert recovered.exit_code==1 and writes[2]==writes[1]
+
+
+@pytest.mark.parametrize('extra',[['--recover'],['--request','unused.json'],['--idempotency-key','new-key']])
+def test_abandon_does_not_accept_competing_intents(remote,extra):
+    calls,_,_=remote
+    result=CliRunner().invoke(cli,['cloud','edits','apply',P,'--abandon-pending',*extra])
+    assert result.exit_code==1 and json.loads(result.output)['error']['code']=='invalid_request'
+    assert calls==[]
+
+
+@pytest.mark.parametrize('failure',['mkdir','parent_sync'])
+def test_archive_failure_does_not_forget_an_uncertain_edit(remote,tmp_path,monkeypatch,failure):
+    from moviestar import cloud_creation_state,cloud_edits
+    if failure=='parent_sync' and cloud_edits.os.name=='nt':pytest.skip('Directory fsync is POSIX only')
+    monkeypatch.setattr(cloud_creation_state,'_account_state_path',lambda:tmp_path/'account.json')
+    _,_,capability=remote
+    file=tmp_path/'trim.json';file.write_text(json.dumps(REQUEST))
+    writes=[]
+    def request(url,credential,**kwargs):
+        if url.endswith('/capabilities'):return 200,capability
+        writes.append(kwargs);return 0,{}
+    monkeypatch.setattr(cloud,'_request',request)
+    assert CliRunner().invoke(cli,['cloud','edits','apply',P,'--request',str(file)]).exit_code==1
+    active=next((tmp_path/'cloud-edit-requests').rglob('*.json'));before=active.read_bytes()
+    def fail(**kwargs):raise OSError('Synthetic full disk')
+    if failure=='mkdir':monkeypatch.setattr(cloud_edits.tempfile,'mkdtemp',fail)
+    else:
+        original_open=cloud_edits.os.open
+        def fail_parent(path,flags,*args,**kwargs):
+            if Path(path)==active.parent:raise OSError('Synthetic parent sync failure')
+            return original_open(path,flags,*args,**kwargs)
+        monkeypatch.setattr(cloud_edits.os,'open',fail_parent)
+    abandoned=CliRunner().invoke(cli,['cloud','edits','apply',P,'--abandon-pending'])
+    assert abandoned.exit_code==1 and json.loads(abandoned.output)['error']['code']=='invalid_request'
+    assert active.read_bytes()==before and len(writes)==1
+    assert CliRunner().invoke(cli,['cloud','edits','apply',P,'--recover']).exit_code==1
+    assert writes==[writes[0]]*2
