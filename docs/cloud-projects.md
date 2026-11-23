@@ -570,8 +570,12 @@ moviestar cloud projects resend-invitation INVITATION_ID
 moviestar cloud projects unshare INVITATION_ID --confirm
 ```
 
-`share` deliberately requests an email. Its retry key is generated and saved
-before sending; rerun the same command after a lost reply to recover the same
+`share` creates an invitation and requests notification email within the service
+allowance. If email is rate-limited, the invitation still appears in the
+recipient inbox with `delivery: not_requested` and
+`email_suppressed_reason: rate_limited`; no email is queued for later. See
+[Invitations](invitations.md#invitations-and-notification-email). Its retry key is
+generated and saved before sending; rerun the same command after a lost reply to recover the same
 request. `--idempotency-key KEY` can recover an explicit request. Resends have
 separate saved retry keys and rotate the acceptance link. Do not automatically
 resend or generate a new key after an uncertain reply. `queued` means waiting
