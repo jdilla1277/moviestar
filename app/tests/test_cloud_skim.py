@@ -1,4 +1,5 @@
 import json
+import pytest
 from click.testing import CliRunner
 from moviestar.cli import cli
 from moviestar import cloud
@@ -33,11 +34,15 @@ def test_skim_invalid_options_do_not_connect(monkeypatch):
   r=CliRunner().invoke(cli,['cloud','skim',A]+options)
   assert r.exit_code!=0
 
-def test_skim_show_downloads_timestamped_frames_and_prevents_overwrite(monkeypatch,tmp_path):
+@pytest.mark.parametrize('decoded',[False,True])
+def test_skim_show_downloads_timestamped_frames_and_prevents_overwrite(monkeypatch,tmp_path,decoded):
  from email.message import Message
  from moviestar import cloud_skim as skims
  monkeypatch.setattr(cloud,'_connection',lambda _:('https://service.invalid/api/v1/account/cloud','mvs_synthetic'))
  complete=job('succeeded');complete['result']={'mode':'visual_skim','thumbnails':[{'index':0,'at_ms':5000,'file_size_bytes':4,'mime_type':'image/jpeg'}]}
+ if decoded:
+  complete['result']['sampling']={'strategy':'local_skim_index_subsample','time_basis':'decoded_source_time','range_filter':'inclusive_requested_index_timestamps','index_interval_ms':5000}
+  complete['result']['thumbnails'][0].update(at_ms=4833,requested_at_ms=5000,timecode='0:00:04.833')
  monkeypatch.setattr(cloud,'_request',lambda *a,**kw:(200,{'job':complete}))
  calls=[]
  class Response:
@@ -55,7 +60,7 @@ def test_skim_show_downloads_timestamped_frames_and_prevents_overwrite(monkeypat
  monkeypatch.setattr(skims,'build_opener',lambda *_:Opener())
  out=tmp_path/'skim';args=['cloud','skim-show',A,J,'--out-dir',str(out)]
  first=CliRunner().invoke(cli,args);assert first.exit_code==0,first.output
- assert (out/'frame-00-0000005000ms.jpg').read_bytes()==b'\xff\xd8\xff\xd9'
+ assert (out/('frame-00-0000004833ms.jpg' if decoded else 'frame-00-0000005000ms.jpg')).read_bytes()==b'\xff\xd8\xff\xd9'
  assert json.loads((out/'skim.json').read_text())['job']['id']==J
  second=CliRunner().invoke(cli,args);assert second.exit_code==1
  assert len(calls)==1
@@ -118,3 +123,23 @@ def test_default_skim_omits_null_wire_end_but_replays_canonical_options(monkeypa
  assert calls[0]['key']==calls[1]['key']
  assert calls[0]['key']==original_key
  assert json.loads(second.output)['job']['options']['to_ms'] is None
+
+
+def test_decoded_skim_keeps_requested_grid_separate_from_repeated_frame_times():
+ from moviestar.cloud_skim import _frames
+ complete=job('succeeded');complete['options']={'from_ms':1000,'to_ms':2000,'count':3}
+ complete['result']={'mode':'visual_skim','sampling':{'strategy':'local_skim_index_subsample','time_basis':'decoded_source_time','range_filter':'inclusive_requested_index_timestamps','index_interval_ms':500},'thumbnails':[
+  {'index':i,'at_ms':at,'requested_at_ms':1000+i*500,'timecode':f'0:00:00.{at:03d}','file_size_bytes':4,'mime_type':'image/jpeg'} for i,at in enumerate([200,200,800])]}
+ assert len(_frames(complete))==3
+ for field,value in [('requested_at_ms',1001),('timecode','0:00:00.999'),('at_ms',-1)]:
+  import copy
+  bad=copy.deepcopy(complete);bad['result']['thumbnails'][0][field]=value
+  import pytest
+  with pytest.raises(ValueError):_frames(bad)
+
+
+def test_decoded_fields_cannot_be_mixed_into_retained_nominal_skim():
+ from moviestar.cloud_skim import _frames
+ import pytest
+ complete=job('succeeded');complete['result']={'mode':'visual_skim','thumbnails':[{'index':0,'at_ms':5000,'requested_at_ms':5000,'file_size_bytes':4,'mime_type':'image/jpeg'}]}
+ with pytest.raises(ValueError):_frames(complete)

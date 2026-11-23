@@ -2827,12 +2827,13 @@ def _emit_load_dry_run(
     # the dir nor the pattern path is created — purely a string
     # computation that mirrors what create_workspace would build.
     project_dir = (Path.cwd() / MOVIESTAR_DIR).resolve()
-    frames_pattern = str(project_dir / FRAMES_DIR / f"{source_id}_%04d.jpg")
+    frames_pattern = str(project_dir / FRAMES_DIR / f"{source_id}_%06d.jpg")
     ffmpeg_cmd = build_extract_frames_command(
         abs_source,
         interval,
         frames_pattern,
-        scale_width=thumb_width,
+        scale_width=thumb_width, start_time=0.0, duration=duration_seconds,
+        source_timestamps=True,
     )
 
     source_dict: dict = {
@@ -4089,6 +4090,11 @@ def skim(
     review at intervals finer than the pre-built index, use
     'moviestar inspect'.
 
+    New indexes separate actual decoded source time (timecode) from the
+    requested prepared-grid time (requested_timecode). Range filtering remains
+    inclusive on that requested grid. Legacy image-only indexes stay explicitly
+    nominal; no image is re-extracted or relabelled as decoded during reads.
+
     Transcript is segment-level by default (compact). Pass --words to
     include word-by-word timing when you need frame-exact trim points.
 
@@ -4146,13 +4152,16 @@ def skim(
             f"Range {from_s}s-{to_s}s exceeds video duration of {duration_seconds}s",
         )
 
-    if text_only:
+    if text_only or fmt == "text":
         frames_in_range: list[dict] = []
         thumbnails: list[dict] = []
         frames_omitted: list[dict] = []
     else:
         # Build thumbnail list
-        all_frames = list_frames(source)
+        try:
+            all_frames = list_frames(source)
+        except ValueError as exc:
+            _error_exit("skim", str(exc))
         frames_in_range = filter_frames_by_range(all_frames, from_s, to_s)
         thumbnails = subsample_frames(frames_in_range, count)
 
@@ -4163,7 +4172,7 @@ def skim(
         # about the dropped *list*, not the dropped *content*).
         sampled_paths = {t["path"] for t in thumbnails}
         frames_omitted = [
-            {"path": f["path"], "timecode": f["timecode"]}
+            {key: value for key, value in f.items() if key != "image"}
             for f in frames_in_range
             if f["path"] not in sampled_paths
         ]
@@ -4185,7 +4194,7 @@ def skim(
     #      to widen, use --words for precise text timing, or re-load finer.
     #   2. Range extends past last indexed frame — mention the gap explicitly.
     #   3. Healthy — standard narrowing hint.
-    last_indexed = frames_in_range[-1]["timecode"]["seconds"] if frames_in_range else None
+    last_indexed = frames_in_range[-1].get("requested_timecode", frames_in_range[-1]["timecode"])["seconds"] if frames_in_range else None
 
     # Issue #27: hint reflects post-action state. Three geometry
     # branches as before (zero-thumbnails / past-end-of-range /
@@ -4248,6 +4257,9 @@ def skim(
         _emit_transcript_text("skim", transcript_out, skip_reason)
         return
 
+    if not text_only and not source.get("frame_index") and not frames_skip_reason:
+        hint += " Legacy index: labels are nominal prepared-index times, not decoded frame times. Use inspect for fresh decoded-time frames."
+
     result = {
         "range": {
             "from": format_timecode(from_s),
@@ -4271,6 +4283,10 @@ def skim(
     else:
         result.update(
             {
+                "sampling": {
+                    "time_basis": "decoded_source_time" if source.get("frame_index") else "nominal_prepared_index",
+                    "range_filter": "inclusive_requested_index_timestamps" if source.get("frame_index") else "inclusive_nominal_index_timestamps",
+                },
                 "thumbnails": thumbnails,
                 "available_frames": len(frames_in_range),
                 "thumbnails_returned": len(thumbnails),
