@@ -139,3 +139,17 @@ Writes are disabled by default. Audio gain/mute remains validation-only.
 
 Local `moviestar trim --dry-run ...` and `moviestar undo --dry-run` show proposed
 ranges without writing the spec. Ordinary local commands stay local.
+
+## Explicit personal API-key connection
+
+For a developer client using a website-issued personal key, set both
+`MOVIESTAR_API_KEY` and `MOVIESTAR_CLOUD_URL` (the exact service base, such as
+`https://YOUR_PREVIEW_HOST/api/v1/account/cloud`). Load the key from your secret
+manager or a private local file; never put it in command arguments or chat.
+Then run the same `moviestar cloud edits` commands. The service rechecks that
+key's account/project/input authority for every request and replay.
+
+Explicit key mode does not read or modify your installation profile/keyring.
+A missing/malformed key or service URL fails without installation fallback.
+With neither variable set, existing installation behavior is unchanged. Use a
+Preview-issued key with Preview; Production keys belong to Production.
