@@ -73,3 +73,20 @@ def test_unknown_revoke_keeps_id_and_sends_no_automatic_retry(remote):
 def test_unknown_resend_reuses_its_key(remote):
  remote.update(status=0,body={});r,b=invoke('resend-invitation',I);assert r.exit_code==1;key=b['idempotency_key']
  remote.update(status=202,body={'status':'invitation_resent','invitation':invitation(),'delivery':'queued'});r,b=invoke('resend-invitation',I);assert r.exit_code==0 and b['idempotency_key']==key
+
+
+def test_share_confirms_inbox_invitation_when_notification_is_suppressed(remote):
+ item=invitation();item.update(delivery='not_requested',last_requested_at=None,resend_available_at=None)
+ remote.update(status=202,body={'status':'invitation_requested','invitation':item,'delivery':'not_requested','email_suppressed_reason':'rate_limited'})
+ r,b=invoke('share',P,'recipient@example.invalid');assert r.exit_code==0,b
+ assert b['status']=='invitation_requested' and b['delivery']=='not_requested'
+ assert b['email_suppressed_reason']=='rate_limited'
+ assert 'inbox' in b['hint'] and 'No email' in b['hint']
+ remote.update(status=200,body={'status':'ok','invitations':[item],'next_cursor':None})
+ r,b=invoke('access',P);assert r.exit_code==0 and b['invitations'][0]['delivery']=='not_requested'
+
+@pytest.mark.parametrize('changes',[{'email_suppressed_reason':None},{'email_suppressed_reason':'other'},{'status':'invitation_resent'}])
+def test_does_not_confirm_inconsistent_no_email_receipts(remote,changes):
+ item=invitation();item.update(delivery='not_requested',last_requested_at=None,resend_available_at=None)
+ remote.update(status=202,body={'status':'invitation_requested','invitation':item,'delivery':'not_requested','email_suppressed_reason':'rate_limited',**changes})
+ r,b=invoke('share',P,'recipient@example.invalid');assert r.exit_code==1 and b['status']=='sharing_unconfirmed'

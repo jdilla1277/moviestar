@@ -55,7 +55,7 @@ def _invitation(raw):
     if (not isinstance(raw.get('email'), str) or len(raw['email']) > 254 or not _EMAIL.fullmatch(raw['email'])
             or not isinstance(raw.get('includes_assets'), bool) or raw.get('state') not in ('pending', 'accepted', 'revoked', 'expired')
             or raw.get('role', 'viewer') not in ('viewer', 'editor')
-            or raw.get('delivery') not in ('queued', 'pending', 'accepted', 'failed', 'unknown', 'cancelled')):
+            or raw.get('delivery') not in ('queued', 'pending', 'accepted', 'failed', 'unknown', 'cancelled', 'not_requested')):
         return None
     for field in ('created_at', 'expires_at', 'accepted_at', 'revoked_at', 'last_requested_at', 'resend_available_at'):
         value = raw.get(field)
@@ -73,6 +73,16 @@ def _id(command, value):
     if not service._UUID.fullmatch(value):
         service._fail(command, 'invalid_request', _HINTS['invalid_request'])
     return value.lower()
+
+
+def _valid_notification(body, invitation):
+    status, delivery, reason = body.get('status'), body.get('delivery'), body.get('email_suppressed_reason')
+    if status == 'invitation_exists':
+        return delivery == 'not_requested' and reason is None
+    if delivery == 'queued':
+        return reason is None
+    return (status == 'invitation_requested' and delivery == 'not_requested'
+            and reason == 'rate_limited' and invitation['delivery'] == 'not_requested')
 
 
 def _send(command, resource_id, email, explicit_key, role='viewer'):
@@ -105,7 +115,7 @@ def _send(command, resource_id, email, explicit_key, role='viewer'):
             if (body.get('status') not in expected or invitation is None
                     or (email is not None and (invitation['email'] != email or invitation['role'] != role))
                     or (email is None and invitation['id'].lower() != resource_id)
-                    or body.get('delivery') != ('not_requested' if body.get('status') == 'invitation_exists' else 'queued')):
+                    or not _valid_notification(body, invitation)):
                 service._fail(command, 'sharing_unconfirmed', 'The request may have succeeded. Rerun the same command to recover its key, or list project access. No automatic retry was sent.', sharing_outcome='unknown', **fields)
             try:
                 pending.resolve()
@@ -115,8 +125,10 @@ def _send(command, resource_id, email, explicit_key, role='viewer'):
         service._fail(command, 'sharing_in_progress', 'The same invitation request is already running. Wait and retry.')
     except CreationStateError:
         service._fail(command, 'sharing_state_unavailable', 'Could not read or save invitation recovery state. Check project access before repairing local retry files; preserve any returned key.', **fields)
+    if body.get('email_suppressed_reason') == 'rate_limited':
+        fields['email_suppressed_reason'] = 'rate_limited'
     click.echo(json.dumps({'command': command, 'status': body['status'], 'invitation': invitation, 'delivery': body['delivery'], **fields,
-                           'hint': 'This receipt records an email request queued at creation time, not current delivery. Check access for live status. The recipient must verify the invited email and accept.' if body['delivery'] == 'queued' else 'An invitation already exists; no additional email was requested.'}, indent=2))
+                           'hint': 'This receipt records an email request queued at creation time, not current delivery. Check access for live status. The recipient must verify the invited email and accept.' if body['delivery'] == 'queued' else ('Invitation created in the recipient inbox. No email was sent because the email limit was reached; the recipient can review and accept it through Web, CLI or MCP.' if body['status'] == 'invitation_requested' else 'An invitation already exists; no additional email was requested.')}, indent=2))
 
 
 def register_project_sharing(projects):
@@ -128,8 +140,9 @@ def register_project_sharing(projects):
     def share_project(project_id, email, idempotency_key, role):
         """Invite EMAIL to PROJECT_ID as a viewer or --role editor.
 
-        Owner only. Running this command deliberately requests an invitation
-        email. Recipient verifies and accepts in their browser. Repeat the same
+        Owner only. Creates an invitation and requests an email within the
+        notification allowance. The invitation remains available in the recipient
+        inbox when email is rate-limited. Recipient must verify and accept. Repeat the same
         command after uncertainty; its saved key prevents duplicate delivery.
         """
         _send('cloud projects share', project_id, email, idempotency_key, role)

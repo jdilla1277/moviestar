@@ -10,6 +10,25 @@ leaves pending and the object appears in **Shared with me**. A project invitatio
 keeps its original permissions: a legacy details-only invitation does not become
 an asset-download invitation.
 
+## Invitations and notification email
+
+Project and asset sharing creates a pending invitation. Email is a notification,
+not a requirement for discovering or accepting that invitation.
+
+When the service's notification allowance is exhausted, sharing still succeeds:
+`status` is `invitation_requested`, `delivery` is `not_requested`, and
+`email_suppressed_reason` is `rate_limited`. No notification is queued for later.
+The invitation appears in the recipient's Web inbox and in
+`moviestar cloud invitations list` / `moviestar_list_invitations` once they have
+an account with the invited email verified. Access still requires explicit
+acceptance; an invitation does not create an account or grant access by itself.
+
+The owner can list access to distinguish invitation state from email delivery.
+Retrying the same request key returns the original receipt, even after the email
+allowance resets, and does not send another email. An explicit resend still
+respects email limits; a rejected resend leaves the current invitation and
+acceptance link unchanged.
+
 ## Remote CLI
 
 ```sh
