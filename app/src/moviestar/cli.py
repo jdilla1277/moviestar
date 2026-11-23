@@ -5192,6 +5192,17 @@ def watch(
     same contract as 'clip' (the deliverable-framed sibling on the
     same extraction engine).
 
+    Without a composition, including trim-only projects, timecodes also
+    use source-time: watch at zero starts at the original file's zero,
+    not the authored trim. The default path can apply an authored audio mix;
+    --source selects raw source audio as well. Use export for the edited result.
+
+    Responses identify the requested range's clock with clock: "source"
+    or "result" in both dry-run and real calls. Source extraction includes
+    source_id and the original file path; compositions retain per-slot source
+    mappings in scene_windows. The output MP4 starts its own clock at zero;
+    measured actual duration does not establish an exact source-frame boundary.
+
     Default is stream-copy (fast, ±keyframe alignment). Pass --precise
     for frame-accurate re-encoding when exact boundaries matter. --review
     also re-encodes, fitting the finished image inside an orientation-aware
@@ -5334,6 +5345,8 @@ def watch(
             "status": "would_extract",
             "would_extract_to": abs_output,
             "source": os.path.realpath(source_path),
+            "source_id": source_id,
+            "clock": "source",
             "range": {
                 "requested": {
                     "from": format_timecode(from_s),
@@ -5413,6 +5426,8 @@ def watch(
         "status": "extracted",
         "out": abs_output,
         "source": os.path.realpath(source_path),
+        "source_id": source_id,
+        "clock": "source",
         "range": {
             "requested": {
                 "from": format_timecode(from_s),
@@ -5789,6 +5804,7 @@ def _watch_scene_layout_composition(
     audio_dropped_note = artifacts["audio_dropped_note"]
     base_result: dict = {
         "mode": "scene_composition",
+        "clock": "result",
         "composition_type": "scenes",
         "output_fps": artifacts["output_fps"],
         "composition_canvas": plan["canvas"],

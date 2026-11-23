@@ -61,7 +61,18 @@ Do not assume every timecode uses the same clock:
 - `trim` uses result-time, so later trims narrow the already-edited result.
 - `find` reports source, segment, and result ranges.
 - `clip` and source-targeted `watch` operate on source-time without changing
-  the edit.
+  the edit. Ordinary `watch` without a composition also uses source-time,
+  including trim-only projects: zero means original source zero, even after
+  a head trim. It can apply the authored audio mix; explicit `--source` uses
+  raw source audio. Use `export` for the edited result.
+- Local `watch` returns `clock: "source"` with `source_id` and `source` (path),
+  or `clock: "result"` for a scene/layout composition with source mappings in
+  `scene_windows[].slots`. Dry-run and real calls disclose the same clock for
+  `range.requested`. The output MP4 has its own zero-based clock; reported
+  duration is a measurement, not a decoded source timestamp.
+- `cloud watch` / `watch-show` return `job.clock: "source"` and `job.asset_id`.
+  This is the selected asset's file clock, even for a saved rendered asset;
+  it does not refer back to an originating project's source/result clock.
 - External audio is placed on result-time, the finished video's clock.
 - Composition and scene commands document whether their ranges are source,
   per-source result, composition result, or scene-local time.

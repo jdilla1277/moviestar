@@ -4,6 +4,23 @@ Use an existing ready Cloud video asset on that file's own timeline. This also
 works for an already rendered MP4 stored as a ready asset. It does not render an
 unrendered composition. Local `moviestar watch` remains account-free.
 
+Every request/reopen response identifies `job.clock: "source"` alongside
+`job.asset_id`: requested and effective ranges refer to that selected file's
+clock. A saved rendered asset is a new file with its own source clock, not a
+reference to the original project's timeline. This applies to retained jobs too;
+the service adds disclosure when reading, without rewriting stored measurements
+or extracting again. An updated CLI supplies the same disclosure for older
+services and rejects a conflicting clock. REST and hosted MCP expose it when
+the paired service update is deployed.
+
+Local watch uses the same `clock: "source"` label for raw extraction (including
+trim-only projects, where watch at zero starts at original source zero), with
+`source_id` and `source` path. Scene/layout watch instead reports `clock: "result"`
+and per-slot source mappings in `scene_windows`. Both dry-run and real local
+responses identify the clock. Output MP4 playback starts at zero independently
+of the requested range's clock; duration measurements do not prove exact source
+frame boundaries.
+
 ```sh
 moviestar cloud watch ASSET_ID --from 1.250 --to 6.250 --idempotency-key review-motion-1
 moviestar cloud watch-show ASSET_ID JOB_ID
