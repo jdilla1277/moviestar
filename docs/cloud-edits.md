@@ -1,4 +1,9 @@
-# Check an initial Cloud edit without saving
+# Read, check, save and undo a Cloud trim
+
+Services can separately advertise [saved-mix inspection and audio dry runs](cloud-saved-audio.md)
+through the same commands. Audio patches remain validation-only; the one-video
+trim/undo save path is described below. The initial timeline journey below
+continues to use null saved revision and trim-only validation.
 
 These commands require a service that advertises `editing` with
 `contract_version: cloud-editing-v1`. They use your existing approved personal
@@ -8,9 +13,10 @@ editing is unavailable.
 
 The first supported journey is an **unsaved baseline** for an owned personal
 project whose active inputs are ready video account-asset references owned by
-the same account. Saved personal edits, project-source uploads, borrowed inputs
-and other asset types are not supported in this slice; the service rejects them
-rather than silently dropping state. Create a project and attach existing assets
+the same account. This initial-state path does not accept caller-supplied saved specs,
+project-source uploads, borrowed inputs or other asset types; it never silently
+drops state. Saved audio-mix reads require the separately advertised capability
+above. Create a project and attach existing assets
 through [Cloud projects](cloud-projects.md).
 
 ```sh
@@ -78,10 +84,58 @@ have no server request ID.
 
 This journey creates no saved revision, Activity event, processing job or usage
 reservation, and leaves the original assets unchanged. It does not provide
-apply, save/reopen, history, undo, preview or final rendering. A successful dry
+apply, saving, history, undo, preview or final rendering. A successful dry
 run is neither a save nor a render grant. Hosted deployment and real-account
 acceptance depend on the service's configured, pinned metadata engine bridge.
 
 A missing audio codec in historical ready-video metadata remains unreported,
 not inferred silence. Timeline reads/trim validation need only measured duration
 and dimensions; they do not establish audio-track presence or routing.
+
+## Save one trim and undo
+
+On an explicitly enrolled service/account, `cloud edits apply PROJECT --request
+trim.json` saves one owned video trim. Read and validate first, then use exactly
+the returned current revision as `expected_base_revision` (null before any save).
+`operation` remains `{ "type":"trim", "source_id":"ID_FROM_SHOW",
+"time_space":"source_result", "from_ms":10000, "to_ms":40000 }`.
+A second trim uses the edited source clock: 5–20 seconds after 10–40 selects
+original seconds 15–30.
+
+The CLI saves a generated retry key AND the exact request privately before
+sending. If the response is lost, use `cloud edits apply PROJECT --recover` in a
+fresh process using the same account profile. Do not change the base or key.
+An explicit `--idempotency-key KEY` plus the original request can recover across
+credential renewal for the same authorized account; automatic profile recovery
+is scoped to the original credential. A changed pending request or different explicit key is rejected before sending
+while the original outcome is uncertain. Recover that original request first. If it is rejected and you deliberately
+want to move on, use `cloud edits apply PROJECT --abandon-pending`.
+
+Abandonment is local and works without contacting the service. It durably
+archives the original exact body/key and returns an explicit recovery command;
+it stops automatic retries, **not a possible server save**. `server_outcome`
+remains `unknown`. Read the current edit, then correct the bounds or deliberately
+rebase with its current revision and submit a new command/key. The archived
+request remains recoverable with its original key/body after resolving any
+later pending request. No deletion of recovery files or credential change is
+needed. Do not combine `--abandon-pending` with another apply/recover intent.
+
+`cloud edits show PROJECT --revision REVISION` reopens that exact version;
+`current_revision` separately identifies the current pointer. Undo uses the same
+apply command with a JSON body whose operation is `{ "type":"undo" }` and whose
+base is the current revision. It saves a new immutable version, popping one
+complete engine journal entry. Repeated undo walks backwards, without toggling.
+Old versions remain readable. A full-current-range trim is unchanged and adds no
+journal, revision or Activity event; its retry receipt remains recoverable.
+
+Check `revision.resolved.sources` for selected source ranges and result duration,
+and `undo_remaining` for available commands. `verification.saved_state` records
+server read-back of the saved instructions; document/manifest SHA-256 identifies
+those instructions, **not media correctness**. `input_bytes` and `output` remain
+`not_checked`, and `execution_ready` is false. This path does not render, download,
+or establish verified media dependency pins. Each real change creates one
+unmetered saved-edit Activity record; replay, read and validation create none.
+Writes are disabled by default. Audio gain/mute remains validation-only.
+
+Local `moviestar trim --dry-run ...` and `moviestar undo --dry-run` show proposed
+ranges without writing the spec. Ordinary local commands stay local.

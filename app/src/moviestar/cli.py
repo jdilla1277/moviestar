@@ -8460,11 +8460,13 @@ def _timeline_output(timeline) -> dict:
     help="Snap --from / --to outward to whole words in the transcript "
     "so cuts don't fall mid-syllable. Requires a transcript.",
 )
+@click.option("--dry-run",is_flag=True,help="Show proposed ranges and undo depth without saving.")
 def trim(
     from_tc: str | None,
     to_tc: str | None,
     source_arg: str | None,
     snap: bool,
+    dry_run: bool,
 ) -> None:
     """Trim to a timecode range. Appends to the edit spec.
 
@@ -8584,14 +8586,21 @@ def trim(
 
     try:
         new_spec = append_trim(spec, source_id, from_s, to_s, source_duration)
-        save_spec(new_spec, command="trim")
+        candidate = append_revision(spec,new_spec,"trim")
+        validate_spec(candidate)
+        if not dry_run and new_spec!=spec:
+            save_spec(new_spec, command="trim")
     except SpecValidationError as exc:
         _error_exit("trim", str(exc))
 
     new_timeline = resolve_source(new_spec, source_id, source_duration)
-    new_op = get_source(new_spec, source_id)["operations"][-1]
+    new_op = {"type":"trim","from":format_timecode(from_s)["text"],"to":format_timecode(to_s)["text"]}
 
     result: dict = {
+        "status": "would_apply" if dry_run else "committed" if new_spec!=spec else "unchanged",
+        "dry_run":dry_run,"writes_spec":not dry_run and new_spec!=spec,
+        "changes":new_spec!=spec,"current_undo_remaining":len(spec["revisions"]),
+        "projected_undo_remaining":len(candidate["revisions"]),
         "operation": _op_for_envelope(new_op),
     }
     if snap:
@@ -8639,6 +8648,8 @@ def trim(
         code="trim_result_clock_changed_overlays_stale",
         change_label="trim",
     )
+    if dry_run:
+        result["hint"]="Proposed ranges only; nothing saved. Run the same trim without --dry-run to apply."
     click.echo(json.dumps(result, indent=2))
 
 
@@ -24959,11 +24970,13 @@ def concat(
     is_flag=True,
     help="Undo only when the latest revision changed scenes or motion.",
 )
+@click.option("--dry-run",is_flag=True,help="Show whole-command restoration without saving.")
 def undo(
     source_arg: str | None,
     undo_overlays: bool,
     undo_audio: bool,
     undo_composition: bool,
+    dry_run: bool,
 ) -> None:
     """Undo the last command.
 
@@ -25080,7 +25093,8 @@ def undo(
         except SpecValidationError as exc:
             _error_exit("undo", str(exc))
         try:
-            save_spec(new_spec, record=False)
+            if not dry_run:
+                save_spec(new_spec, record=False)
         except SpecValidationError as exc:
             _error_exit("undo", str(exc))
         undone = {
@@ -25088,8 +25102,9 @@ def undo(
             "fields": sorted(popped["changed"]),
         }
         result = {
-            "status": "command_undone",
-            "writes_spec": True,
+            "status": "would_undo" if dry_run else "command_undone",
+            "dry_run":dry_run,
+            "writes_spec": not dry_run,
             "undone": undone,
             "revisions_remaining": len(new_spec.get("revisions") or []),
         }
@@ -25134,6 +25149,8 @@ def undo(
             code="undo_result_clock_changed_overlays_stale",
             change_label="undo",
         )
+        if dry_run:
+            result["hint"]="Proposed whole-command restoration only; nothing saved. Run undo without --dry-run to apply."
         click.echo(json.dumps(result, indent=2))
         return
 

@@ -2664,6 +2664,8 @@ def append_trim(
         )
 
     new_spec = json.loads(json.dumps(spec))  # deep copy
+    if from_s == 0 and abs(to_s - effective) < 1e-9:
+        return new_spec
     target = get_source(new_spec, source_id)
     target["operations"].append(_trim_op(from_s, to_s))
     validate_spec(new_spec)
