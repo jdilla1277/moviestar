@@ -1,4 +1,5 @@
 import json
+import pytest
 from click.testing import CliRunner
 from moviestar.cli import cli
 from moviestar import cloud
@@ -41,13 +42,19 @@ def test_reopen_creates_no_job(monkeypatch):
  result=CliRunner().invoke(cli,['cloud','inspect-show',A,J])
  assert result.exit_code==0,result.output
 
-def test_download_resumes_identical_files_and_preserves_conflicting_files(monkeypatch,tmp_path):
+@pytest.mark.parametrize('decoded', [False, True])
+def test_download_resumes_identical_files_and_preserves_conflicting_files(monkeypatch,tmp_path,decoded):
  from email.message import Message
  from moviestar import cloud_inspect as inspections
  monkeypatch.setattr(cloud,'_connection',lambda _:('https://service.invalid/api/v1/account/cloud','synthetic'))
  image=b'\xff\xd8\xff\xd9'
  frame={'index':0,'at_ms':0,'width':640,'file_size_bytes':4,'mime_type':'image/jpeg'}
  job={'id':J,'asset_id':A,'state':'succeeded','options':{'from_ms':0,'to_ms':500,'interval_ms':500,'width':640},'result':{'mode':'visual_inspect','range':{'from_ms':0,'to_ms':500},'sampling':{'returned_frames':1,'interval_ms':500,'scale_width':640},'thumbnails':[frame]}}
+ if decoded:
+  frame.update(at_ms=100,requested_at_ms=200,timecode='0:00:00.100')
+  job['options'].update(from_ms=200,to_ms=700)
+  job['result']['range']={'from_ms':200,'to_ms':700}
+  job['result']['sampling'].update(time_basis='decoded_source_time',strategy='source_frame_at_or_before')
  monkeypatch.setattr(cloud,'_request',lambda *a,**kw:(200,{'job':job}))
  class Response:
   status=200
@@ -65,9 +72,31 @@ def test_download_resumes_identical_files_and_preserves_conflicting_files(monkey
  args=['cloud','inspect-show',A,J,'--out-dir',str(tmp_path/'frames')]
  first=CliRunner().invoke(cli,args);assert first.exit_code==0,first.output
  again=CliRunner().invoke(cli,args);assert again.exit_code==0,again.output
- output=tmp_path/'frames'/'inspect_0000_0ms.jpg'
+ output=tmp_path/'frames'/('inspect_0000_100ms.jpg' if decoded else 'inspect_0000_0ms.jpg')
+ saved=json.loads(first.output)['saved'][0]
+ assert saved['time_basis']==('decoded_source_time' if decoded else 'nominal_source_time')
+ assert ('requested_at_ms' in saved)==decoded
  assert output.read_bytes()==image
  output.write_bytes(b'keep')
  conflict=CliRunner().invoke(cli,args)
  assert conflict.exit_code==1
  assert output.read_bytes()==b'keep'
+
+def test_decoded_source_clock_allows_held_times_and_retains_request():
+ from moviestar.cloud_inspect import _frames
+ frame={'index':0,'at_ms':100,'requested_at_ms':200,'timecode':'0:00:00.100','width':640,'file_size_bytes':4,'mime_type':'image/jpeg'}
+ job={'options':{'from_ms':200,'to_ms':700,'interval_ms':500,'width':640},'result':{'mode':'visual_inspect','range':{'from_ms':200,'to_ms':700},'sampling':{'time_basis':'decoded_source_time','strategy':'source_frame_at_or_before','returned_frames':1,'interval_ms':500,'scale_width':640},'thumbnails':[frame]}}
+ assert _frames(job)==[frame]
+
+@pytest.mark.parametrize('change', ['no_request','wrong_request','wrong_timecode','unknown_basis','legacy_mixed'])
+def test_invalid_decoded_clock_rejected(change):
+ from moviestar.cloud_inspect import _frames
+ from click.exceptions import Exit
+ frame={'index':0,'at_ms':100,'requested_at_ms':200,'timecode':'0:00:00.100','width':640,'file_size_bytes':4,'mime_type':'image/jpeg'}
+ job={'options':{'from_ms':200,'to_ms':700,'interval_ms':500,'width':640},'result':{'mode':'visual_inspect','range':{'from_ms':200,'to_ms':700},'sampling':{'time_basis':'decoded_source_time','strategy':'source_frame_at_or_before','returned_frames':1,'interval_ms':500,'scale_width':640},'thumbnails':[frame]}}
+ if change=='no_request':frame.pop('requested_at_ms')
+ if change=='wrong_request':frame['requested_at_ms']=300
+ if change=='wrong_timecode':frame['timecode']='0:00:00.200'
+ if change=='unknown_basis':job['result']['sampling']['time_basis']='unknown'
+ if change=='legacy_mixed':job['result']['sampling']['time_basis']='nominal_source_time'
+ with pytest.raises(Exit):_frames(job)
