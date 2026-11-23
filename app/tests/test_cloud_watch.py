@@ -25,6 +25,7 @@ def test_request_replays_saved_key_after_lost_reply(monkeypatch,tmp_path):
  assert calls[0]['key']==calls[1]['key']
  assert calls[1]['payload']=={'from_ms':83450,'to_ms':84000}
  assert json.loads(second.output)['job']['id']==J
+ assert json.loads(second.output)['job']['clock']=='source'
 
 
 def test_bad_timestamps_do_not_connect(monkeypatch):
@@ -154,3 +155,30 @@ def test_real_http_download_checks_artifact_and_response_lengths(
   assert json.loads(result.output)['status'] in {'media_unavailable', 'invalid_response'}
   assert not out.exists()
  assert paths[0] == f'/api/v1/assets/{A}/watches/{J}'
+
+
+@pytest.mark.parametrize('state', ['queued','running','succeeded','failed','cancelled'])
+@pytest.mark.parametrize('clock', [None,'source'])
+def test_saved_watch_discloses_asset_clock_even_from_older_service(monkeypatch,state,clock):
+ job={'id':J,'asset_id':A,'from_ms':1000,'to_ms':2000,'state':state}
+ if clock is not None:job['clock']=clock
+ snapshot=json.dumps(job)
+ monkeypatch.setattr(cloud,'_connection',lambda _:('https://service.invalid/api/v1/account/cloud','synthetic'))
+ calls=[]
+ def request(*args,**kwargs):
+  calls.append((args,kwargs));return 200,{'job':job}
+ monkeypatch.setattr(cloud,'_request',request)
+ result=CliRunner().invoke(cli,['cloud','watch-show',A,J])
+ assert result.exit_code==0,result.output
+ assert json.loads(result.output)['job']['clock']=='source'
+ assert json.loads(result.output)['job']['asset_id']==A
+ assert json.dumps(job)==snapshot
+ assert len(calls)==1 and calls[0][1]=={}
+
+
+def test_remote_watch_rejects_a_conflicting_clock(monkeypatch):
+ monkeypatch.setattr(cloud,'_connection',lambda _:('https://service.invalid/api/v1/account/cloud','synthetic'))
+ monkeypatch.setattr(cloud,'_request',lambda *a,**kw:(200,{'job':{'id':J,'asset_id':A,'from_ms':0,'to_ms':1000,'state':'queued','clock':'result'}}))
+ result=CliRunner().invoke(cli,['cloud','watch-show',A,J])
+ assert result.exit_code==1
+ assert json.loads(result.output)['status']=='invalid_response'

@@ -20,10 +20,14 @@ def _job(body, asset, job_id=None, from_ms=None, to_ms=None):
             or job.get('state') not in ('queued', 'running', 'succeeded', 'failed', 'cancelled')
             or type(job.get('from_ms')) is not int or type(job.get('to_ms')) is not int
             or not 0 <= job['from_ms'] < job['to_ms'] <= 86400000 or job['to_ms']-job['from_ms']>30000
+            or ('clock' in job and job['clock'] != 'source')
             or (job_id is not None and job['id'] != job_id)
             or (from_ms is not None and (job['from_ms'], job['to_ms']) != (from_ms, to_ms))):
         service._fail('cloud watch', 'invalid_response', 'Preserve the original request key and retry; the watch outcome is uncertain.')
-    return job
+    # This endpoint always extracts the selected asset's original-file clock,
+    # including retained jobs from services predating explicit clock metadata.
+    # Project edit/result clocks are outside this API. Do not rewrite receipts.
+    return {**job, 'clock': 'source'}
 
 
 def _check(status, body, **fields):
@@ -43,6 +47,10 @@ def register_watch_commands(cloud):
     @click.option('--idempotency-key', help='Retain this key on retries; generated and saved if omitted.')
     def watch(asset_id, from_tc, to_tc, idempotency_key):
         """Request a bounded excerpt of a ready Cloud video, including available audio; returns a durable job ID.
+
+        Responses identify job.clock as "source" and job.asset_id as the
+        selected file, including when that file is a saved render. Project
+        trims/compositions are not applied to this asset clock.
 
         Retry the identical command after an uncertain reply. Use watch-show
         to poll/reopen the job and save its private MP4 after reconnecting.
