@@ -44,6 +44,24 @@ def _fail(command: str, status: str, hint: str, **fields) -> None:
 
 
 def _connection(command: str) -> tuple[str, str]:
+    # Explicit personal-key mode is isolated from installation/keyring state.
+    # Require BOTH key and destination; never infer Production or fall back to
+    # an installation/account when an explicit key is missing or malformed.
+    if 'MOVIESTAR_API_KEY' in os.environ or 'MOVIESTAR_CLOUD_URL' in os.environ:
+        key = os.environ.get('MOVIESTAR_API_KEY', '')
+        if not re.fullmatch(r'mvsk_[A-Za-z0-9_-]{43}', key):
+            _fail(command, 'credential_invalid', 'Set an active personal MOVIESTAR_API_KEY for this environment; no installation fallback is used.')
+        url = os.environ.get('MOVIESTAR_CLOUD_URL', '')
+        try:
+            parsed = urlsplit(url)
+            valid = (not _service_url_error(url) and not re.search(r'[\x00-\x20\x7f]',url)
+                     and parsed.path.rstrip('/') == '/api/v1/account/cloud' and not parsed.query)
+            parsed.port
+        except ValueError:
+            valid = False
+        if not valid:
+            _fail(command, 'invalid_configuration', 'Set MOVIESTAR_CLOUD_URL to the exact HTTPS service base ending /api/v1/account/cloud. API-key mode never chooses a service implicitly.')
+        return parsed._replace(path='/api/v1/account/cloud').geturl(), key
     state = _read_state()
     recorded = state.get("installation_url")
     if not (isinstance(recorded, str) and recorded) and not os.environ.get("MOVIESTAR_ACCOUNT_INSTALLATION_URL"):
@@ -159,11 +177,14 @@ def _sharing_supported(capabilities: dict) -> bool:
 def cloud():
     """Work with Cloud projects, account assets and private developer guides.
 
-    Use this approved installation to manage remote metadata, rename projects,
+    Use an approved installation or an explicit personal API key to manage
+    remote metadata, rename projects,
     manage asset references, probe Cloud assets, inspect ready video frames, read guides, or upload a private
     original with 'cloud assets create'. Ordinary local commands stay local;
     Cloud commands do not select a local workspace or render media.
-    Connect the installation with 'moviestar account connect' first.
+    Connect with 'moviestar account connect', or set both MOVIESTAR_API_KEY and
+    MOVIESTAR_CLOUD_URL (the exact HTTPS base ending /api/v1/account/cloud).
+    Explicit key mode never falls back to installation credentials.
     """
 
 

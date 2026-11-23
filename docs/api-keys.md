@@ -29,9 +29,10 @@ curl --fail-with-body https://trymoviestar.com/api/v1/account/me \
 Set `MOVIESTAR_API_KEY` securely in your shell or secret manager. The response
 identifies your account handle and advertises `account:read`. A revoked key
 returns HTTP 401 immediately. [Cloud project creation and metadata](cloud-projects.md#create-through-the-http-api)
-additionally require personal Cloud access on the service. Personal keys do not
-grant media, editing or render API access and are separate from partner
-integration keys and CLI installation credentials.
+additionally require personal Cloud access on the service. A key identifies an account; each route still checks current resource access,
+capabilities and enrollment. It does not bypass media/editing admission or
+enable rendering. Personal keys are separate from partner integration keys
+and CLI installation credentials.
 
 The website/API deployment and the CLI release are separate. An older installed
 CLI may lack `account keys`; use the website URL directly in that case.
@@ -99,3 +100,17 @@ For staging tests, create the key on that staging website and use its exact
 `/mcp` endpoint. An invalid or revoked key returns a website key-settings hint;
 it does not ask the developer to complete a Clerk OAuth login. A temporary
 account-verification outage returns HTTP 503; retry without replacing the key.
+
+
+## Explicit remote CLI connection
+
+Set `MOVIESTAR_API_KEY` from a private file or secret manager and explicitly set
+`MOVIESTAR_CLOUD_URL` to the service base ending `/api/v1/account/cloud`.
+Use the same environment that issued the key. The normal `moviestar cloud`
+commands then use that personal key; they do not read/change your installation
+profile or keyring. Both variables are required, and invalid configuration never
+falls back to an installation or another service. With neither variable set,
+the existing installation flow remains unchanged. Do not put a key in command
+arguments, URLs, tracked files or chat. This mode requires a CLI version that
+includes API-key connection support; a service deployment does not update an
+older installed CLI.
