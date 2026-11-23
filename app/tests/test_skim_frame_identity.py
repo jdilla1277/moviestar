@@ -133,3 +133,41 @@ def test_legacy_large_ordinals_are_sorted_by_grid_time(tmp_path):
     for n in (9999,10000): (directory/f'test_{n:04d}.jpg').touch()
     frames=list_frames({'id':'test','frame_interval':.5},tmp_path)
     assert [f['timecode']['seconds'] for f in frames]==[4999,4999.5]
+
+
+@pytest.mark.parametrize('first_id,second_id',[
+    ('camera_close','camera'),('camera','camera_close'),
+    ('camera_2','camera'),('camera','camera_2'),
+])
+@pytest.mark.parametrize('add',[False,True])
+def test_overlapping_source_ids_keep_separate_images_and_timing(counter,first_id,second_id,add):
+    alternate=counter.with_name('white.mp4')
+    subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=white:s=64x64:r=30:d=1',
+        '-c:v','libx264',str(alternate)],check=True)
+    common=['--interval','0.5','--thumb-width','64','--no-transcribe']
+    if add:
+        invoke('load',str(counter),'--as',first_id,*common)
+        original=load_project()['sources'][0]
+        manifest=Path('moviestar')/original['frame_index']['path']
+        before_manifest=manifest.read_bytes()
+        before_images={f['path']:Path(f['path']).read_bytes() for f in list_frames(original)}
+        invoke('load','--add',str(alternate),'--as',second_id,*common)
+        assert manifest.read_bytes()==before_manifest
+        assert all(Path(path).read_bytes()==data for path,data in before_images.items())
+    else:
+        invoke('load',str(counter),str(alternate),'--as',first_id,'--as',second_id,*common)
+    sources=load_project()['sources']
+    assert [s['id'] for s in sources]==[first_id,second_id]
+    for source,white in zip(sources,[False,True]):
+        frames=list_frames(source)
+        manifest=json.loads((Path('moviestar')/source['frame_index']['path']).read_text())
+        assert manifest['source_id']==source['id']
+        assert len(frames)==len(manifest['frames'])==source['frames_extracted']
+        assert len(frames)==(2 if white else 8)
+        skim=invoke('skim','--source',source['id'],'--from','0','--to','1')
+        assert skim['sampling']['time_basis']=='decoded_source_time'
+        for i,frame in enumerate(frames):
+            assert Path(frame['path']).name==f"{source['id']}_{i+1:06d}.jpg"
+            assert frame['timecode']['seconds']==frame['requested_timecode']['seconds']==i*.5
+            pixels=gray(frame['path']);mean=sum(pixels)/len(pixels)
+            assert mean>250 if white else mean<150

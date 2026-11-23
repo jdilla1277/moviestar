@@ -2267,7 +2267,15 @@ def extract_inspection_frames(
             trace.seek(max(0, trace.tell() - 65536))
             failed = subprocess.CompletedProcess(cmd, result.returncode, result.stdout, trace.read())
             raise RuntimeError(_failure_message("ffmpeg", failed))
-        paths = sorted(output_dir.glob(f"{source_id}_*.jpg"))
+        # Shared load directories can contain IDs such as camera_close or
+        # camera_2 alongside camera. Only this source's numeric sequence is
+        # an output of this decode; foreign frames must not acquire its PTS.
+        pattern = re.compile(re.escape(source_id) + r"_([0-9]+)\.jpg")
+        paths = sorted(
+            (path for path in output_dir.iterdir()
+             if path.is_file() and pattern.fullmatch(path.name)),
+            key=lambda path: int(path.stem[len(source_id) + 1:]),
+        )
         # Audio-only container tails may have no video images in the window.
         if not paths:
             return [], [], cmd
