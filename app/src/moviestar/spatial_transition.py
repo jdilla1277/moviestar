@@ -214,7 +214,7 @@ def measure_transition_layout(frame, canvas, *, output_path=None, browser_sessio
 
 
 def render_transition_frame(spec, frame, canvas, *, output_path, project_root=None,
-                            layout_output_path=None, reference_path=None, browser_session=None):
+                            layout_output_path=None, reference_path=None, browser_session=None, media_session=None):
     from contextlib import nullcontext
     from pathlib import Path
     from tempfile import TemporaryDirectory
@@ -232,7 +232,8 @@ def render_transition_frame(spec, frame, canvas, *, output_path, project_root=No
         references = [temporary / f'reference-{index}.png' for index in range(len(paths))]
         with context as browser:
             reports = [render_spatial_frame(spec, layer['frame'], size, output_path=path,
-                project_root=root, reference_path=reference if reference_path else None, browser_session=browser)
+                project_root=root, reference_path=reference if reference_path else None,
+                browser_session=browser, media_session=media_session)
                 for layer, path, reference in zip(frame['layers'], paths, references)]
             if layout_output_path:
                 _draw_transition_guides(frame, size, reports, temporary / 'layout.png', browser)

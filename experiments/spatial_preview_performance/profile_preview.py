@@ -54,6 +54,12 @@ def worker(request_file, variant):
     render._prepare_assets = timed("asset_preparation",render._prepare_assets)
     render._decode = timed("decode",render._decode)
     render._displayed_frame_pts = timed("source_pts_selection",render._displayed_frame_pts)
+    try:
+        from moviestar.spatial_media import MediaSession
+    except ImportError:
+        pass  # The same profiler can measure a pre-reuse installed wheel.
+    else:
+        MediaSession.decode = timed("session_decode", MediaSession.decode)
     render._publish = timed("publish_frame",render._publish)
     browser_run = BrowserSession.run
     def browser_request(self,request):
@@ -141,6 +147,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project",type=Path)
     parser.add_argument("--out",type=Path)
+    parser.add_argument("--from",dest="from_s",type=float,default=0)
+    parser.add_argument("--to",dest="to_s",type=float,default=5)
     parser.add_argument("--variant",choices=["baseline","production","fused_ffmpeg","in_process","vectorized"],default="production")
     parser.add_argument("--worker",type=Path,help=argparse.SUPPRESS)
     args = parser.parse_args()
@@ -152,7 +160,7 @@ def main():
     from moviestar.local_preview import read_snapshot
     root,output = args.project.resolve(),args.out.resolve()
     output.mkdir(parents=True,exist_ok=False)
-    request = read_snapshot(root,0,5)
+    request = read_snapshot(root,args.from_s,args.to_s)
     request_file = output/"request.json"
     request_file.write_text(json.dumps(request))
     temporary = output/"tmp"
@@ -171,6 +179,8 @@ def main():
         monitor.start()
         try:
             code = process.wait(timeout=600)
+        except subprocess.TimeoutExpired:
+            code = 124
         finally:
             try:
                 os.killpg(process.pid,signal.SIGKILL)
@@ -182,21 +192,37 @@ def main():
             process.wait(timeout=2)
             monitor.close()
     elapsed = (time.perf_counter()-start)*1000
+    report = json.loads((output/"profile.json").read_text()) if (output/"profile.json").exists() else {}
+    import av
+    import moviestar
+    import numpy
+    installed = Path(moviestar.__file__).parent
+    unchanged = before == sha256((root/"moviestar/spec.json").read_bytes()).hexdigest()
+    report.update(resources=monitor.report(), generation_ms=elapsed,exit_code=code,
+        state_id=request["state_id"],profile=request["profile"],range=request["range"],
+        spec_sha256=before,spec_unchanged=unchanged,source_commit=source_commit,
+        experiment_hashes=code_hashes,runtime_directory=str(installed),
+        runtime_versions={'python':sys.version,'av':av.__version__,'numpy':numpy.__version__},
+        runtime_hashes={path.name:sha256(path.read_bytes()).hexdigest()
+                       for path in installed.iterdir() if path.suffix in {'.py','.mjs'}},
+        load_before=load_before,load_after=os.getloadavg())
+    (output/"profile.json").write_text(json.dumps(report,indent=2))
     if code:
         raise RuntimeError((output/"worker.log").read_text()[-3000:])
-    if before != sha256((root/"moviestar/spec.json").read_bytes()).hexdigest():
+    if not unchanged:
         raise AssertionError("Preview generation changed the saved project")
-    report = json.loads((output/"profile.json").read_text())
     probe = json.loads(subprocess.check_output(["ffprobe","-v","error","-show_streams","-of","json",str(output/"preview.mp4")]))
     video = next(row for row in probe["streams"] if row["codec_type"]=="video")
-    audio = next(row for row in probe["streams"] if row["codec_type"]=="audio")
-    assert (video["width"],video["height"],video["nb_frames"],video["r_frame_rate"])==(1280,720,"150","30/1")
-    assert abs(float(audio["duration"])-5)<.05
-    report.update(resources=monitor.report(), generation_ms=elapsed,state_id=request["state_id"],profile=request["profile"],
-        source_commit=source_commit,experiment_hashes=code_hashes,
-        app_hashes={name:sha256((Path(__file__).resolve().parents[2]/"app"/name).read_bytes()).hexdigest()
-                    for name in ["src/moviestar/spatial_render.py","src/moviestar/spatial_composite.py","pyproject.toml"]},
-        load_before=load_before,load_after=os.getloadavg(),
+    audio = next((row for row in probe["streams"] if row["codec_type"]=="audio"), {})
+    from fractions import Fraction
+    from math import ceil
+    fps = Fraction(str(request["profile"]["fps"]))
+    assert abs(float(Fraction(video["r_frame_rate"])-fps)) < 1e-6
+    expected = ceil(round(args.to_s*fps,9))-ceil(round(args.from_s*fps,9))
+    assert (video["width"],video["height"],int(video["nb_frames"]))==(request["profile"]["width"],request["profile"]["height"],expected)
+    if audio:
+        assert abs(float(audio["duration"])-(args.to_s-args.from_s))<.05
+    report.update(
         video={key:video.get(key) for key in ["width","height","nb_frames","r_frame_rate","duration"]},
         audio={key:audio.get(key) for key in ["sample_rate","duration","channels","codec_name"]})
     (output/"profile.json").write_text(json.dumps(report,indent=2))

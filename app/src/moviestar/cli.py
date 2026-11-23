@@ -5887,6 +5887,7 @@ def _render_scene_video_artifacts(
     work_dir.mkdir(parents=True, exist_ok=True)
     with ExitStack() as stack:
         browser_session = None
+        media_session = None
         for path, render_plan in zip(
             artifacts["scene_clip_paths"],
             artifacts["render_plans"],
@@ -5895,10 +5896,14 @@ def _render_scene_video_artifacts(
             if render_plan.get('spatial_render'):
                 from moviestar.spatial_video import render_spatial_sequence
                 from moviestar.spatial_session import BrowserSession
+                from moviestar.spatial_media import MediaSession
                 if browser_session is None:
                     browser_session = stack.enter_context(BrowserSession())
+                if media_session is None:
+                    media_session = stack.enter_context(MediaSession())
                 render_spatial_sequence(artifacts['spatial_spec'], artifacts['spatial_project'],
                                         render_plan, project_root=get_project_dir().parent, browser_session=browser_session,
+                                        media_session=media_session,
                                         progress_cb=None if quiet else lambda message: click.echo(message, err=True))
             render_layout_video(
                 render_plan["render_slots"],

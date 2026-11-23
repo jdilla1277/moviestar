@@ -449,8 +449,11 @@ mastering succeed. Intermediate files are temporary and removed on failure.
 Dry-run plans do not launch Chrome or decode assets; runtime glyph/asset failures
 remain possible and preserve previous output. This introduces no clip cache.
 A watch/export owns one lazy browser session across all its structured scenes.
-Per-frame source decoding/composition and PNG storage remain throughput
-limitations; decoder reuse and streaming remain follow-on work.
+It also owns a bounded media session across scene frames and transition layers:
+cached metadata, up to four independent source cursors, and at most 64 MiB of
+job-local static PNGs. Source identity changes abort the job. Rotated,
+anamorphic, and non-8-bit footage uses the established FFmpeg path. Per-frame composition and
+PNG storage remain throughput limitations; streaming remains follow-on work.
 
 `test_spatial_video.py` uses real encoded clips and decoded frames to verify
 portrait/landscape motion placement, audio RMS without duplicated routing,
