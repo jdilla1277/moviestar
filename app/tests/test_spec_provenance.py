@@ -81,3 +81,79 @@ def test_cli_reset_and_undo_preserve_origin(tmp_path, test_video, cloud_origin, 
 
     invoke("undo")
     assert load_spec() == before
+
+
+@pytest.mark.parametrize("origin_change", ["replace", "remove", "add"])
+@pytest.mark.parametrize("instructions_change", [True, False])
+@pytest.mark.parametrize("dry_run", [True, False])
+def test_cli_spec_replacement_rejects_origin_changes(
+    tmp_path, test_video, monkeypatch, origin_change, instructions_change, dry_run
+):
+    from click.testing import CliRunner
+    from moviestar.cli import cli
+    from moviestar.spec import load_spec, save_spec
+
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    for args in [
+        ["load", test_video, "--as", "speaker", "--no-transcribe", "--no-frames"],
+        ["trim", "--from", "0.25", "--to", "1.5"],
+    ]:
+        result = runner.invoke(cli, args)
+        assert result.exit_code == 0, result.output
+    before = load_spec()
+    if origin_change != "add":
+        before["provenance"] = copy.deepcopy(ORIGIN)
+        save_spec(before, record=False)
+    replacement = copy.deepcopy(before)
+    if instructions_change:
+        replacement["sources"][0]["operations"] = []
+    if origin_change == "remove":
+        del replacement["provenance"]
+    else:
+        replacement["provenance"] = {**ORIGIN, "base_revision_id": "00000000-0000-4000-8000-000000000099"}
+    path = tmp_path / "replacement.json"
+    path.write_text(json.dumps(replacement))
+    spec_file = tmp_path / "moviestar" / "spec.json"
+    before_bytes = spec_file.read_bytes()
+    result = runner.invoke(cli, ["spec", "--edit", str(path), *(["--dry-run"] if dry_run else [])])
+    assert result.exit_code != 0
+    error = json.loads(result.stdout)
+    assert error["reason"] == "provenance_mismatch"
+    assert "provenance" in error["error"]
+    assert "moviestar spec" in error["hint"]
+    assert spec_file.read_bytes() == before_bytes
+    assert load_spec() == before
+
+
+@pytest.mark.parametrize("cloud_origin", [True, False])
+def test_cli_spec_replacement_with_same_origin_is_undoable(
+    tmp_path, test_video, monkeypatch, cloud_origin
+):
+    from click.testing import CliRunner
+    from moviestar.cli import cli
+    from moviestar.spec import load_spec, save_spec
+
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+    def invoke(*args):
+        result = runner.invoke(cli, list(args))
+        assert result.exit_code == 0, result.output
+        return json.loads(result.stdout)
+
+    invoke("load", test_video, "--as", "speaker", "--no-transcribe", "--no-frames")
+    invoke("trim", "--from", "0.25", "--to", "1.5")
+    before = load_spec()
+    if cloud_origin:
+        before["provenance"] = copy.deepcopy(ORIGIN)
+        save_spec(before, record=False)
+    replacement = copy.deepcopy(before)
+    replacement["sources"][0]["operations"] = []
+    path = tmp_path / "replacement.json"
+    path.write_text(json.dumps(replacement))
+    assert invoke("spec", "--edit", str(path), "--dry-run")["status"] == "would_replace"
+    assert load_spec() == before
+    assert invoke("spec", "--edit", str(path))["status"] == "replaced"
+    assert load_spec()["sources"][0]["operations"] == []
+    invoke("undo")
+    assert load_spec() == before

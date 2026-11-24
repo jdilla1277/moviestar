@@ -25213,6 +25213,10 @@ def spec(edit_path: str | None, reset: bool, dry_run: bool) -> None:
     hatch; safer and clearer than looping ``moviestar undo`` until it
     errors).
 
+    Replacement changes editing instructions within the current project; it cannot
+    add, remove, or change Cloud provenance. Keep that origin block unchanged
+    when editing a spec dumped by ``moviestar spec``.
+
     Output shapes (read commands return raw state; write commands
     return a confirmation envelope):
 
@@ -25384,6 +25388,19 @@ def spec(edit_path: str | None, reset: bool, dry_run: bool) -> None:
             "spec",
             f"Spec source IDs {spec_ids} do not match project source IDs "
             f"{project_ids}. Replacing a spec across projects is not supported.",
+        )
+
+    # The Cloud origin is project context, not an undoable editing family.
+    # A replacement may not silently reattribute the instructions or erase
+    # their base. Run the same guard before dry-run and before a real save.
+    if new_spec.get("provenance") != current_spec.get("provenance"):
+        _error_exit_with_hint(
+            "spec",
+            "Replacement provenance must match the current spec. Adding, "
+            "removing, or changing Cloud origin with --edit is not supported.",
+            "Start from 'moviestar spec', keep its provenance block unchanged "
+            "(or absent), and edit only the editing instructions.",
+            reason="provenance_mismatch",
         )
 
     try:

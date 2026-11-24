@@ -174,6 +174,14 @@ preserve provenance through editing, `spec --reset`, and undo. Older specs
 without provenance remain valid. Unknown provenance fields and malformed
 identifiers are rejected.
 
+`spec --edit FILE` replaces instructions within the current project; it is not
+a Cloud import or rebase operation. The replacement must retain exactly the
+current provenance block, including keeping it absent for a local-only project.
+Adding, removing, or changing origin is rejected as `provenance_mismatch` in
+both dry-run and save mode, without changing the spec or undo history. Start
+from `moviestar spec` when preparing a replacement. With the same origin, the
+replacement is one undoable command and undo restores the prior instructions.
+
 The metadata does not itself download media, create a local workspace, import
 an edit or synchronize local checkpoints. Source files and the authorized asset
 mapping are still required for local/Cloud continuity. No render is requested by
