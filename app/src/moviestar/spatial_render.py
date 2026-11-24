@@ -179,6 +179,8 @@ def _prepare_assets(spec: dict, frame: dict, prepared: dict, root: Path, tempora
         source = (sources if kind == 'video' else images).get(asset_id)
         if source is None or not source.is_file():
             raise SpatialRenderError(f"{path}: unavailable {kind} asset {asset_id!r}")
+        address = tuple(node['path'])
+        raster = reference or any(address[:len(parent)] == parent for parent in moving_paths)
         if kind == 'video':
             media = original.get('media')
             if media is None:
@@ -197,15 +199,16 @@ def _prepare_assets(spec: dict, frame: dict, prepared: dict, root: Path, tempora
                     raise SpatialRenderError(f"{path}: video alpha is not supported by this preview slice")
                 probed.add(source)
             source_time = media['source_time_s']
-            key = (source, source_time)
+            # Raster motion needs a file even when an ordinary occurrence uses
+            # these same source pixels. Their preparation formats cannot share
+            # one cache entry, regardless of traversal order.
+            key = (source, source_time, raster if pixels else False)
         else:
             source_time = None
             key = (source, None)
         if key not in decoded:
             png = temporary / f'asset-{len(decoded)}.png'
             try:
-                address = tuple(node['path'])
-                raster = reference or any(address[:len(parent)] == parent for parent in moving_paths)
                 if pixels and kind == 'video' and media_session is not None and not raster:
                     decoded[key] = media_session.pixels(source, source_time=source_time, occurrence=address)
                 elif media_session is None:

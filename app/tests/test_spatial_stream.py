@@ -210,3 +210,54 @@ def test_generator_cleanup_does_not_replace_primary_error():
         def close(self):raise RuntimeError('secondary cleanup error')
     with pytest.raises(ValueError,match='primary generator error'):
         encode_frames([sys.executable,'-c','import sys;sys.stdin.buffer.read()'],Frames(),(320,180))
+
+
+@pytest.mark.parametrize('moving_first',[False,True])
+def test_shared_frame_keeps_raster_and_pixel_representations_separate(tmp_path,moving_first):
+    from moviestar.spatial_render import _prepare_assets
+    source=tmp_path/'source';source.write_bytes(b'fixture')
+    spec={'sources':[{'id':'camera','path':str(source)}]}
+    nodes=[{'occurrence_path':[name],'type':'video','content':{'asset_id':'camera'},
+            'media':{'visible':True,'source_time_s':.5}} for name in ['static','moving']]
+    prepared={'nodes':[{'path':[node['occurrence_path'][0]],'kind':'video',
+        **({'motion':{'translate_x':'1px'}} if node['occurrence_path']==['moving'] else {})}
+        for node in nodes]}
+    if moving_first:prepared['nodes'].reverse()
+    class Media:
+        def probe(self,path):return {'streams':[{'pix_fmt':'yuv420p'}]}
+        def pixels(self,*args,**kwargs):return frame(160,90)
+        def decode(self,path,output,**kwargs):
+            from fractions import Fraction
+            encoder=av.CodecContext.create('png','w')
+            encoder.width,encoder.height,encoder.pix_fmt=160,90,'rgb24'
+            encoder.time_base=Fraction(1,24)
+            picture=frame(160,90);picture.pts=0;picture.time_base=Fraction(1,24)
+            output.write_bytes(b''.join(bytes(p) for p in [*encoder.encode(picture),*encoder.encode(None)]))
+    videos=_prepare_assets(spec,{'children':nodes},prepared,tmp_path,tmp_path,
+        reference=False,media_session=Media(),pixels=True)
+    decoded={tuple(v['path']):v['decoded'] for v in videos.values()}
+    assert isinstance(decoded[('static',)],av.VideoFrame)
+    assert isinstance(decoded[('moving',)],Path)
+    moving=next(n for n in prepared['nodes'] if n['path']==['moving'])
+    assert moving['video']['raster_image'].startswith('data:image/png;base64,')
+
+
+def test_same_source_static_and_motion_match_png_frame(project,tmp_path):
+    from moviestar.spatial_layout import browser_available
+    from moviestar.spatial_render import render_spatial_frame,render_spatial_pixels
+    from moviestar.spatial_session import BrowserSession
+    from tests.test_spatial_render import _frame
+    if not browser_available():pytest.skip('Chrome required')
+    spec,metadata=project
+    listeners=spec['spatial']['scenes']['interview']['layout']['children'][1]
+    listeners['bindings']['left']['source']={'start':0,'end':1.2}
+    listeners['motion']={'translate_x':[{'at':0,'value':.5}]}
+    with BrowserSession() as browser,MediaSession() as media:
+        for index,at in enumerate([.05,.15,.55]):
+            model=_frame(spec,metadata,at);canvas={'width':320,'height':180}
+            reference=tmp_path/f'reference-{index}.png'
+            render_spatial_frame(spec,model,canvas,output_path=reference,project_root=tmp_path,
+                browser_session=browser,media_session=media)
+            direct=render_spatial_pixels(spec,model,canvas,project_root=tmp_path,
+                browser_session=browser,media_session=media)
+            assert direct.to_ndarray(format='rgb24').tobytes()==rgb(reference)

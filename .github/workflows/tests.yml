@@ -48,7 +48,7 @@ jobs:
           # timestamp selection, format fallbacks, eviction and cleanup. Full
           # browser composition/export coverage runs in the main test job.
           python -m pytest app/tests/test_spatial_media_session.py -q -k 'not session_frames_match_full_reference_composition'
-          python -m pytest app/tests/test_spatial_stream.py -q -k 'not direct_pixels and not cli_uses_pixels'
+          python -m pytest app/tests/test_spatial_stream.py -q -k 'not direct_pixels and not cli_uses_pixels and not same_source_static_and_motion'
           python bin/check-dependency-licenses
 
   test:
