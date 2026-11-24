@@ -12,6 +12,8 @@ for the operations your service currently advertises.
 
 For initial timeline reads and trim dry runs, see [Cloud edit checks](cloud-edits.md).
 Those commands are available only when the service advertises the editing bridge.
+For explicit exact-version previews and verified MP4 downloads, see
+[Cloud previews](cloud-renders.md). Saving or undoing never renders automatically.
 
 ## Install
 
