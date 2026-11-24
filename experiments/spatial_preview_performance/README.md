@@ -78,15 +78,21 @@ speedups, FFmpeg launch counts, app revision, experiment hashes, library version
 and host load. First-call import costs are included rather than silently removed.
 
 `profile_preview.py` invokes the real completed-preview worker with an explicitly
-selected experimental compositor. It records interpreter/import-inclusive
+selected compositor (`production` uses the installed renderer; `baseline` is
+the old **compositor**, not an old package). Use separate pinned Python
+environments with `--variant production` to compare package revisions. Optional
+`--from` and `--to` select a result-time window (default 0–5 seconds).
+It records hashes of the actual imported package modules, interpreter/import-inclusive
 generation time, nested stage timings, process/source-decoder counts, browser
 PNG captures, and PNG byte sums observed around composition. The parent also
 samples the owned process group's summed RSS every 100 ms and request-folder
 disk usage every second. Shared pages may count twice, and sampling can miss
 brief peaks; those maxima are observations rather than continuous resource
 bounds. Parent/agent memory and other project directories are excluded. It
-checks that review output is 1280×720, 150 frames at 30 fps, with five seconds of
-audio. It does not time an agent editing command, inspection, publication, player
+checks the snapshot's review dimensions, frame count on the output grid, and
+audio duration when present. It includes the review downscale/encode after the
+canonical spatial render; this is not a full export benchmark.
+It does not time an agent editing command, inspection, publication, player
 startup, or human reaction. Interpreter/import startup is outside the child
 stage timer but inside the parent generation timer. Inclusive stage timings must
 not be added together; decoder/PTS work is nested within asset preparation.

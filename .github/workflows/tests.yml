@@ -39,10 +39,15 @@ jobs:
       - name: Install FFmpeg and Python dependencies
         run: |
           python bin/install-ci-ffmpeg
-          python -m pip install -e ./app pytest "numpy==1.24.4"
-      - name: Compare the compositor with FFmpeg on the oldest supported Python
+          python -m pip install -e ./app pytest "numpy==1.24.4" "av==16.1.0"
+      - name: Compare rendering with FFmpeg on minimum Python, NumPy and PyAV
         run: |
+          python -c "import av; assert av.__version__ == '16.1.0', av.__version__"
           python -m pytest app/tests/test_spatial_composite.py -q
+          # Headless decoder coverage includes real reformat calls, exact RGB,
+          # timestamp selection, format fallbacks, eviction and cleanup. Full
+          # browser composition/export coverage runs in the main test job.
+          python -m pytest app/tests/test_spatial_media_session.py -q -k 'not session_frames_match_full_reference_composition'
           python bin/check-dependency-licenses
 
   test:

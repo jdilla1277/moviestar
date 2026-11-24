@@ -538,6 +538,32 @@ def test_video_command_owns_one_browser_across_scenes(video_project, tmp_path, m
     assert not Path(args[3]).exists()
 
 
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
+def test_export_owns_media_sources_across_scenes_and_transition_layers(video_project, tmp_path, monkeypatch):
+    import moviestar.spatial_media as media
+    import moviestar.spatial_render as render
+    spec, metadata = video_project
+    _transition_project(spec, metadata)
+    save_spec(spec, cwd=tmp_path)
+    sessions, probes = [], []
+    original_session, original_run = media.MediaSession, render._run
+    class TrackedSession(original_session):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            sessions.append(self)
+    def run(command):
+        if command[0] == 'ffprobe':
+            probes.append(command)
+        return original_run(command)
+    monkeypatch.setattr(media, 'MediaSession', TrackedSession)
+    monkeypatch.setattr(render, '_run', run)
+    for job in range(2):
+        _invoke(['export', '--out', 'reused.mp4', '--quiet', '--video-encoder', 'x264'])
+        assert len(sessions) == job + 1, 'Each job owns fresh source state'
+        assert sessions[-1].closed and not Path(sessions[-1]._temporary.name).exists()
+        assert len(probes) == job + 1, 'All frames and transition layers share source metadata'
+
+
 
 @pytest.mark.skipif(not browser_available(), reason='Chrome and Node are required')
 def test_browser_shutdown_failure_preserves_prior_movie(video_project, tmp_path, monkeypatch, browser_sessions):

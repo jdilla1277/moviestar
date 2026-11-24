@@ -45,7 +45,9 @@ def _frame_count(plan):
     return _frame_window(plan)[1]
 
 
-def render_spatial_sequence(spec, project, plan, *, project_root, progress_cb=None, browser_session=None):
+def render_spatial_sequence(spec, project, plan, *, project_root, progress_cb=None, browser_session=None,
+                            media_session=None):
+    from moviestar.spatial_media import MediaSession
     timeline = resolve_project(project, spec)
     durations = {source['id']: source['duration']['seconds'] for source in project['sources']}
     directory = Path(plan['frame_sequence']).parent
@@ -53,7 +55,8 @@ def render_spatial_sequence(spec, project, plan, *, project_root, progress_cb=No
     first, count = _frame_window(plan)
     last_progress = 0
     context = nullcontext(browser_session) if browser_session is not None else BrowserSession()
-    with context as browser:
+    media_context = nullcontext(media_session) if media_session is not None else MediaSession()
+    with context as browser, media_context as media:
         for index in range(count):
             at = (first + index) / plan['output_fps']
             scene_index = plan['scene_window']['index']
@@ -62,7 +65,7 @@ def render_spatial_sequence(spec, project, plan, *, project_root, progress_cb=No
                 frame = compile_spatial_scene_frame(spec, timeline, scene_index, at - scene_start,
                                                      source_durations=durations)
                 render_spatial_frame(spec, frame, timeline.canvas, output_path=directory / f'frame{index:08d}.png',
-                                      project_root=project_root, browser_session=browser)
+                                      project_root=project_root, browser_session=browser, media_session=media)
             except (ValueError, SpatialLayoutError) as exc:
                 raise SpatialLayoutError(f"{plan['spatial_render']['scene_id']} at result {at:.6f}s: {exc}") from exc
             if progress_cb and (index + 1 == count or monotonic() - last_progress >= 1):

@@ -157,7 +157,7 @@ def _decode(path: Path, output: Path, *, source_time: float | None = None) -> No
 
 
 def _prepare_assets(spec: dict, frame: dict, prepared: dict, root: Path, temporary: Path,
-                    *, reference: bool) -> dict[str, dict]:
+                    *, reference: bool, media_session=None) -> dict[str, dict]:
     sources = {source['id']: _asset_path(source['path'], root) for source in spec['sources']}
     images = {name: _asset_path(asset['path'], root)
               for name, asset in spec.get('spatial', {}).get('assets', {}).items()}
@@ -186,8 +186,9 @@ def _prepare_assets(spec: dict, frame: dict, prepared: dict, root: Path, tempora
             if not media['visible']:
                 continue
             if source not in probed:
-                probe = json.loads(_run(['ffprobe', '-v', 'error', '-select_streams', 'v:0',
-                                         '-show_entries', 'stream=pix_fmt:stream_tags', '-of', 'json', str(source)]))
+                probe = (media_session.probe(source) if media_session is not None else
+                         json.loads(_run(['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+                                         '-show_entries', 'stream=pix_fmt:stream_tags', '-of', 'json', str(source)])))
                 stream = (probe.get('streams') or [{}])[0]
                 pixel_format = stream.get('pix_fmt', '')
                 tags = {key.lower(): str(value) for key, value in stream.get('tags', {}).items()}
@@ -203,8 +204,11 @@ def _prepare_assets(spec: dict, frame: dict, prepared: dict, root: Path, tempora
         if key not in decoded:
             png = temporary / f'asset-{len(decoded)}.png'
             try:
-                _decode(source, png, source_time=source_time)
-            except SpatialRenderError as exc:
+                if media_session is None:
+                    _decode(source, png, source_time=source_time)
+                else:
+                    media_session.decode(source, png, source_time=source_time, occurrence=tuple(node['path']))
+            except ValueError as exc:
                 raise SpatialRenderError(f"{path}: {exc}") from exc
             decoded[key] = png
         png = decoded[key]
@@ -272,7 +276,7 @@ def _validate_frame_destinations(spec, root, output_path, layout_output_path, re
 def render_spatial_frame(spec: dict, frame: dict, canvas: dict, *,
                          output_path: Path, project_root: Path | None = None,
                          layout_output_path: Path | None = None,
-                         reference_path: Path | None = None, browser_session=None) -> dict:
+                         reference_path: Path | None = None, browser_session=None, media_session=None) -> dict:
     """Render a single PNG; the optional browser reference supports parity tests."""
     root = (project_root or Path.cwd()).resolve()
     for diagnostic in frame.get('diagnostics', []):
@@ -281,7 +285,8 @@ def render_spatial_frame(spec: dict, frame: dict, canvas: dict, *,
     if frame.get('kind') == 'transition':
         from moviestar.spatial_transition import render_transition_frame
         return render_transition_frame(spec, frame, canvas, output_path=output_path, project_root=root,
-            layout_output_path=layout_output_path, reference_path=reference_path, browser_session=browser_session)
+            layout_output_path=layout_output_path, reference_path=reference_path,
+            browser_session=browser_session, media_session=media_session)
     if frame.get('kind') == 'preset':
         from moviestar.spatial_preset import render_preset_frame
         return render_preset_frame(spec, frame, canvas, output_path=output_path, project_root=root,
@@ -293,7 +298,8 @@ def render_spatial_frame(spec: dict, frame: dict, canvas: dict, *,
             raise SpatialRenderError(f"{diagnostic['code']} at {'/'.join(diagnostic['path'])}")
     with TemporaryDirectory(prefix='moviestar-frame-') as directory:
         temporary = Path(directory)
-        videos = _prepare_assets(spec, frame, prepared, root, temporary, reference=reference_path is not None)
+        videos = _prepare_assets(spec, frame, prepared, root, temporary,
+                                 reference=reference_path is not None, media_session=media_session)
         request = {**prepared, 'paint_dir': str(temporary),
                    'reference_path': str(temporary / 'reference.png') if reference_path else None,
                    'layout_output_path': str(temporary / 'layout.png') if layout_output_path else None}

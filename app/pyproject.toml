@@ -27,7 +27,9 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "av<19",  # faster-whisper 1.2.1 passes av.open(metadata_errors=...), removed in av 19
+    # 16.1.0 is the tested Python 3.10-compatible floor for frame selection.
+    # faster-whisper 1.2.1 passes av.open(metadata_errors=...), removed in av 19.
+    "av>=16.1.0,<19",
     "click>=8.0",
     "faster-whisper>=1.0",
     "keyring>=25.0",

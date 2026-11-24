@@ -58,13 +58,19 @@ def test_sdist_excludes_repository_tests():
     assert manifest == "prune tests\n"
 
 
-def test_dependencies_cap_pyav_below_19_for_faster_whisper():
+def test_dependencies_require_tested_renderer_pyav_and_cap_below_19_for_whisper():
+    # Test the Python 3.10-compatible floor as well as the newer reformatter.
     # faster-whisper 1.2.1 (latest) calls av.open(metadata_errors=...),
     # which PyAV 19.0.0 removed; every transcription fails on a fresh
     # install. Lift the cap once a faster-whisper release supports av 19.
     dependencies = _pyproject()["project"]["dependencies"]
 
-    assert "av<19" in dependencies
+    from packaging.requirements import Requirement
+    requirement = next(Requirement(item) for item in dependencies if Requirement(item).name == 'av')
+    assert '15.1.0' not in requirement.specifier
+    assert '16.1.0' in requirement.specifier
+    assert '18.1.0' in requirement.specifier
+    assert '19.0.0' not in requirement.specifier
 
 
 def test_numpy_is_a_direct_dependency_for_local_composition():
