@@ -321,3 +321,51 @@ globalThis.WebSocket = class extends EventTarget {
         assert not state or state.startswith('Z'), state
     finally:
         session.close(abort=True)
+
+
+def test_dead_worker_cannot_serve_cached_paint(fake_worker, tmp_path):
+    script = Path(fake_worker.files('moviestar')) / 'spatial_browser.mjs'
+    script.write_text('''
+import sys,json
+from pathlib import Path
+for line in sys.stdin:
+ message=json.loads(line);root=Path(message['request']['paint_dir'])
+ (root/'base.png').write_bytes(b'paint')
+ print(json.dumps({'id':message['id'],'result':{'video_planes':[],'diagnostics':[]}}),flush=True)
+''')
+    request = {'paint_dir': str(tmp_path), 'nodes': [], 'canvas': {'width': 1, 'height': 1}}
+    with BrowserSession() as session:
+        session.run(request)
+        assert session._paint_cache.retained_bytes
+        session.run(request)
+        assert session._counter == 1
+        session._process.kill(); session._process.wait()
+        with pytest.raises(SpatialLayoutError, match='closed'):
+            session.run(request)
+        assert session._paint_cache.retained_bytes == 0
+
+
+def test_cache_restore_failure_closes_worker_and_clears_paint(fake_worker, monkeypatch):
+    with BrowserSession() as session:
+        session.run({})
+        def fail(request):
+            raise OSError('simulated paint write failure')
+        monkeypatch.setattr(session._paint_cache, 'restore', fail)
+        with pytest.raises(SpatialLayoutError, match='paint write failure'):
+            session.run({})
+        assert session._closed and session._process.poll() is not None
+        assert session._paint_cache.retained_bytes == 0
+        with pytest.raises(SpatialLayoutError, match='closed'):
+            session.run({})
+
+
+def test_worker_exit_during_paint_restore_cannot_return_a_hit(fake_worker, monkeypatch):
+    with BrowserSession() as session:
+        session.run({})
+        def restore(request):
+            session._process.kill();session._process.wait()
+            return {'cached': True}
+        monkeypatch.setattr(session._paint_cache, 'restore', restore)
+        with pytest.raises(SpatialLayoutError, match='closed'):
+            session.run({})
+        assert session._closed and session._paint_cache.retained_bytes == 0

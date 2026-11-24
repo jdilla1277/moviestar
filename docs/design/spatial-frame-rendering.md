@@ -492,10 +492,21 @@ deadline; no renderer deadline or performance budget is relaxed.
 passes sequential, numbered JSON-line requests through the same page renderer
 used by standalone frames. The Node input iterator is installed before browser
 startup so the first request cannot be lost during the startup handshake.
-Every request reapplies the viewport, rebuilds the DOM, resolves current text,
+Every worker request reapplies the viewport, rebuilds the DOM, resolves current text,
 media and motion, and installs fresh paint/label callbacks. Rendered or labeled
 views from an earlier request cannot persist into a later frame. Standalone
 measurement and PNG commands retain the single-request protocol.
+
+The Python session may skip a worker request when its last successful paint has
+an identical resolved visual input. `spatial_paint.py` retains one base/mask set
+and serialized report, at most 64 MiB in total. It preserves CSS declaration
+order and all node data, including caption word state, intrinsic media size,
+images, crop and styles. Only unused root result/scene clocks and output paths
+are excluded. Unknown request fields, motion, raster video and auxiliary views
+force a miss. The compositor still uses fresh decoded source frames. A fresh
+report copy prevents per-frame diagnostics from mutating the retained entry.
+Errors, a dead worker, close and cancellation discard reusable paint; new jobs
+start empty. This adds no full-frame, clip, or cross-job cache.
 
 The Python context lazily starts the worker, owns its temporary profile and
 POSIX process group, drains bounded stderr, and bounds response size. A request's

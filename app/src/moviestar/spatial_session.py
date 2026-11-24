@@ -1,4 +1,4 @@
-"""A command-owned browser worker; frames remain independent render requests."""
+"""A command-owned browser worker with bounded reuse of unchanged paint."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from tempfile import TemporaryDirectory
 from threading import Event, Lock, Thread
 
 from moviestar.spatial_layout import SpatialLayoutError, _chrome_path
+from moviestar.spatial_paint import PaintCache
 
 _REQUEST_TIMEOUT = 60
 _MAX_RESPONSE = 16 * 1024 * 1024
@@ -37,6 +38,7 @@ class BrowserSession:
         self._counter = 0
         self._readers = []
         self._writer = None
+        self._paint_cache = PaintCache()
 
     def __enter__(self):
         if self._closed:
@@ -108,6 +110,7 @@ class BrowserSession:
         if self._closed:
             return
         self._closed = True
+        self._paint_cache.clear()
         self._stopping.set()
         process = self._process
         shutdown_error = None
@@ -159,6 +162,13 @@ class BrowserSession:
         try:
             if self._process is None:
                 self._start()
+            if self._process.poll() is not None or not self._messages.empty():
+                raise SpatialLayoutError('browser session driver closed or returned unexpected data')
+            reused = self._paint_cache.restore(request)
+            if reused is not None:
+                if self._closed or self._process.poll() is not None or not self._messages.empty():
+                    raise SpatialLayoutError('browser session driver closed during paint reuse')
+                return reused
             self._counter += 1
             payload = (json.dumps({'id': self._counter, 'request': request}) + '\n').encode('utf-8')
 
@@ -191,6 +201,7 @@ class BrowserSession:
             if not isinstance(response.get('result'), dict):
                 raise SpatialLayoutError('browser session returned an invalid response result')
             self._writer.join(timeout=1)
+            self._paint_cache.store(request, response['result'])
             return response['result']
         except BaseException as exc:
             self.close(abort=True)

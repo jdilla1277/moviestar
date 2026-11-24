@@ -63,10 +63,18 @@ def worker(request_file, variant):
     render._publish = timed("publish_frame",render._publish)
     browser_run = BrowserSession.run
     def browser_request(self,request):
+        before = self._counter
         result = browser_run(self,request)
-        counts["browser_requests"] += 1
-        counts["browser_png_captures"] += (1 + len(result.get("video_planes",[]))
-            + bool(request.get("layout_output_path")) + bool(request.get("reference_path")))
+        if self._counter == before:
+            counts["browser_paint_reuses"] += 1
+        else:
+            counts["browser_requests"] += 1
+            counts["browser_png_captures"] += (1 + len(result.get("video_planes",[]))
+                + bool(request.get("layout_output_path")) + bool(request.get("reference_path")))
+        paint = getattr(self, '_paint_cache', None)
+        if paint is not None:
+            counts['browser_paint_peak_retained_bytes'] = max(
+                counts['browser_paint_peak_retained_bytes'], paint.retained_bytes)
         return result
     BrowserSession.run = timed("browser_request",browser_request)
     cli.render_layout_video = timed("scene_encode",cli.render_layout_video)
