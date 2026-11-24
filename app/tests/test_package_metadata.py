@@ -59,8 +59,7 @@ def test_sdist_excludes_repository_tests():
 
 
 def test_dependencies_require_tested_renderer_pyav_and_cap_below_19_for_whisper():
-    # Spatial decoding needs the reformatter threading/color-range API tested
-    # at 18.1.0; an existing 16.1 install must be upgraded by the resolver.
+    # Test the Python 3.10-compatible floor as well as the newer reformatter.
     # faster-whisper 1.2.1 (latest) calls av.open(metadata_errors=...),
     # which PyAV 19.0.0 removed; every transcription fails on a fresh
     # install. Lift the cap once a faster-whisper release supports av 19.
@@ -68,8 +67,8 @@ def test_dependencies_require_tested_renderer_pyav_and_cap_below_19_for_whisper(
 
     from packaging.requirements import Requirement
     requirement = next(Requirement(item) for item in dependencies if Requirement(item).name == 'av')
-    assert '16.1.0' not in requirement.specifier
-    assert '18.0.0' not in requirement.specifier
+    assert '15.1.0' not in requirement.specifier
+    assert '16.1.0' in requirement.specifier
     assert '18.1.0' in requirement.specifier
     assert '19.0.0' not in requirement.specifier
 

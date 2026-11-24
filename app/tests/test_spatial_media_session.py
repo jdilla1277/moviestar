@@ -24,6 +24,7 @@ def references(video, times, directory):
     return results
 
 
+@pytest.mark.skipif(tuple(map(int, av.__version__.split('.')[:2])) < (18, 1), reason='Older PyAV uses reference decoding')
 def test_forward_decode_reuses_source_and_matches_reference(project, tmp_path, monkeypatch):
     video = Path(project[0]['sources'][0]['path'])
     times = [.05, .15, .15, .25, .35, .45, .55]
@@ -134,6 +135,7 @@ def test_display_matrix_keeps_reference_autorotation(tmp_path, rotation):
 
 
 @pytest.mark.parametrize('failure', [RuntimeError, KeyboardInterrupt])
+@pytest.mark.skipif(tuple(map(int, av.__version__.split('.')[:2])) < (18, 1), reason='Older PyAV retains no source cursors')
 def test_decoder_limit_and_cleanup_on_error_or_cancel(project, tmp_path, monkeypatch, failure):
     video = Path(project[0]['sources'][0]['path'])
     real_open = av.open
@@ -248,3 +250,27 @@ def test_static_image_cache_evicts_within_job_budget(project, tmp_path, monkeypa
             assert session._image_bytes <= session.image_budget
     assert len(calls) == 3
     assert not directory.exists()
+
+
+@pytest.mark.parametrize('failure', [RuntimeError, KeyboardInterrupt])
+def test_older_pyav_uses_reference_without_retaining_cursors(project, tmp_path, monkeypatch, failure):
+    import moviestar.spatial_render as render
+    video = Path(project[0]['sources'][0]['path'])
+    expected = references(video, [.05, .15, .55], tmp_path)
+    monkeypatch.setattr(av, '__version__', '16.1.0')
+    original = render._decode
+    calls = []
+    def decode(*args, **kwargs):
+        calls.append(args[0])
+        return original(*args, **kwargs)
+    monkeypatch.setattr(render, '_decode', decode)
+    with pytest.raises(failure):
+        with MediaSession() as session:
+            directory = Path(session._temporary.name)
+            for i, at in enumerate([.05, .15, .55]):
+                out = tmp_path / f'legacy-{i}.png'
+                session.decode(video, out, source_time=at)
+                assert rgb(out) == expected[i]
+                assert not session._decoders
+            raise failure()
+    assert len(calls) == 3 and session.closed and not directory.exists()

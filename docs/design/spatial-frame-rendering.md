@@ -454,6 +454,8 @@ cached metadata, up to four independent source cursors, and at most 64 MiB of
 job-local static PNGs. Source identity changes abort the job. Rotated,
 anamorphic, and non-8-bit footage uses the established FFmpeg path. Per-frame composition and
 PNG storage remain throughput limitations; streaming remains follow-on work.
+PyAV before 18.1 uses reference video decoding without retained cursors; PyAV 18.1+
+enables forward reuse. Both paths share job-local metadata/static-image preparation.
 
 `test_spatial_video.py` uses real encoded clips and decoded frames to verify
 portrait/landscape motion placement, audio RMS without duplicated routing,

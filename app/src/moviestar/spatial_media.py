@@ -189,6 +189,16 @@ class MediaSession:
             return
         if not math.isfinite(source_time) or source_time < 0:
             raise SpatialMediaError(f'no source frame at {source_time}s in {path.name}')
+        if tuple(map(int, av.__version__.split('.')[:2])) < (18, 1):
+            # Older supported PyAV lacks the threading API and its RGB/range
+            # conversion differs. Preserve the established FFmpeg pixels and
+            # bounded per-frame lifetime, without allocating forward cursors.
+            from moviestar.spatial_render import _decode
+            try:
+                _decode(path, output, source_time=source_time)
+            except ValueError as exc:
+                raise SpatialMediaError(str(exc)) from exc
+            return
         key = path, tuple(occurrence)
         decoder = self._decoders.pop(key, None)
         if decoder is None:

@@ -901,6 +901,9 @@ least-recently-used decoders close before replacements open. Static decoded
 images use a job-local temporary cache limited to 64 MiB. All handles and cached
 images are discarded on completion, failure, or cancellation. Rotated,
 anamorphic, and non-8-bit sources retain the established FFmpeg decode path for pixel parity.
+PyAV before 18.1 also retains reference video decoding, preserving Python 3.10 support;
+forward decoder reuse requires PyAV 18.1 or newer. Source metadata and static
+images remain job-owned on both paths.
 Per-frame composition and temporary PNG disk use remain; streaming is follow-on work.
 Export throughput has not been validated against release performance budgets. No unchanged-clip reuse or cache invalidation is added.
 Overlapping internal transition inspection and real-content/performance
