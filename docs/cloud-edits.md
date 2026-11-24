@@ -153,3 +153,36 @@ Explicit key mode does not read or modify your installation profile/keyring.
 A missing/malformed key or service URL fails without installation fallback.
 With neither variable set, existing installation behavior is unchanged. Use a
 Preview-issued key with Preview; Production keys belong to Production.
+
+## Origin metadata in downloaded specs
+
+A compatible Cloud service can expose an authorized saved revision as
+`spec.json`. The editing fields keep the existing local format (`version: "0.2"`).
+The optional `provenance` object retains:
+
+- `project_id` and `base_revision_id`: the Cloud project and exact saved version
+  this file came from;
+- `base_document_sha256`: the service's fingerprint of the original saved
+  document/dependencies/engine, or `null` when unreported;
+- `engine_version`: the exact recorded engine commit;
+- `contract_version`: `cloud-editing-v1`.
+
+This is origin metadata, not authorization or a claim that later local changes
+were already saved in Cloud. The base fingerprint is **not** the checksum of the
+JSON download with its origin metadata added. Local commands validate and
+preserve provenance through editing, `spec --reset`, and undo. Older specs
+without provenance remain valid. Unknown provenance fields and malformed
+identifiers are rejected.
+
+`spec --edit FILE` replaces instructions within the current project; it is not
+a Cloud import or rebase operation. The replacement must retain exactly the
+current provenance block, including keeping it absent for a local-only project.
+Adding, removing, or changing origin is rejected as `provenance_mismatch` in
+both dry-run and save mode, without changing the spec or undo history. Start
+from `moviestar spec` when preparing a replacement. With the same origin, the
+replacement is one undoable command and undo restores the prior instructions.
+
+The metadata does not itself download media, create a local workspace, import
+an edit or synchronize local checkpoints. Source files and the authorized asset
+mapping are still required for local/Cloud continuity. No render is requested by
+reading or downloading a saved spec.
