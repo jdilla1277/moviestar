@@ -3129,6 +3129,7 @@ def build_render_layout_video_command(
     video_encoder: str = "x264",
     frame_sequence: str | None = None,
     sample_offset: float | None = None,
+    frame_stream: bool = False,
 ) -> list[str]:
     """Render simultaneous layout slots composited onto one canvas.
 
@@ -3139,23 +3140,29 @@ def build_render_layout_video_command(
         if (
             output_fps is None or output_fps <= 0 or not math.isfinite(sample_offset)
             or sample_offset < -1e-9 or sample_offset >= 1 / output_fps + 1e-9
-            or frame_sequence is not None
+            or frame_sequence is not None or frame_stream
         ):
             raise ValueError("render_layout: invalid preset sample_offset or output_fps")
-    if frame_sequence is None:
+    if frame_stream and frame_sequence is not None:
+        raise ValueError('render_layout: choose a frame stream or PNG sequence')
+    external_frames = frame_stream or frame_sequence is not None
+    if not external_frames:
         _validate_layout_slots(layout_slots, canvas, duration)
     cmd: list[str] = [
         "ffmpeg", "-y", "-loglevel", "error",
         "-progress", "pipe:2", "-nostats",
     ]
-    if frame_sequence is None:
+    if frame_stream:
+        cmd += ['-f', 'rawvideo', '-pixel_format', 'rgb24', '-video_size', f'{canvas[0]}x{canvas[1]}',
+                '-framerate', str(output_fps or 30), '-thread_queue_size', '1', '-i', 'pipe:0']
+    elif frame_sequence is None:
         _append_layout_video_inputs(cmd, layout_slots)
     else:
         cmd += ['-framerate', str(output_fps or 30), '-start_number', '0', '-i', frame_sequence]
-    video_inputs = len(layout_slots) if frame_sequence is None else 1
+    video_inputs = len(layout_slots) if not external_frames else 1
     _append_audio_from_inputs(cmd, video_inputs, audio_from_input)
     audio_input_count = len(audio_from_input[1]) if audio_from_input else 0
-    if frame_sequence is None:
+    if not external_frames:
         _append_shape_mask_inputs(cmd, layout_slots, duration)
 
     # Overlays burn in at canvas resolution, before any preview
@@ -3163,7 +3170,7 @@ def build_render_layout_video_command(
     composed_label = "vlaid" if overlay_plans else (
         "vraw" if preview else "outv"
     )
-    if frame_sequence is None:
+    if not external_frames:
         filter_parts = _layout_filter_parts(
             layout_slots, canvas, duration, output_label=composed_label,
             output_fps=output_fps, mask_start_index=video_inputs + audio_input_count,
@@ -4059,9 +4066,10 @@ def render_layout_video(
     video_encoder: str = "x264",
     frame_sequence: str | None = None,
     sample_offset: float | None = None,
+    frame_source=None,
 ) -> list[str]:
     """Render simultaneous layout slots composited onto one MP4."""
-    for slot in ([] if frame_sequence is not None else layout_slots):
+    for slot in ([] if frame_sequence is not None or frame_source is not None else layout_slots):
         if not os.path.exists(slot["path"]):
             raise FileNotFoundError(f"File not found: {slot['path']}")
     if audio_from_input is not None:
@@ -4071,7 +4079,7 @@ def render_layout_video(
 
     check_ffmpeg_available()
     preflight_overlay_render_capabilities(overlay_plans)
-    if frame_sequence is None:
+    if frame_sequence is None and frame_source is None:
         preflight_shape_render_capabilities(layout_slots)
     cmd = build_render_layout_video_command(
         layout_slots,
@@ -4087,9 +4095,15 @@ def render_layout_video(
         output_fps=output_fps,
         **({'frame_sequence': frame_sequence} if frame_sequence is not None else {}),
         **({'sample_offset': sample_offset} if sample_offset is not None else {}),
+        **({'frame_stream': True} if frame_source is not None else {}),
     )
     if progress_cb is None:
         progress_cb = lambda line: sys.stderr.write(line + "\n")
+
+    if frame_source is not None:
+        from moviestar.spatial_stream import encode_frames
+        encode_frames(cmd, frame_source, canvas, progress_cb=progress_cb)
+        return cmd
 
     proc = subprocess.Popen(
         cmd,

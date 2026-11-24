@@ -28,8 +28,9 @@ def _channels(frame):
             for plane in frame.planes]
 
 
-def _place_video(path: Path, rect: dict, width: int, height: int):
-    media = _read_png(path).reformat(width=rect['width'], height=rect['height'],
+def _place_video(path, rect: dict, width: int, height: int):
+    source = path if isinstance(path, av.VideoFrame) else _read_png(path)
+    media = source.reformat(width=rect['width'], height=rect['height'],
                                     format='rgb24', interpolation='BILINEAR')
     blank = av.VideoFrame(width, height, format='rgb24')
     target = np.frombuffer(blank.planes[0], dtype=np.uint8).reshape(height, blank.planes[0].line_size)
@@ -64,7 +65,7 @@ def _accumulate(accumulators, base_channels, white_channels, media_channels):
             accumulator[rows] = pixels
 
 
-def compose(temporary: Path, canvas: dict, planes: list[dict], videos: dict, output: Path) -> None:
+def compose(temporary: Path, canvas: dict, planes: list[dict], videos: dict, output: Path | None):
     width, height = canvas['width'], canvas['height']
     base = _read_png(temporary / 'base.png').reformat(format='gbrp16le')
     if (base.width, base.height) != (width, height):
@@ -85,6 +86,8 @@ def compose(temporary: Path, canvas: dict, planes: list[dict], videos: dict, out
         _accumulate(accumulators, base_channels, _channels(white), _channels(scaled))
         del white, scaled
     frame = result.reformat(format='rgb24')
+    if output is None:
+        return frame
     encoder = av.CodecContext.create('png', 'w')
     encoder.thread_count = 1
     encoder.width, encoder.height = width, height

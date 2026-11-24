@@ -1,6 +1,6 @@
 """Render spatial scene clips through the existing audio/transition pipeline.
 
-Temporary PNG sequences are frame inputs, not a reusable rendered-clip cache.
+Structured video streams RGB frames; still-image callers retain PNG output.
 The final movie is staged until rendering, mixing, and mastering all succeed.
 """
 
@@ -18,7 +18,7 @@ import click
 from moviestar.resolved import ResolvedProjectError, resolve_project
 from moviestar.spatial_layout import SpatialLayoutError, prepare_layout_frame
 from moviestar.spatial_model import compile_spatial_scene_frame, expand_spatial_scene
-from moviestar.spatial_render import _asset_path, render_spatial_frame
+from moviestar.spatial_render import _asset_path, render_spatial_frame, render_spatial_pixels
 from moviestar.spatial_session import BrowserSession
 from moviestar.timecodes import format_timecode
 from moviestar.transitions import resolve_edge_transition
@@ -46,12 +46,24 @@ def _frame_count(plan):
 
 
 def render_spatial_sequence(spec, project, plan, *, project_root, progress_cb=None, browser_session=None,
-                            media_session=None):
+                            media_session=None, stream=False):
+    iterator = iter_spatial_frames(spec, project, plan, project_root=project_root,
+        progress_cb=progress_cb, browser_session=browser_session, media_session=media_session,
+        stream=stream)
+    if stream:
+        return iterator
+    for _ in iterator:
+        pass
+
+
+def iter_spatial_frames(spec, project, plan, *, project_root, progress_cb=None,
+                        browser_session=None, media_session=None, stream=True):
     from moviestar.spatial_media import MediaSession
     timeline = resolve_project(project, spec)
     durations = {source['id']: source['duration']['seconds'] for source in project['sources']}
-    directory = Path(plan['frame_sequence']).parent
-    directory.mkdir(parents=True, exist_ok=True)
+    directory = Path(plan['frame_sequence']).parent if not stream else None
+    if directory is not None:
+        directory.mkdir(parents=True, exist_ok=True)
     first, count = _frame_window(plan)
     last_progress = 0
     context = nullcontext(browser_session) if browser_session is not None else BrowserSession()
@@ -64,8 +76,13 @@ def render_spatial_sequence(spec, project, plan, *, project_root, progress_cb=No
             try:
                 frame = compile_spatial_scene_frame(spec, timeline, scene_index, at - scene_start,
                                                      source_durations=durations)
-                render_spatial_frame(spec, frame, timeline.canvas, output_path=directory / f'frame{index:08d}.png',
-                                      project_root=project_root, browser_session=browser, media_session=media)
+                if stream:
+                    yield render_spatial_pixels(spec, frame, timeline.canvas, project_root=project_root,
+                        browser_session=browser, media_session=media)
+                else:
+                    render_spatial_frame(spec, frame, timeline.canvas, output_path=directory / f'frame{index:08d}.png',
+                        project_root=project_root, browser_session=browser, media_session=media)
+                    yield None
             except (ValueError, SpatialLayoutError) as exc:
                 raise SpatialLayoutError(f"{plan['spatial_render']['scene_id']} at result {at:.6f}s: {exc}") from exc
             if progress_cb and (index + 1 == count or monotonic() - last_progress >= 1):
@@ -211,7 +228,7 @@ def spatial_video_command(*, project, spec, command, output, from_s=0.0, to_s=No
                 raise ValueError('--loudness-target requires an exported audio track')
             spatial_plan = [{**item['spatial_render'], 'frame_count': _frame_count(item),
                              'result_range': item['scene_window']['result_range'],
-                             'frame_sequence': item['frame_sequence']}
+                             'frame_input': item['frame_input']}
                             for item in artifacts['render_plans'] if item.get('spatial_render')]
             needs_finish = (render_start != from_s or render_end != end
                             or spec.get('opening_transition') or spec.get('closing_transition'))

@@ -80,7 +80,11 @@ def test_spatial_video_dry_run_plans_frames_and_audio_without_writing(video_proj
     assert result['render_available'] is True
     assert result['spatial_render_plan'][0]['frame_count'] == 4
     assert result['spatial_render_plan'][0]['scene_id'] == 'interview'
-    assert '-framerate' in result['scene_render_commands'][0]['command']
+    assert result['spatial_render_plan'][0]['frame_input'] == {
+        'transport': 'pipe', 'format': 'rgb24', 'queue_frames': 1}
+    command = result['scene_render_commands'][0]['command']
+    assert '-framerate' in command and 'rawvideo' in command and 'pipe:0' in command
+    assert not any('frame%' in part for part in command)
     assert result['audio_routes'][0]['audio_from'] == 'camera'
     assert not (tmp_path / 'movie.mp4').exists()
     assert not (tmp_path / 'moviestar' / 'scene-renders').exists()
