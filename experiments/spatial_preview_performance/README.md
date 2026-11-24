@@ -96,6 +96,9 @@ It does not time an agent editing command, inspection, publication, player
 startup, or human reaction. Interpreter/import startup is outside the child
 stage timer but inside the parent generation timer. Inclusive stage timings must
 not be added together; decoder/PTS work is nested within asset preparation.
+`browser_requests` and `browser_png_captures` count actual worker work;
+`browser_paint_reuses` counts frames served from the session's bounded paint
+entry. The browser-request stage includes lookup/copy time on those hits.
 
 ## Historical observations, November 6, 2026
 

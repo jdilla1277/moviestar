@@ -887,9 +887,18 @@ audio mixing, and mastering succeed. Failures preserve an existing destination;
 outputs cannot overwrite a project media asset. Rendering writes no spec revision.
 
 Watch and export lazily start one command-owned browser worker for all selected
-structured scenes, including transition handles. Each request rebuilds its page
-and resets the viewport; layout, captions, motion, and media selection resolve
-from the current frame's input. The worker closes before clip concatenation and final publication.
+structured scenes, including transition handles. Each frame resolves layout,
+captions, motion, and media selection from its current input. The worker retains
+one successful base image, visibility-mask set, and measured report, limited to
+64 MiB including the report. An identical resolved visual request reuses this
+paint while source video frames are still decoded and composed at the current
+time. Only the two unused root clocks and output locations are excluded from
+identity; CSS declaration order, captions/active words, images, crop, dimensions,
+reservations, and scene paths remain part of it. Motion, raster video, reference
+and debug views, and unknown request fields bypass reuse. A miss rebuilds the
+page and resets the viewport. Reports are copied per frame; errors are never
+cached. Reuse is discarded on failure or shutdown, and a dead worker cannot
+serve a hit. The worker closes before clip concatenation and final publication.
 A failed request closes the session and aborts the movie without replaying the
 frame. Dry-run and preset-only windows launch no browser worker.
 
