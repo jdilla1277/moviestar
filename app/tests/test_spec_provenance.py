@@ -1,5 +1,6 @@
 """Portable origin metadata never changes editing/undo meaning."""
 import copy
+import json
 import pytest
 from moviestar.spec import empty_spec, validate_spec, append_trim, append_revision, pop_revision, SpecValidationError
 
@@ -38,6 +39,7 @@ def test_origin_survives_actual_spec_file_io(tmp_path):
     before=spec()
     save_spec(before,cwd=tmp_path,record=False)
     assert load_spec(cwd=tmp_path)==before
+
     changed=append_trim(before,'speaker',10,40,60)
     save_spec(changed,cwd=tmp_path,command='trim')
     saved=load_spec(cwd=tmp_path)
@@ -45,3 +47,37 @@ def test_origin_survives_actual_spec_file_io(tmp_path):
     restored,_=pop_revision(saved)
     save_spec(restored,cwd=tmp_path,record=False)
     assert load_spec(cwd=tmp_path)==before
+
+
+@pytest.mark.parametrize("cloud_origin", [True, False])
+def test_cli_reset_and_undo_preserve_origin(tmp_path, test_video, cloud_origin, monkeypatch):
+    from click.testing import CliRunner
+    from moviestar.cli import cli
+    from moviestar.spec import load_spec, save_spec
+
+    runner = CliRunner()
+    monkeypatch.chdir(tmp_path)
+
+    def invoke(*args):
+        result = runner.invoke(cli, list(args))
+        assert result.exit_code == 0, result.output
+        return json.loads(result.stdout)
+
+    invoke("load", test_video, "--as", "speaker", "--no-transcribe", "--no-frames")
+    invoke("trim", "--from", "0.25", "--to", "1.5")
+    before = load_spec()
+    if cloud_origin:
+        before["provenance"] = copy.deepcopy(ORIGIN)
+        save_spec(before, record=False)
+
+    reset = invoke("spec", "--reset")
+    reset_spec = load_spec()
+    assert reset["spec"] == reset_spec
+    assert reset_spec["sources"][0]["operations"] == []
+    if cloud_origin:
+        assert reset_spec["provenance"] == ORIGIN
+    else:
+        assert "provenance" not in reset_spec
+
+    invoke("undo")
+    assert load_spec() == before

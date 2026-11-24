@@ -25318,6 +25318,10 @@ def spec(edit_path: str | None, reset: bool, dry_run: bool) -> None:
             {"id": s["id"], "path": s["path"]} for s in project["sources"]
         ]
         new_spec = empty_spec(seed_sources)
+        # Reset editing instructions, not the draft's Cloud origin. Provenance
+        # is deliberately outside the undo journal and must survive both steps.
+        if "provenance" in current_spec:
+            new_spec["provenance"] = copy.deepcopy(current_spec["provenance"])
         try:
             new_spec = save_spec(new_spec, command="spec")
         except SpecValidationError as exc:

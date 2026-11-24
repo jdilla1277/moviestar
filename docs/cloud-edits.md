@@ -170,8 +170,9 @@ The optional `provenance` object retains:
 This is origin metadata, not authorization or a claim that later local changes
 were already saved in Cloud. The base fingerprint is **not** the checksum of the
 JSON download with its origin metadata added. Local commands validate and
-preserve provenance through editing and undo. Older specs without provenance
-remain valid. Unknown provenance fields and malformed identifiers are rejected.
+preserve provenance through editing, `spec --reset`, and undo. Older specs
+without provenance remain valid. Unknown provenance fields and malformed
+identifiers are rejected.
 
 The metadata does not itself download media, create a local workspace, import
 an edit or synchronize local checkpoints. Source files and the authorized asset
