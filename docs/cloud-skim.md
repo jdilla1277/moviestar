@@ -22,7 +22,7 @@ installations. Changing options with a retained key produces a conflict; use a
 new key for intentional new work.
 
 `--out-dir` creates a new directory containing real private JPEG files named
-with their nominal timestamps and a `skim.json` manifest. Existing directories
+with their decoded source timestamps for new jobs (nominal timestamps for retained legacy jobs) and a `skim.json` manifest. Existing directories
 are never overwritten. Failed downloads remove the newly created partial
 directory; retry the same job into a new directory. No public image URLs or
 credentials are written into the manifest.
@@ -37,15 +37,33 @@ video duration, capped at five seconds, then filters that index inclusively by
 indexed entries, including the first and last; count 1 chooses the middle
 indexed entry. When the range contains fewer entries it returns all of them.
 
-Timestamps identify the **nominal prepared index**, not the exact presentation
-timestamp of the decoded source frame. The FFmpeg FPS filter can choose a frame
-within that sampling bin. `sampling.time_basis`, `range_filter`,
+New jobs use `sampling.time_basis: decoded_source_time` and
+`range_filter: inclusive_requested_index_timestamps`. Each thumbnail's `at_ms`
+and `timecode` identify the displayed source frame, rounded to milliseconds;
+`requested_at_ms` identifies its selected prepared-grid sample. Range filtering
+and subsampling use requested times, not the possibly earlier or repeated
+actual frame times. Both are preserved when saving `skim.json`.
+
+The shared sampler observes the actual rational FFmpeg output ticks. Cloud
+fast-seeks each selected sample while retaining the original index grid and
+keyframe preroll; it does not decode an entire long file or encode a full JPEG
+index merely to return a small subset. Local load prepares the complete index
+once; subsequent skim reads need no media tools. Timestamps are not inferred
+from a nominal frame rate or selected output ordinal.
+
+Retained `nominal_prepared_index` jobs keep their original images and nominal
+labels. Reopening never recalculates PTS, relabels an old image as decoded time,
+or starts new work. Upgrade the remote CLI before downloading new decoded-time
+jobs; older CLI validators require nominal in-range increasing timestamps.
+The service and installed skim worker must adopt the paired contract before
+new jobs use decoded-time results. REST, native MCP labels and the viewer
+preserve both clocks and identify legacy labels as nominal.
+
 `index_interval_ms`, `available_frames`, `returned_count`, and `omitted_count`
-make the coverage explicit. A short range between index timestamps can return
-zero images with `coverage_note: "no_indexed_frames_in_range"`; widen the range
-or use an [exact asset screenshot](cloud-screenshot.md) to inspect a specific
-time. A skim is sampled visual evidence and can miss events between bins. A
-locally prepared index with a custom interval has different coverage.
+make coverage explicit. A short range between index samples can return zero
+images with `coverage_note: "no_indexed_frames_in_range"`; widen the range or use
+an [asset screenshot](cloud-screenshot.md) to request a particular time. A skim
+can miss events between samples. A local custom interval has different coverage.
 
 This first Cloud mode is visual-only. It reports `transcript: null`,
 `transcript_status: "unavailable"`, and

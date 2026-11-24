@@ -21,7 +21,7 @@ from fractions import Fraction
 from pathlib import Path
 
 from moviestar.caption_import import CAPTIONS_BACKEND, import_caption_transcript
-from moviestar.ffmpeg import extract_frames, run_ffprobe
+from moviestar.ffmpeg import extract_inspection_frames, run_ffprobe
 from moviestar.timecodes import format_timecode
 from moviestar.transcribe import (
     DEFAULT_MODEL,
@@ -293,29 +293,51 @@ def transcript_reference(transcript: dict, source_id: str) -> dict:
 
 
 def list_frames(source: dict, cwd: Path | None = None) -> list[dict]:
-    """Return the pre-built frame index for a source, sorted by timecode.
+    """Read persisted decoded frame times, or explicitly retained nominal times.
 
-    Each entry: {"path": <absolute>, "timecode": {"text": ..., "seconds": ...}}.
-    Frame N (1-indexed by ffmpeg's %04d pattern) corresponds to time
-    (N - 1) * frame_interval. We enumerate the sorted files and derive
-    timecodes — the filename → index parse is authoritative.
+    No source/media tool is opened. Missing images do not shift later entries.
+    A declared new index must validate; it never falls back to nominal labels.
     """
     source_id = source["id"]
     interval = float(source["frame_interval"])
-    frames_subdir = source.get("frames_dir", FRAMES_DIR)
-    frames_dir = get_project_dir(cwd) / frames_subdir
-
-    files = sorted(frames_dir.glob(f"{source_id}_*.jpg"))
-    result: list[dict] = []
-    for i, f in enumerate(files):
-        seconds = i * interval
-        result.append(
-            {
-                "path": str(f.resolve()),
-                "timecode": format_timecode(seconds),
-            }
-        )
-    return result
+    frames_dir = get_project_dir(cwd) / source.get("frames_dir", FRAMES_DIR)
+    index = source.get("frame_index")
+    if index is None:
+        result = []
+        for path in sorted(frames_dir.glob(f"{source_id}_*.jpg")):
+            ordinal = path.stem[len(source_id) + 1:]
+            if ordinal.isdigit() and int(ordinal) > 0:
+                result.append({"path": str(path.resolve()),
+                               "timecode": format_timecode((int(ordinal) - 1) * interval)})
+        return sorted(result, key=lambda frame: frame["timecode"]["seconds"])
+    try:
+        expected = f"{source.get('frames_dir', FRAMES_DIR)}/{source_id}.index.json"
+        if index != {"version": 1, "path": expected, "time_basis": "decoded_source_time"}:
+            raise ValueError("Invalid frame index pointer")
+        data = json.loads((get_project_dir(cwd) / expected).read_text())
+        if (data.get("version") != 1 or data.get("source_id") != source_id
+                or data.get("interval_seconds") != interval or not isinstance(data.get("frames"), list)
+                or len(data["frames"]) != source["frames_extracted"]):
+            raise ValueError("Invalid frame index header")
+        result = []
+        previous = -1.0
+        for i, frame in enumerate(data["frames"]):
+            filename = f"{source_id}_{i + 1:06d}.jpg"
+            actual, requested = frame["source_seconds"], frame["requested_seconds"]
+            if (frame["file"] != filename or type(actual) not in (int, float)
+                    or not math.isfinite(actual) or actual < previous or actual < 0
+                    or type(requested) not in (int, float) or not math.isfinite(requested)
+                    or requested != round(i * interval, 3)):
+                raise ValueError("Invalid frame index timing")
+            previous = actual
+            path = frames_dir / filename
+            if path.is_file():
+                result.append({"path": str(path.resolve()),
+                               "timecode": format_timecode(actual),
+                               "requested_timecode": format_timecode(requested)})
+        return result
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise ValueError("Prepared frame index is missing or invalid; use inspect for fresh frames.") from exc
 
 
 def filter_frames_by_range(
@@ -327,7 +349,7 @@ def filter_frames_by_range(
     return [
         f
         for f in frames
-        if from_seconds <= f["timecode"]["seconds"] <= to_seconds
+        if from_seconds <= f.get("requested_timecode", f["timecode"])["seconds"] <= to_seconds
     ]
 
 
@@ -537,10 +559,16 @@ def _build_source_entry(
 
     if frames:
         _log(f"  [{source_id}] Extracting frames (every {interval}s)...", quiet=quiet)
-        frame_paths, _argv = extract_frames(
+        frame_paths, frame_times, _argv = extract_inspection_frames(
             abs_source, interval, frames_dir, source_id,
-            scale_width=thumb_width,
+            scale_width=thumb_width, start_time=0.0, duration=duration_seconds,
         )
+        index_path = frames_dir / f"{source_id}.index.json"
+        index_path.write_text(json.dumps({
+            "version": 1, "source_id": source_id, "interval_seconds": interval,
+            "frames": [{"file": path.name, "requested_seconds": round(i * interval, 3),
+                        "source_seconds": at} for i, (path, at) in enumerate(zip(frame_paths, frame_times))],
+        }))
         _log(f"  [{source_id}] Extracted {len(frame_paths)} frames.", quiet=quiet)
     else:
         _log(f"  [{source_id}] Skipping frame extraction (--no-frames).", quiet=quiet)
@@ -561,6 +589,10 @@ def _build_source_entry(
         "frames_dir": FRAMES_DIR,
         "thumb_width": thumb_width,
     }
+
+    if frames:
+        entry["frame_index"] = {"version": 1, "path": f"{FRAMES_DIR}/{source_id}.index.json",
+                                "time_basis": "decoded_source_time"}
 
     if "duration_probe" in fmt:
         entry["duration_probe"] = fmt["duration_probe"]

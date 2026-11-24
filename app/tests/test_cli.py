@@ -2724,7 +2724,7 @@ class TestLoad:
         data = json.loads(result.stdout)
         assert data["sources"][0]["id"] == "holden"
         assert any(
-            "holden_%04d.jpg" in arg for arg in data["ffmpeg_command"]
+            "holden_%06d.jpg" in arg for arg in data["ffmpeg_command"]
         ), data["ffmpeg_command"]
 
     def test_load_dry_run_honors_as_override(
@@ -2741,7 +2741,7 @@ class TestLoad:
         data = json.loads(result.stdout)
         assert data["sources"][0]["id"] == "cam"
         assert any(
-            "cam_%04d.jpg" in arg for arg in data["ffmpeg_command"]
+            "cam_%06d.jpg" in arg for arg in data["ffmpeg_command"]
         ), data["ffmpeg_command"]
 
     def test_load_dry_run_would_extract_frames_count_formula(

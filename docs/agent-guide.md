@@ -125,6 +125,26 @@ without writing an image or highlight assets. Trims and cuts still map the
 result timecode to the correct source frame. Use `screenshot --file VIDEO`
 to inspect raw or exported file pixels without applying project edits or text.
 
+`load` now persists a decoded-time thumbnail index. `skim` reads that metadata
+without running media tools: `requested_timecode` identifies the prepared grid
+sample and `timecode` identifies the displayed source frame, rounded to
+milliseconds. `sampling.time_basis: decoded_source_time` and
+`range_filter: inclusive_requested_index_timestamps` make the distinction
+explicit. Filtering and subsampling stay on the requested grid, so held frames
+can repeat or precede the requested range. Missing images do not shift the
+remaining entries' labels; a malformed declared index fails visual reads.
+Transcript-only `--text-only` and `--format text` reads do not need the index.
+
+Existing image-only indexes remain `nominal_prepared_index`; skim does not
+re-extract or pretend to know their decoded frame times. Use `inspect` for fresh
+decoded-time frames in an existing workspace. Newly loaded workspaces use the
+new index; its timing is separate from the on-demand inspect cache. Load
+`--dry-run` plans the same extraction without creating images or timing files;
+the predicted count is the scheduled maximum, and video ending before an audio
+container tail can produce fewer images. Cloud skim uses the same sampler,
+default interval selection and inclusive requested-grid filtering; local custom
+intervals and thumbnail widths remain explicit local options.
+
 For dense source inspection, use `moviestar inspect --from X --to Y`. Each
 thumbnail's `requested_timecode` is a sample on the interval grid; its `timecode`
 is the displayed source frame's presentation time, rounded to milliseconds.

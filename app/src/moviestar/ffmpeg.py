@@ -8,6 +8,7 @@ agents can copy the command and reproduce manually).
 from __future__ import annotations
 
 import bisect
+from array import array
 import json
 import math
 import os
@@ -2074,6 +2075,7 @@ def build_extract_frames_command(
     duration: float | None = None,
     *,
     source_timestamps: bool = False,
+    sample_indices: list[int] | None = None,
 ) -> list[str]:
     """Return the argv used to extract frames at a fixed interval.
 
@@ -2087,6 +2089,12 @@ def build_extract_frames_command(
     source_timestamps enables inspect's held-frame sampling and input-PTS
     trace. It preserves keyframe preroll and bounds output by scheduled count.
     """
+    if sample_indices is not None:
+        if (not source_timestamps or duration is None or not sample_indices
+                or any(type(i) is not int or i < 0 for i in sample_indices)
+                or sample_indices != sorted(set(sample_indices))
+                or sample_indices[-1] >= math.ceil(round(duration / interval, 9))):
+            raise ValueError("Invalid prepared-frame sample indices")
     cmd: list[str] = ["ffmpeg", "-y", "-loglevel", "info" if source_timestamps else "error"]
     if source_timestamps:
         cmd += ["-hide_banner", "-nostats", "-copyts", "-start_at_zero"]
@@ -2102,7 +2110,7 @@ def build_extract_frames_command(
             # -t is quantized to the output frame time base; an unaligned
             # endpoint can otherwise drop the final in-range grid sample.
             count = math.ceil(round(duration / interval, 9))
-            cmd += ["-t", str(count * interval), "-frames:v", str(count)]
+            cmd += ["-t", str(count * interval), "-frames:v", str(count if sample_indices is None else len(sample_indices))]
         else:
             cmd += ["-t", str(duration)]
     vf = f"fps=1/{interval},scale={scale_width}:-1"
@@ -2116,6 +2124,9 @@ def build_extract_frames_command(
             f"showinfo@sample=checksum=0,fps=1/{interval}:start_time=0:"
             f"round=up:eof_action=pass,showinfo@output=checksum=0,scale={scale_width}:-1"
         )
+        if sample_indices is not None:
+            selection = "+".join(f"eq(n,{i})" for i in sample_indices)
+            vf = vf.replace("showinfo@output", f"select='{selection}',showinfo@output")
         cmd += ["-map", "0:v:0", "-fps_mode", "passthrough"]
     cmd += [
         "-vf", vf,
@@ -2176,22 +2187,32 @@ def extract_frames(
     return paths, cmd
 
 
-def _inspection_timestamps(trace: str, label: str) -> list[Fraction]:
-    lines = "\n".join(line for line in trace.splitlines() if f"[showinfo@{label} " in line)
-    time_bases = set(re.findall(r"config in time_base:\s*(\d+/\d+)", lines))
-    frames = re.findall(r"\bn:\s*(\d+)\s+pts:\s*(\S+)\s+pts_time:", lines)
-    if len(time_bases) != 1 or not frames:
-        raise RuntimeError("Could not establish source timestamps for inspection frames")
+def _inspection_timestamps(trace, label: str) -> tuple[array, Fraction]:
+    """Read one clock into compact native PTS records, without retaining logs."""
+    trace.seek(0)
+    pts = array("q")
+    bases = set()
     try:
-        time_base = Fraction(time_bases.pop())
-        if time_base <= 0 or [int(n) for n, _pts in frames] != list(range(len(frames))):
-            raise ValueError("invalid timestamp sequence")
-        decoded = [int(pts) * time_base for _n, pts in frames]
-    except (ValueError, ZeroDivisionError) as exc:
-        raise RuntimeError("Invalid source timestamp trace for inspection frames") from exc
-    if decoded != sorted(decoded):
-        raise RuntimeError("Inspection source timestamps are not in presentation order")
-    return decoded
+        for line in trace:
+            if f"[showinfo@{label} " not in line:
+                continue
+            base = re.search(r"config in time_base:\s*(\d+/\d+)", line)
+            if base:
+                bases.add(base.group(1))
+            frame = re.search(r"\bn:\s*(\d+)\s+pts:\s*(\S+)\s+pts_time:", line)
+            if frame:
+                n, value = int(frame[1]), int(frame[2])
+                if n != len(pts) or (pts and value < pts[-1]):
+                    raise ValueError("Invalid presentation order")
+                pts.append(value)
+        if len(bases) != 1 or not pts:
+            raise ValueError("Missing timestamp clock")
+        time_base = Fraction(bases.pop())
+        if time_base <= 0:
+            raise ValueError("Invalid time base")
+    except (ValueError, ZeroDivisionError, OverflowError) as exc:
+        raise RuntimeError("Could not establish source timestamps for inspection frames") from exc
+    return pts, time_base
 
 
 def extract_inspection_frames(
@@ -2202,6 +2223,9 @@ def extract_inspection_frames(
     scale_width: int,
     start_time: float,
     duration: float,
+    *,
+    sample_indices: list[int] | None = None,
+    decode_seek_time: float | None = None,
 ) -> tuple[list[Path], list[float], list[str]]:
     """Sample held source frames and retain millisecond source presentation times.
 
@@ -2209,41 +2233,63 @@ def extract_inspection_frames(
     (relative to container start), rebased input PTS and actual fps output PTS.
     This avoids reconstructing timestamps from either a quantized seek offset
     or the requested decimal interval.
+    Optional sample_indices selects a bounded subset of that same output grid,
+    before JPEG encoding; timestamps are still observed after selection.
+    decode_seek_time can fast-seek input before a selected global-grid sample
+    without rebasing that grid. Retained keyframe preroll still supplies held
+    frames. Cloud skim uses one bounded seek per selected image.
     No nominal frame rate or output-sequence position is treated as source PTS.
     """
     if not os.path.exists(video_path):
         raise FileNotFoundError(f"File not found: {video_path}")
     check_ffmpeg_available()
-    output_dir.mkdir(parents=True, exist_ok=True)
     cmd = build_extract_frames_command(
         video_path, interval, str(output_dir / f"{source_id}_%06d.jpg"),
         scale_width, start_time=start_time, duration=duration,
-        source_timestamps=True,
+        source_timestamps=True, sample_indices=sample_indices,
     )
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(_failure_message("ffmpeg", result))
-    paths = sorted(output_dir.glob(f"{source_id}_*.jpg"))
-    # An audio-only tail can be inside the container range but beyond every
-    # video frame. Preserve the existing empty-result contract without
-    # inventing timestamps (nonempty images still require a valid trace).
-    if not paths:
-        return [], [], cmd
-    source_times = _inspection_timestamps(result.stderr, "source")
-    decoded = _inspection_timestamps(result.stderr, "sample")
-    output_times = _inspection_timestamps(result.stderr, "output")
-    if len(source_times) != len(decoded) or len(output_times) < len(paths):
-        raise RuntimeError("Could not establish source timestamps for inspection frames")
-    times = []
-    # fps rationalizes its output rate; reconstructing ticks from a decimal
-    # interval (e.g. 1/30) can choose the preceding source frame. Use the
-    # timestamps actually emitted by the filter, before encoder/muxer limits.
-    for tick in output_times[:len(paths)]:
-        selected = max(0, bisect.bisect_right(decoded, tick) - 1)
-        # Normalize once at the shared boundary, before either client formats
-        # the clock (59.9996 must carry to 1:00.000, not display 0:60.000).
-        times.append(round(float(source_times[selected]), 3))
-    return paths, times, cmd
+    if decode_seek_time is not None:
+        if (start_time != 0 or sample_indices is None or not math.isfinite(decode_seek_time)
+                or not 0 <= decode_seek_time <= sample_indices[0] * interval):
+            raise ValueError("Invalid prepared-frame decode seek")
+        cmd[cmd.index("-ss") + 1] = str(decode_seek_time)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    # Load can cover hours, while inspect covers a small window. Spool verbose
+    # FFmpeg traces to a temporary file rather than keeping every log line and
+    # a Fraction object per decoded input frame in memory. Only compact native
+    # PTS records and selected output times survive parsing.
+    with tempfile.TemporaryFile(mode="w+t", encoding="utf-8", errors="replace") as trace:
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=trace, text=True)
+        if result.stderr:  # Also supports injected subprocess results in tests.
+            trace.write(result.stderr)
+        if result.returncode != 0:
+            trace.seek(0, os.SEEK_END)
+            trace.seek(max(0, trace.tell() - 65536))
+            failed = subprocess.CompletedProcess(cmd, result.returncode, result.stdout, trace.read())
+            raise RuntimeError(_failure_message("ffmpeg", failed))
+        # Shared load directories can contain IDs such as camera_close or
+        # camera_2 alongside camera. Only this source's numeric sequence is
+        # an output of this decode; foreign frames must not acquire its PTS.
+        pattern = re.compile(re.escape(source_id) + r"_([0-9]+)\.jpg")
+        paths = sorted(
+            (path for path in output_dir.iterdir()
+             if path.is_file() and pattern.fullmatch(path.name)),
+            key=lambda path: int(path.stem[len(source_id) + 1:]),
+        )
+        # Audio-only container tails may have no video images in the window.
+        if not paths:
+            return [], [], cmd
+        source_pts, source_base = _inspection_timestamps(trace, "source")
+        decoded_pts, decoded_base = _inspection_timestamps(trace, "sample")
+        output_pts, output_base = _inspection_timestamps(trace, "output")
+        if len(source_pts) != len(decoded_pts) or len(output_pts) < len(paths):
+            raise RuntimeError("Could not establish source timestamps for inspection frames")
+        times = []
+        for pts in output_pts[:len(paths)]:
+            tick = pts * output_base / decoded_base
+            selected = max(0, bisect.bisect_right(decoded_pts, tick) - 1)
+            times.append(round(float(source_pts[selected] * source_base), 3))
+        return paths, times, cmd
 
 
 def build_storyboard_frame_command(

@@ -10,7 +10,7 @@ import click
 from moviestar import cloud as service
 from moviestar.account import _CLIENT_MARKER, _NoRedirectHandler
 from moviestar.cloud_creation_state import creation_request, CreationBusy, CreationStateError
-from moviestar.timecodes import parse_timecode
+from moviestar.timecodes import parse_timecode, format_timecode
 
 
 def _timestamp(value):
@@ -51,23 +51,39 @@ def _frames(job):
     frames=result.get('thumbnails') if isinstance(result,dict) and result.get('mode')=='visual_skim' else None
     if not isinstance(frames,list) or len(frames)>job['options']['count']:
         raise ValueError('Invalid skim result')
-    previous=-1
+    sampling=result.get('sampling',{})
+    basis=sampling.get('time_basis','nominal_prepared_index')
+    decoded=basis=='decoded_source_time'
+    if basis not in ('nominal_prepared_index','decoded_source_time'):
+        raise ValueError('Invalid skim clock')
+    if decoded and (sampling.get('strategy')!='local_skim_index_subsample'
+            or sampling.get('range_filter')!='inclusive_requested_index_timestamps'
+            or type(sampling.get('index_interval_ms')) is not int
+            or not 1<=sampling['index_interval_ms']<=5000):
+        raise ValueError('Invalid skim sampling')
+    previous=-1;previous_requested=-1
     for index,frame in enumerate(frames):
-        if (not isinstance(frame,dict) or frame.get('index')!=index or type(frame.get('at_ms')) is not int
-                or not previous<frame['at_ms']<=86400000 or frame['at_ms']<job['options']['from_ms']
-                or job['options']['to_ms'] is not None and frame['at_ms']>job['options']['to_ms']
+        if not isinstance(frame,dict):raise ValueError('Invalid thumbnail')
+        at=frame.get('at_ms');requested=frame.get('requested_at_ms') if decoded else at
+        if (frame.get('index')!=index or type(at) is not int or not 0<=at<=86400000
+                or (at<previous if decoded else at<=previous)
+                or type(requested) is not int or not previous_requested<requested<=86400000
+                or requested<job['options']['from_ms']
+                or job['options']['to_ms'] is not None and requested>job['options']['to_ms']
+                or decoded and (requested%sampling['index_interval_ms']!=0 or frame.get('timecode')!=format_timecode(at/1000)['text'])
+                or not decoded and 'requested_at_ms' in frame
                 or type(frame.get('file_size_bytes')) is not int or not 4<=frame['file_size_bytes']<=131072
                 or frame.get('mime_type')!='image/jpeg'):
             raise ValueError('Invalid thumbnail')
-        previous=frame['at_ms']
+        previous=at;previous_requested=requested
     return frames
 
 
 def register_skim_commands(cloud):
     @cloud.command('skim')
     @click.argument('asset_id')
-    @click.option('--from','start',default='0',show_default=True,help='Inclusive nominal index time: seconds, M:SS or HH:MM:SS.mmm.')
-    @click.option('--to','end',help='Inclusive nominal index end; defaults to video duration.')
+    @click.option('--from','start',default='0',show_default=True,help='Inclusive requested index time: seconds, M:SS or HH:MM:SS.mmm.')
+    @click.option('--to','end',help='Inclusive requested index end; defaults to video duration.')
     @click.option('--count',default=10,type=int,show_default=True)
     @click.option('--idempotency-key',help='Retain this retry key; generated and saved when omitted.')
     def skim(asset_id,start,end,count,idempotency_key):
@@ -75,6 +91,9 @@ def register_skim_commands(cloud):
 
         Returns a durable job ID. Retry the same options after an uncertain reply;
         use skim-show to reopen status and save private timestamped JPEG files.
+        New results separate requested index time from decoded source frame
+        time. Retained old results remain nominal; reopening does not relabel
+        their images or create another job.
         Existing transcript association is currently unavailable; no transcription
         is started. Count=1 selects the middle prepared index frame in the range.
         """
