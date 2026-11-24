@@ -48,6 +48,7 @@ jobs:
           # timestamp selection, format fallbacks, eviction and cleanup. Full
           # browser composition/export coverage runs in the main test job.
           python -m pytest app/tests/test_spatial_media_session.py -q -k 'not session_frames_match_full_reference_composition'
+          python -m pytest app/tests/test_spatial_stream.py -q -k 'not direct_pixels and not cli_uses_pixels and not same_source_static_and_motion'
           python bin/check-dependency-licenses
 
   test:
@@ -270,3 +271,46 @@ jobs:
             ${{ runner.temp }}/native-pip/test_two_tracks_*/browser/*.wav
           if-no-files-found: ignore
           retention-days: 7
+
+  spatial-stream-memory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container:
+      image: python:3.12-bookworm
+      options: --memory 4g --memory-swap 4g --cpus 2 --cpuset-cpus 0-1
+    env:
+      MOVIESTAR_CHROME_NO_SANDBOX: '1'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Install container render dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ffmpeg procps curl unzip fonts-liberation libnss3 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libasound2
+          python -m pip install -e ./app "av==18.1.0"
+      - name: Install pinned headless renderer
+        run: |
+          curl --fail --location --silent --show-error \
+            https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.73/linux64/chrome-headless-shell-linux64.zip \
+            --output "$RUNNER_TEMP/chrome.zip"
+          unzip -q "$RUNNER_TEMP/chrome.zip" -d "$RUNNER_TEMP/chrome"
+          echo "MOVIESTAR_CHROME_PATH=$RUNNER_TEMP/chrome/chrome-headless-shell-linux64/chrome-headless-shell" >> "$GITHUB_ENV"
+      - name: Measure four and five 4K cameras at 1080p and 4K output
+        run: |
+          python experiments/spatial_stream_performance/measure.py \
+            --out "$RUNNER_TEMP/spatial-stream-memory" --short 4 --long 16 \
+            --require-limit-mib 4096 --require-cpus 2
+      - name: Retain all resource results and first failures
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: spatial-stream-memory-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/spatial-stream-memory/summary.json
+            ${{ runner.temp }}/spatial-stream-memory/**/result.json
+            ${{ runner.temp }}/spatial-stream-memory/**/source-opens.json
+            ${{ runner.temp }}/spatial-stream-memory/**/stdout
+            ${{ runner.temp }}/spatial-stream-memory/**/stderr
+          if-no-files-found: warn

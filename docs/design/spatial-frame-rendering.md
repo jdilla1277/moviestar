@@ -414,10 +414,15 @@ they do not establish the exact cause of the original CI `fetch failed` result.
 ## Spatial video integration
 
 `spatial_video.py` selects the shared spatial frame renderer for structured
-scene clips and the existing layout renderer for preset clips. PNG sequences
-feed the existing video encoder through `frame_sequence`; routed source audio
+scene clips and the existing layout renderer for preset clips. Structured clips
+stream RGB24 frames through an acknowledged one-frame write into the encoder;
+FFmpeg's raw input queue is one packet. Ordinary source video reaches the
+compositor as RGB frames, with the existing scale, placement and mask arithmetic.
+Still/diagnostic callers retain PNG output. Motion, raster assets, compatibility
+decoding, and transition/preset frame fallbacks retain only current-frame PNGs;
+no output PNG sequence is created for video. Routed source audio
 uses the existing slice/tempo filters once, independently of visual reuse.
-The video filter limits each PNG sequence without an output-level duration cap
+The video filter limits each frame stream without an output-level duration cap
 on audio. Concatenation decodes zero-origin scene clips without seeking past AAC
 priming, preserving the full authored audio samples independently of quantized
 video frame counts.
@@ -450,12 +455,19 @@ Dry-run plans do not launch Chrome or decode assets; runtime glyph/asset failure
 remain possible and preserve previous output. This introduces no clip cache.
 A watch/export owns one lazy browser session across all its structured scenes.
 It also owns a bounded media session across scene frames and transition layers:
-cached metadata, up to four independent source cursors, and at most 64 MiB of
+cached metadata, up to five independent source cursors, and at most 64 MiB of
 job-local static PNGs. Source identity changes abort the job. Rotated,
-anamorphic, and non-8-bit footage uses the established FFmpeg path. Per-frame composition and
-PNG storage remain throughput limitations; streaming remains follow-on work.
+anamorphic, and non-8-bit footage uses the established FFmpeg path.
 PyAV before 18.1 uses reference video decoding without retained cursors; PyAV 18.1+
 enables forward reuse. Both paths share job-local metadata/static-image preparation.
+The frame handoff uses backpressure and bounded stderr capture. Encoder errors,
+stalled writes, cancellation and partial startup close the frame generator and
+reap owned processes and I/O threads before publication. Preview encoders remain
+in the supervisor's process group so hard cancellation owns the entire job.
+Codec reference frames and encoder lookahead add native RAM; the synthetic
+Linux container resource harness measures four/five independent 4K sources at
+both 1080p and 4K output over short/long exports. It does not establish a RAM
+guarantee for every codec or composition.
 
 `test_spatial_video.py` uses real encoded clips and decoded frames to verify
 portrait/landscape motion placement, audio RMS without duplicated routing,

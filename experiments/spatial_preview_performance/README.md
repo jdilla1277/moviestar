@@ -85,7 +85,7 @@ environments with `--variant production` to compare package revisions. Optional
 It records hashes of the actual imported package modules, interpreter/import-inclusive
 generation time, nested stage timings, process/source-decoder counts, browser
 PNG captures, and PNG byte sums observed around composition. The parent also
-samples the owned process group's summed RSS every 100 ms and request-folder
+samples the owned process tree's summed RSS every 100 ms and request-folder
 disk usage every second. Shared pages may count twice, and sampling can miss
 brief peaks; those maxima are observations rather than continuous resource
 bounds. Parent/agent memory and other project directories are excluded. It
@@ -96,6 +96,11 @@ It does not time an agent editing command, inspection, publication, player
 startup, or human reaction. Interpreter/import startup is outside the child
 stage timer but inside the parent generation timer. Inclusive stage timings must
 not be added together; decoder/PTS work is nested within asset preparation.
+Streaming frame generation is also inside `scene_encode`; the previous PNG
+sequence renderer generated frames before encoding. Compare end-to-end time,
+not these differently nested stage totals. Separately grouped encoder/browser
+children are included in the resource sampler. Experimental compositors use a
+PNG adapter with the streaming package; `production` uses direct frames.
 `browser_requests` and `browser_png_captures` count actual worker work;
 `browser_paint_reuses` counts frames served from the session's bounded paint
 entry. The browser-request stage includes lookup/copy time on those hits.

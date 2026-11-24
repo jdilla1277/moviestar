@@ -11,7 +11,7 @@ import click
 def render(request_file):
     from moviestar.project import set_explicit_workspace_root
     from moviestar.spatial_session import BrowserSession
-    from moviestar import spatial_session, spatial_video
+    from moviestar import spatial_session, spatial_video, spatial_stream
 
     request_file = Path(request_file)
     request = json.loads(request_file.read_text())
@@ -24,6 +24,10 @@ def render(request_file):
             super().__init__(own_process_group=False)
 
     spatial_video.BrowserSession = spatial_session.BrowserSession = WorkerBrowserSession
+    class WorkerFrameEncoder(spatial_stream.FrameEncoder):
+        def __init__(self, command):
+            super().__init__(command, own_process_group=False)
+    spatial_stream.FrameEncoder = WorkerFrameEncoder
     original = folder / "render.mp4"
     from moviestar.cli import cli
     with click.Context(cli, info_name="preview"):

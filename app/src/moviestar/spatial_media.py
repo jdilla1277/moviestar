@@ -110,7 +110,7 @@ class _Cursor:
 
 
 class MediaSession:
-    def __init__(self, *, max_decoders=4, max_gap_s=2, image_cache_bytes=64*1024*1024):
+    def __init__(self, *, max_decoders=5, max_gap_s=2, image_cache_bytes=64*1024*1024):
         if max_decoders < 1 or max_gap_s <= 0 or image_cache_bytes < 0:
             raise ValueError('invalid media session limits')
         self.max_decoders = max_decoders
@@ -164,7 +164,21 @@ class MediaSession:
                 '-show_entries', 'stream=pix_fmt:stream_tags:stream_side_data', '-of', 'json', str(path)]))
         return self._probes[path]
 
-    def decode(self, path, output, *, source_time=None, occurrence=()):
+    def pixels(self, path, *, source_time, occurrence=()):
+        """Return an owned RGB frame; compatibility decoding stays per-frame."""
+        fallback = Path(self._temporary.name) / 'pixel-fallback.png'
+        try:
+            picture = self.decode(path, fallback, source_time=source_time,
+                                  occurrence=occurrence, _return_pixels=True)
+            if picture is not None:
+                return picture
+            with av.open(str(fallback)) as container:
+                container.streams.video[0].codec_context.thread_count = 1
+                return next(container.decode(video=0)).reformat(format='rgb24')
+        finally:
+            fallback.unlink(missing_ok=True)
+
+    def decode(self, path, output, *, source_time=None, occurrence=(), _return_pixels=False):
         path = self._check(path)
         output = Path(output)
         if source_time is None:
@@ -230,6 +244,11 @@ class MediaSession:
                 width=int(frame.width*sar), height=frame.height, format='rgb24',
                 interpolation='BICUBIC', src_color_range=frame.color_range,
                 dst_color_range='JPEG', threads=1)
+            if _return_pixels:
+                # Reformat can return its input for already-RGB recordings.
+                # Consumers must never be able to mutate a retained cursor.
+                return (av.VideoFrame.from_ndarray(rgb.to_ndarray(), format='rgb24')
+                        if rgb is frame else rgb)
             # Encode an owned copy: PNG timestamp assignment must never change
             # the cursor's retained decoded frame or its presentation clock.
             picture = av.VideoFrame.from_ndarray(rgb.to_ndarray(), format='rgb24')

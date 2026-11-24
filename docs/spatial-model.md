@@ -902,9 +902,14 @@ serve a hit. The worker closes before clip concatenation and final publication.
 A failed request closes the session and aborts the movie without replaying the
 frame. Dry-run and preset-only windows launch no browser worker.
 
-Video generation still calls the shared frame renderer for each spatial frame
-and stores a temporary PNG sequence. One command-owned media session reuses
-source metadata and up to four forward video decoders, with independent clocks
+Video generation calls the shared frame renderer for each spatial frame and
+streams RGB pixels directly into FFmpeg. The producer waits for each frame write;
+FFmpeg's raw input queue holds one packet. Ordinary video pixels go directly
+from the decoder to the compositor without a source or output PNG sequence.
+Dry-run plans describe this input as `frame_input` with `transport: pipe`,
+`format: rgb24`, and `queue_frames: 1`.
+One command-owned media session reuses source metadata and up to five forward
+video decoders, with independent clocks
 for separate occurrences. Backward requests and large forward jumps seek again;
 least-recently-used decoders close before replacements open. Static decoded
 images use a job-local temporary cache limited to 64 MiB. All handles and cached
@@ -912,8 +917,13 @@ images are discarded on completion, failure, or cancellation. Rotated,
 anamorphic, and non-8-bit sources retain the established FFmpeg decode path for pixel parity.
 PyAV before 18.1 also retains reference video decoding, preserving Python 3.10 support;
 forward decoder reuse requires PyAV 18.1 or newer. Source metadata and static
-images remain job-owned on both paths.
-Per-frame composition and temporary PNG disk use remain; streaming is follow-on work.
+images remain job-owned on both paths. Compatibility decoding, motion/raster
+assets, preset frames, and transition layers can still use temporary PNGs for
+the current frame; these do not accumulate into a movie-length sequence.
+Browser paint planes remain PNGs. Decoder references, Chrome, and encoder
+lookahead add native memory beyond the bounded Python frame handoff. Resource
+checks for four/five 4K H.264 sources at 1080p/4K output live under
+`experiments/spatial_stream_performance`; the queue size is not a total RAM budget.
 Export throughput has not been validated against release performance budgets. No unchanged-clip reuse or cache invalidation is added.
 Overlapping internal transition inspection and real-content/performance
 acceptance remain separate work before release.

@@ -48,8 +48,30 @@ def worker(request_file, variant):
               "in_process":in_process,"vectorized":vectorized}[variant]
     def compose(temporary,canvas,planes,videos,output):
         counts["compose_png_bytes_before_sum"] += sum(path.stat().st_size for path in temporary.glob("*.png"))
-        chosen(temporary,canvas,planes,videos,output)
+        if output is None and variant != 'production':
+            # The frozen experiments consume files. Keep them usable for
+            # diagnostics, explicitly including their PNG adapter overhead.
+            from fractions import Fraction
+            from moviestar.spatial_composite import _read_png
+            adapted = {}
+            for identity, item in videos.items():
+                path = item['decoded']
+                if isinstance(path, av.VideoFrame):
+                    picture = av.VideoFrame.from_ndarray(path.to_ndarray(format='rgb24'),format='rgb24')
+                    picture.pts, picture.time_base = 0, Fraction(1,25)
+                    encoder = av.CodecContext.create('png','w')
+                    encoder.width, encoder.height, encoder.pix_fmt = picture.width,picture.height,'rgb24'
+                    encoder.time_base, encoder.thread_count = Fraction(1,25),1
+                    path = temporary/f'experiment-{identity}.png'
+                    path.write_bytes(b''.join(bytes(p) for p in [*encoder.encode(picture),*encoder.encode(None)]))
+                adapted[identity] = {**item,'decoded':path}
+            staged = temporary/'experiment-output.png'
+            chosen(temporary,canvas,planes,adapted,staged)
+            result = _read_png(staged).reformat(format='rgb24')
+        else:
+            result = chosen(temporary,canvas,planes,videos,output)
         counts["compose_png_bytes_after_sum"] += sum(path.stat().st_size for path in temporary.glob("*.png"))
+        return result
     render._compose = timed("composition",compose)
     render._prepare_assets = timed("asset_preparation",render._prepare_assets)
     render._decode = timed("decode",render._decode)
@@ -60,6 +82,8 @@ def worker(request_file, variant):
         pass  # The same profiler can measure a pre-reuse installed wheel.
     else:
         MediaSession.decode = timed("session_decode", MediaSession.decode)
+        if hasattr(MediaSession, 'pixels'):
+            MediaSession.pixels = timed('source_pixels', MediaSession.pixels)
     render._publish = timed("publish_frame",render._publish)
     browser_run = BrowserSession.run
     def browser_request(self,request):
@@ -106,8 +130,20 @@ def worker(request_file, variant):
         (Path(request_file).parent/"profile.json").write_text(json.dumps(report,indent=2))
 
 
+def owned_process_rows(root):
+    rows = subprocess.check_output(['ps','-axo','pid=,ppid=,pgid=,rss='],text=True,timeout=2).splitlines()
+    values = [tuple(map(int,row.split())) for row in rows if len(row.split())==4]
+    owned = {root} | {pid for pid,parent,group,rss in values if group==root}
+    while True:
+        descendants = {pid for pid,parent,group,rss in values if parent in owned}
+        if descendants <= owned:
+            break
+        owned |= descendants
+    return [row for row in values if row[0] in owned]
+
+
 class Resources:
-    """Sample only the worker's owned process group; no unrelated agent jobs."""
+    """Sample the owned worker tree, including separately grouped encoders."""
 
     def __init__(self, group, folder):
         self.group, self.folder = group, folder
@@ -122,9 +158,8 @@ class Resources:
         next_disk = 0
         while not self.stop.is_set():
             try:
-                rows = subprocess.check_output(['ps','-axo','pgid=,rss='],text=True,timeout=2).splitlines()
-                values = [tuple(map(int,row.split())) for row in rows if len(row.split())==2]
-                self.rss_kib = max(self.rss_kib,sum(rss for group,rss in values if group==self.group))
+                values = owned_process_rows(self.group)
+                self.rss_kib = max(self.rss_kib,sum(rss for pid,parent,group,rss in values))
                 self.samples += 1
                 if time.monotonic() >= next_disk:
                     size = 0
@@ -148,7 +183,7 @@ class Resources:
         return {'sampled_peak_group_rss_mib':self.rss_kib/1024,
                 'sampled_peak_request_disk_bytes':self.disk_bytes,'rss_samples':self.samples,
                 'rss_interval_s':.1,'disk_interval_s':1,
-                'scope':'Owned process group RSS sum (shared pages may count twice); request-folder disk only. Sampled maxima, not continuous peaks.'}
+                'scope':'Owned worker process tree RSS sum, including descendant groups (shared pages may count twice); request-folder disk only. Sampled maxima, not continuous peaks.'}
 
 
 def main():

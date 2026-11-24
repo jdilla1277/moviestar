@@ -157,7 +157,7 @@ def _decode(path: Path, output: Path, *, source_time: float | None = None) -> No
 
 
 def _prepare_assets(spec: dict, frame: dict, prepared: dict, root: Path, temporary: Path,
-                    *, reference: bool, media_session=None) -> dict[str, dict]:
+                    *, reference: bool, media_session=None, pixels=False) -> dict[str, dict]:
     sources = {source['id']: _asset_path(source['path'], root) for source in spec['sources']}
     images = {name: _asset_path(asset['path'], root)
               for name, asset in spec.get('spatial', {}).get('assets', {}).items()}
@@ -179,6 +179,8 @@ def _prepare_assets(spec: dict, frame: dict, prepared: dict, root: Path, tempora
         source = (sources if kind == 'video' else images).get(asset_id)
         if source is None or not source.is_file():
             raise SpatialRenderError(f"{path}: unavailable {kind} asset {asset_id!r}")
+        address = tuple(node['path'])
+        raster = reference or any(address[:len(parent)] == parent for parent in moving_paths)
         if kind == 'video':
             media = original.get('media')
             if media is None:
@@ -197,26 +199,32 @@ def _prepare_assets(spec: dict, frame: dict, prepared: dict, root: Path, tempora
                     raise SpatialRenderError(f"{path}: video alpha is not supported by this preview slice")
                 probed.add(source)
             source_time = media['source_time_s']
-            key = (source, source_time)
+            # Raster motion needs a file even when an ordinary occurrence uses
+            # these same source pixels. Their preparation formats cannot share
+            # one cache entry, regardless of traversal order.
+            key = (source, source_time, raster if pixels else False)
         else:
             source_time = None
             key = (source, None)
         if key not in decoded:
             png = temporary / f'asset-{len(decoded)}.png'
             try:
-                if media_session is None:
+                if pixels and kind == 'video' and media_session is not None and not raster:
+                    decoded[key] = media_session.pixels(source, source_time=source_time, occurrence=address)
+                elif media_session is None:
                     _decode(source, png, source_time=source_time)
                 else:
                     media_session.decode(source, png, source_time=source_time, occurrence=tuple(node['path']))
             except ValueError as exc:
                 raise SpatialRenderError(f"{path}: {exc}") from exc
-            decoded[key] = png
+            if key not in decoded:
+                decoded[key] = png
         png = decoded[key]
         if kind == 'image':
             node['image'] = _image_data(png)
         else:
             identity = f'video{len(videos)}'
-            width, height = _png_size(png)
+            width, height = ((png.width, png.height) if not isinstance(png, Path) else _png_size(png))
             node['video'] = {'id': identity, 'width': width, 'height': height,
                              'black_image': _solid_image(0, width, height),
                              'white_image': _solid_image(255, width, height)}
@@ -233,8 +241,11 @@ def _prepare_assets(spec: dict, frame: dict, prepared: dict, root: Path, tempora
     return videos
 
 
-def _compose(temporary: Path, canvas: dict, planes: list[dict], videos: dict, output: Path) -> None:
+def _compose(temporary: Path, canvas: dict, planes: list[dict], videos: dict, output: Path | None):
     if not planes:
+        if output is None:
+            from moviestar.spatial_composite import _read_png
+            return _read_png(temporary / 'base.png').reformat(format='rgb24')
         shutil.copyfile(temporary / 'base.png', output)
         return
     for plane in planes:
@@ -244,7 +255,7 @@ def _compose(temporary: Path, canvas: dict, planes: list[dict], videos: dict, ou
     import av
     from moviestar.spatial_composite import compose
     try:
-        compose(temporary, canvas, planes, videos, output)
+        return compose(temporary, canvas, planes, videos, output)
     except (av.error.FFmpegError, OSError, ValueError, TypeError, StopIteration, MemoryError) as exc:
         raise SpatialRenderError(f'in-process video composition failed: {exc}') from exc
 
@@ -276,7 +287,8 @@ def _validate_frame_destinations(spec, root, output_path, layout_output_path, re
 def render_spatial_frame(spec: dict, frame: dict, canvas: dict, *,
                          output_path: Path, project_root: Path | None = None,
                          layout_output_path: Path | None = None,
-                         reference_path: Path | None = None, browser_session=None, media_session=None) -> dict:
+                         reference_path: Path | None = None, browser_session=None, media_session=None,
+                         _pixel_sink=None) -> dict:
     """Render a single PNG; the optional browser reference supports parity tests."""
     root = (project_root or Path.cwd()).resolve()
     for diagnostic in frame.get('diagnostics', []):
@@ -299,7 +311,8 @@ def render_spatial_frame(spec: dict, frame: dict, canvas: dict, *,
     with TemporaryDirectory(prefix='moviestar-frame-') as directory:
         temporary = Path(directory)
         videos = _prepare_assets(spec, frame, prepared, root, temporary,
-                                 reference=reference_path is not None, media_session=media_session)
+                                 reference=reference_path is not None, media_session=media_session,
+                                 pixels=_pixel_sink is not None)
         request = {**prepared, 'paint_dir': str(temporary),
                    'reference_path': str(temporary / 'reference.png') if reference_path else None,
                    'layout_output_path': str(temporary / 'layout.png') if layout_output_path else None}
@@ -311,8 +324,12 @@ def render_spatial_frame(spec: dict, frame: dict, canvas: dict, *,
                 region = f"; reserved region {diagnostic['region_id']!r}" if 'region_id' in diagnostic else ''
                 raise SpatialRenderError(f"{diagnostic['code']} at {'/'.join(diagnostic['path'])}{region}")
         staged = temporary / 'rendered.png'
-        _compose(temporary, prepared['canvas'], measured['video_planes'], videos, staged)
-        _publish(staged, output_path.resolve())
+        picture = _compose(temporary, prepared['canvas'], measured['video_planes'], videos,
+                           None if _pixel_sink is not None else staged)
+        if _pixel_sink is not None:
+            _pixel_sink(picture)
+        else:
+            _publish(staged, output_path.resolve())
         if layout_output_path:
             _publish(temporary / 'layout.png', layout_output_path.resolve())
         if reference_path:
@@ -323,5 +340,22 @@ def render_spatial_frame(spec: dict, frame: dict, canvas: dict, *,
             'diagnostics': [*prepared['diagnostics'], *measured['diagnostics']],
             'media': [{**{key: value for key, value in videos[plane['id']].items() if key != 'decoded'},
                        'rect': plane['rect']} for plane in measured['media_planes']],
-            'artifact': str(output_path.resolve()),
+            'artifact': str(output_path.resolve()) if output_path else None,
             'layout_artifact': str(layout_output_path.resolve()) if layout_output_path else None}
+
+
+def render_spatial_pixels(spec, frame, canvas, *, project_root, browser_session, media_session):
+    """Internal streaming adapter; still/reference commands retain PNG output."""
+    if frame.get('kind') in {'transition', 'preset'}:
+        # Preserve the established blend/preset algorithms with bounded scratch
+        # images for this frame, never a sequence proportional to movie length.
+        from moviestar.spatial_composite import _read_png
+        with TemporaryDirectory(prefix='moviestar-pixel-fallback-') as folder:
+            path = Path(folder) / 'frame.png'
+            render_spatial_frame(spec, frame, canvas, output_path=path, project_root=project_root,
+                browser_session=browser_session, media_session=media_session)
+            return _read_png(path).reformat(format='rgb24')
+    pictures = []
+    render_spatial_frame(spec, frame, canvas, output_path=None, project_root=project_root,
+        browser_session=browser_session, media_session=media_session, _pixel_sink=pictures.append)
+    return pictures[0]

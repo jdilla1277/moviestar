@@ -5606,7 +5606,7 @@ def _scene_video_render_artifacts(
     ]
     for index, render_plan in enumerate(render_plans):
         if render_plan.get('spatial_render'):
-            render_plan['frame_sequence'] = str(work_dir / f'frames_{index:04d}' / 'frame%08d.png')
+            render_plan['frame_input'] = {'transport': 'pipe', 'format': 'rgb24', 'queue_frames': 1}
     scene_render_commands = [
         {
             "scene": render_plan["scene_window"]["scene"],
@@ -5626,7 +5626,7 @@ def _scene_video_render_artifacts(
                 highlight_ass=_highlight_ass_arg(
                     render_plan["overlay_context"]
                 ),
-                **({'frame_sequence': render_plan['frame_sequence']} if render_plan.get('frame_sequence') else {}),
+                **({'frame_stream': True} if render_plan.get('spatial_render') else {}),
                 **({'sample_offset': render_plan['preset_sample_offset']} if 'preset_sample_offset' in render_plan else {}),
             ),
             "duration": format_timecode(render_plan["duration"]),
@@ -5892,6 +5892,7 @@ def _render_scene_video_artifacts(
             artifacts["scene_clip_paths"],
             artifacts["render_plans"],
         ):
+            frame_source = None
             _write_highlight_ass(render_plan.get("overlay_context"))
             if render_plan.get('spatial_render'):
                 from moviestar.spatial_video import render_spatial_sequence
@@ -5901,9 +5902,10 @@ def _render_scene_video_artifacts(
                     browser_session = stack.enter_context(BrowserSession())
                 if media_session is None:
                     media_session = stack.enter_context(MediaSession())
-                render_spatial_sequence(artifacts['spatial_spec'], artifacts['spatial_project'],
+                frame_source = render_spatial_sequence(artifacts['spatial_spec'], artifacts['spatial_project'],
                                         render_plan, project_root=get_project_dir().parent, browser_session=browser_session,
                                         media_session=media_session,
+                                        stream=True,
                                         progress_cb=None if quiet else lambda message: click.echo(message, err=True))
             render_layout_video(
                 render_plan["render_slots"],
@@ -5915,7 +5917,7 @@ def _render_scene_video_artifacts(
                 audio_from_input=render_plan["audio_from_input"],
                 audio_speed=render_plan.get("audio_speed", 1.0),
                 output_fps=render_plan.get("output_fps"),
-                **({'frame_sequence': render_plan['frame_sequence']} if render_plan.get('frame_sequence') else {}),
+                **({'frame_source': frame_source} if frame_source is not None else {}),
                 **({'sample_offset': render_plan['preset_sample_offset']} if 'preset_sample_offset' in render_plan else {}),
                 progress_cb=lambda _line: None,
                 overlay_plans=render_plan.get("overlay_plans"),
