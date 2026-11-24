@@ -822,6 +822,25 @@ def _validate_spec_state(spec: dict) -> None:
             f"expected {SCHEMA_VERSION!r}"
         )
 
+    # Optional portable origin. This is a sync hint, never authorization or
+    # the identity of a locally modified draft. It is not an undo family.
+    if "provenance" in spec:
+        origin = spec["provenance"]
+        keys = {"project_id", "base_revision_id", "base_document_sha256", "engine_version", "contract_version"}
+        if not isinstance(origin, dict) or set(origin) != keys:
+            raise SpecValidationError("spec.provenance: expected complete portable origin metadata")
+        import re
+        for key in ("project_id", "base_revision_id"):
+            if not isinstance(origin[key], str) or not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", origin[key]):
+                raise SpecValidationError(f"spec.provenance.{key}: expected canonical UUID")
+        for key, length in (("base_document_sha256", 64), ("engine_version", 40)):
+            if key == "base_document_sha256" and origin[key] is None:
+                continue
+            if not isinstance(origin[key], str) or not re.fullmatch(r"[0-9a-f]{%d}" % length, origin[key]):
+                raise SpecValidationError(f"spec.provenance.{key}: invalid fingerprint or engine pin")
+        if origin["contract_version"] != "cloud-editing-v1":
+            raise SpecValidationError("spec.provenance.contract_version: unsupported origin contract")
+
     _require_field(spec, "sources", "spec")
     sources = spec["sources"]
     if not isinstance(sources, list):
