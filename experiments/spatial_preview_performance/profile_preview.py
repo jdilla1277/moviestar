@@ -46,7 +46,7 @@ def worker(request_file, variant):
         return wrapped
     chosen = {"baseline":ffmpeg_reference,"production":render._compose,"fused_ffmpeg":fused_ffmpeg,
               "in_process":in_process,"vectorized":vectorized}[variant]
-    def compose(temporary,canvas,planes,videos,output):
+    def compose(temporary,canvas,planes,videos,output,*,paint_cache=None):
         counts["compose_png_bytes_before_sum"] += sum(path.stat().st_size for path in temporary.glob("*.png"))
         if output is None and variant != 'production':
             # The frozen experiments consume files. Keep them usable for
@@ -68,8 +68,14 @@ def worker(request_file, variant):
             staged = temporary/'experiment-output.png'
             chosen(temporary,canvas,planes,adapted,staged)
             result = _read_png(staged).reformat(format='rgb24')
+        elif variant == 'production' and paint_cache is not None:
+            result = chosen(temporary,canvas,planes,videos,output,paint_cache=paint_cache)
         else:
+            # Frozen functions and older production wheels use five arguments.
             result = chosen(temporary,canvas,planes,videos,output)
+        if paint_cache is not None:
+            counts['decoded_paint_peak_retained_bytes'] = max(
+                counts['decoded_paint_peak_retained_bytes'], paint_cache.decoded_bytes)
         counts["compose_png_bytes_after_sum"] += sum(path.stat().st_size for path in temporary.glob("*.png"))
         return result
     render._compose = timed("composition",compose)
