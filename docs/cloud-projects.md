@@ -678,6 +678,38 @@ cannot be recalled. Account-wide asset discovery remains owner-only; sharing a
 project does not expose the owner's other originals. Editor/resharing rights
 and attaching another person's assets remain separate work.
 
+## Download one asset original directly
+
+Save a ready original you own or can access through an accepted asset/project
+share, without a browser or a local project:
+
+```sh
+moviestar cloud assets download ASSET_ID --out ./original.png
+```
+
+`--out` chooses the exact destination file. Its parent directory must exist;
+existing files, folders and symlinks are never overwritten. The remote display
+name, original filename and response headers do not choose a local path.
+
+The command transfers original video, audio, image or transcript/caption bytes
+without re-encoding. It uses the connected installation, or the existing explicit
+`MOVIESTAR_API_KEY` plus `MOVIESTAR_CLOUD_URL` mode. Every download rechecks current
+access. It refuses redirects, checks the expected content type and byte count,
+and publishes the file only after transfer completes. Failed transfers clean up
+private staging data rather than presenting a partial file as complete; retries
+are explicit.
+
+A successful receipt has `status: downloaded`, `asset_id`, the absolute `file`
+path, `size_bytes` and the SHA-256 of the saved bytes. Compare that hash with the
+source original when checking round-trip integrity. The receipt does not claim
+that the server supplied an authoritative checksum.
+
+`moviestar cloud assets get ASSET_ID` and hosted MCP's `moviestar_get_asset`
+continue to return a private download URL. Receiving a URL does not save a file;
+open it in a browser signed in to the connected account, or let an authenticated
+developer client GET `/api/v1/account/cloud/assets/ASSET_ID/download` using its
+own credential. Keep credentials out of URLs and refuse cross-origin redirects.
+
 ## Download project originals directly
 
 On a service supporting `project-download-v1`, download every currently ready
