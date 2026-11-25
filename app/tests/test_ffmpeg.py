@@ -497,6 +497,7 @@ class TestLayerLoudnessProbe:
         )
         probe = build_layer_loudness_probe_command(
             "base.mp4", mix, 2.0, source_audio_available=True, layer_id="music",
+            prune_unrelated=False,
         )
 
         input_paths = [
@@ -526,6 +527,7 @@ class TestLayerLoudnessProbe:
         mix = _resolved_mix(tracks=[_resolved_track("music.wav")])
         probe = build_layer_loudness_probe_command(
             "base.mp4", mix, 2.0, source_audio_available=True, layer_id="source",
+            prune_unrelated=False,
         )
         probe_parts = probe[probe.index("-filter_complex") + 1].split(";")
         assert "[music_mix]anullsink" in probe_parts

@@ -671,16 +671,17 @@ def build_layer_loudness_probe_command(
     target_lufs: float = -14.0,
     true_peak: float = -1.5,
     lra: float = 11.0,
+    prune_unrelated: bool = True,
 ) -> list[str]:
     """Measure one routed layer of the resolved mix with loudnorm.
 
     Shares :func:`_build_mix_layer_graph` with the render post-pass, so the
     measured signal is exactly what :func:`build_mix_audio_command` sums —
     gain, fades, looping, placement, and signal-driven ducking applied; the
-    final sum and limiter are not. Layers other than the target drain into
-    ``anullsink`` so the graph stays identical (ducking sidechains keep
-    compressing against the real upstream signal) while only the target
-    reaches the loudnorm measurement.
+    final sum and limiter are not. Only the target and its active transitive
+    ducking dependencies are processed. Retained sidechains drain their unused
+    mix outputs into ``anullsink``. ``prune_unrelated=False`` retains the full
+    reference graph for parity/performance diagnostics.
     """
     graph = _build_mix_layer_graph(
         audio_mix,
@@ -699,6 +700,29 @@ def build_layer_loudness_probe_command(
                 f"window ({skipped[layer_id]})"
             )
         raise ValueError(f"loudness probe: unknown audio layer '{layer_id}'")
+
+    if prune_unrelated:
+        # Validate the complete graph above before pruning: malformed unrelated
+        # routing must not become silently acceptable to a measurement caller.
+        active = set(graph['mix_labels'])
+        tracks = {track['id']: track for track in audio_mix.get('tracks', [])}
+        needed = {layer_id}
+        pending = [layer_id]
+        while pending:
+            current = pending.pop()
+            for sidechain in (tracks.get(current, {}).get('ducking') or {}).get('under', []):
+                if sidechain in active and sidechain not in needed:
+                    needed.add(sidechain)
+                    pending.append(sidechain)
+        if needed != active:
+            graph = _build_mix_layer_graph(
+                {**audio_mix, 'tracks': [track for track in audio_mix.get('tracks', [])
+                                       if track['id'] in needed]},
+                result_duration,
+                source_audio_available=source_audio_available and 'source' in needed,
+                window_start=window_start,
+                window_duration=window_duration,
+            )
 
     filter_parts = list(graph["filter_parts"])
     for other_id in graph["layer_order"]:
