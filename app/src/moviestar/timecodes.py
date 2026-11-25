@@ -70,16 +70,24 @@ def format_timecode(seconds: float, fps: float | None = None) -> dict:
     Returns {"text": "H:MM:SS.mmm", "seconds": float}
     If fps is provided, also includes "frame": int.
 
+    Round before splitting hours/minutes so carries agree with the numeric
+    field. Frame indexes retain the original input precision.
+
     Seconds is rounded to milliseconds (3 decimal places) to match the
     text field's precision. This keeps arithmetic like from_s + i * interval
     from leaking float-representation noise ("42.870000000000005") into
     output JSON and downstream artifacts like cache-dir names.
     """
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = seconds - hours * 3600 - minutes * 60
-    text = f"{hours}:{minutes:02d}:{secs:06.3f}"
-    result: dict = {"text": text, "seconds": round(seconds, 3)}
+    rounded_seconds = round(seconds, 3)
+    # Convert the declared precision to integer ticks before splitting. The
+    # integer conversion removes multiplication noise (e.g. 1.001 * 1000);
+    # it does not round the original input to a different precision.
+    milliseconds = round(rounded_seconds * 1000)
+    hours, remainder = divmod(milliseconds, 3_600_000)
+    minutes, remainder = divmod(remainder, 60_000)
+    secs, millis = divmod(remainder, 1000)
+    text = f"{hours}:{minutes:02d}:{secs:02d}.{millis:03d}"
+    result: dict = {"text": text, "seconds": rounded_seconds}
     if fps is not None:
         result["frame"] = int(round(seconds * fps))
     return result

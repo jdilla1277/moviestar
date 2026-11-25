@@ -12,6 +12,8 @@ import copy
 import math
 from dataclasses import dataclass, replace
 
+from moviestar.timecodes import format_timecode
+
 from moviestar.motion import ResolvedScene, ResolvedTimeline
 from moviestar.spec import SpecValidationError, layout_regions, parse_timecode_string
 
@@ -171,11 +173,7 @@ class ResolvedCameraPlan:
 
 
 def _timecode(seconds: float) -> str:
-    total = max(0.0, float(seconds))
-    hours = int(total // 3600)
-    minutes = int((total % 3600) // 60)
-    secs = total - hours * 3600 - minutes * 60
-    return f"{hours}:{minutes:02d}:{secs:06.3f}"
+    return format_timecode(max(0.0, float(seconds)))["text"]
 
 
 def _ease(progress: float, ease: str) -> float:

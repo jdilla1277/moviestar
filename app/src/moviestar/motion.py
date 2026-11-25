@@ -12,6 +12,8 @@ import hashlib
 import math
 from dataclasses import dataclass, replace
 
+from moviestar.timecodes import format_timecode
+
 from moviestar.spec import SpecValidationError, parse_timecode_string
 
 
@@ -38,11 +40,7 @@ def _seconds(value, where: str) -> float:
 
 
 def _timecode(seconds: float) -> str:
-    total = max(0.0, float(seconds))
-    hours = int(total // 3600)
-    minutes = int((total % 3600) // 60)
-    secs = total - hours * 3600 - minutes * 60
-    return f"{hours}:{minutes:02d}:{secs:06.3f}"
+    return format_timecode(max(0.0, float(seconds)))["text"]
 
 
 def _entry_range(entry: dict, where: str) -> tuple[float, float] | None:

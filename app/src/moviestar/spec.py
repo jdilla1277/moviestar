@@ -225,10 +225,7 @@ def parse_timecode_string(text: str, where: str) -> float:
 def _format_timecode_string(seconds: float) -> str:
     """Format float seconds as an on-disk timecode string. Mirror of
     :func:`parse_timecode_string`."""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = seconds - hours * 3600 - minutes * 60
-    return f"{hours}:{minutes:02d}:{secs:06.3f}"
+    return format_timecode(seconds)["text"]
 
 
 # ---------- Validation ----------
