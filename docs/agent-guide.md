@@ -56,6 +56,11 @@ for version requirements.
 
 ## Time spaces
 
+The shared timecode formatter rounds numeric `seconds` and matching
+`H:MM:SS.mmm` text to milliseconds together. Rounding carries into minutes and hours: 59.9996 seconds
+is `{"text": "0:01:00.000", "seconds": 60.0}`. An optional `frame` index
+uses the original time and supplied frame rate, before millisecond rounding.
+
 Do not assume every timecode uses the same clock:
 
 - `trim` uses result-time, so later trims narrow the already-edited result.

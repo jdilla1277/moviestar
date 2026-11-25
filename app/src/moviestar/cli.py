@@ -7804,17 +7804,11 @@ def _storyboard_cap_suggestion(range_duration: float) -> float:
 def _compact_timecode_label(seconds: float) -> str:
     """Short burn-in label: M:SS or H:MM:SS, with milliseconds only when
     the sampling is sub-second (labels stay glanceable at tile size)."""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = seconds - hours * 3600 - minutes * 60
-    frac = round(secs - int(secs), 3)
-    if frac:
-        sec_text = f"{secs:06.3f}".rstrip("0").rstrip(".")
-    else:
-        sec_text = f"{int(secs):02d}"
-    if hours:
-        return f"{hours}:{minutes:02d}:{sec_text}"
-    return f"{minutes}:{sec_text}"
+    hours, minutes, secs = format_timecode(seconds)["text"].split(":")
+    sec_text = secs.rstrip("0").rstrip(".")
+    if int(hours):
+        return f"{hours}:{minutes}:{sec_text}"
+    return f"{int(minutes)}:{sec_text}"
 
 
 def _storyboard_plan(
