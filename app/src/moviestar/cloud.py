@@ -132,7 +132,7 @@ def _capabilities(command: str, endpoint: str, credential: str) -> dict:
         _fail(command, "invalid_response", "The service returned incomplete Cloud capabilities. Retry later.")
     fields = ("contract_version", "operations", "scopes", "project_access", "limits", "source_uploads_enabled",
               "source_imports_enabled", "media_processing_enabled", "saved_edits_enabled", "transcript_imports_enabled",
-              "edit_formats", "source_formats", "transcript_formats", "retention", "project_access_scope", "project_sharing", "received_invitations", "recipient_leave", "asset_sharing", "project_assets", "asset_activity", "editing")
+              "edit_formats", "source_formats", "transcript_formats", "retention", "project_access_scope", "project_sharing", "received_invitations", "recipient_leave", "asset_sharing", "project_assets", "asset_activity", "editing", "rendering")
     return {name: body[name] for name in fields if name in body}
 
 
@@ -181,7 +181,8 @@ def cloud():
     remote metadata, rename projects,
     manage asset references, probe Cloud assets, inspect ready video frames, read guides, or upload a private
     original with 'cloud assets create'. Ordinary local commands stay local;
-    Cloud commands do not select a local workspace or render media.
+    Cloud commands do not select a local workspace. Use 'cloud renders' for
+    explicitly requested saved-version previews when the service admits them.
     Connect with 'moviestar account connect', or set both MOVIESTAR_API_KEY and
     MOVIESTAR_CLOUD_URL (the exact HTTPS base ending /api/v1/account/cloud).
     Explicit key mode never falls back to installation credentials.
@@ -463,3 +464,6 @@ register_invitations(cloud)
 
 from moviestar.cloud_leave import register_leave
 register_leave(cloud)
+
+from moviestar.cloud_renders import register_renders
+register_renders(cloud)
