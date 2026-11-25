@@ -20,6 +20,9 @@ artifact; no lower-quality fallback is substituted. Final requires separate
 account enrollment and a qualified worker; support does not imply availability.
 Use
 `moviestar cloud capabilities` for the connected service's availability/bounds.
+Its summary edit/render flags describe configured availability; account
+enrollment, exact input support and quota are checked at submission. The detailed
+`editing` and `rendering` sections describe the admitted operations/profiles.
 
 ```sh
 moviestar cloud edits show "$PROJECT"
@@ -82,6 +85,8 @@ output bytes and in-flight storage holds count against storage capacity. No
 automatic cleanup or unlimited retention is promised. Existing Activity and
 Cloud allowance track one execution; reads, replay, download and saved edits
 do not create another render debit. Provider costs remain separate.
+Successful output allowance includes the MP4 plus 8 KiB of job/receipt metadata.
+Artifact `size_bytes` is the downloadable MP4 size, without that metadata overhead.
 
 Independent decoding proves file/media integrity, not that a person watched,
 heard or approved the result. Inspect the actual preview before final delivery.

@@ -124,6 +124,7 @@ def register_renders(cloud):
 
         Both render this exact revision without changing its spec or undo journal.
         Final matches local export with x264; no preview approval is inferred.
+        Successful output allowance includes the MP4 plus 8 KiB of job metadata.
 
         After an uncertain reply, repeat the identical command/key. A new key
         deliberately requests new work. Poll renders show with the returned IDs.
@@ -142,6 +143,9 @@ def register_renders(cloud):
                 if status not in (200,202):
                     if status==0 or status>=500:
                         fail('submission_unconfirmed','The outcome is unknown. Retry this exact command/key to recover the original job.',idempotency_key=pending.key,recovery_command=recovery)
+                    if isinstance(body.get('error'),dict) and body['error'].get('code')=='idempotency_conflict':
+                        checked(status,body,idempotency_key=pending.key,
+                                hint='Recover the original project/revision/kind/key. Use a new key only to deliberately request different work.')
                     checked(status,body,idempotency_key=pending.key,recovery_command=recovery)
                 if (body.get('status')!='accepted' or body.get('idempotency_key')!=pending.key or type(body.get('replayed')) is not bool
                         or not valid_job(body.get('job'),project_id,revision=revision,kind=kind)):
