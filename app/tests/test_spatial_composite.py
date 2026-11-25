@@ -56,6 +56,10 @@ def composition(tmp_path):
     ((65, 129), [(-11, -5, 47, 83)]),
     ((37, 29), [(22, 16, 41, 33)]),
     ((37, 29), [(50, 50, 23, 17)]),
+    ((37, 29), [(-36, -28, 37, 29)]),
+    ((37, 29), [(36, 28, 37, 29)]),
+    ((37, 29), [(4, 7, 1, 1)]),
+    ((37, 29), [(0, -40, 8, 10)]),
     ((37, 29), [(0, 0, 37, 29), (5, 3, 30, 24), (-4, 7, 37, 31)]),
 ])
 def test_composition_matches_ffmpeg_without_starting_processes(tmp_path, composition, monkeypatch, size, rectangles):
@@ -74,3 +78,23 @@ def test_invalid_geometry_keeps_the_component_address(tmp_path, composition):
     planes[0]['rect']['width'] = 0
     with pytest.raises(spatial_render.SpatialRenderError, match='scene/video0: unresolved video geometry'):
         spatial_render._compose(tmp_path, canvas, planes, videos, tmp_path / 'output.png')
+
+
+def test_small_placement_allocates_only_its_visible_rectangle():
+    from moviestar.spatial_composite import _place_video
+    source=av.VideoFrame.from_ndarray(np.zeros((9,13,3),dtype=np.uint8),format='rgb24')
+    placed,bounds=_place_video(source,{'x':-3,'y':7,'width':20,'height':11},320,180)
+    assert bounds==(0,7,17,18)
+    assert (placed.width,placed.height)==(17,11)
+
+
+def test_mask_arithmetic_is_bounded_by_visible_media_area(tmp_path,composition,monkeypatch):
+    import moviestar.spatial_composite as compositor
+    canvas,planes,videos=composition((37,29),[(3,2,10,7),(-4,25,12,10),(50,50,5,5)])
+    original=compositor._accumulate;areas=[]
+    def accumulate(accumulators,base,white,media):
+        areas.append(sum(channel.size for channel in base))
+        return original(accumulators,base,white,media)
+    monkeypatch.setattr(compositor,'_accumulate',accumulate)
+    spatial_render._compose(tmp_path,canvas,planes,videos,tmp_path/'actual.png')
+    assert sum(areas)==3*(10*7+8*4)

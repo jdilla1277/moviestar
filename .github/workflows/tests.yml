@@ -275,6 +275,12 @@ jobs:
   spatial-stream-memory:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        sources: [4, 5]
+        canvas: [1080p, 4k]
     container:
       image: python:3.12-bookworm
       options: --memory 4g --memory-swap 4g --cpus 2 --cpuset-cpus 0-1
@@ -297,20 +303,24 @@ jobs:
             --output "$RUNNER_TEMP/chrome.zip"
           unzip -q "$RUNNER_TEMP/chrome.zip" -d "$RUNNER_TEMP/chrome"
           echo "MOVIESTAR_CHROME_PATH=$RUNNER_TEMP/chrome/chrome-headless-shell-linux64/chrome-headless-shell" >> "$GITHUB_ENV"
-      - name: Measure four and five 4K cameras at 1080p and 4K output
+      - name: Measure a complete short/long resource pair
         run: |
           python experiments/spatial_stream_performance/measure.py \
             --out "$RUNNER_TEMP/spatial-stream-memory" --short 4 --long 16 \
+            --sources ${{ matrix.sources }} --canvas ${{ matrix.canvas }} \
+            --compare-reference \
             --require-limit-mib 4096 --require-cpus 2
       - name: Retain all resource results and first failures
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: spatial-stream-memory-${{ github.run_attempt }}
+          name: spatial-stream-memory-${{ matrix.sources }}-${{ matrix.canvas }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/spatial-stream-memory/summary.json
             ${{ runner.temp }}/spatial-stream-memory/**/result.json
             ${{ runner.temp }}/spatial-stream-memory/**/source-opens.json
+            ${{ runner.temp }}/spatial-stream-memory/**/stages.json
+            ${{ runner.temp }}/spatial-stream-memory/**/rgb-stream.json
             ${{ runner.temp }}/spatial-stream-memory/**/stdout
             ${{ runner.temp }}/spatial-stream-memory/**/stderr
           if-no-files-found: warn
