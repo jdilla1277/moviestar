@@ -6,15 +6,54 @@ import re
 
 
 class PaintCache:
-    def __init__(self, *, max_bytes=64*1024*1024):
-        if max_bytes < 0:
+    def __init__(self, *, max_bytes=64*1024*1024, max_decoded_bytes=128*1024*1024):
+        if max_bytes < 0 or max_decoded_bytes < 0:
             raise ValueError('paint budget must be nonnegative')
         self.max_bytes = max_bytes
+        self.max_decoded_bytes = max_decoded_bytes
         self.clear()
 
     def clear(self):
         self._entry = None
         self.retained_bytes = 0
+        self._pixels = {}
+        self.decoded_bytes = 0
+
+    def pixels(self, path, key, load):
+        """Borrow read-only channels of this entry, never source video pixels.
+
+        Copy only admitted channels into compact owned arrays, so a mask crop
+        cannot keep a full-canvas decoder frame or padded native plane alive.
+        Keep the first fitting channels until visual invalidation: replacing a
+        useful entry on every oversized miss would thrash across many layers.
+        """
+        try:
+            if self._entry is None or self.max_decoded_bytes == 0:
+                return load()
+            path = Path(path)
+            artifact = next((data for name, data in self._entry[2] if name == path.name), None)
+            # Temporary paths are reused. Verify the captured bytes, not a
+            # filename/mtime, before lending any decoded content to a caller.
+            if (artifact is None or path.stat().st_size != len(artifact)
+                    or path.read_bytes() != artifact):
+                self.clear()
+                return load()
+            identity = path.name, key
+            if identity in self._pixels:
+                return self._pixels[identity]
+            channels = load()
+            size = sum(channel.nbytes for channel in channels)
+            if size <= self.max_decoded_bytes - self.decoded_bytes:
+                owned = tuple(channel.copy(order='C') for channel in channels)
+                for channel in owned:
+                    channel.setflags(write=False)
+                self._pixels[identity] = owned
+                self.decoded_bytes += size
+                return owned
+            return channels
+        except BaseException:
+            self.clear()
+            raise
 
     @staticmethod
     def key(request):

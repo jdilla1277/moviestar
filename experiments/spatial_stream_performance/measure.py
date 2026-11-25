@@ -19,6 +19,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'spatial_preview_perf
 from profile_preview import Resources,owned_process_rows
 
 
+def reference_compose(*args, paint_cache=None):
+    # The frozen #304 function has no decoded-cache argument. Keep its source
+    # untouched and explicitly ignore only the new optional optimization here.
+    import reference_composite
+    return reference_composite.compose(*args)
+
+
 def worker(root, output, *, compositor='production'):
     import av
     from moviestar import cli, project, spatial_stream
@@ -28,7 +35,7 @@ def worker(root, output, *, compositor='production'):
     chosen = spatial_composite
     if compositor == 'reference':
         import reference_composite as chosen
-        spatial_composite.compose = chosen.compose
+        spatial_composite.compose = reference_compose
     stages = Stages()
     stages.install(compositor=chosen)
     digest = sha256()
@@ -40,6 +47,16 @@ def worker(root, output, *, compositor='production'):
         original_write(encoder, pixels)
         submitted[0] += 1
     spatial_stream.FrameEncoder.write = write_pixels
+    from moviestar.spatial_paint import PaintCache
+    original_pixels = PaintCache.pixels
+    paint = {'max_per_session_decoded_bytes': 0, 'decoded_budget_bytes': 128*1024*1024}
+    def paint_pixels(cache, *args, **kwargs):
+        try:
+            return original_pixels(cache, *args, **kwargs)
+        finally:
+            paint['max_per_session_decoded_bytes'] = max(paint['max_per_session_decoded_bytes'], cache.decoded_bytes)
+            paint['decoded_budget_bytes'] = cache.max_decoded_bytes
+    PaintCache.pixels = paint_pixels
     spec = load_spec(root)
     sources = {str(Path(s['path']).resolve()) for s in spec['sources']}
     original = av.open
@@ -58,6 +75,7 @@ def worker(root, output, *, compositor='production'):
         (output/'source-opens.json').write_text(json.dumps(counts,indent=2))
         (output/'stages.json').write_text(json.dumps(stages.report(),indent=2))
         (output/'rgb-stream.json').write_text(json.dumps({'frames':submitted[0],'sha256':digest.hexdigest()}))
+        (output/'paint-cache.json').write_text(json.dumps(paint,indent=2))
     assert len(counts)==len(sources) and set(counts.values())=={1}, counts
 
 
@@ -115,7 +133,7 @@ def frame_parity(root, spec, project, folder):
     with BrowserSession() as browser,MediaSession() as media:
         original = spatial_composite.compose
         try:
-            spatial_composite.compose = reference_composite.compose
+            spatial_composite.compose = reference_compose
             render_spatial_frame(spec,frame,timeline.canvas,output_path=path,
                 project_root=root,browser_session=browser,media_session=media)
         finally:
@@ -168,6 +186,7 @@ def run_case(root, folder, timeout, *, parity=False, compositor='production'):
     report['source_opens']=json.loads((folder/'source-opens.json').read_text())
     report['stage_profile']=json.loads((folder/'stages.json').read_text())
     report['rgb_stream']=json.loads((folder/'rgb-stream.json').read_text())
+    report['paint_cache']=json.loads((folder/'paint-cache.json').read_text())
     (folder/'result.json').write_text(json.dumps(report,indent=2))
     return report
 
@@ -248,6 +267,11 @@ def main():
                         video=next(s for s in result['probe']['streams'] if s['codec_type']=='video')
                         assert (video['width'],video['height'],int(video['nb_frames']))==(*canvas,duration*24)
                         assert result['rgb_stream']['frames']==duration*24
+                        expected_decodes = (count+1) * (duration*24 if variant=='reference' else 1)
+                        assert result['stage_profile']['stages']['paint_png_decode']['calls']==expected_decodes, (name,variant,'paint decode count')
+                        cached=result['paint_cache']['max_per_session_decoded_bytes']
+                        assert cached <= result['paint_cache']['decoded_budget_bytes']
+                        assert (cached > 0) == (variant=='production')
                         results[label]=result
                         paths[variant]=folder/'movie.mp4'
                         if label=='short' and variant=='production':

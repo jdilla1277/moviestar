@@ -527,7 +527,22 @@ are excluded. Unknown request fields, motion, raster video and auxiliary views
 force a miss. The compositor still uses fresh decoded source frames. A fresh
 report copy prevents per-frame diagnostics from mutating the retained entry.
 Errors, a dead worker, close and cancellation discard reusable paint; new jobs
-start empty. This adds no full-frame, clip, or cross-job cache.
+start empty. This adds no rendered-video, clip, or cross-job cache.
+
+Composition may also retain decoded paint channels from that same successful
+entry, under a separate **128 MiB** per-session limit. The base covers the canvas;
+white masks retain only their visible video rectangles. Admitted uint16 channels
+are copied into compact owned, read-only arrays: a small crop never retains a
+full decoder frame or padded native plane. Accounting sums these owned buffers'
+actual `nbytes`. Compressed capture/report storage keeps its separate 64 MiB cap;
+current decoding, conversion and output buffers remain transient working memory.
+Admission keeps the first fitting channels until the paint entry changes;
+oversized misses use the original decode path without evicting useful channels.
+The cache checks captured PNG bytes as well as canvas/crop identity, preventing
+temporary-path reuse from serving stale pixels. Source video frames are always
+fresh. Paint replacement, session cleanup and composition/decode failures clear
+decoded retention. This memory budget does not qualify arbitrary scenes or
+increase the existing 4 GiB/no-swap resource gate.
 
 The Python context lazily starts the worker, owns its temporary profile and
 POSIX process group, drains bounded stderr, and bounds response size. A request's

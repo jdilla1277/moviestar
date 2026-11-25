@@ -241,7 +241,8 @@ def _prepare_assets(spec: dict, frame: dict, prepared: dict, root: Path, tempora
     return videos
 
 
-def _compose(temporary: Path, canvas: dict, planes: list[dict], videos: dict, output: Path | None):
+def _compose(temporary: Path, canvas: dict, planes: list[dict], videos: dict, output: Path | None,
+             *, paint_cache=None):
     if not planes:
         if output is None:
             from moviestar.spatial_composite import _read_png
@@ -255,7 +256,7 @@ def _compose(temporary: Path, canvas: dict, planes: list[dict], videos: dict, ou
     import av
     from moviestar.spatial_composite import compose
     try:
-        return compose(temporary, canvas, planes, videos, output)
+        return compose(temporary, canvas, planes, videos, output, paint_cache=paint_cache)
     except (av.error.FFmpegError, OSError, ValueError, TypeError, StopIteration, MemoryError) as exc:
         raise SpatialRenderError(f'in-process video composition failed: {exc}') from exc
 
@@ -324,8 +325,14 @@ def render_spatial_frame(spec: dict, frame: dict, canvas: dict, *,
                 region = f"; reserved region {diagnostic['region_id']!r}" if 'region_id' in diagnostic else ''
                 raise SpatialRenderError(f"{diagnostic['code']} at {'/'.join(diagnostic['path'])}{region}")
         staged = temporary / 'rendered.png'
-        picture = _compose(temporary, prepared['canvas'], measured['video_planes'], videos,
-                           None if _pixel_sink is not None else staged)
+        paint_cache = getattr(browser_session, '_paint_cache', None)
+        try:
+            picture = _compose(temporary, prepared['canvas'], measured['video_planes'], videos,
+                               None if _pixel_sink is not None else staged, paint_cache=paint_cache)
+        except BaseException:
+            if paint_cache is not None:
+                paint_cache.clear()
+            raise
         if _pixel_sink is not None:
             _pixel_sink(picture)
         else:

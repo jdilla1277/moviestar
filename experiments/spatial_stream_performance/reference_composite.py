@@ -1,9 +1,9 @@
-# Frozen full-canvas compositor from da8215d; keep as a correctness/timing oracle.
-"""In-process composition of browser visibility masks and decoded video PNGs.
+# Frozen #304 compositor (3b40fa5); experiment oracle, not production code.
+"""In-process composition of browser masks and decoded video pixels.
 
 Chrome still owns layout, clipping and paint order. Placement retains FFmpeg's
 8-bit bilinear/overlay boundary; mask math retains the old 16-bit intermediates.
-Only row-sized arithmetic buffers are allocated, regardless of plane count.
+Placement and row-sized arithmetic buffers cover only visible media rectangles.
 """
 
 from fractions import Fraction
@@ -33,18 +33,20 @@ def _place_video(path, rect: dict, width: int, height: int):
     source = path if isinstance(path, av.VideoFrame) else _read_png(path)
     media = source.reformat(width=rect['width'], height=rect['height'],
                                     format='rgb24', interpolation='BILINEAR')
-    blank = av.VideoFrame(width, height, format='rgb24')
-    target = np.frombuffer(blank.planes[0], dtype=np.uint8).reshape(height, blank.planes[0].line_size)
-    target.fill(0)
     x, y = rect['x'], rect['y']
     left, top = max(0, x), max(0, y)
     right, bottom = min(width, x + media.width), min(height, y + media.height)
-    # Decoded video is validated opaque. An RGB copy therefore matches the old
-    # opaque overlay, including clipping at negative/off-screen coordinates.
-    if right > left and bottom > top:
-        source = np.frombuffer(media.planes[0], dtype=np.uint8).reshape(media.height, media.planes[0].line_size)
-        target[top:bottom, left * 3:right * 3] = source[top-y:bottom-y, (left-x) * 3:(right-x) * 3]
-    return blank.reformat(format='gbrp16le')
+    if right <= left or bottom <= top:
+        return None
+    # Preserve the full bilinear resize before cropping: rescaling the crop
+    # instead would shift its sampling phase. Pixels outside this intersection
+    # were black in the old full-canvas buffer and contribute exactly zero.
+    placed = av.VideoFrame(right-left, bottom-top, format='rgb24')
+    target = np.frombuffer(placed.planes[0], dtype=np.uint8).reshape(placed.height, placed.planes[0].line_size)
+    target.fill(0)
+    source = np.frombuffer(media.planes[0], dtype=np.uint8).reshape(media.height, media.planes[0].line_size)
+    target[:, :placed.width*3] = source[top-y:bottom-y, (left-x)*3:(right-x)*3]
+    return placed.reformat(format='gbrp16le'), (left,top,right,bottom)
 
 
 def _accumulate(accumulators, base_channels, white_channels, media_channels):
@@ -84,7 +86,11 @@ def compose(temporary: Path, canvas: dict, planes: list[dict], videos: dict, out
         white = _read_png(temporary / f"{plane['id']}-white.png").reformat(format='gbrp16le')
         if (white.width, white.height) != (width, height):
             raise ValueError('visibility mask dimensions do not match the canvas')
-        _accumulate(accumulators, base_channels, _channels(white), _channels(scaled))
+        if scaled is not None:
+            media, (left,top,right,bottom) = scaled
+            region = lambda channels: [channel[top:bottom,left:right] for channel in channels]
+            _accumulate(region(accumulators), region(base_channels), region(_channels(white)), _channels(media))
+            del media
         del white, scaled
     frame = result.reformat(format='rgb24')
     if output is None:

@@ -337,12 +337,17 @@ for line in sys.stdin:
     with BrowserSession() as session:
         session.run(request)
         assert session._paint_cache.retained_bytes
+        import numpy as np
+        session._paint_cache.pixels(tmp_path/'base.png', (),
+            lambda: [np.zeros((2, 3), dtype=np.uint16)] * 3)
+        assert session._paint_cache.decoded_bytes
         session.run(request)
         assert session._counter == 1
         session._process.kill(); session._process.wait()
         with pytest.raises(SpatialLayoutError, match='closed'):
             session.run(request)
         assert session._paint_cache.retained_bytes == 0
+        assert session._paint_cache.decoded_bytes == 0
 
 
 def test_cache_restore_failure_closes_worker_and_clears_paint(fake_worker, monkeypatch):
