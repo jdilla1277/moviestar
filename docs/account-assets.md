@@ -238,3 +238,48 @@ paths grant access. Follow `next_cursor` unchanged. Capabilities advertise
 `project_assets.operations` includes `assets:read` for direct detail/download.
 
 For pending invitations received by your account, see [Invitations](invitations.md).
+
+## Delete an owned asset
+
+Deletion permanently ends access to a ready account original, removes its
+references from every project, and revokes direct invitations and recipient
+access. Projects, other assets, and local files remain intact. Recipients cannot
+delete another account's asset; use `cloud assets leave` to leave its direct
+share instead. Downloads already started or saved cannot be recalled.
+
+```sh
+moviestar cloud assets delete ASSET_ID --confirm
+```
+
+Without `--confirm`, the CLI makes no remote request. After an uncertain reply,
+retry the **same asset ID** with `--confirm`; do not read it first or select a
+replacement. The owner can recover the deletion receipt even when ordinary
+asset reads return `not_found`. Services without the `assets:delete` capability
+fail gracefully without sending a deletion.
+
+API callers use the same personal key or approved installation as other Cloud
+asset operations:
+
+```http
+DELETE /api/v1/account/cloud/assets/ASSET_ID
+Authorization: Bearer YOUR_API_KEY
+Content-Type: application/json
+
+{"confirm_asset_id":"ASSET_ID"}
+```
+
+Hosted MCP exposes `moviestar_delete_asset` with `asset_id` and
+`confirm_asset_id`, both set to the exact asset UUID. An agent must have an
+explicit user request to delete that original. Web owners use **Delete asset**
+on the asset detail page and confirm the selected original.
+
+A successful receipt has `status: "deleted"`, `asset_id`, `references_removed`,
+`projects_preserved: true`, `storage_released`, and a stable
+`deletion: {id, state}`. HTTP 200 / `state: "succeeded"` confirms verified
+original-storage cleanup and quota release. HTTP 202 / `state: "pending"`
+confirms access has ended but cleanup is pending; space remains charged until
+cleanup is verified. Retry the same deletion to check or continue cleanup.
+The service's scheduled cleanup also retries pending work when enabled.
+
+Deletion currently applies to ready originals. Pending or incomplete uploads
+return `asset_not_ready`; continue the existing upload recovery flow first.
