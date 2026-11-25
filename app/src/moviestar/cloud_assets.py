@@ -126,7 +126,10 @@ def _list(command, project, limit, cursor, shared=False):
 def register_asset_commands(cloud, projects):
     @cloud.group("assets")
     def assets():
-        """Find existing ready account assets. No upload or local editing."""
+        """Manage account assets on the connected Cloud service."""
+
+    from moviestar.cloud_asset_delete import register_asset_delete
+    register_asset_delete(assets)
 
     from moviestar.cloud_asset_sharing import register_asset_sharing
     register_asset_sharing(assets)
