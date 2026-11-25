@@ -308,6 +308,7 @@ jobs:
           python experiments/spatial_stream_performance/measure.py \
             --out "$RUNNER_TEMP/spatial-stream-memory" --short 4 --long 16 \
             --sources ${{ matrix.sources }} --canvas ${{ matrix.canvas }} \
+            --compare-reference \
             --require-limit-mib 4096 --require-cpus 2
       - name: Retain all resource results and first failures
         if: always()
@@ -319,6 +320,7 @@ jobs:
             ${{ runner.temp }}/spatial-stream-memory/**/result.json
             ${{ runner.temp }}/spatial-stream-memory/**/source-opens.json
             ${{ runner.temp }}/spatial-stream-memory/**/stages.json
+            ${{ runner.temp }}/spatial-stream-memory/**/rgb-stream.json
             ${{ runner.temp }}/spatial-stream-memory/**/stdout
             ${{ runner.temp }}/spatial-stream-memory/**/stderr
           if-no-files-found: warn

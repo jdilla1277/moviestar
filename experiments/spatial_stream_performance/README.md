@@ -34,7 +34,7 @@ children). Shared pages can count twice and short peaks can be missed in the
 RSS samples; the container limit is independent of this sampler.
 
 Assertions cover one source open per active camera, exact direct-compositor vs
-PNG-reference pixels, output dimensions/frame count, unchanged project files,
+frozen full-canvas reference pixels, output dimensions/frame count, unchanged project files,
 absence of an output PNG sequence, no container OOM kills, and RAM plateau when
 duration increases fourfold. The plateau check allows 256 MiB or 25% above the
 short-run peak for allocator/native warm-up and sampling. These resource checks
@@ -48,6 +48,17 @@ times, not CPU samples. Inclusive stages overlap and must not be added; exclusiv
 times subtract instrumented producer-thread child calls. Encoder CPU can overlap
 frame generation, so write/finish waits alone do not establish encoder cost.
 Interpreter startup is included in case elapsed time, outside the stage timers.
+
+CI also uses `--compare-reference`: each duration is exported with both the
+frozen compositor from `da8215d` and production, in fresh workers on the same
+container. Short runs use reference first; long runs reverse the order. Each
+variant must independently pass its RAM plateau. Complete submitted RGB-stream
+hashes and encoded MP4 hashes must match, not just a sampled still. Hashing is
+constant-memory, timed separately, and included equally in both case elapsed
+times. `reference_composite.py` is an experiment oracle, not distributed code;
+do not optimize it alongside production. All baseline/candidate results remain
+in `summary.json`, including first failures. Local default mode can omit this
+extra comparison, while retaining production resource checks.
 
 The Python producer has one outstanding acknowledged frame write; FFmpeg's raw
 input queue is one packet. Decoder references, five source cursors, Chrome and

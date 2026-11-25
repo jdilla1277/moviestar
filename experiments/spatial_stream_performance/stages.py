@@ -27,18 +27,19 @@ class Stages:
                     self.stack[-1][1] += elapsed
         return timed
 
-    def install(self):
+    def install(self, compositor=None):
         from moviestar import cli, spatial_render, spatial_composite, spatial_media, spatial_stream
         from moviestar.spatial_session import BrowserSession
+        compositor = compositor or spatial_composite
         for owner, attr, label in [
             (spatial_render, '_prepare_assets', 'asset_preparation'),
             (spatial_media.MediaSession, 'pixels', 'source_pixels'),
             (spatial_media._Cursor, 'select', 'source_frame_selection'),
             (BrowserSession, 'run', 'browser_paint_or_reuse'),
             (spatial_render, '_compose', 'composition'),
-            (spatial_composite, '_read_png', 'paint_png_decode'),
-            (spatial_composite, '_place_video', 'video_placement'),
-            (spatial_composite, '_accumulate', 'mask_accumulation'),
+            (compositor, '_read_png', 'paint_png_decode'),
+            (compositor, '_place_video', 'video_placement'),
+            (compositor, '_accumulate', 'mask_accumulation'),
             (spatial_stream.FrameEncoder, 'write', 'encoder_write_wait'),
             (spatial_stream.FrameEncoder, 'finish', 'encoder_finish_wait'),
             (cli, 'render_layout_video', 'scene_generation_and_encoding'),

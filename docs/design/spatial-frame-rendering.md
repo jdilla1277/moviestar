@@ -351,6 +351,15 @@ nested video uses also passes the existing 3/255 browser paint parity budget.
 
 ### Media and compositing
 
+The compositor preserves the full bilinear resize before cropping media to its
+intersection with the canvas. It creates a placement buffer only for that
+intersection and applies the existing 16-bit mask arithmetic to the matching
+base/mask/result slices. Outside it, the prior placement buffer was black and
+contributed exactly zero. Fully off-screen media skips accumulation; paint-mask
+dimension checks still run. This bounds placement and arithmetic work by the
+visible media rectangle without changing sampling phase, clipping, saturation,
+or the browser's masks. It does not eliminate full-frame paint-PNG decoding.
+
 `app/tests/test_spatial_render.py` generates a lossless 10 fps clip whose source
 frames have distinct RGB values. Three uses inside nested reusable components
 sample source times 0.5, 0.7, and 0.9 seconds. Their actual pixels identify frames

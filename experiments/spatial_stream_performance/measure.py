@@ -19,13 +19,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'spatial_preview_perf
 from profile_preview import Resources,owned_process_rows
 
 
-def worker(root, output):
+def worker(root, output, *, compositor='production'):
     import av
-    from moviestar import cli, project
+    from moviestar import cli, project, spatial_stream
     from moviestar.spec import load_spec
     from stages import Stages
+    from moviestar import spatial_composite
+    chosen = spatial_composite
+    if compositor == 'reference':
+        import reference_composite as chosen
+        spatial_composite.compose = chosen.compose
     stages = Stages()
-    stages.install()
+    stages.install(compositor=chosen)
+    digest = sha256()
+    submitted = [0]
+    hash_frame = stages.wrap('rgb_stream_hashing', lambda pixels: digest.update(memoryview(pixels).cast('B')))
+    original_write = spatial_stream.FrameEncoder.write
+    def write_pixels(encoder, pixels):
+        hash_frame(pixels)
+        original_write(encoder, pixels)
+        submitted[0] += 1
+    spatial_stream.FrameEncoder.write = write_pixels
     spec = load_spec(root)
     sources = {str(Path(s['path']).resolve()) for s in spec['sources']}
     original = av.open
@@ -43,6 +57,7 @@ def worker(root, output):
     finally:
         (output/'source-opens.json').write_text(json.dumps(counts,indent=2))
         (output/'stages.json').write_text(json.dumps(stages.report(),indent=2))
+        (output/'rgb-stream.json').write_text(json.dumps({'frames':submitted[0],'sha256':digest.hexdigest()}))
     assert len(counts)==len(sources) and set(counts.values())=={1}, counts
 
 
@@ -91,13 +106,20 @@ def frame_parity(root, spec, project, folder):
     from moviestar.spatial_render import render_spatial_frame,render_spatial_pixels
     from moviestar.spatial_session import BrowserSession
     from moviestar.spatial_media import MediaSession
+    from moviestar import spatial_composite
+    import reference_composite
     timeline=resolve_project(project,spec)
     durations={s['id']:s['duration']['seconds'] for s in project['sources']}
     frame=compile_spatial_frame(spec,timeline,.25,source_durations=durations)
     path=folder/'reference.png'
     with BrowserSession() as browser,MediaSession() as media:
-        render_spatial_frame(spec,frame,timeline.canvas,output_path=path,
-            project_root=root,browser_session=browser,media_session=media)
+        original = spatial_composite.compose
+        try:
+            spatial_composite.compose = reference_composite.compose
+            render_spatial_frame(spec,frame,timeline.canvas,output_path=path,
+                project_root=root,browser_session=browser,media_session=media)
+        finally:
+            spatial_composite.compose = original
         direct=render_spatial_pixels(spec,frame,timeline.canvas,project_root=root,
             browser_session=browser,media_session=media)
         actual=sha256(direct.to_ndarray(format='rgb24').tobytes()).hexdigest()
@@ -108,13 +130,13 @@ def frame_parity(root, spec, project, folder):
     return actual
 
 
-def run_case(root, folder, timeout, *, parity=False):
+def run_case(root, folder, timeout, *, parity=False, compositor='production'):
     folder.mkdir();(folder/'tmp').mkdir()
     before={p.name:sha256(p.read_bytes()).hexdigest() for p in (root/'moviestar').glob('*.json')}
     start=time.perf_counter()
     with (folder/'stdout').open('wb') as stdout,(folder/'stderr').open('wb') as stderr:
         process=subprocess.Popen([sys.executable,str(Path(__file__).resolve()),'--worker',str(root),
-            '--out',str(folder), *(['--parity'] if parity else [])],stdout=stdout,stderr=stderr,start_new_session=True,
+            '--out',str(folder),'--compositor',compositor, *(['--parity'] if parity else [])],stdout=stdout,stderr=stderr,start_new_session=True,
             env={**os.environ,'TMPDIR':str(folder/'tmp')})
         monitor=Resources(process.pid,folder);monitor.start()
         try:
@@ -132,7 +154,8 @@ def run_case(root, folder, timeout, *, parity=False):
             try:os.killpg(process.pid,signal.SIGKILL)
             except ProcessLookupError:pass
             process.wait();monitor.close()
-    report={'exit_code':code,'elapsed_s':time.perf_counter()-start,'resources':monitor.report()}
+    report={'exit_code':code,'elapsed_s':time.perf_counter()-start,'resources':monitor.report(),
+            'compositor':compositor}
     (folder/'result.json').write_text(json.dumps(report,indent=2))
     assert code==0,((folder/'stderr').read_text()+(folder/'stdout').read_text())[-4000:]
     assert before=={p.name:sha256(p.read_bytes()).hexdigest() for p in (root/'moviestar').glob('*.json')}
@@ -144,6 +167,7 @@ def run_case(root, folder, timeout, *, parity=False):
     report['probe']=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json',str(folder/'movie.mp4')],text=True))
     report['source_opens']=json.loads((folder/'source-opens.json').read_text())
     report['stage_profile']=json.loads((folder/'stages.json').read_text())
+    report['rgb_stream']=json.loads((folder/'rgb-stream.json').read_text())
     (folder/'result.json').write_text(json.dumps(report,indent=2))
     return report
 
@@ -153,6 +177,9 @@ def main():
     parser.add_argument('--out',type=Path,required=True)
     parser.add_argument('--worker',type=Path)
     parser.add_argument('--parity',action='store_true')
+    parser.add_argument('--compositor',choices=['production','reference'],default='production')
+    parser.add_argument('--compare-reference',action='store_true',
+                        help='Pair each export with the frozen full-canvas compositor')
     parser.add_argument('--short',type=int,default=4)
     parser.add_argument('--long',type=int,default=16)
     parser.add_argument('--source-width',type=int,default=3840)
@@ -172,7 +199,7 @@ def main():
             digest=frame_parity(args.worker,load_spec(args.worker),load_project(args.worker),args.out)
             (args.out/'parity.json').write_text(json.dumps({'canonical_frame_sha256':digest}))
             return
-        worker(args.worker,args.out);return
+        worker(args.worker,args.out,compositor=args.compositor);return
     import av,numpy,moviestar
     def cgroup():
         root=Path('/sys/fs/cgroup')
@@ -192,9 +219,10 @@ def main():
     code=Path(moviestar.__file__).parent
     report={'runtime':{'python':sys.version,'av':av.__version__,'numpy':numpy.__version__,
         'modules':{p.name:sha256(p.read_bytes()).hexdigest() for p in code.iterdir() if p.suffix in ('.py','.mjs')}},
+        'reference_compositor_sha256':sha256(Path(__file__).with_name('reference_composite.py').read_bytes()).hexdigest(),
         'input':{'source_size':source_size,'fps':24,'codec':'H264/yuv420p','b_frames':2,'refs':3},
         'affinity':sorted(os.sched_getaffinity(0)) if hasattr(os,'sched_getaffinity') else None,
-        'cgroup_before':limits,'cases':{},'notes':['Owned process-tree RSS is sampled, can double-count shared pages.',
+        'cgroup_before':limits,'cases':{},'reference_cases':{},'notes':['Owned process-tree RSS is sampled, can double-count shared pages.',
         'Python handoff is one frame; native decoder reference frames and encoder lookahead add memory.',
         'Memory comparisons include fresh worker startup; all samples retained.']}
     try:
@@ -203,22 +231,41 @@ def main():
                 canvas={'1080p':(1920,1080),'4k':(3840,2160)}[size]
                 key=f'{count}-sources-{canvas[0]}x{canvas[1]}'
                 pair={};report['cases'][key]=pair
+                reference_pair={}
+                if args.compare_reference:
+                    report['reference_cases'][key]=reference_pair
                 for label,duration in [('short',args.short),('long',args.long)]:
                     name=f'{key}-{label}'
                     root=args.out/f'{name}-project'
                     spec,project=prepare_project(root,files,count,canvas,duration,source_size,args.long+2)
-                    result=run_case(root,args.out/name,args.timeout)
-                    video=next(s for s in result['probe']['streams'] if s['codec_type']=='video')
-                    assert (video['width'],video['height'],int(video['nb_frames']))==(*canvas,duration*24)
-                    if label=='short':
-                        result['canonical_frame_parity']=run_case(root,args.out/name/'parity',args.timeout,parity=True)
-                    pair[label]=result
-                    print(json.dumps({'case':name,'elapsed_s':result['elapsed_s'],'resources':result['resources']}),flush=True)
-                small=pair['short']['resources']['sampled_peak_group_rss_mib']
-                large=pair['long']['resources']['sampled_peak_group_rss_mib']
-                # A 4x-duration job cannot retain frames proportional to length.
-                # Allow 256 MiB/25% for allocator/native warm-up and sampling.
-                assert large <= small+max(256,small*.25),(key,small,large,'RAM did not plateau')
+                    variants=([('reference',reference_pair),('production',pair)] if args.compare_reference
+                              else [('production',pair)])
+                    if label=='long':variants.reverse()
+                    paths={}
+                    for variant,results in variants:
+                        folder=args.out/(name if variant=='production' else 'reference-'+name)
+                        result=run_case(root,folder,args.timeout,compositor=variant)
+                        video=next(s for s in result['probe']['streams'] if s['codec_type']=='video')
+                        assert (video['width'],video['height'],int(video['nb_frames']))==(*canvas,duration*24)
+                        assert result['rgb_stream']['frames']==duration*24
+                        results[label]=result
+                        paths[variant]=folder/'movie.mp4'
+                        if label=='short' and variant=='production':
+                            result['canonical_frame_parity']=run_case(root,folder/'parity',args.timeout,parity=True)
+                        print(json.dumps({'case':name,'compositor':variant,'elapsed_s':result['elapsed_s'],
+                            'resources':result['resources']}),flush=True)
+                    if args.compare_reference:
+                        hashes={variant:sha256(path.read_bytes()).hexdigest() for variant,path in paths.items()}
+                        pair[label]['movie_sha256']=hashes['production']
+                        reference_pair[label]['movie_sha256']=hashes['reference']
+                        assert hashes['production']==hashes['reference'],(name,'encoded MP4 differs from full-canvas reference')
+                        assert pair[label]['rgb_stream']==reference_pair[label]['rgb_stream'],(name,'raw RGB stream differs')
+                for variant,results in [('production',pair), *([('reference',reference_pair)] if args.compare_reference else [])]:
+                    small=results['short']['resources']['sampled_peak_group_rss_mib']
+                    large=results['long']['resources']['sampled_peak_group_rss_mib']
+                    # A 4x-duration job cannot retain frames proportional to length.
+                    # Allow 256 MiB/25% for allocator/native warm-up and sampling.
+                    assert large <= small+max(256,small*.25),(key,variant,small,large,'RAM did not plateau')
     except BaseException as exc:
         report['failure']=f'{type(exc).__name__}: {exc}'
         raise
