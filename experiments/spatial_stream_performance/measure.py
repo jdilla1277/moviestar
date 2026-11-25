@@ -23,6 +23,9 @@ def worker(root, output):
     import av
     from moviestar import cli, project
     from moviestar.spec import load_spec
+    from stages import Stages
+    stages = Stages()
+    stages.install()
     spec = load_spec(root)
     sources = {str(Path(s['path']).resolve()) for s in spec['sources']}
     original = av.open
@@ -39,6 +42,7 @@ def worker(root, output):
                      standalone_mode=False)
     finally:
         (output/'source-opens.json').write_text(json.dumps(counts,indent=2))
+        (output/'stages.json').write_text(json.dumps(stages.report(),indent=2))
     assert len(counts)==len(sources) and set(counts.values())=={1}, counts
 
 
@@ -139,6 +143,7 @@ def run_case(root, folder, timeout, *, parity=False):
         return report
     report['probe']=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json',str(folder/'movie.mp4')],text=True))
     report['source_opens']=json.loads((folder/'source-opens.json').read_text())
+    report['stage_profile']=json.loads((folder/'stages.json').read_text())
     (folder/'result.json').write_text(json.dumps(report,indent=2))
     return report
 
@@ -154,6 +159,8 @@ def main():
     parser.add_argument('--source-height',type=int,default=2160)
     parser.add_argument('--canvas',action='append',choices=['1080p','4k'],
                         help='Limit smoke tests; acceptance defaults to both sizes')
+    parser.add_argument('--sources',action='append',type=int,choices=[4,5],
+                        help='Select a CI cell; defaults to both source counts')
     parser.add_argument('--timeout',type=int,default=1800)
     parser.add_argument('--require-limit-mib',type=int)
     parser.add_argument('--require-cpus',type=int)
@@ -191,7 +198,7 @@ def main():
         'Python handoff is one frame; native decoder reference frames and encoder lookahead add memory.',
         'Memory comparisons include fresh worker startup; all samples retained.']}
     try:
-        for count in (4,5):
+        for count in (args.sources or [4,5]):
             for size in (args.canvas or ['1080p','4k']):
                 canvas={'1080p':(1920,1080),'4k':(3840,2160)}[size]
                 key=f'{count}-sources-{canvas[0]}x{canvas[1]}'
