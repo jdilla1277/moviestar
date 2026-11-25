@@ -186,3 +186,7 @@ The metadata does not itself download media, create a local workspace, import
 an edit or synchronize local checkpoints. Source files and the authorized asset
 mapping are still required for local/Cloud continuity. No render is requested by
 reading or downloading a saved spec.
+
+To explicitly render a saved version, use the separately enabled
+[Cloud preview workflow](cloud-renders.md). Its job/artifact status is separate
+from the saved-instruction proof above.

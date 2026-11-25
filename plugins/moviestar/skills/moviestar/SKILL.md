@@ -83,6 +83,21 @@ made, and any remaining warning. A successful command is not by itself proof
 that the edit looks or sounds right; inspect representative frames and motion,
 and check audio when the deliverable contains it.
 
+## Preview a saved Cloud edit
+
+Inspect `cloud capabilities` before using remote rendering. When advertised,
+`cloud renders submit PROJECT --revision REVISION --kind preview` requests that
+exact saved version; it never selects the latest edit or changes undo history.
+Retain its retry key and identical request after an uncertain reply. Reopen
+with `cloud renders show PROJECT JOB`; accepted/queued is not a verified output.
+Only a succeeded job identifies a verified artifact. Use `cloud artifacts list`
+and `cloud artifacts download PROJECT ARTIFACT --out NEW.mp4` to verify/save the
+actual file, then inspect its content. Undo preserves earlier videos. Current
+Cloud preview bounds are narrower than local export; do not silently remove
+unsupported layout/audio/text or substitute source-asset watch for edited output.
+Private grants are not publication, saving or perception. See
+`cloud renders --help` and the public Cloud preview guide for current limits.
+
 ## Hosted account setup
 
 When the human requests hosted services, `moviestar account connect EMAIL --terminal`

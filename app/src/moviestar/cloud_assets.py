@@ -133,6 +133,8 @@ def register_asset_commands(cloud, projects):
 
     from moviestar.cloud_asset_sharing import register_asset_sharing
     register_asset_sharing(assets)
+    from moviestar.cloud_asset_download import register_asset_download
+    register_asset_download(assets)
 
     @assets.command("get")
     @click.argument("asset_id")
