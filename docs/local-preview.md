@@ -15,6 +15,16 @@ mode. Docs, guided feedback and account links open the main site in another
 tab without sending your local project or media. Local review requires no
 account. Fonts are bundled, so branding does not require a network connection.
 
+Use **Fullscreen** to review the complete composition in either native or
+rendered mode. The revision selector and playback controls stay available with
+the picture; portrait and landscape canvases fit without cropping. **Exit
+fullscreen** or the browser's Escape action returns to the page. Entering or
+leaving fullscreen preserves the current player, playback position and paused
+state. Following a new edit or choosing a historical revision keeps the existing
+revision rules while fullscreen remains active. This changes presentation only,
+never the saved edit, undo history or export canvas. Browsers without the
+Fullscreen API show the control as unavailable.
+
 ## Start the viewer
 
 From a project containing saved scenes, in a persistent terminal:
