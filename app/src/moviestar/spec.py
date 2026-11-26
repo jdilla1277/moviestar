@@ -225,10 +225,7 @@ def parse_timecode_string(text: str, where: str) -> float:
 def _format_timecode_string(seconds: float) -> str:
     """Format float seconds as an on-disk timecode string. Mirror of
     :func:`parse_timecode_string`."""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = seconds - hours * 3600 - minutes * 60
-    return f"{hours}:{minutes:02d}:{secs:06.3f}"
+    return format_timecode(seconds)["text"]
 
 
 # ---------- Validation ----------
@@ -821,6 +818,25 @@ def _validate_spec_state(spec: dict) -> None:
             f"spec: unsupported version {spec['version']!r}; "
             f"expected {SCHEMA_VERSION!r}"
         )
+
+    # Optional portable origin. This is a sync hint, never authorization or
+    # the identity of a locally modified draft. It is not an undo family.
+    if "provenance" in spec:
+        origin = spec["provenance"]
+        keys = {"project_id", "base_revision_id", "base_document_sha256", "engine_version", "contract_version"}
+        if not isinstance(origin, dict) or set(origin) != keys:
+            raise SpecValidationError("spec.provenance: expected complete portable origin metadata")
+        import re
+        for key in ("project_id", "base_revision_id"):
+            if not isinstance(origin[key], str) or not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", origin[key]):
+                raise SpecValidationError(f"spec.provenance.{key}: expected canonical UUID")
+        for key, length in (("base_document_sha256", 64), ("engine_version", 40)):
+            if key == "base_document_sha256" and origin[key] is None:
+                continue
+            if not isinstance(origin[key], str) or not re.fullmatch(r"[0-9a-f]{%d}" % length, origin[key]):
+                raise SpecValidationError(f"spec.provenance.{key}: invalid fingerprint or engine pin")
+        if origin["contract_version"] != "cloud-editing-v1":
+            raise SpecValidationError("spec.provenance.contract_version: unsupported origin contract")
 
     _require_field(spec, "sources", "spec")
     sources = spec["sources"]
@@ -2664,6 +2680,8 @@ def append_trim(
         )
 
     new_spec = json.loads(json.dumps(spec))  # deep copy
+    if from_s == 0 and abs(to_s - effective) < 1e-9:
+        return new_spec
     target = get_source(new_spec, source_id)
     target["operations"].append(_trim_op(from_s, to_s))
     validate_spec(new_spec)

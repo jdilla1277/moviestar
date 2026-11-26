@@ -7,6 +7,8 @@ agents can copy the command and reproduce manually).
 
 from __future__ import annotations
 
+import bisect
+from array import array
 import json
 import math
 import os
@@ -17,6 +19,7 @@ import sys
 import tempfile
 import time
 from contextlib import contextmanager
+from fractions import Fraction
 from pathlib import Path
 
 from moviestar.render_profiles import REVIEW_VIDEO_FILTER, review_video_args
@@ -586,7 +589,9 @@ def build_mix_audio_command(
         "-c:a", "aac",
         "-ar", str(AUDIO_MIX_SAMPLE_RATE),
         "-ac", "2",
-        "-shortest",
+        # Each audio layer is already padded/trimmed to the authored window.
+        # Let the copied video drain independently: -shortest can stop muxing
+        # before reordered H.264 packets at EOF have all been written (#257).
         output_path,
     ]
     return cmd
@@ -959,6 +964,103 @@ def build_ffprobe_command(video_path: str) -> list[str]:
     ]
 
 
+_DURATION_PACKET_LIMIT = 1_000_000
+_DURATION_PROBE_TIMEOUT = 60
+
+
+def _finite_number(value: object) -> float | None:
+    try:
+        number = float(value)
+    except (ValueError, TypeError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _recover_packet_duration(video_path: str, fmt: dict) -> None:
+    """Recover the seek-relative endpoint without decoding or assuming CFR.
+
+    A full demux is necessary for unindexed recorder WebM. Bound it by both
+    wall time and packet count, spool compact output to disk (not RAM), and
+    reject truncated scans rather than passing off a partial duration as exact.
+    """
+    cmd = [
+        "ffprobe", "-v", "error", "-read_intervals",
+        f"%+#{_DURATION_PACKET_LIMIT + 1}", "-show_packets",
+        "-show_entries", "packet=codec_type,stream_index,pts_time,duration_time",
+        "-of", "compact=p=0", video_path,
+    ]
+    recovery_hint = (
+        "Could not recover media duration. Remux the source into a seekable "
+        "file with duration metadata, then retry; the original is unchanged."
+    )
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as packets:
+        try:
+            result = subprocess.run(
+                cmd, stdout=packets, stderr=subprocess.PIPE, text=True,
+                timeout=_DURATION_PROBE_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"{recovery_hint} Packet scan timed out.") from exc
+        if result.returncode != 0 or result.stderr.strip():
+            raise RuntimeError(
+                f"{recovery_hint} {_failure_message('ffprobe', result)}"
+            )
+        packets.seek(0)
+        earliest = math.inf
+        latest_by_stream: dict[str, float] = {}
+        end_by_stream: dict[str, float] = {}
+        last_timed_pts: dict[str, float] = {}
+        count = 0
+        for line in packets:
+            # Compact packet side-data can occupy separate/empty lines.
+            fields = dict(
+                item.split("=", 1) for item in line.strip().split("|")
+                if "=" in item
+            )
+            if "codec_type" not in fields:
+                continue
+            count += 1
+            if count > _DURATION_PACKET_LIMIT:
+                raise RuntimeError(f"{recovery_hint} Packet scan limit exceeded.")
+            if fields["codec_type"] not in {"audio", "video"}:
+                continue
+            pts = _finite_number(fields.get("pts_time"))
+            if pts is None:
+                raise RuntimeError(
+                    f"{recovery_hint} Missing packet presentation time."
+                )
+            stream = fields["stream_index"]
+            earliest = min(earliest, pts)
+            latest_by_stream[stream] = max(
+                latest_by_stream.get(stream, -math.inf), pts,
+            )
+            duration = _finite_number(fields.get("duration_time"))
+            if duration is not None and duration > 0:
+                last_timed_pts[stream] = max(
+                    last_timed_pts.get(stream, -math.inf), pts,
+                )
+                end_by_stream[stream] = max(
+                    end_by_stream.get(stream, -math.inf), pts + duration,
+                )
+        if not latest_by_stream or any(
+            last_timed_pts.get(stream, -math.inf) < pts
+            for stream, pts in latest_by_stream.items()
+        ):
+            raise RuntimeError(f"{recovery_hint} Missing final packet duration.")
+        origin = _finite_number(fmt.get("start_time"))
+        if origin is None:
+            origin = earliest
+        endpoint = max(end_by_stream.values())
+        duration = endpoint - origin
+        if not math.isfinite(duration) or duration <= 0:
+            raise RuntimeError(f"{recovery_hint} Invalid packet extent.")
+        fmt["duration"] = str(duration)
+        fmt["duration_probe"] = {
+            "method": "packet_endpoints", "origin_seconds": origin,
+            "end_seconds": endpoint, "packet_count": count,
+        }
+
+
 def run_ffprobe(video_path: str) -> dict:
     """Run ffprobe and return the parsed JSON response.
 
@@ -976,7 +1078,18 @@ def run_ffprobe(video_path: str) -> dict:
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(_failure_message("ffprobe", result))
-    return json.loads(result.stdout)
+    data = json.loads(result.stdout)
+    fmt = data.setdefault("format", {})
+    duration = _finite_number(fmt.get("duration"))
+    recorder_container = bool(
+        {"matroska", "webm"} & set(fmt.get("format_name", "").split(","))
+    )
+    if recorder_container and (duration is None or duration <= 0) and any(
+        stream.get("codec_type") in {"audio", "video"}
+        for stream in data.get("streams", [])
+    ):
+        _recover_packet_duration(video_path, fmt)
+    return data
 
 
 def build_last_video_packet_timestamp_command(
@@ -1471,30 +1584,157 @@ def build_extract_frame_command(
     overlay_plans: list[dict] | None = None,
     overlay_canvas: tuple[int, int] | None = None,
     highlight_ass: tuple[str, str] | None = None,
+    video_stream_index: int | None = None,
 ) -> list[str]:
     """Extract a frame, optionally burning plans selected at an exact instant.
 
     Overlay and ASS event times are local to the requested result instant;
     reset the decoded frame's PTS so fractional seeks also render at t=0.
-    The source seek remains independent of that overlay clock.
+    The source seek remains independent of that overlay clock. Automatic
+    selection is left to FFmpeg; capture its mapping so empty-seek recovery
+    can pin that exact input stream without reproducing version-specific rules.
     """
+    # Overlay graphs already bind the input stream. Capture empty-seek
+    # warnings for JPEG recovery without collecting source metadata at info.
     cmd = [
-        "ffmpeg", "-y", "-loglevel", "error",
+        "ffmpeg", "-y", "-loglevel",
+        "level+warning" if overlay_plans else (
+            "error" if video_stream_index is not None else "level+info"
+        ),
         "-ss", str(at_seconds),
         "-i", video_path,
     ]
     if overlay_plans:
         if overlay_canvas is None:
             raise ValueError("Frame overlays require the source canvas dimensions")
-        parts = ["[0:v]setpts=PTS-STARTPTS[vraw]"]
+        input_label = f"[0:{video_stream_index}]" if video_stream_index is not None else "[0:v]"
+        parts = [f"{input_label}setpts=PTS-STARTPTS[vraw]"]
         parts.extend(build_overlay_filter_parts(
             overlay_plans, overlay_canvas, LAYOUT_FRAME_DECODE_DURATION,
             input_label="vraw", output_label="outv", static=True,
             highlight_ass=highlight_ass,
         ))
         cmd += ["-filter_complex", ";".join(parts), "-map", "[outv]"]
+    elif video_stream_index is not None:
+        cmd += ["-map", f"0:{video_stream_index}"]
     cmd += ["-frames:v", "1", "-q:v", str(quality), output_path]
     return cmd
+
+
+class FrameNotProducedError(RuntimeError):
+    """A successful encoder invocation did not deliver a usable frame."""
+
+
+_FRAME_PROBE_PACKET_LIMIT = 10_000
+_FRAME_PROBE_TIMEOUT = 30
+
+
+def _selected_frame_stream(stderr: str) -> int:
+    """Read the actual automatic video mapping from the initial extraction.
+
+    The image output has a single output stream. If FFmpeg's trace cannot
+    identify it unambiguously, fail closed instead of using another stream.
+    """
+    indexes = set(re.findall(
+        r"^\[info\]\s+Stream #0:(\d+) -> #0:0\b", stderr, re.MULTILINE,
+    ))
+    if len(indexes) != 1:
+        raise FrameNotProducedError("Could not identify the video stream selected for extraction.")
+    return int(indexes.pop())
+
+
+def _preceding_frame_seek(
+    video_path: str, at_seconds: float, *, video_stream: str = "v:0",
+) -> float:
+    """Find a decoded presentation timestamp, not a nominal-FPS estimate.
+
+    Only used after an empty seek. Start at the preceding keyframe and reject
+    incomplete scans so a packet budget cannot masquerade as the last frame.
+    ffprobe uses absolute PTS; FFmpeg input seeks use time relative to start.
+    """
+    try:
+        metadata = run_ffprobe(video_path)
+    except (RuntimeError, OSError, json.JSONDecodeError) as exc:
+        raise FrameNotProducedError(f"Could not read frame-recovery timing: {exc}") from exc
+    fmt = metadata.get("format", {})
+    try:
+        origin = float(fmt["start_time"])
+        duration = float(fmt["duration"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise FrameNotProducedError("Source timing is unavailable for frame recovery.") from exc
+    if not all(math.isfinite(value) for value in (origin, duration, at_seconds)):
+        raise FrameNotProducedError("Source timing is invalid for frame recovery.")
+    if not 0 <= at_seconds < duration:
+        raise FrameNotProducedError("The requested frame is outside the source duration.")
+    target = origin + at_seconds
+    command = [
+        "ffprobe", "-v", "error", "-select_streams", video_stream,
+        "-read_intervals", f"{_audio_number(target)}%+#{_FRAME_PROBE_PACKET_LIMIT + 1}",
+        "-show_frames", "-count_packets", "-show_entries",
+        "frame=best_effort_timestamp_time:stream=nb_read_packets", "-of", "json",
+        video_path,
+    ]
+    try:
+        result = subprocess.run(
+            command, capture_output=True, text=True, timeout=_FRAME_PROBE_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise FrameNotProducedError("Frame recovery exceeded its 30-second scan budget.") from exc
+    if result.returncode != 0 or result.stderr.strip():
+        raise FrameNotProducedError(_failure_message("ffprobe", result))
+    try:
+        data = json.loads(result.stdout)
+        count = int(data["streams"][0]["nb_read_packets"])
+        if not 0 < count <= _FRAME_PROBE_PACKET_LIMIT:
+            raise FrameNotProducedError("Frame recovery exceeded its packet scan budget.")
+        timestamps = [
+            float(frame["best_effort_timestamp_time"]) for frame in data["frames"]
+        ]
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        raise FrameNotProducedError("No complete frame-timing evidence was available.") from exc
+    if not timestamps or not all(math.isfinite(pts) for pts in timestamps):
+        raise FrameNotProducedError("Decoded frame timing was incomplete or invalid.")
+    eligible = [pts for pts in timestamps if origin <= pts <= target]
+    if not eligible:
+        raise FrameNotProducedError("No preceding displayed frame was found.")
+    seek = max(eligible) - origin
+    if seek >= at_seconds:
+        raise FrameNotProducedError("The requested frame could not be produced.")
+    return seek
+
+
+@contextmanager
+def _preserve_frame_output(output_path: str):
+    """Keep an old proof out of empty-output detection; restore it on failure."""
+    backup = None
+    if os.path.isfile(output_path):
+        fd, backup = tempfile.mkstemp(
+            prefix=".moviestar-frame-", dir=os.path.dirname(os.path.abspath(output_path)),
+        )
+        os.close(fd)
+        try:
+            os.replace(output_path, backup)
+        except OSError:
+            os.remove(backup)
+            raise
+    succeeded = False
+    try:
+        if backup is not None:
+            # FFmpeg normally preserves permissions when truncating an existing
+            # output. Keep that property even though its old bytes are backed up.
+            fd = os.open(output_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            os.close(fd)
+            os.chmod(output_path, os.stat(backup).st_mode & 0o777)
+        yield
+        succeeded = True
+    finally:
+        if not succeeded and os.path.isfile(output_path):
+            os.remove(output_path)
+        if backup is not None:
+            if succeeded:
+                os.remove(backup)
+            else:
+                os.replace(backup, output_path)
 
 
 def extract_frame(
@@ -1527,10 +1767,48 @@ def extract_frame(
         overlay_plans=overlay_plans, overlay_canvas=overlay_canvas,
         highlight_ass=highlight_ass,
     )
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0 or _has_bitmap_glyph_error(result.stderr):
-        raise RuntimeError(_failure_message("ffmpeg", result, overlay_plans=overlay_plans))
-    return cmd
+    with _preserve_frame_output(output_path):
+        for attempt in range(2):
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            # Some FFmpeg builds fail MJPEG encoder initialization after an
+            # empty seek instead of returning success without a file. Permit
+            # only that first empty JPEG attempt to reach the existing bounded
+            # presentation-time recovery; all other encoder errors still fail.
+            empty_jpeg_seek = (
+                attempt == 0 and result.returncode != 0
+                and Path(output_path).suffix.lower() in (".jpg", ".jpeg")
+                and not (os.path.isfile(output_path) and os.path.getsize(output_path) > 0)
+                and re.search(
+                    r"^\[(?:vf|fc)[^\]]*\](?: \[vo[^\]]*\])? "
+                    r"\[warning\] No filtered frames for output stream\b",
+                    result.stderr, re.MULTILINE,
+                ) is not None
+            )
+            if (result.returncode != 0 and not empty_jpeg_seek) or _has_bitmap_glyph_error(result.stderr):
+                # Captured info includes private input metadata; retain only
+                # diagnostic levels in an error receipt, never the info trace.
+                if "[info]" in result.stderr:
+                    diagnostics = []
+                    for line in result.stderr.splitlines():
+                        level = re.search(r"\[(info|warning|error|fatal|panic)\]", line)
+                        if level and level.group(1) != "info":
+                            diagnostics.append(line)
+                    result.stderr = "\n".join(diagnostics)
+                raise RuntimeError(_failure_message("ffmpeg", result, overlay_plans=overlay_plans))
+            if os.path.isfile(output_path) and os.path.getsize(output_path) > 0:
+                return cmd
+            if attempt == 0:
+                # Overlay graphs explicitly bind [0:v]; otherwise preserve
+                # the stream FFmpeg actually auto-selected on the first seek.
+                stream_index = None if overlay_plans else _selected_frame_stream(result.stderr)
+                selector = "v:0" if stream_index is None else str(stream_index)
+                seek = _preceding_frame_seek(video_path, at_seconds, video_stream=selector)
+                cmd = build_extract_frame_command(
+                    video_path, seek, output_path, quality,
+                    overlay_plans=overlay_plans, overlay_canvas=overlay_canvas,
+                    highlight_ass=highlight_ass, video_stream_index=stream_index,
+                )
+        raise FrameNotProducedError(f"FFmpeg produced no frame at {at_seconds}s.")
 
 
 def build_platform_preview_command(
@@ -1797,6 +2075,9 @@ def build_extract_frames_command(
     quality: int = 5,
     start_time: float | None = None,
     duration: float | None = None,
+    *,
+    source_timestamps: bool = False,
+    sample_indices: list[int] | None = None,
 ) -> list[str]:
     """Return the argv used to extract frames at a fixed interval.
 
@@ -1806,15 +2087,51 @@ def build_extract_frames_command(
     Optional start_time / duration scope extraction to a range:
       -ss <start_time>   placed before -i for fast seek
       -t <duration>      placed after -i
+
+    source_timestamps enables inspect's held-frame sampling and input-PTS
+    trace. It preserves keyframe preroll and bounds output by scheduled count.
     """
-    cmd: list[str] = ["ffmpeg", "-y", "-loglevel", "error"]
+    if sample_indices is not None:
+        if (not source_timestamps or duration is None or not sample_indices
+                or any(type(i) is not int or i < 0 for i in sample_indices)
+                or sample_indices != sorted(set(sample_indices))
+                or sample_indices[-1] >= math.ceil(round(duration / interval, 9))):
+            raise ValueError("Invalid prepared-frame sample indices")
+    cmd: list[str] = ["ffmpeg", "-y", "-loglevel", "info" if source_timestamps else "error"]
+    if source_timestamps:
+        cmd += ["-hide_banner", "-nostats", "-copyts", "-start_at_zero"]
     if start_time is not None:
+        if source_timestamps:
+            # Keep keyframe preroll: a VFR frame before the requested start
+            # may still be on screen at the first requested sample.
+            cmd += ["-noaccurate_seek"]
         cmd += ["-ss", str(start_time)]
     cmd += ["-i", video_path]
     if duration is not None:
-        cmd += ["-t", str(duration)]
+        if source_timestamps:
+            # -t is quantized to the output frame time base; an unaligned
+            # endpoint can otherwise drop the final in-range grid sample.
+            count = math.ceil(round(duration / interval, 9))
+            cmd += ["-t", str(count * interval), "-frames:v", str(count if sample_indices is None else len(sample_indices))]
+        else:
+            cmd += ["-t", str(duration)]
+    vf = f"fps=1/{interval},scale={scale_width}:-1"
+    if source_timestamps:
+        # Round incoming timestamps upward onto the output grid. A sample
+        # therefore uses the last source frame at/before that instant, rather
+        # than advancing by half an interval (fps's default nearest rounding).
+        # Record input PTS before fps replaces it with its synthetic grid.
+        vf = (
+            f"showinfo@source=checksum=0,setpts=ceil(PTS-{start_time or 0}/TB),"
+            f"showinfo@sample=checksum=0,fps=1/{interval}:start_time=0:"
+            f"round=up:eof_action=pass,showinfo@output=checksum=0,scale={scale_width}:-1"
+        )
+        if sample_indices is not None:
+            selection = "+".join(f"eq(n,{i})" for i in sample_indices)
+            vf = vf.replace("showinfo@output", f"select='{selection}',showinfo@output")
+        cmd += ["-map", "0:v:0", "-fps_mode", "passthrough"]
     cmd += [
-        "-vf", f"fps=1/{interval},scale={scale_width}:-1",
+        "-vf", vf,
         "-q:v", str(quality),
         "-threads", "1",
         "-strict", "unofficial",
@@ -1870,6 +2187,111 @@ def extract_frames(
 
     paths = sorted(output_dir.glob(f"{source_id}_*.jpg"))
     return paths, cmd
+
+
+def _inspection_timestamps(trace, label: str) -> tuple[array, Fraction]:
+    """Read one clock into compact native PTS records, without retaining logs."""
+    trace.seek(0)
+    pts = array("q")
+    bases = set()
+    try:
+        for line in trace:
+            if f"[showinfo@{label} " not in line:
+                continue
+            base = re.search(r"config in time_base:\s*(\d+/\d+)", line)
+            if base:
+                bases.add(base.group(1))
+            frame = re.search(r"\bn:\s*(\d+)\s+pts:\s*(\S+)\s+pts_time:", line)
+            if frame:
+                n, value = int(frame[1]), int(frame[2])
+                if n != len(pts) or (pts and value < pts[-1]):
+                    raise ValueError("Invalid presentation order")
+                pts.append(value)
+        if len(bases) != 1 or not pts:
+            raise ValueError("Missing timestamp clock")
+        time_base = Fraction(bases.pop())
+        if time_base <= 0:
+            raise ValueError("Invalid time base")
+    except (ValueError, ZeroDivisionError, OverflowError) as exc:
+        raise RuntimeError("Could not establish source timestamps for inspection frames") from exc
+    return pts, time_base
+
+
+def extract_inspection_frames(
+    video_path: str,
+    interval: float,
+    output_dir: Path,
+    source_id: str,
+    scale_width: int,
+    start_time: float,
+    duration: float,
+    *,
+    sample_indices: list[int] | None = None,
+    decode_seek_time: float | None = None,
+) -> tuple[list[Path], list[float], list[str]]:
+    """Sample held source frames and retain millisecond source presentation times.
+
+    One seek/decode serves the whole window. Traces record source PTS
+    (relative to container start), rebased input PTS and actual fps output PTS.
+    This avoids reconstructing timestamps from either a quantized seek offset
+    or the requested decimal interval.
+    Optional sample_indices selects a bounded subset of that same output grid,
+    before JPEG encoding; timestamps are still observed after selection.
+    decode_seek_time can fast-seek input before a selected global-grid sample
+    without rebasing that grid. Retained keyframe preroll still supplies held
+    frames. Cloud skim uses one bounded seek per selected image.
+    No nominal frame rate or output-sequence position is treated as source PTS.
+    """
+    if not os.path.exists(video_path):
+        raise FileNotFoundError(f"File not found: {video_path}")
+    check_ffmpeg_available()
+    cmd = build_extract_frames_command(
+        video_path, interval, str(output_dir / f"{source_id}_%06d.jpg"),
+        scale_width, start_time=start_time, duration=duration,
+        source_timestamps=True, sample_indices=sample_indices,
+    )
+    if decode_seek_time is not None:
+        if (start_time != 0 or sample_indices is None or not math.isfinite(decode_seek_time)
+                or not 0 <= decode_seek_time <= sample_indices[0] * interval):
+            raise ValueError("Invalid prepared-frame decode seek")
+        cmd[cmd.index("-ss") + 1] = str(decode_seek_time)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    # Load can cover hours, while inspect covers a small window. Spool verbose
+    # FFmpeg traces to a temporary file rather than keeping every log line and
+    # a Fraction object per decoded input frame in memory. Only compact native
+    # PTS records and selected output times survive parsing.
+    with tempfile.TemporaryFile(mode="w+t", encoding="utf-8", errors="replace") as trace:
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=trace, text=True)
+        if result.stderr:  # Also supports injected subprocess results in tests.
+            trace.write(result.stderr)
+        if result.returncode != 0:
+            trace.seek(0, os.SEEK_END)
+            trace.seek(max(0, trace.tell() - 65536))
+            failed = subprocess.CompletedProcess(cmd, result.returncode, result.stdout, trace.read())
+            raise RuntimeError(_failure_message("ffmpeg", failed))
+        # Shared load directories can contain IDs such as camera_close or
+        # camera_2 alongside camera. Only this source's numeric sequence is
+        # an output of this decode; foreign frames must not acquire its PTS.
+        pattern = re.compile(re.escape(source_id) + r"_([0-9]+)\.jpg")
+        paths = sorted(
+            (path for path in output_dir.iterdir()
+             if path.is_file() and pattern.fullmatch(path.name)),
+            key=lambda path: int(path.stem[len(source_id) + 1:]),
+        )
+        # Audio-only container tails may have no video images in the window.
+        if not paths:
+            return [], [], cmd
+        source_pts, source_base = _inspection_timestamps(trace, "source")
+        decoded_pts, decoded_base = _inspection_timestamps(trace, "sample")
+        output_pts, output_base = _inspection_timestamps(trace, "output")
+        if len(source_pts) != len(decoded_pts) or len(output_pts) < len(paths):
+            raise RuntimeError("Could not establish source timestamps for inspection frames")
+        times = []
+        for pts in output_pts[:len(paths)]:
+            tick = pts * output_base / decoded_base
+            selected = max(0, bisect.bisect_right(decoded_pts, tick) - 1)
+            times.append(round(float(source_pts[selected] * source_base), 3))
+        return paths, times, cmd
 
 
 def build_storyboard_frame_command(
@@ -1971,7 +2393,9 @@ def build_storyboard_padding_tile_command(
     cmd: list[str] = [
         "ffmpeg", "-y", "-loglevel", "error",
         "-f", "lavfi",
-        "-i", f"color=c=0x262626:size={width}x{height}",
+        # Legacy color sources can round odd dimensions down. Restore the
+        # exact tile size before encoding so the mosaic graph never resets.
+        "-i", f"color=c=0x262626:size={width}x{height},scale={width}:{height}",
         "-frames:v", "1",
         # Match the video tiles' full-range JPEG pixel format. lavfi
         # color is limited-range yuv420p; a mid-sequence pixel-format

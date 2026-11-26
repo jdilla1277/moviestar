@@ -117,20 +117,29 @@ def build_activity_decode_command(
 ) -> list[str]:
     """Build a raw-grayscale decode that preserves held VFR frames.
 
+    Explicitly select the first video stream, matching the timestamp probe
+    and source metadata even when a different track is marked default.
     Seeking starts at the last decoded frame at/before the requested sample.
     ``fps`` then carries that frame across a VFR timestamp void. Starting the
     fps grid at ``sample_offset_seconds`` makes the first raw frame correspond
     exactly to the requested evidence clock rather than the preceding packet.
     """
+    # Preserve a final sample before the real EOF even when EOF falls between
+    # grid points. Rounding EOF down would drop that sample and fail the
+    # decoder's exact-frame-count check for otherwise valid whole-file runs.
     fps_filter = (
         f"fps=fps=1/{_number(interval)}:"
-        f"start_time={_number(sample_offset_seconds)}:round=down"
+        f"start_time={_number(sample_offset_seconds)}:round=down:eof_action=pass"
     )
     return [
         "ffmpeg", "-v", "error",
         "-ss", _number(seek_seconds),
         "-i", video_path,
-        "-vf", f"{fps_filter},scale={width}:{height}:flags=area,format=gray",
+        "-map", "0:v:0",
+        # Pad before resampling so an audio-only tail uses the actual final
+        # decoded frame, rather than repeating an earlier grid sample. The
+        # explicit output frame count bounds the cloned tail.
+        "-vf", f"tpad=stop_mode=clone:stop=-1,{fps_filter},scale={width}:{height}:flags=area,format=gray",
         "-frames:v", str(frame_count),
         "-f", "rawvideo", "-pix_fmt", "gray", "-",
     ]

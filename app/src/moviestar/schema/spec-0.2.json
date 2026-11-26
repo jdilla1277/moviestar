@@ -10,6 +10,44 @@
       "type": "string",
       "const": "0.2"
     },
+    "provenance": {
+      "description": "Optional portable Cloud origin. Local changes remain a draft based on this revision. Not authorization; no effect on rendering or command undo.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_id",
+        "base_revision_id",
+        "base_document_sha256",
+        "engine_version",
+        "contract_version"
+      ],
+      "properties": {
+        "project_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "base_revision_id": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "base_document_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "engine_version": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "contract_version": {
+          "const": "cloud-editing-v1"
+        }
+      }
+    },
     "sources": {
       "type": "array",
       "minItems": 1,

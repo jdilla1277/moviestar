@@ -13,6 +13,8 @@ AI agents. Start with the path that matches your task:
   what it contains, and send it to the Moviestar team.
 - [Agent guide](agent-guide.md) — understand project state, time spaces,
   structured output, composition, and verification.
+- [Transcription and repair](../plugins/moviestar/skills/moviestar/references/transcription.md)
+  — choose a local model, correct names, repair one passage, or import timed captions.
 - [Review exports](review-exports.md) — create a 720p rendition while preserving
   authored composition and typography.
 - [Review evidence](review-evidence.md) — keep artifact-bound technical, source,
@@ -23,6 +25,10 @@ AI agents. Start with the path that matches your task:
   Codex plugin or copy the portable skill to another compatible agent.
 - [Skill validation](skill-validation.md) — review the scaffold, installation,
   and source-blind editing evidence.
+- [CI media setup](ci-media-setup.md) — Ubuntu FFmpeg package provenance,
+  verified download caching, setup deadlines and failure-path checks.
+- [v0.8.4 release notes](releases/v0.8.4.md) — local editing fixes, expanded
+  Cloud preview inspection and asset workflows, account-linked feedback and agent guidance.
 - [v0.8.2 release notes](releases/v0.8.2.md) — audio timing, scene exports,
   font-aware wrapping, and canvas undo fixes.
 - [v0.8.1 release notes](releases/v0.8.1.md) — audio/font fixes, review exports
@@ -44,7 +50,21 @@ The CLI's built-in help is the authoritative command reference. Run
 
 - [Accounts from the CLI](accounts.md) — terminal email verification, signup, age and terms consent, and revocable installation approval.
 - [Personal API keys and remote MCP](api-keys.md) — create a key on the website and authenticate a developer-controlled MCP client.
+- [Account usage and Activity](account-usage.md) — storage, monthly Cloud allowance,
+  task history and support links through CLI, HTTP and hosted MCP.
+- [Account assets](account-assets.md) — upload private video, audio, image and
+  caption/transcript originals with your approved CLI installation.
+- [Cloud asset storyboards](cloud-storyboard.md) — labeled contact sheets and durable private image retrieval.
+- [Cloud visual activity](cloud-activity.md) — measure visual change and reopen timestamped evidence across API, CLI and hosted MCP.
 - [Cloud asset inspection](cloud-probe.md) — probe remote media metadata and recover durable jobs.
+- [Detailed Cloud video inspection](cloud-inspect.md) — extract and reopen private timestamped frames for a short section.
 - [Personal Cloud projects](cloud-projects.md) — explicitly create, list, and reopen owned projects through an approved installation.
 
 - [Sharing and download](sharing.md) — private uploads, unlisted handoffs, retries, link management, and recipient downloads.
+- [Feedback and account contact](feedback.md) — user-approved reports, account
+  linkage, deliberately supplied contact, and anonymous submission.
+
+- [Cloud watch excerpts](cloud-watch.md) — request private bounded video/audio, reopen durable jobs, and retrieve through the CLI.
+- [Cloud visual skims](cloud-skim.md) — timestamped private thumbnails from a ready Cloud video.
+
+- [Initial Cloud edit checks](cloud-edits.md) — read an unsaved timeline and validate a trim without saving, when advertised by the service.

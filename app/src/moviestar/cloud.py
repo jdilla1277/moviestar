@@ -44,6 +44,24 @@ def _fail(command: str, status: str, hint: str, **fields) -> None:
 
 
 def _connection(command: str) -> tuple[str, str]:
+    # Explicit personal-key mode is isolated from installation/keyring state.
+    # Require BOTH key and destination; never infer Production or fall back to
+    # an installation/account when an explicit key is missing or malformed.
+    if 'MOVIESTAR_API_KEY' in os.environ or 'MOVIESTAR_CLOUD_URL' in os.environ:
+        key = os.environ.get('MOVIESTAR_API_KEY', '')
+        if not re.fullmatch(r'mvsk_[A-Za-z0-9_-]{43}', key):
+            _fail(command, 'credential_invalid', 'Set an active personal MOVIESTAR_API_KEY for this environment; no installation fallback is used.')
+        url = os.environ.get('MOVIESTAR_CLOUD_URL', '')
+        try:
+            parsed = urlsplit(url)
+            valid = (not _service_url_error(url) and not re.search(r'[\x00-\x20\x7f]',url)
+                     and parsed.path.rstrip('/') == '/api/v1/account/cloud' and not parsed.query)
+            parsed.port
+        except ValueError:
+            valid = False
+        if not valid:
+            _fail(command, 'invalid_configuration', 'Set MOVIESTAR_CLOUD_URL to the exact HTTPS service base ending /api/v1/account/cloud. API-key mode never chooses a service implicitly.')
+        return parsed._replace(path='/api/v1/account/cloud').geturl(), key
     state = _read_state()
     recorded = state.get("installation_url")
     if not (isinstance(recorded, str) and recorded) and not os.environ.get("MOVIESTAR_ACCOUNT_INSTALLATION_URL"):
@@ -64,7 +82,7 @@ def _connection(command: str) -> tuple[str, str]:
     return f"{parsed.scheme}://{parsed.netloc}/api/v1/account/cloud", credential
 
 
-def _request(url: str, credential: str, *, payload=None, key=None, method=None) -> tuple[int, dict]:
+def _request(url: str, credential: str, *, payload=None, key=None, method=None, max_response_bytes=1_048_576) -> tuple[int, dict]:
     request = Request(url, method=method or ("GET" if payload is None else "POST"),
         data=None if payload is None else json.dumps(payload).encode("utf-8"),
         headers={"Authorization": f"Bearer {credential}", "x-moviestar-client": _CLIENT_MARKER,
@@ -76,8 +94,8 @@ def _request(url: str, credential: str, *, payload=None, key=None, method=None) 
         except HTTPError as failure:
             response = failure
         with response:
-            status, raw = response.status, response.read(1_048_577)
-        if len(raw) > 1_048_576:
+            status, raw = response.status, response.read(max_response_bytes+1)
+        if len(raw) > max_response_bytes:
             return status, {}
         if status == 204:
             return status, {}
@@ -114,7 +132,7 @@ def _capabilities(command: str, endpoint: str, credential: str) -> dict:
         _fail(command, "invalid_response", "The service returned incomplete Cloud capabilities. Retry later.")
     fields = ("contract_version", "operations", "scopes", "project_access", "limits", "source_uploads_enabled",
               "source_imports_enabled", "media_processing_enabled", "saved_edits_enabled", "transcript_imports_enabled",
-              "edit_formats", "source_formats", "transcript_formats", "retention", "project_access_scope", "project_sharing", "project_assets")
+              "edit_formats", "source_formats", "transcript_formats", "retention", "project_access_scope", "project_sharing", "received_invitations", "recipient_leave", "asset_sharing", "project_assets", "asset_activity", "editing", "rendering")
     return {name: body[name] for name in fields if name in body}
 
 
@@ -139,7 +157,7 @@ def _project(raw: object) -> dict | None:
     parsed = {name: raw[name] for name in ("id", "title", "state", "owner_id", "current_revision")}
     if "access" in raw:
         access = raw["access"]
-        if not isinstance(access, dict) or access.get("role") not in ("owner", "viewer"):
+        if not isinstance(access, dict) or access.get("role") not in ("owner", "viewer", "editor"):
             return None
         parsed["access"] = {"role": access["role"]}
     return parsed
@@ -150,19 +168,25 @@ def _sharing_supported(capabilities: dict) -> bool:
     return (isinstance(sharing, dict) and sharing.get("contract_version") == "recipient-projects-v1"
             and sharing.get("discovery_path") == "/api/v1/account/cloud/shared-projects"
             and sharing.get("detail_path") == "/api/v1/account/cloud/projects/:id"
-            and sharing.get("roles") == {"viewer": ["projects:read"]}
+            and isinstance(sharing.get("roles"), dict) and sharing["roles"].get("viewer") == ["projects:read"]
             and sharing.get("permissions_are_resource_specific") is True
             and sharing.get("account_scopes_do_not_grant_collaborator_writes") is True)
 
 
 @click.group()
 def cloud():
-    """Use personal Cloud projects and private guides with this approved installation.
+    """Work with Cloud projects, account assets and private developer guides.
 
-    Ordinary local commands stay local. These commands create/read Cloud
-    metadata, rename projects, manage existing asset references and probe Cloud assets.
-    They do not select a local workspace, upload media, or render.
-    Connect the installation with 'moviestar account connect' first.
+    Use an approved installation or an explicit personal API key to manage
+    remote metadata, rename projects,
+    manage asset references, probe Cloud assets, inspect ready video frames, read guides, or upload a private
+    original with 'cloud assets create'. Ordinary local commands stay local;
+    Cloud commands do not select a local workspace. Use 'cloud renders' for
+    explicitly requested saved-version previews and full-quality videos when
+    the service admits them.
+    Connect with 'moviestar account connect', or set both MOVIESTAR_API_KEY and
+    MOVIESTAR_CLOUD_URL (the exact HTTPS base ending /api/v1/account/cloud).
+    Explicit key mode never falls back to installation credentials.
     """
 
 
@@ -236,7 +260,7 @@ def create_project(title: str, idempotency_key: str | None):
 @click.option("--cursor", help="Use next_cursor from the previous page unchanged.")
 @click.option("--shared", is_flag=True, help="List accepted shared projects instead of owned projects.")
 def list_projects(limit: int, cursor: str | None, shared: bool):
-    """Read one owned page, or --shared for accepted viewer invitations.
+    """Read one owned page, or --shared for accepted viewer/editor invitations.
 
     Call both collections to find all accessible projects. Keep pagination
     cursors with their original collection. Missing media fields are
@@ -264,13 +288,13 @@ def list_projects(limit: int, cursor: str | None, shared: bool):
                 break
             if shared:
                 handle = item.get("shared_by")
-                if (body.get("contract_version") != "recipient-projects-v1" or item.get("role") != "viewer"
-                        or item.get("permissions") != ["projects:read"] or not isinstance(handle, str)
+                if (body.get("contract_version") != "recipient-projects-v1" or item.get("role") not in ("viewer", "editor")
+                        or item.get("permissions") != (["projects:read", "projects:rename", "references:attach", "references:detach"] if item.get("role") == "editor" else ["projects:read"]) or not isinstance(handle, str)
                         or not re.fullmatch(r"[a-z0-9][a-z0-9_]{2,29}", handle)):
                     parsed = None
                     break
                 project["shared_by"] = handle
-            project["access"] = {"role": "viewer" if shared else "owner"}
+            project["access"] = {"role": item["role"] if shared else "owner"}
             parsed.append(project)
     if shared and body.get("contract_version") != "recipient-projects-v1":
         parsed = None
@@ -336,7 +360,7 @@ def rename_project(project_id: str, title: str, expected_title: str | None):
         _failure(command, status, body, rename_outcome="rejected", **fields)
     project = _project(body.get("project"))
     if (status != 200 or body.get("status") != "renamed" or type(body.get("changed")) is not bool or project is None
-            or project["id"].lower() != project_id.lower() or project["title"] != title or project.get("access") != {"role": "owner"}):
+            or project["id"].lower() != project_id.lower() or project["title"] != title or project.get("access", {}).get("role") not in ("owner", "editor")):
         _fail(command, "rename_unconfirmed", "The rename may have succeeded. Inspect the project, or retry with the exact returned expected_title using --expected-title. No automatic retry was sent.", rename_outcome="unknown", **fields)
     click.echo(json.dumps({"command": command, "status": "renamed", "changed": body["changed"], "project": project}, indent=2))
 
@@ -408,3 +432,39 @@ def show_docs(page: str, json_output: bool, markdown: bool):
 
 from moviestar.cloud_probe import register_probe
 register_probe(cloud)
+from moviestar.cloud_inspect import register_inspect_commands
+register_inspect_commands(cloud)
+
+from moviestar.cloud_project_delete import register_project_delete
+register_project_delete(projects)
+
+from moviestar.cloud_screenshot import register_screenshot_commands
+register_screenshot_commands(cloud)
+
+from moviestar.cloud_watch import register_watch_commands
+register_watch_commands(cloud)
+
+from moviestar.cloud_project_download import register_project_download
+register_project_download(projects)
+
+from moviestar.cloud_storyboard import register_storyboard_commands
+register_storyboard_commands(cloud)
+
+from moviestar.cloud_skim import register_skim_commands
+register_skim_commands(cloud)
+from moviestar.cloud_activity import register_activity
+register_activity(cloud)
+
+from moviestar.cloud_project_sharing import register_project_sharing
+register_project_sharing(projects)
+
+from moviestar.cloud_edits import register_edits
+register_edits(cloud)
+from moviestar.cloud_invitations import register_invitations
+register_invitations(cloud)
+
+from moviestar.cloud_leave import register_leave
+register_leave(cloud)
+
+from moviestar.cloud_renders import register_renders
+register_renders(cloud)

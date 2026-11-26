@@ -90,3 +90,64 @@ class TestRoundtrip:
     def test_format_then_parse(self, seconds):
         formatted = format_timecode(seconds)
         assert parse_timecode(formatted["text"]) == pytest.approx(seconds, abs=0.001)
+
+
+@pytest.mark.parametrize('boundary', [60, 3600, 86400])
+@pytest.mark.parametrize('offset', [-.0006, -.0005, -.0004, 0, .0004, .0006])
+def test_rounding_carries_before_splitting_clock(boundary, offset):
+    seconds = boundary + offset
+    result = format_timecode(seconds, fps=30000 / 1001)
+    assert result['seconds'] == round(seconds, 3)
+    assert parse_timecode(result['text']) == result['seconds']
+    hours, minutes, seconds_text = result['text'].split(':')
+    assert 0 <= int(minutes) < 60
+    assert 0 <= float(seconds_text) < 60
+    assert result['frame'] == round(seconds * (30000 / 1001))
+
+
+@pytest.mark.parametrize('seconds,text', [
+    (59.9996, '0:01:00.000'), (3599.9996, '1:00:00.000'),
+    (1.001, '0:00:01.001'), (59.9995, '0:00:59.999'),
+    (-.5, '-1:59:59.500'), (-3600.5, '-2:59:59.500'),
+    (-60.0004, '-1:59:00.000'), (-.0004, '0:00:00.000'),
+])
+def test_precision_and_existing_signed_hour_convention(seconds, text):
+    result = format_timecode(seconds)
+    assert result == {'text': text, 'seconds': round(seconds, 3)}
+    hours, minutes, secs = text.split(':')
+    assert int(hours)*3600 + int(minutes)*60 + float(secs) == pytest.approx(result['seconds'])
+
+
+def test_frame_index_uses_original_precision():
+    assert format_timecode(.0006, fps=10000) == {
+        'text': '0:00:00.001', 'seconds': .001, 'frame': 6,
+    }
+
+
+@pytest.mark.parametrize('seconds,text,compact', [
+    (59.9996, '0:01:00.000', '1:00'),
+    (3599.9996, '1:00:00.000', '1:00:00'),
+    (83.5, '0:01:23.500', '1:23.5'),
+])
+def test_authored_ranges_camera_motion_and_storyboard_share_carry(seconds, text, compact):
+    from moviestar.spec import empty_spec, append_trim
+    from moviestar.camera import _timecode as camera_timecode
+    from moviestar.motion import _timecode as motion_timecode
+    from moviestar.cli import _compact_timecode_label
+    spec = append_trim(empty_spec([{'id': 'a', 'path': 'a.mp4'}]), 'a', seconds, seconds+1, seconds+2)
+    assert spec['sources'][0]['operations'][0]['from'] == text
+    assert camera_timecode(seconds) == motion_timecode(seconds) == text
+    assert _compact_timecode_label(seconds) == compact
+    assert camera_timecode(-.5) == motion_timecode(-.5) == '0:00:00.000'
+
+
+@pytest.mark.parametrize('seconds,text', [(59.9996, '0:01:00.000'), (3599.9996, '1:00:00.000')])
+def test_probe_json_rounds_duration_before_splitting(monkeypatch, seconds, text):
+    import json
+    import importlib
+    from click.testing import CliRunner
+    module = importlib.import_module('moviestar.cli')
+    monkeypatch.setattr(module, 'run_ffprobe', lambda _: {'format': {'duration': str(seconds)}, 'streams': []})
+    result = CliRunner().invoke(module.cli, ['probe', 'synthetic.mp4'])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)['duration'] == {'text': text, 'seconds': round(seconds, 3)}

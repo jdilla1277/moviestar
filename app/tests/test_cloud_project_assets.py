@@ -101,3 +101,139 @@ def test_malformed_assets_are_not_presented_as_ready(remote, field, value):
     remote["asset"][field] = value
     result, body = invoke("projects", "assets", P)
     assert result.exit_code == 1 and body["status"] == "invalid_response"
+
+
+def test_shared_collection_is_explicit_and_preserves_access_provenance(remote, monkeypatch):
+    remote['cap']['shared_collection'] = 'accepted_project_assets'
+    previous = cloud._request
+    def request(url, credential, **kwargs):
+        status, body = previous(url, credential, **kwargs)
+        if 'collection=shared' in url:
+            body.update(collection='shared', items=[{**ASSET, 'shared_via': {'project_id': P, 'project_title': 'Shared project', 'reference_id': R, 'shared_by': 'alex'}}])
+        return status, body
+    monkeypatch.setattr(cloud, '_request', request)
+    result, body = invoke('assets', 'list', '--shared')
+    assert result.exit_code == 0, result.output
+    assert body['collection'] == 'shared'
+    assert body['items'][0]['shared_via']['project_id'] == P
+    assert 'collection=shared' in remote['calls'][-1][0]
+
+
+def test_old_service_does_not_silently_return_owned_assets_for_shared(remote):
+    result, body = invoke('assets', 'list', '--shared')
+    assert result.exit_code == 1 and body['status'] == 'unsupported_operation'
+    assert len(remote['calls']) == 1
+
+
+@pytest.mark.parametrize('change', ['missing_collection', 'missing_provenance', 'bad_reference', 'duplicate'])
+def test_shared_catalog_never_accepts_downgraded_or_malformed_rows(remote, monkeypatch, change):
+    remote['cap']['shared_collection'] = 'accepted_project_assets'
+    previous = cloud._request
+    def request(url, credential, **kwargs):
+        status, body = previous(url, credential, **kwargs)
+        if 'collection=shared' in url:
+            item = {**ASSET, 'shared_via': {'project_id': P, 'project_title': 'Shared', 'reference_id': R, 'shared_by': 'alex'}}
+            body.update(collection='shared', items=[item])
+            if change == 'missing_collection':
+                body.pop('collection')
+            elif change == 'missing_provenance':
+                item.pop('shared_via')
+            elif change == 'bad_reference':
+                item['shared_via']['reference_id'] = 'bad'
+            else:
+                body['items'].append(item)
+        return status, body
+    monkeypatch.setattr(cloud, '_request', request)
+    result, body = invoke('assets', 'list', '--shared')
+    assert result.exit_code == 1 and body['status'] == 'invalid_response'
+
+
+def test_rename_asset_preserves_original_and_sends_previous_name(remote, monkeypatch):
+    remote['cap']['operations'] = [*remote['cap']['operations'], 'assets:rename']
+    previous = cloud._request
+    def request(url, credential, **kwargs):
+        if kwargs.get('method') == 'PATCH':
+            remote['calls'].append((url, kwargs))
+            return 200, {'status': 'renamed', 'changed': True, 'asset': {**ASSET, 'display_name': 'Opening'}}
+        return previous(url, credential, **kwargs)
+    monkeypatch.setattr(cloud, '_request', request)
+    result, body = invoke('assets', 'rename', A, 'Opening', '--expected-name', 'photo.png')
+    assert result.exit_code == 0, result.output
+    assert body['asset']['filename'] == 'photo.png' and body['asset']['display_name'] == 'Opening'
+    assert remote['calls'][-1] == (f'https://example.invalid/api/v1/account/cloud/assets/{A}', {'method': 'PATCH', 'payload': {'display_name': 'Opening', 'expected_display_name': 'photo.png'}})
+
+
+def test_rename_asset_on_old_services_fails_before_mutation(remote):
+    result, body = invoke('assets', 'rename', A, 'Opening')
+    assert result.exit_code == 1 and body['status'] == 'unsupported_operation'
+    assert len(remote['calls']) == 1
+
+
+def test_rename_reads_the_owned_name_when_no_compare_value_is_supplied(remote, monkeypatch):
+    remote['cap']['operations'] = [*remote['cap']['operations'], 'assets:rename']
+    previous = cloud._request
+    def request(url, credential, **kwargs):
+        if url.endswith(f'/api/v1/assets/{A}'):
+            remote['calls'].append((url, kwargs))
+            return 200, {'asset': {**ASSET, 'display_name': 'Previous'}}
+        if kwargs.get('method') == 'PATCH':
+            remote['calls'].append((url, kwargs))
+            return 200, {'status': 'renamed', 'changed': True, 'asset': {**ASSET, 'display_name': 'Opening'}}
+        return previous(url, credential, **kwargs)
+    monkeypatch.setattr(cloud, '_request', request)
+    result, body = invoke('assets', 'rename', A, 'Opening')
+    assert result.exit_code == 0, result.output
+    assert remote['calls'][-1][1]['payload']['expected_display_name'] == 'Previous'
+    assert any(f'/api/v1/assets/{A}' in url for url, _ in remote['calls'])
+
+
+@pytest.mark.parametrize('status,response,expected', [(0, {}, 'rename_unconfirmed'), (409, {'error': {'code': 'asset_changed'}}, 'asset_changed')])
+def test_rename_unknown_or_stale_outcomes_preserve_the_compare_value_without_retry(remote, monkeypatch, status, response, expected):
+    remote['cap']['operations'] = [*remote['cap']['operations'], 'assets:rename']
+    previous = cloud._request
+    def request(url, credential, **kwargs):
+        if kwargs.get('method') == 'PATCH':
+            remote['calls'].append((url, kwargs))
+            return status, response
+        return previous(url, credential, **kwargs)
+    monkeypatch.setattr(cloud, '_request', request)
+    result, body = invoke('assets', 'rename', A, 'Opening', '--expected-name', 'Previous')
+    assert result.exit_code == 1 and body['status'] == expected
+    assert body['expected_display_name'] == 'Previous'
+    assert len([kw for _, kw in remote['calls'] if kw.get('method') == 'PATCH']) == 1
+
+
+@pytest.mark.parametrize('name', ['', ' padded ', 'a\nb', 'a' * 241, '\u202Ehidden'])
+def test_invalid_asset_display_names_fail_before_auth_or_network(remote, name):
+    result, body = invoke('assets', 'rename', A, name)
+    assert result.exit_code == 1 and body['status'] == 'invalid_request'
+    assert remote['calls'] == []
+
+def test_direct_asset_shared_collection_preserves_nonproject_provenance(remote, monkeypatch):
+    remote['cap']['shared_collection'] = 'accepted_project_assets'
+    original = cloud._request
+    def request(url, credential, **kwargs):
+        if 'collection=shared' in url:
+            return 200, {'contract_version': CONTRACT, 'collection': 'shared', 'items': [{**ASSET, 'shared_via': {'kind': 'asset', 'invitation_id': R, 'shared_by': 'alex'}}], 'next_cursor': None}
+        return original(url, credential, **kwargs)
+    monkeypatch.setattr(cloud, '_request', request)
+    result, body = invoke('assets', 'list', '--shared')
+    assert result.exit_code == 0, body
+    assert body['items'][0]['shared_via'] == {'kind': 'asset', 'invitation_id': R, 'shared_by': 'alex'}
+
+
+def test_get_asset_checks_its_id_and_private_download_path(remote, monkeypatch):
+    remote['cap']['operations'] = [*remote['cap']['operations'], 'assets:read']
+    original = cloud._request
+    wrong = {'value': False}
+    def request(url, credential, **kwargs):
+        if url.endswith('/assets/' + A):
+            return 200, {'asset': ASSET, 'download_path': 'https://foreign.invalid/key' if wrong['value'] else f'/api/v1/account/cloud/assets/{A}/download'}
+        return original(url, credential, **kwargs)
+    monkeypatch.setattr(cloud, '_request', request)
+    result, body = invoke('assets', 'get', A)
+    assert result.exit_code == 0, body
+    assert body['download_url'] == f'https://example.invalid/api/v1/account/cloud/assets/{A}/download'
+    wrong['value'] = True
+    result, body = invoke('assets', 'get', A)
+    assert result.exit_code == 1 and body['status'] == 'invalid_response'

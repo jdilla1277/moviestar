@@ -57,6 +57,7 @@ from moviestar.ffmpeg import (
     AUDIO_MIX_SAMPLE_RATE,
     FFmpegCapabilityError,
     FFmpegNotFoundError,
+    FrameNotProducedError,
     build_extract_clip_command,
     build_extract_frame_command,
     build_render_segments_command,
@@ -75,6 +76,7 @@ from moviestar.ffmpeg import (
     render_segments,
     extract_frame,
     extract_frames,
+    extract_inspection_frames,
     measure_region_stability,
     render_selection_frame,
     render_target_grid_frame,
@@ -288,6 +290,7 @@ from moviestar.feedback import feedback
 from moviestar.subscribe import subscribe as subscribe_command
 from moviestar.account import account as account_command
 from moviestar.cloud import cloud as cloud_command
+from moviestar.cloud_asset_upload import register_asset_upload
 from moviestar.incoming import shared as shared_command
 from moviestar.upload import upload as upload_command
 from moviestar.sharing import (
@@ -1055,8 +1058,10 @@ ACCOUNT COMMANDS
 
 \b
   account connect EMAIL  Ask Moviestar to email the human an account claim.
-  cloud                 Work with Cloud projects and private developer guides.
+  cloud                 Work with Cloud projects, private assets and developer guides.
   account status         Show approval or connection state for this install.
+  account usage          Read storage and monthly Cloud allowance.
+  account activity       Read tasks and their allowance consumption.
   account disconnect     Revoke this install; local editing keeps working.
   account keys           Open the website to create or manage API keys.
   account open           Open the human's account page; --email-link EMAIL requests sign-in mail.
@@ -1220,6 +1225,7 @@ def cli() -> None:
 cli.add_command(subscribe_command)
 cli.add_command(feedback)
 cli.add_command(account_command)
+register_asset_upload(cloud_command)
 cli.add_command(cloud_command)
 cli.add_command(shared_command)
 cli.add_command(upload_command)
@@ -1999,17 +2005,30 @@ def _refresh_caption_tracks(project: dict, spec: dict) -> dict:
         fingerprint = _caption_cache_fingerprint(project, spec, recipe)
         if fingerprint == recipe.get("cache_fingerprint"):
             continue
+        # No words in this edit is a valid empty result. Unreadable inputs or
+        # other derivation failures must retain their structured error, not
+        # silently export cached captions as if they were current.
+        diagnostic = io.StringIO()
         try:
-            with contextlib.redirect_stdout(io.StringIO()):
+            with contextlib.redirect_stdout(diagnostic):
                 records, _meta = _derive_caption_records(
-                    project, spec, recipe, "captions refresh"
+                    project, spec, recipe, "captions refresh", allow_empty=True
                 )
         except SystemExit:
-            # Derivation failed (e.g. transcript unavailable). Keep the
-            # stale cache; the next successful derivation heals it, and
-            # the owning command reports the real error when run
-            # directly.
-            continue
+            try:
+                problem = json.loads(diagnostic.getvalue())
+            except (ValueError, TypeError):
+                problem = {}
+            if not isinstance(problem, dict):
+                problem = {}
+            _error_exit_with_hint(
+                "captions refresh",
+                f"Caption track {recipe['track']!r} could not refresh. "
+                + str(problem.get("error", "Caption derivation failed.")),
+                problem.get("hint")
+                or "Restore the source transcript and retry; the saved edit "
+                "and caption recipe have not been changed.",
+            )
         track = recipe["track"]
         spec["overlays"] = [
             overlay
@@ -2069,10 +2088,15 @@ def _caption_cache_fingerprint(
     project: dict, spec: dict, recipe: dict
 ) -> str:
     """Cache key for one derived track: the compiled timeline, the
-    recipe itself, and the project caption rules. Any change re-derives
-    the track's cues on the next spec load."""
+    recipe itself, the source transcripts, and the project caption rules.
+    Any change re-derives the track's cues on the next spec load."""
     try:
         resolved = resolve_project(project, spec)
+        transcript_sources = {
+            span.audio.source_id
+            for span in resolved.spans
+            if span.audio.source_id and span.audio.slices and not span.held
+        }
         timeline_repr = [
             (
                 span.scene_name,
@@ -2088,9 +2112,29 @@ def _caption_cache_fingerprint(
         ]
     except (ResolvedProjectError, SpecValidationError):
         timeline_repr = ["unresolved"]
+        transcript_sources = {source["id"] for source in project["sources"]}
+    if recipe.get("source") is not None:
+        transcript_sources = {recipe["source"]}
+    transcript_pins = []
+    for source in project["sources"]:
+        if source["id"] not in transcript_sources:
+            continue
+        info = source.get("transcript")
+        content_hash = None
+        if info:
+            try:
+                content_hash = hashlib.sha256(
+                    (get_project_dir() / info["path"]).read_bytes()
+                ).hexdigest()
+            except OSError:
+                # Invalidated, but derivation remains responsible for its
+                # normal structured missing/unreadable-transcript error.
+                content_hash = "unavailable"
+        transcript_pins.append((source["id"], content_hash))
     payload = {
-        "v": 4,
+        "v": 5,
         "timeline": timeline_repr,
+        "transcripts": sorted(transcript_pins),
         "recipe": {
             key: value
             for key, value in recipe.items()
@@ -2783,12 +2827,13 @@ def _emit_load_dry_run(
     # the dir nor the pattern path is created — purely a string
     # computation that mirrors what create_workspace would build.
     project_dir = (Path.cwd() / MOVIESTAR_DIR).resolve()
-    frames_pattern = str(project_dir / FRAMES_DIR / f"{source_id}_%04d.jpg")
+    frames_pattern = str(project_dir / FRAMES_DIR / f"{source_id}_%06d.jpg")
     ffmpeg_cmd = build_extract_frames_command(
         abs_source,
         interval,
         frames_pattern,
-        scale_width=thumb_width,
+        scale_width=thumb_width, start_time=0.0, duration=duration_seconds,
+        source_timestamps=True,
     )
 
     source_dict: dict = {
@@ -2807,6 +2852,9 @@ def _emit_load_dry_run(
         "frame_interval": interval,
         "start_offset_seconds": start_offset_seconds,
     }
+
+    if "duration_probe" in fmt:
+        source_dict["duration_probe"] = fmt["duration_probe"]
 
     # Build the hint conditionally on whether --force would wipe.
     same_source = False
@@ -2902,7 +2950,11 @@ def probe(video: str, loudness: bool, from_tc: str | None, to_tc: str | None) ->
     """Inspect a media file's metadata, and optionally audio loudness.
 
     Run this before 'load' to see what you're working with — no frames,
-    no transcript, just the file's structural info. Pass --loudness to
+    no transcript, just the file's structural info. If Matroska/WebM duration
+    is absent or invalid, scan up to one million packets / 60 seconds for
+    presentation endpoints; duration_probe reports the recovery evidence.
+    Unknown endpoints fail rather than estimating duration from frame rate.
+    Pass --loudness to
     get machine-readable LUFS / peak metrics for the whole file or a
     --from/--to range.
     """
@@ -2931,6 +2983,9 @@ def probe(video: str, loudness: bool, from_tc: str | None, to_tc: str | None) ->
         "format": fmt.get("format_name", ""),
         "bitrate": int(fmt.get("bit_rate", 0)) if fmt.get("bit_rate") else 0,
     }
+
+    if "duration_probe" in fmt:
+        result["duration_probe"] = fmt["duration_probe"]
 
     video_stream = next(
         (s for s in data.get("streams", []) if s.get("codec_type") == "video"),
@@ -3456,6 +3511,17 @@ def load(
                         )
                     break
 
+    # Duration recovery can fail or hit its budget. Establish usable source
+    # metadata before --force discards the previous workspace, and reuse it
+    # below so recorder inputs are not scanned twice.
+    source_probes: dict[str, dict] = {}
+    if should_reset_workspace:
+        for abs_path in abs_paths:
+            try:
+                source_probes[abs_path] = run_ffprobe(abs_path)
+            except (FFmpegNotFoundError, RuntimeError, json.JSONDecodeError) as exc:
+                _error_exit("load", f"Could not probe {abs_path}: {exc}")
+
     # Fetch caption URLs last, so no earlier check wastes the network call,
     # and before the reset, so a missing track leaves the workspace alone.
     captions_provenance: list[dict | None] = [None] * len(abs_captions)
@@ -3510,6 +3576,7 @@ def load(
             transcribe_windows=transcribe_windows or None,
             captions_provenance=captions_provenance or None,
             precomputed_transcripts=precomputed_transcripts or None,
+            source_probes=source_probes or None,
         )
     except WorkspaceConflictError as exc:
         _error_exit("load", str(exc))
@@ -3564,6 +3631,8 @@ def load(
             "frames_extracted": source.get("frames_extracted"),
             "thumb_width": source.get("thumb_width", DEFAULT_THUMB_WIDTH),
         }
+        if "duration_probe" in source:
+            output_source["duration_probe"] = source["duration_probe"]
         if source.get("frame_extraction_skipped_reason"):
             output_source["frame_extraction_skipped_reason"] = source[
                 "frame_extraction_skipped_reason"
@@ -4021,6 +4090,11 @@ def skim(
     review at intervals finer than the pre-built index, use
     'moviestar inspect'.
 
+    New indexes separate actual decoded source time (timecode) from the
+    requested prepared-grid time (requested_timecode). Range filtering remains
+    inclusive on that requested grid. Legacy image-only indexes stay explicitly
+    nominal; no image is re-extracted or relabelled as decoded during reads.
+
     Transcript is segment-level by default (compact). Pass --words to
     include word-by-word timing when you need frame-exact trim points.
 
@@ -4078,13 +4152,16 @@ def skim(
             f"Range {from_s}s-{to_s}s exceeds video duration of {duration_seconds}s",
         )
 
-    if text_only:
+    if text_only or fmt == "text":
         frames_in_range: list[dict] = []
         thumbnails: list[dict] = []
         frames_omitted: list[dict] = []
     else:
         # Build thumbnail list
-        all_frames = list_frames(source)
+        try:
+            all_frames = list_frames(source)
+        except ValueError as exc:
+            _error_exit("skim", str(exc))
         frames_in_range = filter_frames_by_range(all_frames, from_s, to_s)
         thumbnails = subsample_frames(frames_in_range, count)
 
@@ -4095,7 +4172,7 @@ def skim(
         # about the dropped *list*, not the dropped *content*).
         sampled_paths = {t["path"] for t in thumbnails}
         frames_omitted = [
-            {"path": f["path"], "timecode": f["timecode"]}
+            {key: value for key, value in f.items() if key != "image"}
             for f in frames_in_range
             if f["path"] not in sampled_paths
         ]
@@ -4117,7 +4194,7 @@ def skim(
     #      to widen, use --words for precise text timing, or re-load finer.
     #   2. Range extends past last indexed frame — mention the gap explicitly.
     #   3. Healthy — standard narrowing hint.
-    last_indexed = frames_in_range[-1]["timecode"]["seconds"] if frames_in_range else None
+    last_indexed = frames_in_range[-1].get("requested_timecode", frames_in_range[-1]["timecode"])["seconds"] if frames_in_range else None
 
     # Issue #27: hint reflects post-action state. Three geometry
     # branches as before (zero-thumbnails / past-end-of-range /
@@ -4180,6 +4257,9 @@ def skim(
         _emit_transcript_text("skim", transcript_out, skip_reason)
         return
 
+    if not text_only and not source.get("frame_index") and not frames_skip_reason:
+        hint += " Legacy index: labels are nominal prepared-index times, not decoded frame times. Use inspect for fresh decoded-time frames."
+
     result = {
         "range": {
             "from": format_timecode(from_s),
@@ -4203,6 +4283,10 @@ def skim(
     else:
         result.update(
             {
+                "sampling": {
+                    "time_basis": "decoded_source_time" if source.get("frame_index") else "nominal_prepared_index",
+                    "range_filter": "inclusive_requested_index_timestamps" if source.get("frame_index") else "inclusive_nominal_index_timestamps",
+                },
                 "thumbnails": thumbnails,
                 "available_frames": len(frames_in_range),
                 "thumbnails_returned": len(thumbnails),
@@ -4541,6 +4625,27 @@ INSPECT_DEFAULT_INTERVAL_SECONDS = 0.5
 INSPECT_SCALE_WIDTH = 640
 
 
+def _inspect_cached_times(frames_out: Path, source_id: str, identity: dict) -> list[float] | None:
+    """An image-only or incomplete cache cannot establish frame identity."""
+    try:
+        manifest = json.loads((frames_out / "source-times.json").read_text())
+        paths = sorted(frames_out.glob(f"{source_id}_inspect_*.jpg"))
+        entries = manifest["frames"]
+        if (
+            manifest["identity"] != identity
+            or not entries
+            or [entry["file"] for entry in entries] != [path.name for path in paths]
+            or any(not path.is_file() or path.stat().st_size == 0 for path in paths)
+        ):
+            return None
+        times = [entry["seconds"] for entry in entries]
+        if not all(type(value) in (int, float) and math.isfinite(value) and value >= 0 for value in times):
+            return None
+        return times if times == sorted(times) else None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 @cli.command()
 @project_workspace_option
 @click.option("--from", "from_tc", required=True, help="Start timecode of the range.")
@@ -4601,7 +4706,7 @@ INSPECT_SCALE_WIDTH = 640
     "envelope with status: 'would_extract', dry_run: true, "
     "would_write_to (deterministic frames subdir), "
     "would_reuse_cache (true if a real call would hit cache, false "
-    "if it would extract fresh — detected by subdir-existence), "
+    "if it would extract fresh — requires complete images and source timing), "
     "and would_extract_frames_count. --inline has no effect "
     "(no frames to embed).",
 )
@@ -4633,10 +4738,15 @@ def inspect(
     already 240 frames per call without scene-boundary resets. Scene
     compositions may return more. Wider overviews are skim's job.
 
-    Without scenes, thumbnails land at from_s, from_s+interval, ...,
+    Without scenes, sample requests land at from_s, from_s+interval, ...,
     stopping strictly before to_s. So a 10s range at 0.5s interval
     returns 20 frames (5.0, 5.5, ..., 14.5), not 21 — the upper bound
-    is exclusive.
+    is exclusive. Each thumbnail's requested_timecode identifies that sample;
+    timecode identifies the displayed source frame's presentation time (rounded
+    to milliseconds). Sampling uses the last decoded frame at or before each FFmpeg sample tick;
+    FFmpeg quantizes the requested grid to its representable output time base. Fractional cadence or held VFR
+    frames can therefore have earlier, repeated timecodes. If the video starts
+    later than the first request, its first available frame is used.
 
     For scene compositions, sampling restarts at each overlapping scene:
     one thumbnail at the beginning of the scene's requested window, then
@@ -4675,9 +4785,9 @@ def inspect(
     same envelope shape with ``dry_run: true``, ``status:
     "would_extract"``, top-level ``would_write_to`` (the deterministic
     frames subdir), ``would_reuse_cache`` (true if a real call would
-    hit cache, false if it would extract fresh — detected by
-    subdir-existence + 1+ frames, the same signal the real call
-    uses), and ``would_extract_frames_count`` (the exact selected count;
+    hit cache, false if it would extract fresh — requires complete images and
+    source-timestamp metadata matching the source and sampling arguments),
+    and ``would_extract_frames_count`` (the scheduled sample count;
     for scenes this is the sum of the per-scene counts). Drops ``thumbnails``,
     ``thumbnails_returned`` (don't exist until extraction); drops
     ``extraction.frames_dir`` and ``extraction.cached`` (now top-
@@ -4792,8 +4902,8 @@ def inspect(
             f"--interval must be at least {INSPECT_MIN_INTERVAL_SECONDS} seconds",
         )
 
-    # Guardrail: interval too coarse for the requested range. ffmpeg's
-    # fps=1/interval filter yields the first frame at t=0 and the next at
+    # Guardrail: interval too coarse for the requested range. Sampling
+    # yields the first frame at t=0 and the next at
     # t=interval — if the range is shorter, you only get a single frame,
     # which surprises users ("--from 20 --to 20.5 --interval 0.5 = 1 frame").
     # Refuse and suggest a concrete interval.
@@ -4809,18 +4919,8 @@ def inspect(
             "range with --from/--to.",
         )
 
-    # Deterministic output path — repeat calls with identical args land here.
-    # Round-to-ms in the subdir name so "20.0" and "20" hit the same cache
-    # and so float noise like "43.300000000000004" doesn't leak into paths.
-    inspect_root = get_project_dir() / INSPECT_FRAMES_DIR
-    subdir_name = (
-        f"{source_id}_{round(from_s, 3)}_{round(to_s, 3)}_"
-        f"{round(interval, 3)}_{width}"
-    )
-    frames_out = inspect_root / subdir_name
-
-    # Frame count for the range. ffmpeg's `fps=1/interval` filter
-    # samples at t=0, interval, 2*interval, ... while t < range_duration
+    # Scheduled frame count for the range: t=0, interval, 2*interval, ...
+    # while t < range_duration
     # (the upper bound is exclusive, per the docstring). math.ceil(D/I)
     # produces the right count for both the aligned case (D == k*I →
     # k frames at 0, I, ..., (k-1)*I) and the unaligned case
@@ -4831,13 +4931,29 @@ def inspect(
     # claimed 4 frames for the 1.5/0.5 case where the real call
     # extracts 3).
     expected_frame_count = math.ceil(round(range_duration / interval, 9))
-    cached = (
-        frames_out.exists()
-        and len(sorted(frames_out.glob(f"{source_id}_inspect_*.jpg"))) >= 1
+    try:
+        source_stat = Path(source_path).stat()
+        source_signature = [source_stat.st_size, source_stat.st_mtime_ns, source_stat.st_ctime_ns]
+    except OSError:
+        source_signature = None
+    cache_identity = {
+        "version": 2, "source": source_path, "signature": source_signature,
+        "from": from_s, "to": to_s, "interval": interval, "width": width,
+    }
+    # Readable milliseconds plus exact identity: nearby requests and replaced
+    # sources must not overwrite images returned by an earlier response.
+    fingerprint = hashlib.sha256(json.dumps(cache_identity, sort_keys=True).encode()).hexdigest()[:16]
+    inspect_root = get_project_dir() / INSPECT_FRAMES_DIR
+    subdir_name = (
+        f"{source_id}_{round(from_s, 3)}_{round(to_s, 3)}_"
+        f"{round(interval, 3)}_{width}_pts_v2_{fingerprint}"
     )
+    frames_out = inspect_root / subdir_name
+    frame_times = _inspect_cached_times(frames_out, source_id, cache_identity)
+    cached = source_signature is not None and frame_times is not None
 
     # Issue #36 stage 2: dry-run forks at the side-effect boundary.
-    # Validation, cache detection (subdir-existence + 1+ frames), and
+    # Validation, complete-image/timestamp cache detection, and
     # frame-count prediction all run identically. Below, dry-run
     # builds the would-be ffmpeg argv via the pure builder, slices
     # the transcript (pure read), and emits the envelope without
@@ -4846,7 +4962,7 @@ def inspect(
         # Pure ffmpeg argv — same args the real call would use.
         # `output_pattern` mirrors what extract_frames builds internally
         # so the agent sees the actual would-be argv, not a placeholder.
-        output_pattern = str(frames_out / f"{source_id}_inspect_%04d.jpg")
+        output_pattern = str(frames_out / f"{source_id}_inspect_%06d.jpg")
         ffmpeg_cmd = build_extract_frames_command(
             source_path,
             interval,
@@ -4854,6 +4970,7 @@ def inspect(
             scale_width=width,
             start_time=from_s,
             duration=range_duration,
+            source_timestamps=True,
         )
         transcript_out, skip_reason, words_unavailable_reason = (
             _slice_transcript_for_response(source, from_s, to_s, words)
@@ -4917,7 +5034,7 @@ def inspect(
             import shutil as _shutil
             _shutil.rmtree(frames_out)
         try:
-            frame_paths, _argv = extract_frames(
+            frame_paths, frame_times, _argv = extract_inspection_frames(
                 source_path,
                 interval,
                 frames_out,
@@ -4926,6 +5043,11 @@ def inspect(
                 start_time=from_s,
                 duration=range_duration,
             )
+            (frames_out / "source-times.json").write_text(json.dumps({
+                "identity": cache_identity,
+                "frames": [{"file": path.name, "seconds": seconds}
+                           for path, seconds in zip(frame_paths, frame_times)],
+            }))
         except FFmpegNotFoundError as exc:
             _error_exit("inspect", str(exc))
         except FileNotFoundError as exc:
@@ -4933,11 +5055,12 @@ def inspect(
         except RuntimeError as exc:
             _error_exit("inspect", f"Frame extraction failed: {exc}")
 
-    # Frame N (1-indexed) → from_s + (N-1) * interval
+    # Output-grid positions are requests; the decoded source clock is separate.
     thumbnails = [
         {
             "path": str(p.resolve()),
-            "timecode": format_timecode(from_s + i * interval),
+            "timecode": format_timecode(round(frame_times[i], 3)),
+            "requested_timecode": format_timecode(round(from_s + i * interval, 3)),
         }
         for i, p in enumerate(frame_paths)
     ]
@@ -5085,6 +5208,17 @@ def watch(
     same contract as 'clip' (the deliverable-framed sibling on the
     same extraction engine).
 
+    Without a composition, including trim-only projects, timecodes also
+    use source-time: watch at zero starts at the original file's zero,
+    not the authored trim. The default path can apply an authored audio mix;
+    --source selects raw source audio as well. Use export for the edited result.
+
+    Responses identify the requested range's clock with clock: "source"
+    or "result" in both dry-run and real calls. Source extraction includes
+    source_id and the original file path; compositions retain per-slot source
+    mappings in scene_windows. The output MP4 starts its own clock at zero;
+    measured actual duration does not establish an exact source-frame boundary.
+
     Default is stream-copy (fast, ±keyframe alignment). Pass --precise
     for frame-accurate re-encoding when exact boundaries matter. --review
     also re-encodes, fitting the finished image inside an orientation-aware
@@ -5227,6 +5361,8 @@ def watch(
             "status": "would_extract",
             "would_extract_to": abs_output,
             "source": os.path.realpath(source_path),
+            "source_id": source_id,
+            "clock": "source",
             "range": {
                 "requested": {
                     "from": format_timecode(from_s),
@@ -5306,6 +5442,8 @@ def watch(
         "status": "extracted",
         "out": abs_output,
         "source": os.path.realpath(source_path),
+        "source_id": source_id,
+        "clock": "source",
         "range": {
             "requested": {
                 "from": format_timecode(from_s),
@@ -5682,6 +5820,7 @@ def _watch_scene_layout_composition(
     audio_dropped_note = artifacts["audio_dropped_note"]
     base_result: dict = {
         "mode": "scene_composition",
+        "clock": "result",
         "composition_type": "scenes",
         "output_fps": artifacts["output_fps"],
         "composition_canvas": plan["canvas"],
@@ -5877,6 +6016,13 @@ def _scene_video_render_artifacts(
         render_plan["audio_from_input"] is not None
         for render_plan in render_plans
     ]
+    # Validate before the low-level builder can raise an unstructured ValueError.
+    _validate_audio_join_fade_durations(
+        audio_join_fade,
+        [segment[2] - segment[1] for segment in concat_segments],
+        command,
+        noun="scene",
+    )
     concat_command = build_render_segments_command(
         concat_segments,
         abs_output,
@@ -7075,6 +7221,13 @@ def screenshot(
     branch on a single key rather than sniffing for the presence of
     ``result_timecode``.
 
+    Raw-file and flat-project timecodes are half-open: use a time earlier
+    than the source/result endpoint. If a final seek produces no image,
+    retry the last decoded displayed frame using bounded timing evidence.
+    Requested timecodes and overlay timing stay at the requested instant;
+    ffmpeg_command reports the seek used to produce the actual image.
+    Unavailable frames fail with a structured recovery hint.
+
     Outputs JPEG by default. When --out is omitted, the file is
     written to screenshot_<seconds>s.jpg in the current directory.
     Pass --out foo.png if you need a lossless PNG.
@@ -7100,6 +7253,9 @@ def screenshot(
         at_seconds = parse_timecode(timecode)
     except ValueError as exc:
         _error_exit("screenshot", str(exc))
+
+    if not math.isfinite(at_seconds) or at_seconds < 0:
+        _error_exit("screenshot", "Timecode must be finite and nonnegative.")
 
     if video is not None and file_path is not None:
         _error_exit(
@@ -7144,10 +7300,10 @@ def _screenshot_file_mode(
 
     fmt = probe_data.get("format", {})
     duration = float(fmt.get("duration", 0)) if fmt.get("duration") else 0.0
-    if duration and at_seconds > duration:
+    if duration and at_seconds >= duration:
         _error_exit(
             "screenshot",
-            f"Timecode {at_seconds}s is beyond source duration {duration}s",
+            f"Timecode {at_seconds}s is at or beyond source duration {duration}s",
         )
 
     video_stream = next(
@@ -7203,12 +7359,25 @@ def _screenshot_file_mode(
 
     try:
         ffmpeg_cmd = extract_frame(abs_source, at_seconds, abs_output)
+    except FrameNotProducedError as exc:
+        _error_exit_with_hint(
+            "screenshot", str(exc),
+            "Try an earlier --at timecode or inspect the source with 'moviestar probe'. "
+            "No screenshot was produced; any prior output was preserved.",
+            reason="frame_unavailable",
+        )
     except FFmpegNotFoundError as exc:
         _error_exit("screenshot", str(exc))
     except FileNotFoundError as exc:
         _error_exit("screenshot", str(exc))
     except RuntimeError as exc:
         _error_exit("screenshot", str(exc))
+    except OSError as exc:
+        _error_exit_with_hint(
+            "screenshot", f"Could not write screenshot: {exc}",
+            "Check that the output directory and existing output are writable, "
+            "then retry with --out pointing to an image file.",
+        )
 
     _render_platform_preview_in_place("screenshot", platform_preview)
     width, height = _probe_output_dimensions(abs_output)
@@ -7283,15 +7452,11 @@ def _screenshot_in_project(
     timeline = resolve_source(spec, source_id, source_duration)
     effective = timeline.effective_duration
 
-    # Strict bounds for screenshot: a single-point timecode "1.5s into a
-    # 1s timeline" is unambiguously beyond — no epsilon needed (unlike
-    # trim's range bounds, which allow a small slack to forgive float
-    # comparisons against the effective end). A tiny tolerance covers
-    # float-arithmetic noise when the user types the exact end second.
-    if at_seconds < 0 or at_seconds > effective + 0.001:
+    # A flat timeline is half-open: there is no frame at its endpoint.
+    if at_seconds < 0 or at_seconds >= effective:
         _error_exit(
             "screenshot",
-            f"Timecode {at_seconds}s exceeds result duration of {effective}s",
+            f"Timecode {at_seconds}s is at or beyond result duration of {effective}s",
         )
 
     # Walk segments so result-time past a cut seam maps to the right
@@ -7372,12 +7537,25 @@ def _screenshot_in_project(
         ffmpeg_cmd = extract_frame(abs_source, source_seconds, abs_output, **frame_options)
     except FFmpegCapabilityError as exc:
         _ffmpeg_capability_error_exit("screenshot", exc)
+    except FrameNotProducedError as exc:
+        _error_exit_with_hint(
+            "screenshot", str(exc),
+            "Try an earlier --at timecode or inspect the source with 'moviestar probe'. "
+            "No screenshot was produced; any prior output was preserved.",
+            reason="frame_unavailable",
+        )
     except FFmpegNotFoundError as exc:
         _error_exit("screenshot", str(exc))
     except FileNotFoundError as exc:
         _error_exit("screenshot", str(exc))
     except RuntimeError as exc:
         _error_exit("screenshot", str(exc))
+    except OSError as exc:
+        _error_exit_with_hint(
+            "screenshot", f"Could not write screenshot: {exc}",
+            "Check that the output directory and existing output are writable, "
+            "then retry with --out pointing to an image file.",
+        )
 
     _render_platform_preview_in_place("screenshot", platform_preview)
     width, height = _probe_output_dimensions(abs_output)
@@ -7626,17 +7804,11 @@ def _storyboard_cap_suggestion(range_duration: float) -> float:
 def _compact_timecode_label(seconds: float) -> str:
     """Short burn-in label: M:SS or H:MM:SS, with milliseconds only when
     the sampling is sub-second (labels stay glanceable at tile size)."""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = seconds - hours * 3600 - minutes * 60
-    frac = round(secs - int(secs), 3)
-    if frac:
-        sec_text = f"{secs:06.3f}".rstrip("0").rstrip(".")
-    else:
-        sec_text = f"{int(secs):02d}"
-    if hours:
-        return f"{hours}:{minutes:02d}:{sec_text}"
-    return f"{minutes}:{sec_text}"
+    hours, minutes, secs = format_timecode(seconds)["text"].split(":")
+    sec_text = secs.rstrip("0").rstrip(".")
+    if int(hours):
+        return f"{hours}:{minutes}:{sec_text}"
+    return f"{int(minutes)}:{sec_text}"
 
 
 def _storyboard_plan(
@@ -8314,11 +8486,13 @@ def _timeline_output(timeline) -> dict:
     help="Snap --from / --to outward to whole words in the transcript "
     "so cuts don't fall mid-syllable. Requires a transcript.",
 )
+@click.option("--dry-run",is_flag=True,help="Show proposed ranges and undo depth without saving.")
 def trim(
     from_tc: str | None,
     to_tc: str | None,
     source_arg: str | None,
     snap: bool,
+    dry_run: bool,
 ) -> None:
     """Trim to a timecode range. Appends to the edit spec.
 
@@ -8438,14 +8612,21 @@ def trim(
 
     try:
         new_spec = append_trim(spec, source_id, from_s, to_s, source_duration)
-        save_spec(new_spec, command="trim")
+        candidate = append_revision(spec,new_spec,"trim")
+        validate_spec(candidate)
+        if not dry_run and new_spec!=spec:
+            save_spec(new_spec, command="trim")
     except SpecValidationError as exc:
         _error_exit("trim", str(exc))
 
     new_timeline = resolve_source(new_spec, source_id, source_duration)
-    new_op = get_source(new_spec, source_id)["operations"][-1]
+    new_op = {"type":"trim","from":format_timecode(from_s)["text"],"to":format_timecode(to_s)["text"]}
 
     result: dict = {
+        "status": "would_apply" if dry_run else "committed" if new_spec!=spec else "unchanged",
+        "dry_run":dry_run,"writes_spec":not dry_run and new_spec!=spec,
+        "changes":new_spec!=spec,"current_undo_remaining":len(spec["revisions"]),
+        "projected_undo_remaining":len(candidate["revisions"]),
         "operation": _op_for_envelope(new_op),
     }
     if snap:
@@ -8493,6 +8674,8 @@ def trim(
         code="trim_result_clock_changed_overlays_stale",
         change_label="trim",
     )
+    if dry_run:
+        result["hint"]="Proposed ranges only; nothing saved. Run the same trim without --dry-run to apply."
     click.echo(json.dumps(result, indent=2))
 
 
@@ -17573,7 +17756,9 @@ def scenes_motion_set(motion_file: str, dry_run: bool) -> None:
     automatic return to full-frame.
 
     Source-local 0:00 is the slot's source_from. Result-local 0:00 is
-    the authored scene's start after pacing.
+    the authored scene's start after pacing. To hold at a scene's end, set
+    'at' to its exact source-local extent. Holds within 1 ms of that end are
+    rejected to avoid a near-zero final render segment.
 
     """
     command = "scenes motion set"
@@ -17596,7 +17781,12 @@ def scenes_motion_set(motion_file: str, dry_run: bool) -> None:
 
     try:
         old_motion = spec.get("motion") or {"version": 1, "scenes": []}
-        old_timeline = resolve_pacing(spec["composition"], old_motion)
+        # A formerly accepted sliver must not prevent saving its correction.
+        # Only the old timeline used for camera rebasing bypasses this check;
+        # the replacement above has already passed strict pacing validation.
+        old_timeline = resolve_pacing(
+            spec["composition"], old_motion, allow_legacy_hold_tails=True
+        )
         motion_document, camera_rebases = rebase_camera_ranges(
             old_motion,
             motion_document,
@@ -18928,6 +19118,60 @@ def _overlay_style_envelope(
     }
 
 
+def _validate_imported_overlay_styles(spec: dict) -> None:
+    """Check authored CSS without rewriting stored preset defaults/history.
+
+    Complete stored defaults can predate today's viewport-based presets.
+    Their values remain snapshots; explicit CSS must still match the same
+    resolver used by overlay authoring. Resolved-only styles stay explicit.
+    """
+    for index, overlay in enumerate(spec.get("overlays", [])):
+        style = overlay["style"]
+        where = f"overlays[{index}].style"
+        preset, css = style.get("preset"), style.get("css")
+        if preset is not None and not isinstance(preset, str):
+            raise ValueError(f"{where}.preset: must be a style preset name.")
+        if css is not None and not isinstance(css, str):
+            raise ValueError(f"{where}.css: must be a string or null.")
+        if not preset and not (css or "").strip():
+            continue
+        try:
+            highlight_color = (overlay.get("highlight") or {}).get("color")
+            expected = _overlay_style_envelope(
+                preset=preset or (
+                    "caption-default" if overlay["kind"] == "caption" else "title"
+                ),
+                css=css, highlight_color=highlight_color,
+            )["resolved"]
+            declared = _parse_overlay_css(css)
+        except (ValueError, TypeError, OverflowError) as exc:
+            raise ValueError(f"{where}: {exc}") from exc
+        resolved = style.get("resolved")
+        if not isinstance(resolved, dict):
+            raise ValueError(f"{where}.resolved: missing complete derived styling.")
+        missing = sorted(set(expected) - set(resolved))
+        if missing:
+            raise ValueError(
+                f"{where}.resolved: missing derived field(s): {', '.join(missing)}."
+            )
+        keys = set(declared) - {"stroke"}
+        if "stroke" in declared:
+            keys.add("stroke_width")
+            if len(str(declared["stroke"]).split(maxsplit=1)) > 1:
+                keys.add("stroke_color")
+        if highlight_color is not None:
+            keys.add("highlight_color")
+        stale = sorted(
+            key for key in keys
+            if isinstance(resolved.get(key), bool) or resolved.get(key) != expected.get(key)
+        )
+        if stale:
+            raise ValueError(
+                f"{where}.resolved: inconsistent with authored CSS/highlight "
+                f"for field(s): {', '.join(stale)}."
+            )
+
+
 def _split_css_declarations(css: str | None) -> list[str]:
     """Split CSS-ish declarations on semicolons or top-level commas.
 
@@ -20040,13 +20284,15 @@ def captions(ctx: click.Context) -> None:
     )
 
 
-def _caption_track_cues(spec: dict, track: str, command: str) -> list[dict]:
+def _caption_track_cues(
+    spec: dict, track: str, command: str, *, allow_empty: bool = False
+) -> list[dict]:
     cues = [
         overlay
         for overlay in spec.get("overlays", [])
         if overlay.get("kind") == "caption" and overlay.get("track") == track
     ]
-    if not cues:
+    if not cues and not allow_empty:
         tracks = sorted(
             {
                 overlay["track"]
@@ -20621,9 +20867,9 @@ def captions_dump(track: str) -> None:
     """
     command = "captions dump"
     project, spec = _overlay_project_spec(command)
-    cues = _caption_track_cues(spec, track, command)
     recipe = caption_recipe_for_track(spec, track)
     derived = recipe is not None and not recipe.get("frozen")
+    cues = _caption_track_cues(spec, track, command, allow_empty=derived)
     # #412: staleness is queryable state. Derived tracks are never
     # stale (they re-derive at load); frozen recipes compare their
     # freeze fingerprint against the current timeline; recipe-less
@@ -22506,7 +22752,7 @@ def _transcript_items_for_source(
     transcript_path = (get_project_dir() / info["path"]).resolve()
     try:
         data = json.loads(transcript_path.read_text())
-    except (json.JSONDecodeError, FileNotFoundError) as exc:
+    except (json.JSONDecodeError, OSError) as exc:
         _error_exit(
             command,
             f"Could not read transcript for '{source_id}' at "
@@ -22672,7 +22918,8 @@ def _caption_records_from_cues(
 
 
 def _derive_caption_records(
-    project: dict, spec: dict, recipe: dict, command: str
+    project: dict, spec: dict, recipe: dict, command: str,
+    *, allow_empty: bool = False,
 ) -> tuple[list[dict], dict]:
     """Derive one track's cue records from its recipe against the
     current compiled timeline.
@@ -22680,8 +22927,9 @@ def _derive_caption_records(
     The single derivation pipeline behind `captions generate` and the
     spec-load cache refresh: audio windows -> transcript mapping ->
     rules -> grouping -> placement -> canonical overlay records.
-    Errors exit with the calling command's envelope; the refresh path
-    traps them and keeps the stale cache instead.
+    Errors exit with the calling command's envelope. Refresh permits an empty
+    valid derivation, but still rejects failed derivation instead of reusing
+    stale text. Explicit generation keeps its existing no-cues error.
     """
     track = recipe["track"]
     highlight = (recipe.get("highlight") or {}).get("mode", "none")
@@ -22701,7 +22949,7 @@ def _derive_caption_records(
         command=command,
         source_filter=recipe.get("source"),
     )
-    if not windows:
+    if not windows and not allow_empty:
         _error_exit_with_hint(
             command,
             "No audio windows resolved for caption generation."
@@ -22779,7 +23027,7 @@ def _derive_caption_records(
     cues = rebalance_orphan_cues(cues)
     cues = apply_join_edits(apply_break_edits(cues, recipe_edits), recipe_edits)
     cues.sort(key=lambda cue: (cue["from_s"], cue["to_s"]))
-    if not cues:
+    if not cues and not allow_empty:
         _error_exit_with_hint(
             command,
             "The transcript produced no caption cues in the requested range.",
@@ -23352,6 +23600,52 @@ def _position_margin(value, name: str) -> int | str:
     )
 
 
+def _normalized_overlay_tokens(tokens: list[dict] | None) -> list[dict] | None:
+    """Normalize imported word clocks before previews or persisted validation."""
+    if tokens is None:
+        return None
+    if not isinstance(tokens, list):
+        raise ValueError("Overlay tokens must be an array.")
+    normalized = []
+    for index, token in enumerate(tokens):
+        where = f"tokens[{index}]"
+        if not isinstance(token, dict):
+            raise ValueError(f"{where}: must be an object.")
+        if not isinstance(token.get("text"), str) or not token["text"]:
+            raise ValueError(f"{where}.text: must be a non-empty string.")
+        seconds = {}
+        for field in ("from", "to"):
+            value = token.get(field)
+            if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+                raise ValueError(f"{where}.{field}: must be seconds or a timecode.")
+            try:
+                parsed = parse_timecode(str(value))
+            except (ValueError, OverflowError) as exc:
+                raise ValueError(f"{where}.{field}: {exc}") from exc
+            if not math.isfinite(parsed):
+                raise ValueError(f"{where}.{field}: must be finite.")
+            seconds[field] = parsed
+        if seconds["from"] > seconds["to"]:
+            raise ValueError(f"{where}: 'from' must not be after 'to'.")
+        # Zero-duration tokens remain gaps, and out-of-cue tokens are clipped
+        # by the existing highlight planner. Preserve provenance/extra fields.
+        normalized.append({
+            **token,
+            **{field: format_timecode(value)["text"] for field, value in seconds.items()},
+        })
+    return normalized
+
+
+def _validated_overlay_candidate(spec: dict, records: list[dict]) -> dict:
+    """Run the save boundary's full validation, including the proposed undo state."""
+    candidate = set_overlays(spec, records)
+    try:
+        validate_spec(append_revision(spec, candidate, "overlays set"))
+    except SpecValidationError as exc:
+        _error_exit("overlays set", str(exc))
+    return candidate
+
+
 def _normalized_overlay(raw: dict, *, existing_ids: set[str]) -> dict:
     """Rebuild one overlay from an overlays.json entry through the same
     validators `overlays add` uses. Inputs (preset, css, timing, text,
@@ -23427,7 +23721,7 @@ def _normalized_overlay(raw: dict, *, existing_ids: set[str]) -> dict:
         style=style,
         z_index=z_index,
         highlight=raw.get("highlight"),
-        tokens=raw.get("tokens"),
+        tokens=_normalized_overlay_tokens(raw.get("tokens")),
         source=source,
     )
 
@@ -23830,6 +24124,10 @@ def overlays_set(overlay_file: str, dry_run: bool) -> None:
     Nested ``timing`` records use ``result`` or ``scene`` space. Dry-run
     resolves the same records without writing; omit it to persist them.
 
+    Word token clocks accept seconds or timecode strings and are stored as
+    H:MM:SS.mmm. Times must be finite, non-negative, and ordered. Zero-length
+    tokens remain gaps; tokens outside a cue keep the renderer's clipping.
+
     \b
       {"overlays": [
         {"text": "End card", "timing": {
@@ -24011,6 +24309,7 @@ def overlays_set(overlay_file: str, dry_run: bool) -> None:
                 "drop the id field to auto-assign one.",
             )
 
+        candidate_spec = _validated_overlay_candidate(spec, canonical)
         result = {
             "status": "validated_overlays" if dry_run else "set_overlays",
             "dry_run": dry_run,
@@ -24042,7 +24341,6 @@ def overlays_set(overlay_file: str, dry_run: bool) -> None:
             if drawtext_warning is not None:
                 warnings.append(drawtext_warning)
         _add_warnings(result, warnings)
-        candidate_spec = set_overlays(spec, canonical)
         if dry_run:
             result["resolved_geometry"] = _overlay_geometry_preview(
                 project, candidate_spec, canonical
@@ -24118,6 +24416,7 @@ def overlays_set(overlay_file: str, dry_run: bool) -> None:
             "drop the id field to auto-assign one.",
         )
 
+    candidate_spec = _validated_overlay_candidate(spec, normalized)
     replaced_count = len(spec.get("overlays", []))
     result = {
         "status": "validated_overlays" if dry_run else "set_overlays",
@@ -24150,7 +24449,7 @@ def overlays_set(overlay_file: str, dry_run: bool) -> None:
     if dry_run:
         result["overlays"] = [_overlay_view(record) for record in normalized]
         result["resolved_geometry"] = _overlay_geometry_preview(
-            project, set_overlays(spec, normalized), normalized
+            project, candidate_spec, normalized
         )
         result["derived_fields_note"] = (
             "style.resolved is derived from preset + css and is recomputed "
@@ -24158,9 +24457,8 @@ def overlays_set(overlay_file: str, dry_run: bool) -> None:
         )
 
     if not dry_run:
-        new_spec = set_overlays(spec, normalized)
         try:
-            save_spec(new_spec, command="overlays set")
+            save_spec(candidate_spec, command="overlays set")
         except SpecValidationError as exc:
             _error_exit("overlays set", str(exc))
 
@@ -24698,11 +24996,13 @@ def concat(
     is_flag=True,
     help="Undo only when the latest revision changed scenes or motion.",
 )
+@click.option("--dry-run",is_flag=True,help="Show whole-command restoration without saving.")
 def undo(
     source_arg: str | None,
     undo_overlays: bool,
     undo_audio: bool,
     undo_composition: bool,
+    dry_run: bool,
 ) -> None:
     """Undo the last command.
 
@@ -24819,7 +25119,8 @@ def undo(
         except SpecValidationError as exc:
             _error_exit("undo", str(exc))
         try:
-            save_spec(new_spec, record=False)
+            if not dry_run:
+                save_spec(new_spec, record=False)
         except SpecValidationError as exc:
             _error_exit("undo", str(exc))
         undone = {
@@ -24827,8 +25128,9 @@ def undo(
             "fields": sorted(popped["changed"]),
         }
         result = {
-            "status": "command_undone",
-            "writes_spec": True,
+            "status": "would_undo" if dry_run else "command_undone",
+            "dry_run":dry_run,
+            "writes_spec": not dry_run,
             "undone": undone,
             "revisions_remaining": len(new_spec.get("revisions") or []),
         }
@@ -24873,6 +25175,8 @@ def undo(
             code="undo_result_clock_changed_overlays_stale",
             change_label="undo",
         )
+        if dry_run:
+            result["hint"]="Proposed whole-command restoration only; nothing saved. Run undo without --dry-run to apply."
         click.echo(json.dumps(result, indent=2))
         return
 
@@ -24919,6 +25223,10 @@ def spec(edit_path: str | None, reset: bool, dry_run: bool) -> None:
     hatch; safer and clearer than looping ``moviestar undo`` until it
     errors).
 
+    Replacement changes editing instructions within the current project; it cannot
+    add, remove, or change Cloud provenance. Keep that origin block unchanged
+    when editing a spec dumped by ``moviestar spec``.
+
     Output shapes (read commands return raw state; write commands
     return a confirmation envelope):
 
@@ -24948,6 +25256,12 @@ def spec(edit_path: str | None, reset: bool, dry_run: bool) -> None:
                                      agent constructing specs
                                      programmatically catches bugs
                                      before replacing the current edit.
+
+    Overlay preset/CSS inputs require complete ``style.resolved`` values
+    consistent with their CSS and highlight overrides. Both dry-run and apply
+    reject missing/stale derived styling before writing; use ``overlays set``
+    to recompute it, then dump a complete spec again. Existing preset defaults
+    are kept as stored, and styles containing only ``resolved`` remain explicit.
 
     Parse errors on ``--edit`` include a structured
     ``parse_error`` sub-object alongside the top-level error
@@ -25018,6 +25332,10 @@ def spec(edit_path: str | None, reset: bool, dry_run: bool) -> None:
             {"id": s["id"], "path": s["path"]} for s in project["sources"]
         ]
         new_spec = empty_spec(seed_sources)
+        # Reset editing instructions, not the draft's Cloud origin. Provenance
+        # is deliberately outside the undo journal and must survive both steps.
+        if "provenance" in current_spec:
+            new_spec["provenance"] = copy.deepcopy(current_spec["provenance"])
         try:
             new_spec = save_spec(new_spec, command="spec")
         except SpecValidationError as exc:
@@ -25080,6 +25398,32 @@ def spec(edit_path: str | None, reset: bool, dry_run: bool) -> None:
             "spec",
             f"Spec source IDs {spec_ids} do not match project source IDs "
             f"{project_ids}. Replacing a spec across projects is not supported.",
+        )
+
+    # The Cloud origin is project context, not an undoable editing family.
+    # A replacement may not silently reattribute the instructions or erase
+    # their base. Run the same guard before dry-run and before a real save.
+    if new_spec.get("provenance") != current_spec.get("provenance"):
+        _error_exit_with_hint(
+            "spec",
+            "Replacement provenance must match the current spec. Adding, "
+            "removing, or changing Cloud origin with --edit is not supported.",
+            "Start from 'moviestar spec', keep its provenance block unchanged "
+            "(or absent), and edit only the editing instructions.",
+            reason="provenance_mismatch",
+        )
+
+    try:
+        _validate_imported_overlay_styles(new_spec)
+    except ValueError as exc:
+        _error_exit_with_hint(
+            "spec", str(exc),
+            "Use 'moviestar overlays set FILE' to validate and recompute "
+            "preset/CSS styling, then dump a complete spec again with "
+            "'moviestar spec'. Derived captions must be edited through their "
+            "recipe or materialized before hand-editing. Complete stored "
+            "preset defaults and resolved-only styles are preserved.",
+            reason="overlay_style_unresolved",
         )
 
     # Issue #36 stage 1: dry-run forks here. Everything above (file
@@ -25196,6 +25540,8 @@ def status() -> None:
             "frames_extracted": source.get("frames_extracted"),
             "thumb_width": source.get("thumb_width", DEFAULT_THUMB_WIDTH),
         }
+        if "duration_probe" in source:
+            section["duration_probe"] = source["duration_probe"]
         if source.get("frame_extraction_skipped_reason"):
             section["frame_extraction_skipped_reason"] = source[
                 "frame_extraction_skipped_reason"
@@ -26391,15 +26737,6 @@ def _export_scene_layout_composition(
             "--loudness-target requires an exported audio track, but this "
             "scene composition has no routed audio.",
         )
-    _validate_audio_join_fade_durations(
-        audio_join_fade,
-        [
-            segment[2] - segment[1]
-            for segment in artifacts["concat_segments"]
-        ],
-        "export",
-        noun="scene",
-    )
     plan = _scene_report_from_render_plans(plan, render_plans)
 
     def audio_route(render_plan: dict) -> dict:

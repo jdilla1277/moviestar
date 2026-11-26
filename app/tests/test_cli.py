@@ -2724,7 +2724,7 @@ class TestLoad:
         data = json.loads(result.stdout)
         assert data["sources"][0]["id"] == "holden"
         assert any(
-            "holden_%04d.jpg" in arg for arg in data["ffmpeg_command"]
+            "holden_%06d.jpg" in arg for arg in data["ffmpeg_command"]
         ), data["ffmpeg_command"]
 
     def test_load_dry_run_honors_as_override(
@@ -2741,7 +2741,7 @@ class TestLoad:
         data = json.loads(result.stdout)
         assert data["sources"][0]["id"] == "cam"
         assert any(
-            "cam_%04d.jpg" in arg for arg in data["ffmpeg_command"]
+            "cam_%06d.jpg" in arg for arg in data["ffmpeg_command"]
         ), data["ffmpeg_command"]
 
     def test_load_dry_run_would_extract_frames_count_formula(
@@ -2773,12 +2773,18 @@ class TestLoad:
     ):
         """test_video has an audio stream; without --no-transcribe, a
         real call would transcribe. Dry-run reports would_transcribe:
-        true and the chosen model.
+        true and the chosen model. Assume an available, cached model here;
+        test_optional_transcription.py covers the real missing-extra response.
         """
         monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(
+            "moviestar.cli.model_download_requirement", lambda model: None
+        )
         result = runner.invoke(cli, [
             "load", test_video, "--model", "tiny", "--dry-run",
         ])
+        assert result.exit_code == 0, result.stdout
+        assert not (tmp_path / "moviestar").exists()
         data = json.loads(result.stdout)
         assert data["would_transcribe"] is True
         assert data["would_use_model"] == "tiny"
@@ -6126,20 +6132,39 @@ class TestHistory:
         assert data["steps"][1]["op"]["type"] == "trim"
         assert data["steps"][1]["result_duration"]["seconds"] == pytest.approx(1.0)
 
+    def test_full_range_trim_does_not_add_history_or_undo(
+        self, runner, test_video, tmp_path, monkeypatch
+    ):
+        self._load(runner, test_video, tmp_path, monkeypatch)
+        before = runner.invoke(cli, ["history"])
+        result = runner.invoke(cli, ["trim", "--from", "0", "--to", "2"])
+        assert result.exit_code == 0, result.stdout
+        data = json.loads(result.stdout)
+        assert data["status"] == "unchanged"
+        assert data["changes"] is False
+        assert data["writes_spec"] is False
+        assert runner.invoke(cli, ["history"]).stdout == before.stdout
+        undone = runner.invoke(cli, ["undo"])
+        assert undone.exit_code == 1
+        assert "No command revision to undo" in undone.stdout
+
     def test_history_after_trim_and_cut(
         self, runner, test_video, tmp_path, monkeypatch
     ):
         """Three steps: initial + trim + cut. The post-cut step exposes
         the multi-segment internal state via source_segments."""
         self._load(runner, test_video, tmp_path, monkeypatch)
-        runner.invoke(cli, ["trim", "--from", "0", "--to", "2"])
+        # A full-range trim is a no-op; this fixture needs a real command.
+        trimmed = runner.invoke(cli, ["trim", "--from", "0", "--to", "1.8"])
+        assert trimmed.exit_code == 0, trimmed.stdout
+        assert json.loads(trimmed.stdout)["changes"] is True
         runner.invoke(cli, ["cut", "--from", "0.5", "--to", "1.0"])
         result = runner.invoke(cli, ["history"])
         data = json.loads(result.stdout)
         assert len(data["steps"]) == 3
         post_cut = data["steps"][2]
         assert post_cut["op"]["type"] == "cut"
-        assert post_cut["result_duration"]["seconds"] == pytest.approx(1.5)
+        assert post_cut["result_duration"]["seconds"] == pytest.approx(1.3)
         # Cut splits the trimmed result into two source-time segments.
         assert len(post_cut["source_segments"]) == 2
 
@@ -14608,7 +14633,10 @@ class TestUndo:
         change in test_undo_hint_drops_undo_again_when_spec_now_empty
         kicks in only at the boundary."""
         self._load(runner, test_video, tmp_path, monkeypatch)
-        runner.invoke(cli, ["trim", "--from", "0", "--to", "2"])
+        # A full-range trim is a no-op; this fixture needs a real command.
+        trimmed = runner.invoke(cli, ["trim", "--from", "0", "--to", "1.8"])
+        assert trimmed.exit_code == 0, trimmed.stdout
+        assert json.loads(trimmed.stdout)["changes"] is True
         runner.invoke(cli, ["trim", "--from", "0", "--to", "1"])
         # Two ops, undo once → one op remaining.
         result = runner.invoke(cli, ["undo"])
@@ -18452,7 +18480,10 @@ class TestResultRange:
         is mid-flow on). Pointing at `status` is reserved for the
         empty-boundary case."""
         self._load(runner, test_video, tmp_path, monkeypatch)
-        runner.invoke(cli, ["trim", "--from", "0", "--to", "2"])
+        # A full-range trim is a no-op; this fixture needs a real command.
+        trimmed = runner.invoke(cli, ["trim", "--from", "0", "--to", "1.8"])
+        assert trimmed.exit_code == 0, trimmed.stdout
+        assert json.loads(trimmed.stdout)["changes"] is True
         runner.invoke(cli, ["trim", "--from", "0", "--to", "1"])
         result = runner.invoke(cli, ["undo"])
         data = json.loads(result.stdout)
@@ -20362,7 +20393,7 @@ class TestThumbnailWidth:
         monkeypatch.chdir(tmp_path)
         result = runner.invoke(
             cli,
-            ["load", test_video, "--dry-run", "--thumb-width", "160"],
+            ["load", test_video, "--no-transcribe", "--dry-run", "--thumb-width", "160"],
         )
         assert result.exit_code == 0, result.output
         data = json.loads(result.stdout)

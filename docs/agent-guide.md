@@ -5,6 +5,11 @@ decides what the edit should communicate; Moviestar stores non-destructive
 state, resolves time mappings, renders through FFmpeg, and returns structured
 evidence.
 
+If transcription is slow or inaccurate, follow
+[transcription and repair](../plugins/moviestar/skills/moviestar/references/transcription.md).
+It covers model costs, vocabulary, partial retries, supplied transcripts and
+caption-only corrections. The same guide ships inside the agent skill.
+
 ## Project model
 
 Run commands from a dedicated project directory. `moviestar load` creates a
@@ -51,12 +56,28 @@ for version requirements.
 
 ## Time spaces
 
+The shared timecode formatter rounds numeric `seconds` and matching
+`H:MM:SS.mmm` text to milliseconds together. Rounding carries into minutes and hours: 59.9996 seconds
+is `{"text": "0:01:00.000", "seconds": 60.0}`. An optional `frame` index
+uses the original time and supplied frame rate, before millisecond rounding.
+
 Do not assume every timecode uses the same clock:
 
 - `trim` uses result-time, so later trims narrow the already-edited result.
 - `find` reports source, segment, and result ranges.
 - `clip` and source-targeted `watch` operate on source-time without changing
-  the edit.
+  the edit. Ordinary `watch` without a composition also uses source-time,
+  including trim-only projects: zero means original source zero, even after
+  a head trim. It can apply the authored audio mix; explicit `--source` uses
+  raw source audio. Use `export` for the edited result.
+- Local `watch` returns `clock: "source"` with `source_id` and `source` (path),
+  or `clock: "result"` for a scene/layout composition with source mappings in
+  `scene_windows[].slots`. Dry-run and real calls disclose the same clock for
+  `range.requested`. The output MP4 has its own zero-based clock; reported
+  duration is a measurement, not a decoded source timestamp.
+- `cloud watch` / `watch-show` return `job.clock: "source"` and `job.asset_id`.
+  This is the selected asset's file clock, even for a saved rendered asset;
+  it does not refer back to an originating project's source/result clock.
 - External audio is placed on result-time, the finished video's clock.
 - Composition and scene commands document whether their ranges are source,
   per-source result, composition result, or scene-local time.
@@ -108,6 +129,45 @@ the source-size frame, including spoken-word highlighting. The response's
 without writing an image or highlight assets. Trims and cuts still map the
 result timecode to the correct source frame. Use `screenshot --file VIDEO`
 to inspect raw or exported file pixels without applying project edits or text.
+
+`load` now persists a decoded-time thumbnail index. `skim` reads that metadata
+without running media tools: `requested_timecode` identifies the prepared grid
+sample and `timecode` identifies the displayed source frame, rounded to
+milliseconds. `sampling.time_basis: decoded_source_time` and
+`range_filter: inclusive_requested_index_timestamps` make the distinction
+explicit. Filtering and subsampling stay on the requested grid, so held frames
+can repeat or precede the requested range. Missing images do not shift the
+remaining entries' labels; a malformed declared index fails visual reads.
+Transcript-only `--text-only` and `--format text` reads do not need the index.
+
+Existing image-only indexes remain `nominal_prepared_index`; skim does not
+re-extract or pretend to know their decoded frame times. Use `inspect` for fresh
+decoded-time frames in an existing workspace. Newly loaded workspaces use the
+new index; its timing is separate from the on-demand inspect cache. Load
+`--dry-run` plans the same extraction without creating images or timing files;
+the predicted count is the scheduled maximum, and video ending before an audio
+container tail can produce fewer images. Cloud skim uses the same sampler,
+default interval selection and inclusive requested-grid filtering; local custom
+intervals and thumbnail widths remain explicit local options.
+
+For dense source inspection, use `moviestar inspect --from X --to Y`. Each
+thumbnail's `requested_timecode` is a sample on the interval grid; its `timecode`
+is the displayed source frame's presentation time, rounded to milliseconds.
+The sampler uses the last frame at or before each FFmpeg sample tick, preserving frames
+held across variable-frame-rate gaps. FFmpeg quantizes the requested grid to its
+representable output time base; labels use observed timing rather than a decimal
+interval reconstruction. Actual frame times can precede the window
+start or repeat across samples; if video begins after the first request, the
+first available frame is used. Source inspection keeps its source clock even
+when a flat project has trims. Scene-composition inspection continues to report
+the rendered composition's result time and scene-local time. `--source ID`
+explicitly selects source inspection for a scene project.
+
+Repeated source inspections reuse only complete images with matching source
+timing metadata. Existing image-only caches are regenerated. `--dry-run` plans
+the same sampling without decoding or writing images; its frame count describes
+the requested grid, so a source that ends before the requested range may return
+fewer frames.
 
 New manual text overlays use canvas-relative preset defaults. Font sizes,
 strokes, and lower-third padding scale with the shorter canvas side, using
@@ -195,3 +255,23 @@ result is pending or unknown. Local files are preserved.
 Unlisted links are forwardable and downloadable; email does not restrict access
 to its recipient. See [sharing and download](sharing.md) for availability, safe
 retries after partial success, pagination, revocation, and Preview origins.
+
+
+## Recorder files without duration metadata
+
+For Matroska/WebM, `probe` and `load` recover missing or invalid container
+duration from audio
+and video packet presentation endpoints. Recovery preserves timestamp origins
+and gaps; it does not infer frame rate or continuous timing from a nominal rate.
+The optional `duration_probe` object records the method, origin, endpoint and
+packet count in probe/load/dry-run/status output and the stored source.
+
+Recovery demuxes without decoding and stops after 60 seconds or one million
+packets. Missing final packet timing, demux errors or an exceeded budget fail
+with remux guidance instead of a zero-length success or a guessed duration.
+Remux to a separate seekable file with duration metadata and retry; keep the
+original. A failed recovery during `load --force` preserves the existing project.
+Packet endpoints establish a metadata range, not full-decode or audiovisual
+quality approval. Existing finite positive container durations use the normal
+fast probe without this scan. Other formats, including timeless image metadata,
+keep their existing probe behavior.

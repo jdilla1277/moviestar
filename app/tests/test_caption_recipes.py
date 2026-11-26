@@ -137,6 +137,159 @@ class TestRecipePersistence:
 
 
 class TestLiveDerivation:
+    def test_replacement_outside_scene_clears_captions_in_dump_and_export(
+        self, runner, test_video, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+        original = tmp_path / "original.vtt"
+        original.write_text(
+            "WEBVTT\n\n00:00:00.100 --> 00:00:00.900\nOld words\n"
+        )
+        _invoke(
+            runner, "load", test_video, "--as", "src_0", "--no-frames",
+            "--captions", str(original),
+        )
+        _invoke(
+            runner, "scenes", "set", "--canvas", "short",
+            "--scene", "intro=single", "--slot", "intro:main=src_0",
+            "--from", "0", "--to", "1", "--audio-from", "intro=src_0",
+        )
+        _invoke(runner, "captions", "generate")
+        _invoke(runner, "captions", "break", "--at-word", "words")
+        before = _spec_on_disk(tmp_path)
+        old_edits = before["captions"][0]["edits"]
+        assert old_edits
+        corrected = tmp_path / "corrected.vtt"
+        corrected.write_text(
+            "WEBVTT\n\n00:00:01.100 --> 00:00:01.900\nCorrect words\n"
+        )
+
+        _invoke(runner, "retranscribe", "--captions", str(corrected), "--quiet")
+        dump = _invoke(runner, "captions", "dump")
+
+        assert dump["cues"] == []
+        assert dump["cues_count"] == 0
+        assert dump["stale"] is False
+        assert dump["recipe"]["edits"] == old_edits
+        assert _spec_on_disk(tmp_path) == before
+        output = tmp_path / "empty-captions.mp4"
+        exported = _invoke(runner, "export", "--out", str(output), "--review")
+        assert exported["status"] == "exported"
+        assert output.is_file() and output.stat().st_size > 0
+        assert "drawtext" not in " ".join(exported["ffmpeg_command"])
+        assert _spec_on_disk(tmp_path) == before
+        # The refresh exception does not change explicit generation's contract.
+        generated = runner.invoke(cli, ["captions", "generate"])
+        assert generated.exit_code == 1
+        assert _spec_on_disk(tmp_path) == before
+
+    @pytest.mark.parametrize("unreadable", ["missing", "invalid_json"])
+    def test_refresh_failure_blocks_dump_and_export_without_writing(
+        self, runner, test_video, tmp_path, monkeypatch, unreadable
+    ):
+        _project(runner, test_video, tmp_path, monkeypatch)
+        before = _spec_on_disk(tmp_path)
+        transcript = tmp_path / "moviestar" / "transcripts" / "src_0.json"
+        if unreadable == "missing":
+            transcript.unlink()
+        else:
+            transcript.write_text("{invalid")
+        output = tmp_path / "must-not-export.mp4"
+
+        for args in (
+            ["captions", "dump"],
+            ["export", "--out", str(output)],
+        ):
+            result = runner.invoke(cli, args)
+            assert result.exit_code == 1
+            error = json.loads(result.stdout)
+            assert "Could not read transcript" in error["error"]
+            assert error["command"] == "captions refresh"
+            assert not output.exists()
+            assert _spec_on_disk(tmp_path) == before
+
+    def test_supplied_transcript_replacement_refreshes_words_without_writing_spec(
+        self, runner, test_video, tmp_path, monkeypatch
+    ):
+        _project(runner, test_video, tmp_path, monkeypatch)
+        _invoke(runner, "captions", "break", "--at-word", "where")
+        before = _spec_on_disk(tmp_path)
+        corrected = tmp_path / "corrected.vtt"
+        corrected.write_text(
+            "WEBVTT\n\n00:00:00.100 --> 00:00:01.900\nHolden fixed this\n"
+        )
+
+        _invoke(runner, "retranscribe", "--captions", str(corrected), "--quiet")
+        dump = _invoke(runner, "captions", "dump")
+
+        text = " ".join(cue["text"] for cue in dump["cues"])
+        assert "Holden" in text
+        assert "intro" not in text
+        assert dump["recipe"]["edits"] == before["captions"][0]["edits"]
+        assert _spec_on_disk(tmp_path) == before
+
+    def test_frozen_captions_keep_their_words_but_become_stale_after_import(
+        self, runner, test_video, tmp_path, monkeypatch
+    ):
+        _project(runner, test_video, tmp_path, monkeypatch)
+        _invoke(runner, "captions", "materialize")
+        before = _invoke(runner, "captions", "dump")
+        assert before["stale"] is False
+        corrected = tmp_path / "corrected.srt"
+        corrected.write_text(
+            "1\n00:00:00,100 --> 00:00:01,900\nHolden fixed this\n"
+        )
+
+        _invoke(runner, "retranscribe", "--captions", str(corrected), "--quiet")
+        after = _invoke(runner, "captions", "dump")
+
+        assert after["cues"] == before["cues"]
+        assert after["stale"] is True
+
+    def test_timing_only_replacement_refreshes_the_cached_cues(
+        self, runner, test_video, tmp_path, monkeypatch
+    ):
+        _project(runner, test_video, tmp_path, monkeypatch)
+        before = _invoke(runner, "captions", "dump")
+        # Same source reference, model, word count and words; only times change.
+        words = _words()
+        for word in words:
+            for boundary in ("start", "end"):
+                word[boundary]["seconds"] *= 0.5
+        inject_synthetic_transcript(tmp_path, words, _segments())
+
+        after = _invoke(runner, "captions", "dump")
+
+        assert [cue["text"] for cue in after["cues"]] == [
+            cue["text"] for cue in before["cues"]
+        ]
+        assert after["cues"][-1]["result_range"]["to"]["seconds"] == pytest.approx(
+            0.975
+        )
+
+    def test_invalid_replacement_leaves_transcript_and_edit_untouched(
+        self, runner, test_video, tmp_path, monkeypatch
+    ):
+        _project(runner, test_video, tmp_path, monkeypatch)
+        project_dir = tmp_path / "moviestar"
+        saved = {
+            path: path.read_bytes()
+            for path in (
+                project_dir / "project.json",
+                project_dir / "spec.json",
+                project_dir / "transcripts" / "src_0.json",
+            )
+        }
+        invalid = tmp_path / "invalid.vtt"
+        invalid.write_text("Not a timed transcript\n")
+
+        result = runner.invoke(
+            cli, ["retranscribe", "--captions", str(invalid), "--quiet"]
+        )
+
+        assert result.exit_code == 1
+        assert all(path.read_bytes() == content for path, content in saved.items())
+
     def test_cues_rederive_after_a_pacing_change(
         self, runner, test_video, tmp_path, monkeypatch
     ):
