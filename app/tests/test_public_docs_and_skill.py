@@ -22,6 +22,8 @@ PUBLIC_DOCS = (
     ROOT / "docs" / "README.md",
     ROOT / "docs" / "getting-started.md",
     ROOT / "docs" / "installation.md",
+    ROOT / "docs" / "feedback-guide.md",
+    ROOT / "docs" / "sharing-guide.md",
     ROOT / "docs" / "agent-guide.md",
     ROOT / "docs" / "review-evidence.md",
     ROOT / "docs" / "install-skill.md",
@@ -328,3 +330,20 @@ def test_submission_guide_documents_build_and_claim_boundary() -> None:
     assert "skill scan" in guide
     assert "codex plugin marketplace add ." in install
     assert "plugin-submission.md" in install
+
+
+def test_feedback_walkthrough_discloses_connected_contact_and_explicit_anonymity():
+    guide = (ROOT / "docs" / "feedback-guide.md").read_text()
+    assert "moviestar feedback --anonymous --file feedback.md" in guide
+    for field in ("account_linked", "contact_available", "anonymous: null"):
+        assert field in guide
+    assert "verified account contact" in guide
+    assert "Moviestar adds no account identity" not in " ".join(guide.split())
+
+
+def test_sharing_walkthrough_distinguishes_public_links_from_received_access():
+    guide = (ROOT / "docs" / "sharing-guide.md").read_text()
+    assert "invitations.md" in guide
+    assert "account-assets.md" in guide
+    assert "Anyone with the link" in guide
+    assert "accepted invitations" in guide

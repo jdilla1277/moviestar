@@ -1,5 +1,9 @@
 # Share and download finished videos
 
+For a walkthrough from your first upload to recipient playback, start with
+[Sharing with Moviestar](sharing-guide.md). This page covers command behavior
+and recovery in detail.
+
 Local editing needs no account. Hosted upload and publication require a connected
 installation and current account-wide terms/age consent; see [account setup](accounts.md).
 These commands work when their service has enabled the corresponding feature.

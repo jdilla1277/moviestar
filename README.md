@@ -93,7 +93,7 @@ to update the cut behind all existing links when the service enables replacement
 Its `--dry-run` reads the owning account, affected URLs and projected storage.
 
 Hosted sharing requires Moviestar v0.8.0 or newer and an account. Unlisted links
-can be forwarded. Start with the [sharing guide](docs/sharing.md) and
+can be forwarded. Start with the [sharing guide](docs/sharing-guide.md) and
 [v0.8.0 release notes](docs/releases/v0.8.0.md). For the latest editing fixes,
 see the [v0.8.2 release notes](docs/releases/v0.8.2.md). The
 [v0.8.1 release notes](docs/releases/v0.8.1.md) cover review tools and the
@@ -110,6 +110,7 @@ for browser acceptance, pagination, offline previews and revocation.
 
 - [Getting started](docs/getting-started.md)
 - [Agent guide](docs/agent-guide.md)
+- [Leaving feedback](docs/feedback-guide.md)
 - [Personal API keys and remote MCP](docs/api-keys.md)
 - [Install the Moviestar skill](docs/install-skill.md)
 - [Documentation index](docs/README.md)
