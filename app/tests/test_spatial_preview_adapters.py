@@ -1,5 +1,6 @@
 """The documented experiment entry points follow the installed render API."""
 import json
+import importlib.util
 from pathlib import Path
 import subprocess
 import sys
@@ -7,27 +8,33 @@ import sys
 import pytest
 
 from moviestar.spatial_layout import browser_available
+from tests.test_preview_benchmark_diagnostics import benchmark_module as foreign_benchmark
 
 
 EXPERIMENT = Path(__file__).parents[2] / 'experiments/spatial_preview_performance'
 
 
 @pytest.fixture
-def synthetic_project(tmp_path, monkeypatch):
+def synthetic_project(tmp_path, monkeypatch, foreign_benchmark):
     if not browser_available():
         pytest.skip('Chrome and Node required')
+    # Reproduce the full-suite import order: the live-browser experiment was
+    # loaded first. It must neither be reused nor overwritten by these tests.
+    monkeypatch.setitem(sys.modules, 'benchmark', foreign_benchmark)
     monkeypatch.syspath_prepend(str(EXPERIMENT))
-    import benchmark
+    entry = importlib.util.spec_from_file_location('spatial_preview_benchmark', EXPERIMENT/'benchmark.py')
+    benchmark = importlib.util.module_from_spec(entry)
+    entry.loader.exec_module(benchmark)
     from moviestar.spec import save_spec
     spec, metadata = benchmark.fixture(tmp_path)
     spec['composition_canvas'].update(width=320, height=180)
     save_spec(spec, cwd=tmp_path)
-    return spec, metadata
+    assert sys.modules['benchmark'] is foreign_benchmark
+    return benchmark, spec, metadata
 
 
 def test_benchmark_capture_accepts_session_paint_cache(tmp_path, synthetic_project):
-    import benchmark
-    spec, metadata = synthetic_project
+    benchmark, spec, metadata = synthetic_project
     from moviestar import spatial_render
     original = spatial_render._compose
     captured = benchmark.capture(tmp_path, 'capture', spec, metadata)
