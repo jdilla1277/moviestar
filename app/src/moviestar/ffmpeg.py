@@ -589,7 +589,9 @@ def build_mix_audio_command(
         "-c:a", "aac",
         "-ar", str(AUDIO_MIX_SAMPLE_RATE),
         "-ac", "2",
-        "-shortest",
+        # Each audio layer is already padded/trimmed to the authored window.
+        # Let the copied video drain independently: -shortest can stop muxing
+        # before reordered H.264 packets at EOF have all been written (#257).
         output_path,
     ]
     return cmd
