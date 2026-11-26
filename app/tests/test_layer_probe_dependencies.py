@@ -42,6 +42,11 @@ def test_pruned_loudness_matches_full_graph(test_video,audio_only_file,mode,wind
         window_duration=window[1],prune_unrelated=prune) for prune in [False,True]]
     metrics=[]
     for cmd in commands:
+        # The unpruned oracle drains unused sidechain branches into anullsink.
+        # Serialize filter scheduling for this numerical equivalence check:
+        # FFmpeg's automatic pool can stall those branches before producing a
+        # report. Keep both graphs, the exact metrics and the 15s deadline.
+        cmd[1:1] = ['-filter_complex_threads', '1']
         measured=subprocess.run(cmd,capture_output=True,text=True,check=True,timeout=15)
         raw=_parse_loudnorm_json(measured.stderr)
         metrics.append({key:raw[key] for key in ['input_i','input_tp','input_lra','input_thresh']})
