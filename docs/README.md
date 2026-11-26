@@ -27,6 +27,8 @@ AI agents. Start with the path that matches your task:
   and source-blind editing evidence.
 - [CI media setup](ci-media-setup.md) — Ubuntu FFmpeg package provenance,
   verified download caching, setup deadlines and failure-path checks.
+- [v0.8.5 release notes](releases/v0.8.5.md) — truthful frame clocks, complete
+  picture endings, saved Cloud edits and bounded verified delivery.
 - [v0.8.4 release notes](releases/v0.8.4.md) — local editing fixes, expanded
   Cloud preview inspection and asset workflows, account-linked feedback and agent guidance.
 - [v0.8.2 release notes](releases/v0.8.2.md) — audio timing, scene exports,
@@ -67,4 +69,5 @@ The CLI's built-in help is the authoritative command reference. Run
 - [Cloud watch excerpts](cloud-watch.md) — request private bounded video/audio, reopen durable jobs, and retrieve through the CLI.
 - [Cloud visual skims](cloud-skim.md) — timestamped private thumbnails from a ready Cloud video.
 
-- [Initial Cloud edit checks](cloud-edits.md) — read an unsaved timeline and validate a trim without saving, when advertised by the service.
+- [Cloud edits](cloud-edits.md) — inspect, validate, save and undo a bounded trim on enabled services.
+- [Cloud render delivery](cloud-renders.md) — request an explicit saved revision and verify/download its preview or supported final output.

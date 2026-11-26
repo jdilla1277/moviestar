@@ -4,12 +4,14 @@
 
 Your agent loads one or many videos, fuzzy-searches the transcript, composes and shapes a timeline across multiple cameras, animates per-scene camera and layout motion, retimes footage, mixes source audio with voiceover and music, burns in captions with spoken-word highlighting, and renders with FFmpeg — or extracts any number of standalone clips in one pass. Editing commands return structured JSON. Source files are never modified — edits are described in a declarative spec and applied at render time.
 
-Version 0.8.4 adds local timing, screenshot, storyboard and text-validation fixes,
-plus remote CLI uploads, inspection jobs, original downloads and project/asset viewer access
-on enabled Cloud preview services. See the [0.8.4 release notes](https://github.com/jdilla1277/moviestar/blob/v0.8.4/docs/releases/v0.8.4.md)
-for availability and upgrade guidance. Remote timeline editing and edited-project
-rendering remain planned. Developer-guide reads now return Markdown by default;
-use `cloud docs show PAGE --json` for a JSON envelope.
+Version 0.8.5 makes inspection frame times truthful and preserves the ending
+picture when replacing audio. Its remote CLI can read/save/undo bounded Cloud
+trims and retrieve verified preview or supported full-quality outputs, alongside
+account usage, invitations, original downloads and confirmed asset deletion.
+See the [0.8.5 release notes](https://github.com/jdilla1277/moviestar/blob/v0.8.5/docs/releases/v0.8.5.md)
+for frame-clock migration and service/enrollment limits. A client upgrade does
+not enable a disabled Cloud operation. Developer-guide reads return Markdown by
+default; use `cloud docs show PAGE --json` for a JSON envelope.
 
 ## Quick start
 
