@@ -5,6 +5,10 @@ attempts to finish an edit, ask it to help you report what happened. You can
 also tell us what worked well or suggest something you'd like Moviestar to do.
 You don't need a Moviestar account to send feedback from the CLI.
 
+The connected-contact and anonymous controls below require Moviestar 0.8.4 or
+newer. Check `moviestar --version` and upgrade an older installation before using
+these examples.
+
 ## Ask your agent to write the report
 
 For example, after reviewing a video:
@@ -90,14 +94,27 @@ moviestar feedback --file feedback.md
 ```
 
 The CLI sends the report text and your installed Moviestar version. It does not
-automatically attach your video, project, logs, command history, or account
-details. A successful response reports `status: "success"`; when the service
-returns a `feedback_id`, keep it as a reference for your report.
+automatically attach your video, project, logs, or command history.
 
-If the command reports a failure, keep `feedback.md` and read the returned
-error and retry instructions. A timeout does not prove the report wasn't
-received. The feedback command has no retry key, so resubmitting after a lost
-reply may send a duplicate report.
+By default, a connected submission uses your approved account connection. The
+service can retain verified account contact for that report; the CLI does not
+search your device for an email address. A blank follow-up email section does
+not make a connected report anonymous. Use the explicit anonymous option below
+if you do not want account contact attached.
+
+A successful response reports `status: "success"`. A confirmed connected receipt
+also reports `account_linked` and `contact_available` without exposing your
+address, account ID, or credential. Keep any returned `feedback_id` as the
+reference for your report. An older service may not confirm account linkage;
+read the receipt rather than assuming it did.
+
+If the command reports a failure, keep `feedback.md`, any `feedback_id`, and the
+returned error/recovery instructions. A timeout does not prove the report wasn't
+received. For an uncertain connected submission, `anonymous: null` means
+anonymity is unconfirmed: the report may already include account contact.
+Authentication failures do not trigger an anonymous retry. The command has no
+retry key, so do not automatically resend or switch to anonymous after a lost
+reply; that can create a duplicate report.
 
 ## Leave an email for follow up
 
@@ -110,12 +127,27 @@ you@example.com
 ```
 
 Use your own address in place of the example. Moviestar removes this section
-from the report text and sends the address separately for follow up. It does
-not subscribe you to general update emails.
+from the report text and sends the address separately as a deliberately supplied
+alternative contact. It is not treated as your verified account address and does
+not replace any account contact already resolved by the service. Contact capture
+does not subscribe you to updates or send an automatic follow-up message.
 
-Leave the section blank to submit without a follow-up address. Moviestar adds
-no account identity to the feedback, but names or other identifying details
-you write in the report remain part of it.
+## Submit without account contact
+
+To omit the saved account connection and its verified contact, use:
+
+```sh
+moviestar feedback --anonymous --file feedback.md
+```
+
+`--anonymous` skips account-state and credential access. Leave the optional
+follow-up email section blank, and remove names or other identifying details
+from the report if you do not want to share them. Anything you write in the
+report remains part of it. Logged-out submissions have no account contact;
+a deliberately supplied follow-up address is still sent separately.
+
+See [Feedback and account contact](feedback.md) for the receipt and recovery
+contract.
 
 ## Send a short note
 

@@ -16,6 +16,15 @@ Or, to send it directly:
 Use the recipient's actual address. Your agent should use the address you
 provide rather than guess from a name.
 
+## Choose the sharing journey
+
+This walkthrough covers finished MP4s shared through an unlisted watch link.
+Project and account-asset sharing instead use accepted invitations and current
+account permissions. See [received invitations](invitations.md) and
+[account assets](account-assets.md) for those workflows. An invitation does not
+create an anonymous watch link, and an unlisted link does not grant project
+editing access.
+
 ## Connect your account once
 
 Local editing needs no account. To upload and share videos, install Moviestar
@@ -59,9 +68,10 @@ copy it into a message. The command also returns a `video_id` for the uploaded
 MP4 and a `link_id` for this particular link. Keep both so you can delete the
 upload or revoke the link later.
 
-`final-handoff-1` is a name you choose for this request. If the connection drops,
-retry with the same name and file so Moviestar can find the existing upload
-and link.
+`final-handoff-1` is an illustrative name for this request. Choose a fresh unique
+key for each deliberate new upload/share request and retain it before sending.
+If the connection drops, retry with the same key and unchanged file so Moviestar
+can find the existing upload and link.
 
 **Anyone with the link can watch, download, and forward it.** Unlisted sharing
 means someone can open it without signing in. Emailing the link to one person
