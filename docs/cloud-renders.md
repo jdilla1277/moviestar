@@ -11,13 +11,18 @@ audio are not admitted yet. Two output kinds are supported when enrolled:
 | Kind | Local equivalent | Output and processing bounds |
 | --- | --- | --- |
 | `preview` | `export --preview --video-encoder x264` | 480px high, 16 MiB, 4 minutes |
-| `final` | `export --video-encoder x264` | Full source dimensions, padded to even pixels, maximum 1920px edge; 64 MiB, 8 minutes |
+| `final` | `export --video-encoder x264` | Square pixels (1:1), full source dimensions padded to even pixels, maximum 1920px edge; 64 MiB, 8 minutes |
 
 Final keeps the engine's full-quality x264 profile (fast, CRF 18), not the
 preview's reduced resolution/quality. Bounds are admission/execution limits,
 not promises that every input will fit. Oversized or failed outputs publish no
 artifact; no lower-quality fallback is substituted. Final requires separate
 account enrollment and a qualified worker; support does not imply availability.
+Non-square-pixel (anamorphic) input is explicitly unsupported for Cloud final
+in this slice and is rejected before a job or usage reservation is created.
+Preview remains supported for otherwise admitted inputs. Local full export
+continues to support its native pixel-aspect-ratio behavior; Cloud does not
+silently stretch or resample the source to bypass this limit.
 Use
 `moviestar cloud capabilities` for the connected service's availability/bounds.
 Its summary edit/render flags describe configured availability; account
