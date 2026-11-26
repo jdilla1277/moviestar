@@ -50,7 +50,7 @@ frame generation, so write/finish waits alone do not establish encoder cost.
 Interpreter startup is included in case elapsed time, outside the stage timers.
 
 CI also uses `--compare-reference`: each duration is exported with both the
-frozen compositor from `da8215d` and production, in fresh workers on the same
+frozen #304 compositor from `3b40fa5` and production, in fresh workers on the same
 container. Short runs use reference first; long runs reverse the order. Each
 variant must independently pass its RAM plateau. Complete submitted RGB-stream
 hashes and encoded MP4 hashes must match, not just a sampled still. Hashing is
@@ -59,6 +59,16 @@ times. `reference_composite.py` is an experiment oracle, not distributed code;
 do not optimize it alongside production. All baseline/candidate results remain
 in `summary.json`, including first failures. Local default mode can omit this
 extra comparison, while retaining production resource checks.
+
+The static grid fixture also asserts actual paint PNG decode counts: reference
+decodes every base/mask on every frame; production decodes each once per worker.
+`paint-cache.json` records maximum retained decoded bytes per session and its
+128 MiB budget. Compact visible-mask channels let the qualified grid fit that
+budget; layouts that cannot fit safely use uncached decoding. Current native
+decode/conversion buffers are transient and still count against the container.
+Both variants retain the same encoded-paint cache; only production uses decoded
+paint reuse. The frozen reference deliberately ignores the new optional cache
+argument via the experiment adapter, without modifying its original algorithm.
 
 The Python producer has one outstanding acknowledged frame write; FFmpeg's raw
 input queue is one packet. Decoder references, five source cursors, Chrome and

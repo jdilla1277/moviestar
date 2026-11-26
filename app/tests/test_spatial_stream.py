@@ -190,11 +190,11 @@ def test_cli_uses_pixels_without_final_or_source_video_pngs(tmp_path,monkeypatch
     import moviestar.spatial_render as render
     from tests.test_spatial_video import _invoke
     original=render._compose;calls=[]
-    def compose(directory,canvas,planes,videos,output):
+    def compose(directory,canvas,planes,videos,output,**kwargs):
         assert output is None
         assert all(isinstance(v['decoded'],av.VideoFrame) for v in videos.values())
         calls.append(1)
-        return original(directory,canvas,planes,videos,output)
+        return original(directory,canvas,planes,videos,output,**kwargs)
     def publish(*args):raise AssertionError('stream published a PNG')
     monkeypatch.setattr(render,'_compose',compose)
     monkeypatch.setattr(render,'_publish',publish)

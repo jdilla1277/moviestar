@@ -67,12 +67,25 @@ def _accumulate(accumulators, base_channels, white_channels, media_channels):
             accumulator[rows] = pixels
 
 
-def compose(temporary: Path, canvas: dict, planes: list[dict], videos: dict, output: Path | None):
+def _paint_channels(path, width, height, bounds=None, *, paint_cache=None):
+    def load():
+        frame = _read_png(path).reformat(format='gbrp16le')
+        if (frame.width, frame.height) != (width, height):
+            label = 'browser capture' if path.name == 'base.png' else 'visibility mask'
+            raise ValueError(f'{label} dimensions do not match the canvas')
+        channels = _channels(frame)
+        if bounds is not None:
+            left, top, right, bottom = bounds
+            channels = [channel[top:bottom, left:right] for channel in channels]
+        return channels
+    return (load() if paint_cache is None else
+            paint_cache.pixels(path, ((width, height), bounds), load))
+
+
+def compose(temporary: Path, canvas: dict, planes: list[dict], videos: dict, output: Path | None,
+            *, paint_cache=None):
     width, height = canvas['width'], canvas['height']
-    base = _read_png(temporary / 'base.png').reformat(format='gbrp16le')
-    if (base.width, base.height) != (width, height):
-        raise ValueError('browser capture dimensions do not match the canvas')
-    base_channels = _channels(base)
+    base_channels = _paint_channels(temporary / 'base.png', width, height, paint_cache=paint_cache)
     result = av.VideoFrame(width, height, format='gbrp16le')
     result.pts, result.time_base = 0, Fraction(1, 25)
     for plane in result.planes:
@@ -82,13 +95,13 @@ def compose(temporary: Path, canvas: dict, planes: list[dict], videos: dict, out
         accumulator[:] = background
     for plane in planes:
         scaled = _place_video(videos[plane['id']]['decoded'], plane['rect'], width, height)
-        white = _read_png(temporary / f"{plane['id']}-white.png").reformat(format='gbrp16le')
-        if (white.width, white.height) != (width, height):
-            raise ValueError('visibility mask dimensions do not match the canvas')
+        bounds = scaled[1] if scaled is not None else (0, 0, 0, 0)
+        white = _paint_channels(temporary / f"{plane['id']}-white.png", width, height,
+                                bounds, paint_cache=paint_cache)
         if scaled is not None:
             media, (left,top,right,bottom) = scaled
             region = lambda channels: [channel[top:bottom,left:right] for channel in channels]
-            _accumulate(region(accumulators), region(base_channels), region(_channels(white)), _channels(media))
+            _accumulate(region(accumulators), region(base_channels), white, _channels(media))
             del media
         del white, scaled
     frame = result.reformat(format='rgb24')

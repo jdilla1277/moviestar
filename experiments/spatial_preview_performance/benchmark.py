@@ -55,7 +55,8 @@ def capture(root, case, spec, project):
     destination = root / case
     destination.mkdir()
     original = renderer._compose
-    def save_inputs(temporary, canvas, planes, videos, output):
+    def save_inputs(temporary, canvas, planes, videos, output, *, paint_cache=None):
+        # Capture uses the frozen reference, which has no decoded-paint cache.
         ffmpeg_reference(temporary, canvas, planes, videos, output)
         for file in temporary.glob("*.png"):
             shutil.copyfile(file, destination / file.name)

@@ -44,6 +44,7 @@ jobs:
         run: |
           python -c "import av; assert av.__version__ == '16.1.0', av.__version__"
           python -m pytest app/tests/test_spatial_composite.py -q
+          python -m pytest app/tests/test_spatial_decoded_paint.py -q
           # Headless decoder coverage includes real reformat calls, exact RGB,
           # timestamp selection, format fallbacks, eviction and cleanup. Full
           # browser composition/export coverage runs in the main test job.
@@ -321,6 +322,7 @@ jobs:
             ${{ runner.temp }}/spatial-stream-memory/**/source-opens.json
             ${{ runner.temp }}/spatial-stream-memory/**/stages.json
             ${{ runner.temp }}/spatial-stream-memory/**/rgb-stream.json
+            ${{ runner.temp }}/spatial-stream-memory/**/paint-cache.json
             ${{ runner.temp }}/spatial-stream-memory/**/stdout
             ${{ runner.temp }}/spatial-stream-memory/**/stderr
           if-no-files-found: warn

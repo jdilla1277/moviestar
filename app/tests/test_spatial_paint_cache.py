@@ -42,6 +42,10 @@ def test_reuse_ignores_only_output_directory_and_unused_root_clocks(tmp_path):
 @pytest.mark.parametrize('change', ['canvas', 'scene', 'style', 'crop', 'content', 'image', 'caption', 'regions', 'unknown'])
 def test_visual_changes_invalidate_paint(tmp_path, change):
     cache = PaintCache(); first = request(tmp_path/'first'); seed(cache, first)
+    import numpy as np
+    cache.pixels(Path(first['paint_dir'])/'base.png', (),
+                 lambda: [np.zeros((2, 3), dtype=np.uint16)] * 3)
+    assert cache.decoded_bytes
     other = deepcopy(first); other['paint_dir'] = str(tmp_path/'second')
     if change == 'canvas': other['canvas']['width'] = 321
     elif change == 'scene': other['scene_id'] = 'new'
@@ -53,6 +57,9 @@ def test_visual_changes_invalidate_paint(tmp_path, change):
     elif change == 'regions': other['reserved_regions'] = [{'id': 'new'}]
     elif change == 'unknown': other['future_timing'] = .2
     assert cache.restore(other) is None
+    Path(other['paint_dir']).mkdir()
+    seed(cache, other)  # A completed fresh browser capture replaces both forms.
+    assert cache.decoded_bytes == 0
 
 
 @pytest.mark.parametrize('special', ['motion', 'media_motion', 'raster_image', 'reference_image', 'reference_path', 'layout_output_path', 'output_path', 'live_dom'])
@@ -107,6 +114,14 @@ def test_real_frames_reuse_paint_but_keep_fresh_video(project, tmp_path, canvas)
         with av.open(str(path)) as source:
             return next(source.decode(video=0)).to_ndarray(format='rgb24').tobytes()
     pixels = []
+    from moviestar import spatial_composite
+    original = spatial_composite._read_png
+    reads = []
+    def read(path):
+        reads.append(path.name)
+        return original(path)
+    # Count cached rendering separately from the independent reference session.
+    from unittest.mock import patch
     with BrowserSession() as session, BrowserSession() as reference:
         reference._paint_cache.max_bytes = 0
         for index, at in enumerate([.05, .15, .25]):
@@ -114,8 +129,12 @@ def test_real_frames_reuse_paint_but_keep_fresh_video(project, tmp_path, canvas)
             before, after = tmp_path/f'old-{index}.png', tmp_path/f'new-{index}.png'
             old = render_spatial_frame(spec, frame, canvas, project_root=tmp_path,
                 output_path=before, browser_session=reference)
-            new = render_spatial_frame(spec, frame, canvas, project_root=tmp_path,
-                output_path=after, browser_session=session)
+            reads.clear()
+            with patch.object(spatial_composite, '_read_png', read):
+                new = render_spatial_frame(spec, frame, canvas, project_root=tmp_path,
+                    output_path=after, browser_session=session)
+            paint_reads = [name for name in reads if name == 'base.png' or name.endswith('-white.png')]
+            assert len(paint_reads) == (1 + len(new['media']) if index == 0 else 0)
             assert rgb(before) == rgb(after)
             pixels.append(rgb(after))
             assert new['boxes'] == old['boxes'] and new['media'] == old['media']
@@ -123,6 +142,7 @@ def test_real_frames_reuse_paint_but_keep_fresh_video(project, tmp_path, canvas)
         assert reference._counter == 3
         assert len(set(pixels)) == 3, 'Reuse must never freeze source frames'
     assert session._paint_cache.retained_bytes == 0
+    assert session._paint_cache.decoded_bytes == 0
 
 
 def test_active_word_changes_repaint_and_keep_current_reports(tmp_path):
