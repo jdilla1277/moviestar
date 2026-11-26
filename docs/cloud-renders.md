@@ -95,3 +95,58 @@ Artifact `size_bytes` is the downloadable MP4 size, without that metadata overhe
 
 Independent decoding proves file/media integrity, not that a person watched,
 heard or approved the result. Inspect the actual preview before final delivery.
+
+
+## See a frame from the rendered video
+
+When `rendering.frame_inspection.submission_available` is true, request one JPEG
+from an **exact verified artifact**. This does not render again or change the
+edit. Times are integer milliseconds on that rendered file, excluding its end.
+Source `screenshot`/`inspect` commands still inspect original footage.
+
+```sh
+moviestar cloud artifacts screenshot "$PROJECT" "$ARTIFACT" --at-ms 10000
+# Retain the returned frame JOB and retry key; poll the SAME job.
+moviestar cloud artifacts screenshot-show "$PROJECT" "$ARTIFACT" "$FRAME_JOB"
+moviestar cloud artifacts screenshot-show "$PROJECT" "$ARTIFACT" "$FRAME_JOB" \
+  --out rendered-frame.jpg
+```
+
+An omitted key is generated and saved before submission. After
+`submission_unconfirmed`, retry the returned recovery command with the same key,
+artifact and timestamp. A new key requests another processing job. Reopening and
+image transfer do not reserve processing again. A failed job does not restart
+when read. New filenames only; `file_saved:true` follows actual JPEG size/SHA
+verification and atomic file creation.
+
+The job binds `project_id`, `revision_id`, `render_job_id`, `artifact_id` and
+`artifact_sha256`. Its `clock` is `rendered_result`; `result.requested_at_ms` is
+your request, while `result.at_ms` is the observed decoded timestamp of the frame
+at or before it (`selection:frame_at_or_before`). Engine/runtime and actual JPEG
+dimensions/size/hash are returned. A newer edit or undo does not retarget an old
+frame. Preview pixels do not certify a separately rendered final artifact.
+
+API below the same account Cloud prefix:
+`POST /projects/P/artifacts/A/screenshots` with `{at_ms:10000}` and retained
+`Idempotency-Key`; `GET /projects/P/artifacts/A/screenshots/J` to reopen;
+`GET /projects/P/artifacts/A/screenshots/J/image` for private JPEG bytes.
+MCP tools are `moviestar_screenshot_render_artifact` and
+`moviestar_get_render_artifact_screenshot`; successful reads include a native
+JPEG image block as well as canonical job metadata. Delivery of a block is not
+proof that a client displayed or perceived it.
+
+The bounded profile accepts verified personal render MP4s up to 64 MiB, returns
+one aspect-preserving JPEG up to 640 pixels wide (no upscale) and 1 MiB, and
+bounds processing at 180 seconds. Pending image storage holds and actual saved
+image bytes count toward capacity. Existing Cloud allowance and screenshot
+Activity track this work, including its exact rendered-output links. The compatible
+Activity kind is `asset_screenshot`; `resource_name` labels the rendered frame and
+`rendered_output` identifies its exact target. Metered `output_bytes` includes
+the JPEG plus existing job/receipt metadata; image `size_bytes` describes only
+the downloadable JPEG. Access is
+rechecked for requests, worker input/publication and image reads. Account
+worker enrollment is still required even when configured flags are available.
+Unrendered compositions, storyboards and time windows are outside this action.
+
+Local `inspect` uses the same observed decoded-time helper. Local `screenshot`
+uses seek-based requested-time reporting; it is not an observed-PTS parity claim.

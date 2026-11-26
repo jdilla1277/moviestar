@@ -103,3 +103,23 @@ def test_invalid_estimates_are_unavailable_not_zero(amount):
              'reason':None, 'scope':'compute', 'method':'attempt_occupancy_v1',
              'policy_version':None, 'adjustment_multiplier':None}
     assert _compute_estimate(value) is False
+
+def test_rendered_frame_activity_keeps_exact_output_identity_and_rejects_bad_context():
+    from moviestar.account_reads import _entry
+    item={'id':'10000000-0000-0000-0000-000000000001','operation_id':'10000000-0000-0000-0000-000000000002',
+          'kind':'asset_screenshot','state':'succeeded','created_at':'2030-01-12T12:00:00Z','finished_at':'2030-01-12T12:00:01Z',
+          'project_id':'10000000-0000-0000-0000-000000000003','asset_id':None,'parent_operation_id':None,'elapsed_ms':1000,
+          'failure_code':None,'actual_cost_usd':None,'cost_receipts':0,'historical':False}
+    output={'project_id':item['project_id'],'revision_id':item['id'],'render_job_id':item['id'],'artifact_id':item['operation_id'],'artifact_sha256':'a'*64}
+    item['rendered_output']=output
+    assert _entry(item,task=True)['rendered_output']==output
+    item['rendered_output']={**output,'artifact_sha256':'not-a-hash'}
+    assert _entry(item,task=True) is None
+
+
+def test_activity_help_explains_rendered_frames_and_output_byte_scope():
+    result = CliRunner().invoke(cli, ['account', 'activity', '--help'])
+    text = ' '.join(result.output.split())
+    assert 'rendered_output' in text
+    assert 'JPEG plus job metadata' in text
+    assert 'image.size_bytes' in text
