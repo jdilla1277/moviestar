@@ -182,7 +182,8 @@ def cloud():
     manage asset references, probe Cloud assets, inspect ready video frames, read guides, or upload a private
     original with 'cloud assets create'. Ordinary local commands stay local;
     Cloud commands do not select a local workspace. Use 'cloud renders' for
-    explicitly requested saved-version previews when the service admits them.
+    explicitly requested saved-version previews and full-quality videos when
+    the service admits them.
     Connect with 'moviestar account connect', or set both MOVIESTAR_API_KEY and
     MOVIESTAR_CLOUD_URL (the exact HTTPS base ending /api/v1/account/cloud).
     Explicit key mode never falls back to installation credentials.

@@ -51,10 +51,51 @@ def test_show_does_not_submit_again(remote):
     assert result.exit_code==0,result.output
     assert calls[-1]==('https://service.invalid/api/v1/account/cloud/projects/'+P+'/render-jobs/'+J,{})
 
-def test_rejects_final_before_connection(remote):
+def test_rejects_unadvertised_kind_before_connection(remote):
     calls,_=remote
-    result=CliRunner().invoke(cli,['cloud','renders','submit',P,'--revision',R,'--kind','final'])
+    result=CliRunner().invoke(cli,['cloud','renders','submit',P,'--revision',R,'--kind','review'])
     assert result.exit_code!=0 and calls==[]
+
+def test_final_submit_preserves_kind_and_rejects_wrong_kind_receipt(remote):
+    calls,value=remote;value['job']['kind']='final'
+    command=['cloud','renders','submit',P,'--revision',R,'--kind','final','--idempotency-key','retained']
+    result=CliRunner().invoke(cli,command)
+    assert result.exit_code==0,result.output
+    assert calls[-1][1]['payload']=={'revision_id':R,'kind':'final'}
+    value['job']['kind']='preview'
+    result=CliRunner().invoke(cli,command)
+    assert json.loads(result.stdout)['error']['code']=='submission_unconfirmed'
+    assert '--kind final' in json.loads(result.stdout)['recovery_command']
+
+def test_unknown_final_reply_recovers_final_not_preview(remote,monkeypatch):
+    monkeypatch.setattr(cloud,'_request',lambda *a,**kw:(0,{}))
+    result=CliRunner().invoke(cli,['cloud','renders','submit',P,'--revision',R,'--kind','final','--idempotency-key','retained'])
+    body=json.loads(result.stdout)
+    assert body['error']['code']=='submission_unconfirmed'
+    assert '--kind final' in body['recovery_command']
+
+def test_conflicting_key_does_not_recommend_repeating_the_conflict(remote,monkeypatch):
+    error={'code':'idempotency_conflict','message':'Key belongs to another intent.','details':{},'retryable':False}
+    monkeypatch.setattr(cloud,'_request',lambda *a,**kw:(409,{'error':error,'request_id':'synthetic'}))
+    result=CliRunner().invoke(cli,['cloud','renders','submit',P,'--revision',R,'--kind','final','--idempotency-key','retained'])
+    body=json.loads(result.stdout)
+    assert result.exit_code!=0 and body['error']==error
+    assert 'recovery_command' not in body
+    assert body['idempotency_key']=='retained'
+    assert 'original' in body['hint'].lower()
+
+def test_malformed_conflict_is_a_canonical_unavailable_error(remote,monkeypatch):
+    monkeypatch.setattr(cloud,'_request',lambda *a,**kw:(409,{'error':'not a canonical error'}))
+    result=CliRunner().invoke(cli,['cloud','renders','submit',P,'--revision',R,'--kind','final','--idempotency-key','retained'])
+    assert result.exit_code!=0
+    assert json.loads(result.stdout)['error']['code']=='renders_unavailable'
+
+def test_final_artifact_has_its_own_size_bound():
+    from moviestar.cloud_renders import valid_artifact
+    value=dict(id=A,project_id=P,revision_id=R,job_id=J,attempt_id=A,kind='final',engine_version='a'*40,sha256='b'*64,size_bytes=32*1024*1024)
+    assert valid_artifact(value,P)
+    assert not valid_artifact({**value,'kind':'preview'},P)
+    assert not valid_artifact({**value,'size_bytes':64*1024*1024+1},P)
 
 def test_capabilities_preserve_render_profile_discovery(remote,monkeypatch):
     capability={'contract_version':'m33.3-personal-projects-1','project_access':'owner_only','operations':['projects:read'],

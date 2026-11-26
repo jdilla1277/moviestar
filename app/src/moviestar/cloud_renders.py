@@ -1,4 +1,4 @@
-"""Exact-version Cloud previews; ordinary local export stays local."""
+"""Exact-version Cloud preview and full-quality renders; ordinary local export stays local."""
 import hashlib
 import json
 import os
@@ -38,23 +38,23 @@ def ids(*values):
     return [v.lower() for v in values]
 
 
-def valid_job(value,project,job=None,revision=None):
+def valid_job(value,project,job=None,revision=None,kind=None):
     return (isinstance(value,dict) and isinstance(value.get('id'),str) and service._UUID.fullmatch(value['id'])
             and value.get('project_id')==project and (job is None or value['id']==job)
             and isinstance(value.get('revision_id'),str) and service._UUID.fullmatch(value['revision_id'])
-            and (revision is None or value['revision_id']==revision) and value.get('kind')=='preview'
+            and (revision is None or value['revision_id']==revision) and value.get('kind') in ('preview','final') and (kind is None or value['kind']==kind)
             and value.get('state') in ('queued','running','verifying','succeeded','failed','cancelled')
             and (isinstance(value.get('artifact_id'),str) and service._UUID.fullmatch(value['artifact_id'])
                  if value.get('state')=='succeeded' else value.get('artifact_id') is None))
 
 
 def valid_artifact(value,project,artifact=None,revision=None):
-    return (isinstance(value,dict) and value.get('project_id')==project and value.get('kind')=='preview'
+    return (isinstance(value,dict) and value.get('project_id')==project and value.get('kind') in ('preview','final')
             and all(isinstance(value.get(k),str) and service._UUID.fullmatch(value[k]) for k in ('id','revision_id','job_id','attempt_id'))
             and (artifact is None or value['id']==artifact) and (revision is None or value['revision_id']==revision)
             and isinstance(value.get('engine_version'),str) and re.fullmatch('[a-f0-9]{40}',value['engine_version'])
             and isinstance(value.get('sha256'),str) and re.fullmatch('[a-f0-9]{64}',value['sha256'])
-            and type(value.get('size_bytes')) is int and 12<=value['size_bytes']<=16777216)
+            and type(value.get('size_bytes')) is int and 12<=value['size_bytes']<=(67108864 if value['kind']=='final' else 16777216))
 
 
 def download(body,project,artifact,out,service_url):
@@ -112,15 +112,19 @@ def download(body,project,artifact,out,service_url):
 def register_renders(cloud):
     @cloud.group()
     def renders():
-        """Render, reopen or cancel an exact saved Cloud preview."""
+        """Render, reopen or cancel an exact saved Cloud revision."""
 
     @renders.command('submit')
     @click.argument('project_id')
     @click.option('--revision',required=True,help='Exact immutable saved revision; never inferred from latest.')
-    @click.option('--kind',type=click.Choice(['preview']),default='preview',show_default=True)
+    @click.option('--kind',type=click.Choice(['preview','final']),default='preview',show_default=True)
     @click.option('--idempotency-key',help='Retain on retries. Generated and saved before sending if omitted.')
     def submit(project_id,revision,kind,idempotency_key):
-        """Request one preview. Accepted means queued, not rendered.
+        """Request preview (480p) or final (full source dimensions). Accepted means queued.
+
+        Both render this exact revision without changing its spec or undo journal.
+        Final matches local export with x264; no preview approval is inferred.
+        Successful output allowance includes the MP4 plus 8 KiB of job metadata.
 
         After an uncertain reply, repeat the identical command/key. A new key
         deliberately requests new work. Poll renders show with the returned IDs.
@@ -135,13 +139,16 @@ def register_renders(cloud):
             with creation_request(url,credential,json.dumps(intent,sort_keys=True),idempotency_key) as pending:
                 pending.save()
                 status,body=service._request(url,credential,payload=intent,key=pending.key)
-                recovery=f'moviestar cloud renders submit {project_id} --revision {revision} --kind preview --idempotency-key {pending.key}'
+                recovery=f'moviestar cloud renders submit {project_id} --revision {revision} --kind {kind} --idempotency-key {pending.key}'
                 if status not in (200,202):
                     if status==0 or status>=500:
                         fail('submission_unconfirmed','The outcome is unknown. Retry this exact command/key to recover the original job.',idempotency_key=pending.key,recovery_command=recovery)
+                    if isinstance(body.get('error'),dict) and body['error'].get('code')=='idempotency_conflict':
+                        checked(status,body,idempotency_key=pending.key,
+                                hint='Recover the original project/revision/kind/key. Use a new key only to deliberately request different work.')
                     checked(status,body,idempotency_key=pending.key,recovery_command=recovery)
                 if (body.get('status')!='accepted' or body.get('idempotency_key')!=pending.key or type(body.get('replayed')) is not bool
-                        or not valid_job(body.get('job'),project_id,revision=revision)):
+                        or not valid_job(body.get('job'),project_id,revision=revision,kind=kind)):
                     fail('submission_unconfirmed','No matching durable receipt was confirmed. Retain this revision/key and retry.',idempotency_key=pending.key,recovery_command=recovery)
                 click.echo(json.dumps(body,indent=2))
         except (CreationBusy,CreationStateError):

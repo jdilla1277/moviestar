@@ -1,13 +1,33 @@
-# Preview an exact saved Cloud edit
+# Preview and deliver an exact saved Cloud edit
 
-Local `export --preview` stays local. Remote previews explicitly render one
-immutable saved version using that engine's preview mode and x264 encoder.
+Local `export` and `export --preview` stay local. Remote renders explicitly use
+one immutable saved version with the same engine and x264 encoder.
 Saving or undoing instructions does not automatically render.
 
 The initial Cloud profile supports one owned ready MP4, trim-only instructions,
-at most 30 seconds of result, a 64 MiB input and a 16 MiB output. Layouts,
-captions, altered audio and full-quality rendering are not admitted yet. Use
+at most 30 seconds of result and a 64 MiB input. Layouts, captions and altered
+audio are not admitted yet. Two output kinds are supported when enrolled:
+
+| Kind | Local equivalent | Output and processing bounds |
+| --- | --- | --- |
+| `preview` | `export --preview --video-encoder x264` | 480px high, 16 MiB, 4 minutes |
+| `final` | `export --video-encoder x264` | Square pixels (1:1), full source dimensions padded to even pixels, maximum 1920px edge; 64 MiB, 8 minutes |
+
+Final keeps the engine's full-quality x264 profile (fast, CRF 18), not the
+preview's reduced resolution/quality. Bounds are admission/execution limits,
+not promises that every input will fit. Oversized or failed outputs publish no
+artifact; no lower-quality fallback is substituted. Final requires separate
+account enrollment and a qualified worker; support does not imply availability.
+Non-square-pixel (anamorphic) input is explicitly unsupported for Cloud final
+in this slice and is rejected before a job or usage reservation is created.
+Preview remains supported for otherwise admitted inputs. Local full export
+continues to support its native pixel-aspect-ratio behavior; Cloud does not
+silently stretch or resample the source to bypass this limit.
+Use
 `moviestar cloud capabilities` for the connected service's availability/bounds.
+Its summary edit/render flags describe configured availability; account
+enrollment, exact input support and quota are checked at submission. The detailed
+`editing` and `rendering` sections describe the admitted operations/profiles.
 
 ```sh
 moviestar cloud edits show "$PROJECT"
@@ -17,13 +37,21 @@ moviestar cloud renders show "$PROJECT" "$JOB"
 moviestar cloud artifacts list "$PROJECT" --revision "$REVISION"
 moviestar cloud artifacts show "$PROJECT" "$ARTIFACT"
 moviestar cloud artifacts download "$PROJECT" "$ARTIFACT" --out preview.mp4
+
+# After reviewing the preview, request the SAME revision at full quality.
+# FINAL_KEY is a different retained key; each new render reserves allowance.
+moviestar cloud renders submit "$PROJECT" --revision "$REVISION" \
+  --kind final --idempotency-key "$FINAL_KEY"
+# Poll the returned final JOB, then download its returned ARTIFACT.
+moviestar cloud artifacts download "$PROJECT" "$FINAL_ARTIFACT" --out final.mp4
 ```
 
 The revision is required: the CLI never silently selects the latest edit.
 Generate a unique retry key before the first submission. If omitted, the CLI
 saves one before sending. Retain the key, exact request and returned job ID.
 Repeating that submission recovers the same job, even after later edits. A new
-key deliberately requests another render. Changed intent with the same key
+key deliberately requests another render. Switching preview to final requires
+a different key; both outputs can belong to the same revision. Changed intent with the same key
 fails. After `submission_unconfirmed`, use the returned recovery command;
 do not infer rollback or generate a replacement key.
 
@@ -44,7 +72,7 @@ API paths below `/api/v1/account/cloud` are project-scoped:
 
 | Action | Route |
 | --- | --- |
-| Submit | `POST /projects/P/render-jobs`, body `{revision_id,kind:"preview"}`, `Idempotency-Key` required |
+| Submit | `POST /projects/P/render-jobs`, body `{revision_id,kind:"preview"}` or `{revision_id,kind:"final"}`, `Idempotency-Key` required |
 | Read / cancel | `GET /projects/P/render-jobs/J`, `POST /projects/P/render-jobs/J/cancel` |
 | List / inspect outputs | `GET /projects/P/artifacts?revision_id=R`, `GET /projects/P/artifacts/A` |
 | Authorize download | `POST /projects/P/artifacts/A/download` returns a JSON GET grant, not bytes |
@@ -62,6 +90,8 @@ output bytes and in-flight storage holds count against storage capacity. No
 automatic cleanup or unlimited retention is promised. Existing Activity and
 Cloud allowance track one execution; reads, replay, download and saved edits
 do not create another render debit. Provider costs remain separate.
+Successful output allowance includes the MP4 plus 8 KiB of job/receipt metadata.
+Artifact `size_bytes` is the downloadable MP4 size, without that metadata overhead.
 
 Independent decoding proves file/media integrity, not that a person watched,
 heard or approved the result. Inspect the actual preview before final delivery.
