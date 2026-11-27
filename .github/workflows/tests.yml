@@ -157,7 +157,8 @@ jobs:
 
   native-playback:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Interview edits, cut/EOF regressions and legacy PiP all run serially.
+    timeout-minutes: 15
     env:
       MOVIESTAR_CHROME_NO_SANDBOX: '1'
 
