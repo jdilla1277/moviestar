@@ -27,7 +27,7 @@ def walk(nodes):
 PROFILE = {"name": "native", "transport": "native-browser", "max_window_s": 10,
            "clip_end_tolerance_ms": 50, "clip_end": "approximate",
            "min_fps": 24, "max_fps": 60, "max_segments": 3, "min_videos_per_segment": 0, "max_videos_per_segment": 3,
-           "max_videos_per_cut_segment": 2,
+           "max_videos_per_cut_segment": 3, "max_video_players": 6,
            "max_independent_audio_tracks": MAX_AUDIBLE_TRACKS,
            "fallback_mode": "rendered"}
 
@@ -111,8 +111,6 @@ def compile_snapshot(snapshot):
             has_scene_clock = True
         if picture_count == 3:
             has_three_pictures = prepared_audio = True
-    if has_three_pictures and len(spans) > 1:
-        fail('three-picture native review requires a single scene span; review each scene separately')
     if has_scene_clock and any(metadata.get(span.audio.source_id, {}).get('audio_codec') for span in spans):
         prepared_audio = True
         routed = {span.audio.source_id for span in spans}
@@ -127,6 +125,8 @@ def compile_snapshot(snapshot):
         child, registered = _compile_span(snapshot, timeline, left, right, span, prepared_audio=prepared_audio, validate_source_route=validate_source_route)
         packets.append({'offset': left-start, 'packet': child})
         assets.update(registered)
+    if sum(media['kind'] == 'video' for segment in packets for media in segment['packet']['media']) > PROFILE['max_video_players']:
+        fail('native cut review supports at most six video players across scenes')
     if len(packets) == 1:
         packet = packets[0]['packet']
     else:
@@ -332,6 +332,16 @@ def _build(request_file,request,timing):
         plane['asset'] = key
     from moviestar.native_caption_reuse import prepare_jobs
     packets = [s['packet'] for s in packet['segments']] if 'segments' in packet else [packet]
+    from moviestar.native_decode import packet_index
+    for child in packets:
+        media=[m for m in child['media'] if m['kind']=='video']
+        if len(media)!=3:continue
+        child['decoded_transport']=True
+        for item in media:
+            asset=assets[item['asset']]
+            if asset_identity(asset['path'])!=asset['identity']:raise ValueError('Native source changed')
+            item['video_decode']=packet_index(asset['path'],item['source_start'],item['source_end'],child['fps'])
+            if asset_identity(asset['path'])!=asset['identity']:raise ValueError('Native source changed')
     jobs,contexts={},{}
     for child in packets:
         plane=child.get('caption_plane')

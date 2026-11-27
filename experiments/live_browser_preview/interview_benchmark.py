@@ -68,10 +68,11 @@ def prepare_case(folder, canvas, depth, *, capture_pcm=False, edits=True, scene=
 
 def run_case(folder, canvas, depth, *, capture_pcm=False, edits=True, scene='intro'):
     root = prepare_case(folder, canvas, depth, capture_pcm=capture_pcm, edits=edits, scene=scene)
-    start = 0 if scene == 'intro' else 3
+    start = 3 if scene == 'reply' else 0
+    stop = 6 if scene == 'all' else start + 3
     with (folder / 'server.log').open('w') as log:
         server = subprocess.Popen([sys.executable, '-m', 'moviestar.cli', 'preview', '--workspace', str(root),
-            '--mode', 'native', '--from', str(start), '--to', str(start + 3), '--port', '0', '--no-open'],
+            '--mode', 'native', '--from', str(start), '--to', str(stop), '--port', '0', '--no-open'],
             stdout=subprocess.PIPE, stderr=log, text=True, env={**os.environ, 'MOVIESTAR_PREVIEW_TIMING': '1'})
         try:
             with selectors.DefaultSelector() as selector:
@@ -80,8 +81,20 @@ def run_case(folder, canvas, depth, *, capture_pcm=False, edits=True, scene='int
                 ready = json.loads(server.stdout.readline())
                 if not ready.get('url'): raise RuntimeError(str(ready))
             with (folder / 'driver.log').open('w') as driver:
-                return subprocess.run(['node', str(HERE / 'interview_benchmark.mjs'), ready['url'], str(root),
-                    str(folder), sys.executable, str(_chrome_path())], stdout=driver, stderr=subprocess.STDOUT, timeout=180).returncode
+                result = subprocess.run(['node', str(HERE / 'interview_benchmark.mjs'), ready['url'], str(root),
+                    str(folder), sys.executable, str(_chrome_path())], stdout=driver, stderr=subprocess.STDOUT, timeout=180)
+            if result.returncode == 0 and capture_pcm:
+                from pcm_reference import verify_pcm_reference
+                report_path=folder/'report.json';report=json.loads(report_path.read_text())
+                try:
+                    for review in report['playback']:
+                        review['pcm_reference']=verify_pcm_reference(review,folder/(review['label']+'-audio-reference.wav'),duration=stop-start)
+                except AssertionError as error:
+                    report['problems'].append('PCM reference: '+str(error))
+                    report_path.write_text(json.dumps(report))
+                    return 1
+                report_path.write_text(json.dumps(report))
+            return result.returncode
         finally:
             server.terminate()
             try: server.wait(timeout=9)
@@ -96,7 +109,7 @@ if __name__ == '__main__':
     parser.add_argument('--history', action='append', type=int, choices=[0, 20, 50])
     parser.add_argument('--capture-pcm', action='store_true')
     parser.add_argument('--playback-only', action='store_true')
-    parser.add_argument('--scene', choices=['intro', 'reply'], default='intro')
+    parser.add_argument('--scene', choices=['intro', 'reply', 'all'], default='intro')
     args = parser.parse_args(); out = args.out.resolve()
     if out.exists(): parser.error('--out must be new; retain previous evidence')
     out.mkdir()

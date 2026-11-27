@@ -52,8 +52,8 @@ def test_three_person_packet_selects_any_visible_speaker_without_flattening(inte
     assert len(videos) == 3 and len(assets) == 4
     assert [(m['source_start'], m['source_end']) for m in videos] == [(2, 5), (3, 6), (4, 7)]
     assert packet['prepared_audio'] is True
-    # The real embedded audio pipeline of the routed speaker supplies the
-    # picture clock, even if an earlier listener in DOM order is silent.
+    # Preserve the routed speaker/source identity for validation, including
+    # when an earlier listener in DOM order is silent.
     assert packet['video_path'] == path
     assert (packet['source_start'], packet['source_end']) == (origin + 1, origin + 4)
     job = assets[packet['audio_plane']['job']]
@@ -124,7 +124,7 @@ def test_three_person_audio_must_match_a_visible_picture_clock(interview_project
 
 
 @pytest.mark.parametrize('scenes', [2, 3])
-def test_three_picture_cut_windows_require_explicit_rendered_fallback(interview_project, scenes):
+def test_three_picture_cut_windows_keep_the_six_decoder_bound(interview_project, scenes):
     spec, _, root = interview_project
     original = deepcopy(spec['composition'][0]); tree = deepcopy(spec['spatial']['scenes']['scene'])
     spec['composition'] = []; spec['spatial']['scenes'] = {}
@@ -134,14 +134,23 @@ def test_three_picture_cut_windows_require_explicit_rendered_fallback(interview_
         part['slots'][0].update(id=f'slot_{index}', source_to='0:00:03.000')
         spec['composition'].append(part); spec['spatial']['scenes'][identity] = deepcopy(tree)
     save_spec(spec, cwd=root)
-    with pytest.raises(NativePreviewUnsupported, match='three-picture.*single scene'):
-        compile_snapshot(read_snapshot(root, 0, 2*scenes))
+    if scenes == 3:
+        with pytest.raises(NativePreviewUnsupported, match='six video players'):
+            compile_snapshot(read_snapshot(root, 0, 2*scenes))
+    else:
+        before = (root/'moviestar/spec.json').read_bytes()
+        packet, assets = compile_snapshot(read_snapshot(root, 0, 2*scenes))
+        assert len(packet['segments']) == 2 and len(packet['media']) == 6
+        assert all(m['has_audio'] and not m.get('picture_only') for m in packet['media']), 'Retain embedded pipelines for zero-gain output-clock connections'
+        assert all(len(child['packet']['media']) == 3 and child['packet']['prepared_audio'] for child in packet['segments'])
+        assert len(assets[packet['audio_plane']['job']]['source_pieces']) == 2
+        assert (root/'moviestar/spec.json').read_bytes() == before
     packet, _ = compile_snapshot(read_snapshot(root, 0, 2))
     assert len(packet['media']) == 3, 'Review each scene independently without flattening'
 
 
-@pytest.mark.parametrize('action', ['finish', 'pause', 'seek', 'dispose'])
-def test_static_interview_completion_is_owned_by_current_play(action):
+@pytest.mark.parametrize('action,cut', [('finish',False),('pause',False),('seek',False),('dispose',False),('finish',True)])
+def test_static_interview_completion_is_owned_by_current_play(action,cut):
     import json
     import subprocess
     from tests.native_stage_harness import stage_script
@@ -162,8 +171,10 @@ vm.runInContext(`packet={fps:30,range:{from:0,to:1/30},source_start:1,source_end
  video=pictures[0].video;videos.push(...pictures);videoGroup=group;reviewAudio=review;pictureStartup={prepared_frame_only:true,lead:0};resolveReady(true);`,context);
 // Assign the module's lexical audio separately from the fixture's global name.
 context.audioFixture=audio;vm.runInContext('audio=audioFixture;',context);
+if(CUT)vm.runInContext('packet.cut_segment=true;reviewAudio=null;freezeLastFrame=()=>{};freezeFollower=()=>{};',context);
 const api=context.window.moviestarLiveStage,flush=()=>new Promise(r=>setImmediate(r));
 (async()=>{
+ if(CUT){await api.play();assert.equal(api.paused,false);assert.equal(audible,false);assert.equal(timers.size,0,'The parent mix owns completion of a static cut child');api.pause();api.dispose();return;}
  await api.play();assert.equal(api.paused,false);assert.equal(audible,true);assert.equal(timers.size,1);
  const stale=[...timers.values()][0].fn;
  if(ACTION==='finish'){
@@ -178,13 +189,13 @@ const api=context.window.moviestarLiveStage,flush=()=>new Promise(r=>setImmediat
  if(ACTION!=='dispose')api.dispose();
 })().catch(error=>{console.error(error);process.exitCode=1;});
 '''
-    result = subprocess.run(['node', '-e', 'const STAGE='+json.dumps(stage_script())+';const ACTION='+json.dumps(action)+';'+script],
+    result = subprocess.run(['node', '-e', 'const STAGE='+json.dumps(stage_script())+';const ACTION='+json.dumps(action)+';const CUT='+json.dumps(cut)+';'+script],
                             capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-@pytest.mark.parametrize('silent_listener', [False, True])
-def test_moving_interview_joins_output_clock_on_play_without_doubling_pcm(silent_listener):
+@pytest.mark.parametrize('cut', [False, True])
+def test_decoded_interview_uses_pcm_without_media_element_audio_nodes(cut):
     import json
     import subprocess
     from tests.native_stage_harness import stage_script
@@ -198,30 +209,29 @@ const audio={sampleRate:48000,currentTime:10,state:'running',resume:async()=>{},
   assert.equal(video.muted,false,'A muted element cannot supply the audio clock');
   const node={video,connect(gain){assert.equal(gain.gain.value,0,'Only prepared PCM may be audible');}};
   sources.push(node);return node;}};
-const pictures=Array.from({length:3},(_,i)=>({path:[String(i)],primary:i===0,hasAudio:i!==2||!SILENT,
+const pictures=Array.from({length:3},(_,i)=>({path:[String(i)],primary:i===0,hasAudio:false,
  video:{muted:true,paused:true,currentTime:i+1,playbackRate:1,pause(){this.paused=true;},
   getVideoPlaybackQuality:()=>({totalVideoFrames:0,droppedVideoFrames:0})}}));
 const review={pause(){},snapshot:()=>({prepared:true}),async play(at,options){
- assert.equal(options.presentationLead,undefined,'Muted preparation cannot calibrate the device-clock pipeline');
- assert.equal(options.pictureLead,1/60,'Use the established half-frame audio-clock launch');}};
+ assert.equal(options.presentationLead,0,'Decoded pictures follow PCM without measured video-element startup');}};
 const group={pause(){pictures.forEach(p=>p.video.pause());},async play(){
- assert.equal(sources.length,SILENT?2:3,'Real audio streams share the output clock before motion');
+ assert.equal(sources.length,0,'Decoded pictures use the prepared PCM clock');
  pictures.forEach(p=>p.video.paused=false);return true;}};
 const context={window:{moviestarScene:{entries:[],applyMotion(){}}},document:{createElement:()=>({getContext:()=>({})})},
  location:{search:'?request=unit'},URLSearchParams,AbortController,performance:{now:()=>1},Date,
  fetch:()=>new Promise(()=>{}),setTimeout,clearTimeout,requestAnimationFrame:()=>1,console,
- pictures,testAudio:audio,review,group};
+ CUT,pictures,testAudio:audio,review,group};
 vm.createContext(context);vm.runInContext(STAGE,context);
-vm.runInContext(`packet={fps:30,source_start:1,prepared_audio:true,media:Array(3).fill({kind:'video'}),samples:Array(90).fill({nodes:[]})};
+vm.runInContext(`packet={decoded_transport:true,cut_segment:CUT,fps:30,source_start:1,prepared_audio:true,media:Array(3).fill({kind:'video'}),samples:Array(90).fill({nodes:[]})};
  audio=testAudio;outputMixer={node:{}};video=pictures[0].video;videos.push(...pictures);
- videoGroup=group;reviewAudio=review;pictureStartup={lead:.032};connectAudioGraph();resolveReady(true);`,context);
+ videoGroup=group;reviewAudio=review;pictureStartup={lead:0,decoded:true};connectAudioGraph();resolveReady(true);`,context);
 assert.equal(sources.length,0,'Readiness must not wait on an autoplay-blocked AudioContext');
 (async()=>{const api=context.window.moviestarLiveStage;
  await api.play();api.pause();await api.play();api.pause();
- assert.equal(sources.length,SILENT?2:3,'Restart reuses each MediaElementAudioSourceNode');
+ assert.equal(sources.length,0,'Restart never attaches canvas transport to media-element audio');
  assert.ok(gains.every(g=>g.gain.value===0),'Embedded tracks never double the canonical PCM');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 '''
-    result = subprocess.run(['node', '-e', 'const STAGE='+json.dumps(stage_script())+';const SILENT='+json.dumps(silent_listener)+';'+script],
+    result = subprocess.run(['node', '-e', 'const STAGE='+json.dumps(stage_script())+';const CUT='+json.dumps(cut)+';'+script],
                             capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stdout + result.stderr
