@@ -154,6 +154,15 @@ def _entry(value, *, task=False):
         if any(a is None for a in parsed):
             return None
         result["attempts"] = parsed
+    if "rendered_output" in value:
+        output = value["rendered_output"]
+        result["rendered_output"] = None
+        if output is not None:
+            parsed = _fields(output, {**dict.fromkeys(("project_id", "revision_id", "render_job_id", "artifact_id"), _id),
+                                     "artifact_sha256": lambda v: isinstance(v, str) and re.fullmatch("[a-f0-9]{64}", v) is not None})
+            if parsed is None:
+                return None
+            result["rendered_output"] = parsed
     if "cloud_usage" in value:
         usage = value["cloud_usage"]
         result["cloud_usage"] = None
@@ -238,6 +247,10 @@ def register_account_reads(account):
     @click.option("--cloud", "cloud_only", is_flag=True, help="Show Cloud jobs only.")
     def activity(limit, cursor, cloud_only):
         """Read task history, allowance and nested attempts without executing work.
+
+        Tasks with rendered_output inspect an exact rendered video, using the
+        existing asset_screenshot kind. Their output_bytes counts the JPEG plus
+        job metadata; image.size_bytes is the downloadable JPEG alone.
 
         Screenshot estimated_compute is a compute-only estimate, separate from
         actual provider receipts. Read its status/reason and never add the job

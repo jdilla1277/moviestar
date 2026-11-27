@@ -184,6 +184,9 @@ def register_renders(cloud):
     def artifacts():
         """Read or download verified outputs bound to saved revisions."""
 
+    from moviestar.cloud_render_frames import register_frame_commands
+    register_frame_commands(artifacts)
+
     @artifacts.command('list')
     @click.argument('project_id')
     @click.option('--revision',help='Filter by this exact saved version.')
