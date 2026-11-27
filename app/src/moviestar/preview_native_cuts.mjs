@@ -39,7 +39,7 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
   // A single picture already has its first frame prepared. Starting it before
   // the cut can advance that frame while hidden. Parallel decoder groups need
   // the existing hidden warmup; do not move source-only pictures early.
-  const handoffLead=i=>(packet.segments[i+1].packet.media??[]).filter(m=>m.kind==='video').length>1?pictureLead:0;
+  const handoffLead=i=>(packet.segments[i+1].packet.media??[]).filter(m=>m.kind==='video').length===2?pictureLead:0;
   async function advancePrepared(i,attempt,expectedAt){
     if(handoff)return;handoff=true;
     const incoming=i+1,boundary=packet.segments[incoming].offset;
@@ -110,12 +110,12 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
     const check=()=>{
       if(disposed||!playing||attempt!==generation||index!==i)return;
       try{
-        const remaining=hasMaster()&&i<stages.length-1?packet.segments[i+1].offset-handoffLead(i)-masterTime():length(i)-stages[i].api.time;
+        const remaining=hasMaster()&&i<stages.length-1?packet.segments[i+1].offset-handoffLead(i)-masterTime():hasMaster()&&stages[i].api.metrics.picture_startup?.prepared_frame_only?duration-masterTime():length(i)-stages[i].api.time;
         if(remaining>.002){timer=setTimeout(check,Math.max(1,remaining*1000));return;}
         advance(i,attempt,Date.now());
       }catch(error){fail(error);}
     };
-    const remaining=hasMaster()&&i<stages.length-1?packet.segments[i+1].offset-handoffLead(i)-masterTime():length(i)-stages[i].api.time;
+    const remaining=hasMaster()&&i<stages.length-1?packet.segments[i+1].offset-handoffLead(i)-masterTime():hasMaster()&&stages[i].api.metrics.picture_startup?.prepared_frame_only?duration-masterTime():length(i)-stages[i].api.time;
     timer=setTimeout(check,Math.max(0,remaining*1000));
   }
   stages.forEach((stage,i)=>{
@@ -231,7 +231,7 @@ export async function mountCuts(packet,signal,metrics){
     reviewAudio=createPreparedAudio(audio,output,signal,packet.range.to-packet.range.from);
     const prepared=await reviewAudio.prepare(packet.audio_plane,signal);prepared.commit();
     const destinations=packet.segments.map(()=>{const gain=audio.createGain();gain.gain.value=0;gain.connect(output);return gain;});
-    window.moviestarCutShared={audio,destinations};
+    window.moviestarCutShared={audio,destinations,reviewAudio,rangeStart:packet.range.from};
     document.documentElement.style.cssText='margin:0;width:100%;height:100%';
     document.body.style.cssText='margin:0;position:relative;width:100%;height:100%;overflow:hidden';
     document.body.replaceChildren();

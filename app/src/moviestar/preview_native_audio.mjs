@@ -1,6 +1,6 @@
 // One lossless, bounded result-window mix. Picture cuts never restart it.
 export function createPreparedAudio(context,destination,signal,duration){
-  let buffer=null,plane=null,source=null,generation=0,disposed=false,offset=0,startedAt=0,lastStart=null;
+  let buffer=null,plane=null,source=null,generation=0,disposed=false,offset=0,startedAt=0,lastStart=null,ended=false;
   const api={
     async prepare(next,requestSignal){
       requestSignal?.throwIfAborted();if(disposed)throw Error('Superseded');
@@ -45,7 +45,7 @@ export function createPreparedAudio(context,destination,signal,duration){
       offset=Math.round(Math.max(0,Math.min(buffer.duration,at))*context.sampleRate)/context.sampleRate;
       if(offset>=buffer.duration)return;
       source=context.createBufferSource();source.buffer=buffer;source.connect(destination);
-      const playing=source;source.onended=()=>{if(source===playing){source.disconnect();source=null;offset=buffer.duration;}};
+      const playing=source;source.onended=()=>{if(source===playing){source.disconnect();source=null;offset=buffer.duration;ended=true;}};
       destination.port?.postMessage({kind:'capture'});
       // Schedule ahead of the rendering thread: starting at currentTime can
       // reach it one quantum late, while the master clock records the earlier
@@ -63,13 +63,13 @@ export function createPreparedAudio(context,destination,signal,duration){
       }
     },
     outputTimeAt(displayEpoch){
-      if(!source||!lastStart||disposed)return null;
+      if((!source&&!ended)||!lastStart||disposed)return null;
       const stamp=context.getOutputTimestamp();
       if(!(stamp.contextTime>0&&stamp.performanceTime>0))return null;
-      return offset+stamp.contextTime+(displayEpoch-performance.timeOrigin-stamp.performanceTime)/1000-startedAt;
+      return Math.min(buffer.duration,lastStart.offset+stamp.contextTime+(displayEpoch-performance.timeOrigin-stamp.performanceTime)/1000-startedAt);
     },
     pause(){
-      ++generation;
+      ended=false;++generation;
       if(source){offset=Math.min(buffer.duration,offset+Math.max(0,context.currentTime-startedAt));
         source.onended=null;source.stop();source.disconnect();source=null;}
     },
