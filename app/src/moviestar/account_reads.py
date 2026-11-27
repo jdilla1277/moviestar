@@ -249,8 +249,8 @@ def register_account_reads(account):
         """Read task history, allowance and nested attempts without executing work.
 
         Tasks with rendered_output inspect an exact rendered video, using the
-        existing asset_screenshot kind. Their output_bytes counts the JPEG plus
-        job metadata; image.size_bytes is the downloadable JPEG alone.
+        existing asset_screenshot or asset_storyboard kinds. Their output_bytes
+        counts the encoded JPEG plus job metadata; image.size_bytes is the downloadable JPEG alone.
 
         Screenshot estimated_compute is a compute-only estimate, separate from
         actual provider receipts. Read its status/reason and never add the job

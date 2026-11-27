@@ -123,3 +123,8 @@ def test_activity_help_explains_rendered_frames_and_output_byte_scope():
     assert 'rendered_output' in text
     assert 'JPEG plus job metadata' in text
     assert 'image.size_bytes' in text
+
+
+def test_activity_help_names_both_rendered_inspection_kinds():
+    result = CliRunner().invoke(cli, ['account', 'activity', '--help'])
+    assert 'asset_screenshot or asset_storyboard' in ' '.join(result.output.split())

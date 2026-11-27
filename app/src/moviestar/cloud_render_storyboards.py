@@ -55,7 +55,8 @@ def register_rendered_storyboard_commands(artifacts):
     def storyboard(project_id, artifact_id, idempotency_key):
         """Request one whole-video automatic contact sheet of an existing verified output. Never rerenders,
         imports an asset, edits the spec or silently chooses the latest output.
-        Poll/reopen using storyboard-show. Actual and requested sample times differ.
+        Poll/reopen using storyboard-show. Poll only queued/running jobs;
+        failed/cancelled jobs are terminal. Actual and requested sample times differ.
         """
         project_id, artifact_id = ids(project_id, artifact_id)
         if idempotency_key is not None and not service._KEY.fullmatch(idempotency_key):
@@ -85,6 +86,8 @@ def register_rendered_storyboard_commands(artifacts):
     def show(project_id, artifact_id, job_id, out):
         """Reopen the exact storyboard job after reconnecting. No new extraction or
         usage reservation. The result binds the rendered file hash and revision.
+        Poll only queued/running jobs; failed/cancelled jobs are terminal.
+        Reopening a failed job preserves diagnostics and never restarts it.
         """
         project_id, artifact_id, job_id = ids(project_id, artifact_id, job_id)
         endpoint, credential = service._connection('cloud artifacts storyboard-show')
@@ -92,7 +95,7 @@ def register_rendered_storyboard_commands(artifacts):
         status, body = service._request(url, credential)
         checked(status, body)
         if not valid_job(body.get('job'), project_id, artifact_id, job_id):
-            fail('invalid_response', 'Frame identity or manifest did not match. Reopen the original IDs.')
+            fail('invalid_response', 'Storyboard identity or manifest did not match. Reopen the original IDs.')
         result = {**body, 'file_saved': False}
         if out is not None:
             j = body['job']

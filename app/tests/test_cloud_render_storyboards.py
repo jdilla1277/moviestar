@@ -128,3 +128,12 @@ def test_unverifiable_sheet_manifest_fails_before_downloading(remote,monkeypatch
  out=tmp_path/'never.jpg'
  r=CliRunner().invoke(cli,['cloud','artifacts','storyboard-show',P,A,J,'--out',str(out)])
  assert r.exit_code!=0 and not out.exists() and json.loads(r.output)['error']['code']=='invalid_response'
+
+
+def test_storyboard_help_explains_polling_and_terminal_failures():
+    for command in ['storyboard','storyboard-show']:
+        result = CliRunner().invoke(cli, ['cloud','artifacts',command,'--help'])
+        text=' '.join(result.output.split())
+        assert 'Poll only queued/running' in text
+        assert 'failed/cancelled' in text
+        assert 'terminal' in text
