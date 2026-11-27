@@ -172,6 +172,9 @@ def test_historical_preview_is_read_only_and_independent_of_latest(server):
 
 def test_viewer_serves_bundled_brand_fonts_without_exposing_other_files(server):
     service, _, _ = server
+    with urlopen(service.url + 'preview_fullscreen.mjs') as response:
+        assert response.headers['Content-Type'] == 'text/javascript'
+        assert b'requestFullscreen' in response.read()
     for name in ("DMSerifDisplay-Regular.ttf", "Inter-Regular.ttf", "Inter-Bold.ttf"):
         with urlopen(service.url + "fonts/" + name) as response:
             assert response.headers["Content-Type"] == "font/ttf"

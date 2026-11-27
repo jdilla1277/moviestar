@@ -33,7 +33,7 @@ class Frame extends Element{
  }
  set src(value){const id=new URL(value,'http://localhost').searchParams.get('request');Object.assign(this.contentWindow.moviestarLiveStage.packet,{request_id:id,state_id:'sha256:'+id});}
 }
-const context={window:{scrollY:0,innerHeight:900,addEventListener(){}},getComputedStyle:()=>({paddingLeft:'28px',paddingRight:'28px'}),document:{querySelector:()=>new Element(),getElementById:id=>elements[id]??=new Element(),createElement:name=>{assert.equal(name,'iframe');const f=new Frame();frames.push(f);return f;}},
+const context={window:{scrollY:0,innerHeight:900,addEventListener(){}},getComputedStyle:()=>({paddingLeft:'28px',paddingRight:'28px'}),document:{addEventListener(){},querySelector:()=>new Element(),getElementById:id=>elements[id]??=new Element(),createElement:name=>{assert.equal(name,'iframe');const f=new Frame();frames.push(f);return f;}},
  location:{pathname:'/projects/unit/',search:'',reload(){reloads++;}},URL,URLSearchParams,Date,Map,AbortController,AbortSignal,performance:{timeOrigin:Date.now()-1000},
  ResizeObserver:class{observe(){}},Option:class{constructor(text,value){this.text=text;this.value=value;}},
  fetch:async()=>({ok:true,json:async()=>structuredClone(responseState)}),

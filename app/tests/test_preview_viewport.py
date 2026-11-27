@@ -24,7 +24,7 @@ def test_native_viewer_fits_and_centers_canvas_on_resize(tmp_path, canvas):
             kind = 'text/html'
             if route == '':
                 body = files('moviestar').joinpath('preview_viewer.html').read_text().replace('data-preview-mode="rendered"', 'data-preview-mode="native"').encode()
-            elif route == 'preview_native.mjs':
+            elif route in {'preview_native.mjs', 'preview_fullscreen.mjs'}:
                 body = files('moviestar').joinpath(route).read_bytes(); kind = 'text/javascript'
             elif route == 'state':
                 body = json.dumps({'mode': 'native', 'latest': item, 'displayed': item, 'history': [item]}).encode(); kind = 'application/json'

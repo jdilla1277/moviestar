@@ -26,7 +26,8 @@ function fitFrame(frame,canvas){
   // Use document position so scrolling does not grow the player underneath
   // the viewer. Short windows can scroll, but never create a giant portrait.
   const top=stage.getBoundingClientRect().top+window.scrollY;
-  const availableHeight=Math.max(180,Math.min(720,window.innerHeight-top-24));
+  const fullscreen=document.fullscreenElement===$('preview');
+  const availableHeight=fullscreen?container.clientHeight:Math.max(180,Math.min(720,window.innerHeight-top-24));
   stage.style.width=Math.max(1,Math.floor(Math.min(availableWidth,availableHeight*canvas.width/canvas.height)))+'px';
   stage.style.aspectRatio=`${canvas.width}/${canvas.height}`;
   scaleFrame(frame,canvas);
@@ -95,12 +96,13 @@ $('restart').addEventListener('click',()=>current?.api.seek(0).catch(error=>{$('
 $('seek').addEventListener('input',()=>{seeking=true;++seekGeneration;});
 $('seek').addEventListener('change',async()=>{const attempt=++seekGeneration;seeking=true;try{await current?.api.seek(Number($('seek').value));}catch(error){$('error').textContent=error.message;}finally{if(attempt===seekGeneration)seeking=false;}});
 $('seek').addEventListener('blur',()=>{seeking=false;});
-let containerWidth;
-new ResizeObserver(entries=>{const width=entries[0].contentRect.width;if(width!==containerWidth){containerWidth=width;fit();}}).observe($('stage').parentElement);
+let containerWidth,containerHeight;
+new ResizeObserver(entries=>{const {width,height}=entries[0].contentRect;if(width!==containerWidth||(document.fullscreenElement===$('preview')&&height!==containerHeight)){containerWidth=width;containerHeight=height;fit();}}).observe($('stage').parentElement);
 new ResizeObserver(()=>{if(current)scaleFrame(current.frame,current.api.packet.canvas);}).observe($('stage'));
 const controlsObserver=new ResizeObserver(fit);
 for(const element of [$('status'),$('native-controls'),document.querySelector('.intro')])controlsObserver.observe(element);
 window.addEventListener('resize',fit);
+document.addEventListener('fullscreenchange',fit);
 async function poll(){
   try{
     const response=await fetch(base+'state',{cache:'no-store',signal:AbortSignal.timeout(3000)});if(!response.ok)throw Error('Disconnected');

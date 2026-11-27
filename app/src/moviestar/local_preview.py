@@ -478,6 +478,8 @@ class _Handler(BaseHTTPRequestHandler):
             page = files("moviestar").joinpath("preview_viewer.html").read_text()
             page = page.replace('data-preview-mode="rendered"', f'data-preview-mode="{self.server.mode}"')
             self._reply(200, page.encode(), "text/html; charset=utf-8")
+        elif route == "preview_fullscreen.mjs":
+            self._reply(200, files("moviestar").joinpath(route).read_bytes(), "text/javascript")
         elif self.server.mode == "native" and route in {
                 "preview_native.mjs", "preview_native_stage.mjs", "preview_native_meter.mjs", "spatial_dom.mjs",
                 "preview_native_worker.mjs", "preview_native_buffer.mjs", "preview_native_cuts.mjs", "preview_native_scene_clock.mjs",

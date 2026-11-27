@@ -19,6 +19,11 @@ video{width:100%;height:100%;object-fit:contain}video.pending{position:absolute;
 #empty[hidden]{display:none}
 #details{color:var(--muted);font-size:12px;margin:14px 0;overflow-wrap:anywhere}.diagnostics{color:var(--muted);border-top:1px solid #a9bcff26;margin-top:22px;padding-top:14px;font-size:12px}.diagnostics summary{cursor:pointer;display:list-item}.diagnostics p{overflow-wrap:anywhere}.guidance{font-size:13px;color:var(--muted)}.error{color:#ffb5a7;white-space:pre-wrap;font-size:13px}.error:empty{display:none}
 #stage iframe{border:0;position:absolute;inset:0;transform-origin:0 0}#stage iframe.pending{visibility:hidden}
+.preview-toolbar{display:flex;align-items:end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:12px}#fullscreen-error:empty{display:none}
+#preview:fullscreen{width:100%;height:100%;max-width:none;background:var(--navy);padding:16px;display:flex;flex-direction:column;gap:8px;overflow:hidden}
+#preview:fullscreen .preview-toolbar,#preview:fullscreen #status,#preview:fullscreen #native-controls,#preview:fullscreen .error{flex:none;margin:0}
+#preview:fullscreen .review-control{min-width:0;width:auto}#preview:fullscreen #stage-area{flex:1;min-height:0;display:flex;align-items:center;justify-content:center}
+#preview:fullscreen #stage{flex:none;margin:0;border:0;border-radius:0;box-shadow:none}
 #native-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}#native-controls[hidden]{display:none}button{font:inherit;color:var(--text);background:var(--blue);border:1px solid #b5c1e166;border-radius:8px;padding:7px 18px;cursor:pointer}button:disabled{opacity:.5;cursor:default}button:focus-visible,input:focus-visible{outline:3px solid var(--gold);outline-offset:3px}#seek{flex:1;min-width:100px;accent-color:var(--gold)}#clock{min-width:65px;color:var(--muted)}
 footer{border-top:1px solid #a9bcff26;color:var(--muted);font-size:12px}footer .shell{display:flex;justify-content:space-between;gap:20px;padding-block:22px;flex-wrap:wrap}footer a{color:var(--gold)}
 @media(max-width:640px){.shell{padding-inline:18px}.topbar .shell{gap:18px}.topbar nav{gap:18px}main{padding-top:26px}h1{font-size:34px}.review-control{width:100%;min-width:0}#stage{border-radius:12px}}
@@ -29,14 +34,18 @@ footer{border-top:1px solid #a9bcff26;color:var(--muted);font-size:12px}footer .
 <nav aria-label="moviestar"><a href="https://trymoviestar.com/docs" target="_blank" rel="noopener noreferrer">Docs</a><a href="https://trymoviestar.com/getting-started#feedback" target="_blank" rel="noopener noreferrer">Feedback</a><a class="account-link" href="https://trymoviestar.com/account" target="_blank" rel="noopener noreferrer">Account ↗</a></nav>
 </div></header>
 <main class="shell"><div class="intro"><div><p class="eyebrow">LOCAL PREVIEW</p><h1>See your latest edit.</h1><p class="intro-copy">Review video and sound as your agent makes changes.</p></div>
-<label class="review-control">Review version<select id="version"><option value="">Follow latest edit</option></select></label></div>
+</div>
+<section id="preview" aria-label="Video preview">
+<div class="preview-toolbar"><label class="review-control">Review version<select id="version"><option value="">Follow latest edit</option></select></label><button id="fullscreen" type="button" aria-pressed="false">Fullscreen</button></div>
 <p id="status" role="status">Connecting to your project…</p>
 <p id="native-controls" hidden><button id="play" type="button">Play</button><button id="pause" type="button">Pause</button><button id="restart" type="button">Restart</button><label for="seek">Position</label><input id="seek" type="range" min="0" max="5" step="0.033333" value="0"><span id="clock"></span></p>
-<div id="stage"><div id="empty">Preparing your first preview…</div></div>
-<p id="details"></p><p id="error" class="error"></p>
+<div id="stage-area"><div id="stage"><div id="empty">Preparing your first preview…</div></div></div>
+<p id="error" class="error"></p><p id="fullscreen-error" class="error" role="status"></p>
+</section><p id="details"></p>
 <p class="guidance">Ask your agent to make changes or undo an edit. This page follows along.</p>
 <details class="diagnostics"><summary>Preview diagnostics</summary><p id="timing">Waiting for a preview.</p><p>Review quality. Export the final video with your agent when you’re ready.</p></details>
 </main><footer><div class="shell"><span>Rendered on your machine. Your video stays local.</span><a href="https://trymoviestar.com/getting-started" target="_blank" rel="noopener noreferrer">Make more with moviestar ↗</a></div></footer>
+<script type="module" src="preview_fullscreen.mjs"></script>
 <script type="module">
 if (document.body.dataset.previewMode === 'native') {
   import('./preview_native.mjs').catch(() => {
