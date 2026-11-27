@@ -15,9 +15,9 @@ from moviestar.account import _CLIENT_MARKER, _NoRedirectHandler
 from moviestar.cloud_creation_state import creation_request, CreationBusy, CreationStateError
 
 
-def fail(code, message, **fields):
-    click.echo(json.dumps({'error': {'code': code, 'message': message, 'details': {},
-                                    'retryable': code in ('submission_unconfirmed', 'inspection_unavailable', 'frame_not_ready')},
+def fail(code, message, *, details=None, **fields):
+    click.echo(json.dumps({'error': {'code': code, 'message': message, 'details': details or {},
+                                    'retryable': code in ('submission_unconfirmed', 'inspection_unavailable', 'frame_not_ready','storyboard_not_ready')},
                            'request_id': str(uuid4()), **fields}, indent=2))
     raise click.exceptions.Exit(1)
 
@@ -31,12 +31,12 @@ def checked(status, body, **fields):
             and isinstance(error['details'], dict) and type(error['retryable']) is bool):
         click.echo(json.dumps({'error': error, **({'request_id': body['request_id']} if isinstance(body.get('request_id'), str) else {}), **fields}, indent=2))
         raise click.exceptions.Exit(1)
-    fail('inspection_unavailable', 'Reopen the same frame IDs; no render or edit was requested.', **fields)
+    fail('inspection_unavailable', 'Reopen the same inspection IDs; no render or edit was requested.', **fields)
 
 
 def ids(*values):
     if any(not isinstance(v, str) or not service._UUID.fullmatch(v) for v in values):
-        fail('invalid_request', 'Use exact project, rendered-artifact and frame-job UUIDs.')
+        fail('invalid_request', 'Use exact project, rendered-artifact and inspection-job UUIDs.')
     return [v.lower() for v in values]
 
 
@@ -65,7 +65,7 @@ def valid_job(j, project, artifact, job=None, at=None):
         return False
 
 
-def save_image(url, credential, job, out):
+def save_image(url, credential, job, out, *, max_bytes=1048576):
     if out.exists() or out.is_symlink():
         fail('output_exists', 'Choose a new filename; existing files are never overwritten.')
     temporary = None
@@ -75,9 +75,9 @@ def save_image(url, credential, job, out):
         with build_opener(_NoRedirectHandler()).open(request, timeout=30) as response:
             if response.status != 200 or response.headers.get_content_type() != 'image/jpeg':
                 raise ValueError('Invalid image response')
-            image = response.read(1048577)
+            image = response.read(max_bytes+1)
         expected = job['result']['image']
-        if (len(image) != expected['size_bytes'] or len(image) > 1048576
+        if (len(image) != expected['size_bytes'] or len(image) > max_bytes
                 or not image.startswith(b'\xff\xd8') or not image.endswith(b'\xff\xd9')
                 or hashlib.sha256(image).hexdigest() != expected['sha256']):
             raise ValueError('Image identity mismatch')
