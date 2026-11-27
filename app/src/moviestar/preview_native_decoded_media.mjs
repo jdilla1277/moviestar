@@ -8,7 +8,7 @@ export function createDecodedMedia(asset,{offset,clock,signal,onFailure}){
   config:{...asset.video_decode.config,description:new Uint8Array(asset.video_decode.config.description)}};
  const last=index.last??index.end-1/index.fps;
  canvas.width=index.config.codedWidth;canvas.height=index.config.codedHeight;
- let paused=true,seeking=false,at=index.start,readyState=0,src='',disposed=false,generation=0,playGeneration=0,frameId=0,
+ let paused=true,seeking=false,at=index.start,playFloor=index.start,readyState=0,src='',disposed=false,generation=0,playGeneration=0,frameId=0,
   callbackId=0,total=0,drops=0,lastTimestamp,shown,seekWork,cached,lastTick,uncertainty=0,refilling;
  const callbacks=new Map();
  const queue=createFrameQueue(index,{maxFrames:Math.min(8,Math.floor(128*1024*1024/(canvas.width*canvas.height*4))),fetchPacket:async(packet,cancel)=>{
@@ -22,7 +22,9 @@ export function createDecodedMedia(asset,{offset,clock,signal,onFailure}){
  }});
  const localTime=()=>{
   if(paused)return at;
-  const time=clock();return Number.isFinite(time)?Math.max(index.start,Math.min(index.end,index.start+time-offset)):at;
+  // PCM may be scheduled ahead of the pictures. A resumed seek must hold its
+  // prepared image until that output clock reaches the selected position.
+  const time=clock();return Number.isFinite(time)?Math.max(playFloor,Math.min(index.end,index.start+time-offset)):at;
  };
  function notify(frame){
   total++;shown={mediaTime:frame.timestamp/1e6,presentedFrames:total,expectedDisplayTime:performance.now(),presentationTime:performance.now()};
@@ -72,7 +74,7 @@ export function createDecodedMedia(asset,{offset,clock,signal,onFailure}){
   }},
  });
  canvas.playbackRate=1;canvas.muted=true;
- canvas.play=async()=>{const attempt=playGeneration;if(seekWork)await seekWork;if(disposed||attempt!==playGeneration)return;paused=false;lastTick=undefined;uncertainty=0;frameId=requestAnimationFrame(tick);};
+ canvas.play=async()=>{const attempt=playGeneration;if(seekWork)await seekWork;if(disposed||attempt!==playGeneration)return;playFloor=at;paused=false;lastTick=undefined;uncertainty=0;frameId=requestAnimationFrame(tick);};
  canvas.pause=()=>{++playGeneration;if(paused)return;at=localTime();paused=true;cancelAnimationFrame(frameId);canvas.dispatchEvent(new Event('pause'));};
  canvas.requestVideoFrameCallback=callback=>{const id=++callbackId;callbacks.set(id,callback);return id;};
  canvas.cancelVideoFrameCallback=id=>callbacks.delete(id);

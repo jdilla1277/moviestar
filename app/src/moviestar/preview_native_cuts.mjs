@@ -157,7 +157,8 @@ export function createCutPlayback({packet,stages,audio,metrics,show,audit=false,
           if(disposed||!playing||attempt!==generation)return;
           pendingPreroll=null;
         }
-        if(reviewAudio?.snapshot().prepared)await reviewAudio.play(api.time,{pictureLead});
+        if(reviewAudio?.snapshot().prepared)await reviewAudio.play(api.time,{pictureLead,
+          ...(packet.segments[index].packet.decoded_transport?{displayFps:packet.fps}:{})});
         if(disposed||!playing||attempt!==generation)return;
         if(reviewAudio)metrics.prepared_audio=reviewAudio.snapshot();
         await stages[index].api.play();
