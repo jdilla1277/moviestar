@@ -93,3 +93,17 @@ def test_invalid_patch_does_not_change_saved_state(op):
 def test_mismatched_or_nonportable_source_is_rejected(path):
     spec = saved(); spec['sources'][0]['path'] = path
     with pytest.raises(EditValidationError): prepare_saved_edit(SOURCES, spec)
+
+
+@pytest.mark.parametrize('codec,expected',[('aac','stream_reported'),(None,'no_stream_in_metadata'),('missing','unreported')])
+def test_saved_read_distinguishes_controls_from_audio_presence_and_measurements(codec,expected):
+    sources=copy.deepcopy(SOURCES)
+    if codec=='missing':sources[0]['media'].pop('audio_codec')
+    else:sources[0]['media']['audio_codec']=codec
+    spec=saved();before=copy.deepcopy(spec)
+    result=prepare_saved_edit(sources,spec)
+    assert result['resolved']['audio_mix']['source_audio']==spec['audio_mix']['source_audio']
+    assert result['resolved']['source_audio_availability']=={'speaker':expected}
+    assert result['resolved']['loudness'] is None
+    assert result['resolved']['loudness_status']=='not_measured'
+    assert spec==before

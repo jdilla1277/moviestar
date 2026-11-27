@@ -41,7 +41,7 @@ def test_show_and_validate_use_same_canonical_envelopes_and_never_mutate(remote,
 def test_saved_mix_reads_and_candidate_keep_same_revision_and_transport(remote,tmp_path):
     calls,response,_=remote
     revision='00000000-0000-4000-8000-000000000099'
-    response.update(status='opened',current_revision=revision,revision={'id':revision,'spec':{'audio_mix':{'source_audio':{'gain_db':-2},'tracks':[]}}})
+    response.update(status='opened',current_revision=revision,revision=saved_mix_read(revision))
     read=CliRunner().invoke(cli,['cloud','edits','show',P])
     assert read.exit_code==0, read.output
     assert json.loads(read.output)==response
@@ -137,7 +137,7 @@ def test_apply_retains_exact_request_before_lost_reply_and_fresh_recovery(remote
 def test_exact_show_does_not_conflate_selected_and_current(remote):
     calls,response,_=remote
     old='00000000-0000-4000-8000-000000000098';current='00000000-0000-4000-8000-000000000099'
-    response.update(status='opened',current_revision=current,revision={'id':old,'spec':{}})
+    response.update(status='opened',current_revision=current,revision=saved_mix_read(old))
     result=CliRunner().invoke(cli,['cloud','edits','show',P,'--revision',old])
     assert result.exit_code==0,result.output
     assert calls[-1][0].endswith('/revisions/'+old)
@@ -259,3 +259,41 @@ def test_archive_failure_does_not_forget_an_uncertain_edit(remote,tmp_path,monke
     assert active.read_bytes()==before and len(writes)==1
     assert CliRunner().invoke(cli,['cloud','edits','apply',P,'--recover']).exit_code==1
     assert writes==[writes[0]]*2
+
+
+def saved_mix_read(revision):
+    controls={'gain_db':-2,'muted':False,'fade_in':0.1,'fade_out':0.2}
+    return {'id':revision,'spec':{'audio_mix':{'source_audio':controls,'tracks':[]}},
+            'resolved':{'audio_mix':{'source_audio':dict(controls),'tracks':[]},'track_count':0,
+                        'routing':[{'source_id':'speaker'}],
+                        'source_audio_availability':{'speaker':'stream_reported'},
+                        'loudness':None,'loudness_status':'not_measured'}}
+
+
+@pytest.mark.parametrize('damage',['missing_resolved','missing_mix','missing_muted','changed_gain','missing_routing','missing_availability','missing_track','bad_track_count','overflow_gain'])
+def test_saved_read_never_confirms_incomplete_or_contradictory_audio(remote,damage):
+    _,response,_=remote
+    revision='00000000-0000-4000-8000-000000000099'
+    value=saved_mix_read(revision)
+    if damage=='missing_resolved':value.pop('resolved')
+    elif damage=='missing_mix':value['resolved'].pop('audio_mix')
+    elif damage=='missing_muted':value['resolved']['audio_mix']['source_audio'].pop('muted')
+    elif damage=='changed_gain':value['resolved']['audio_mix']['source_audio']['gain_db']=-6
+    elif damage=='missing_routing':value['resolved'].pop('routing')
+    elif damage=='missing_availability':value['resolved'].pop('source_audio_availability')
+    elif damage=='missing_track':value['spec']['audio_mix']['tracks']=[{'id':'music'}]
+    elif damage=='bad_track_count':value['resolved']['track_count']=True
+    elif damage=='overflow_gain':
+        value['resolved']['audio_mix']['source_audio']['gain_db']=10**1000
+        value['spec']['audio_mix']['source_audio']['gain_db']=10**1000
+    response.update(status='opened',current_revision=revision,revision=value)
+    result=CliRunner().invoke(cli,['cloud','edits','show',P])
+    assert result.exit_code==1,result.output
+    assert json.loads(result.output)['error']['code']=='invalid_response'
+
+
+def test_saved_read_help_explains_audio_intent_and_unknowns():
+    result=CliRunner().invoke(cli,['cloud','edits','show','--help'])
+    text=' '.join(result.output.split())
+    for term in ['source_audio','gain_db','muted','source_audio_availability','not measured']:
+        assert term in text
