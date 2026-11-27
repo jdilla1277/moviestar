@@ -6,6 +6,7 @@ import {createFrameQueue} from './preview_native_decode.mjs';
 export function createDecodedMedia(asset,{offset,clock,signal,onFailure}){
  const canvas=document.createElement('canvas'),index={...asset.video_decode,
   config:{...asset.video_decode.config,description:new Uint8Array(asset.video_decode.config.description)}};
+ const last=index.last??index.end-1/index.fps;
  canvas.width=index.config.codedWidth;canvas.height=index.config.codedHeight;
  let paused=true,seeking=false,at=index.start,readyState=0,src='',disposed=false,generation=0,playGeneration=0,frameId=0,
   callbackId=0,total=0,drops=0,lastTimestamp,shown,seekWork,cached,lastTick,uncertainty=0,refilling;
@@ -39,7 +40,7 @@ export function createDecodedMedia(asset,{offset,clock,signal,onFailure}){
  }
  function fail(error){if(disposed)return;onFailure(error);}
  async function seek(target){
-  const attempt=++generation;++playGeneration;refilling=null;target=Math.max(index.start,Math.min(index.end-1/index.fps,target));paused=true;cancelAnimationFrame(frameId);seeking=true;at=target;lastTimestamp=undefined;
+  const attempt=++generation;++playGeneration;refilling=null;target=Math.max(index.start,Math.min(last,target));paused=true;cancelAnimationFrame(frameId);seeking=true;at=target;lastTimestamp=undefined;
   try{
    if(!await queue.seek(target)||disposed||attempt!==generation)return;
    seeking=false;readyState=4;draw(target);canvas.dispatchEvent(new Event('seeked'));canvas.dispatchEvent(new Event('canplay'));
@@ -55,7 +56,7 @@ export function createDecodedMedia(asset,{offset,clock,signal,onFailure}){
   const attempt=playGeneration;
   if(lastTick!==undefined)uncertainty=Math.max(uncertainty,stamp-lastTick);lastTick=stamp;
   try{
-   const target=Math.min(index.end-1/index.fps,localTime());
+   const target=Math.min(last,localTime());
    at=localTime();draw(target);
    if(disposed||paused||attempt!==playGeneration)return;
    if(localTime()>=index.end){paused=true;at=index.end;canvas.dispatchEvent(new Event('ended'));return;}

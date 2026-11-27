@@ -75,6 +75,12 @@ def test_four_visible_videos_remain_an_explicit_capability_error(interview_proje
         compile_snapshot(read_snapshot(root, 0, 5))
 
 
+def test_three_picture_final_image_uses_the_canonical_sample_not_a_rounded_origin(interview_project):
+    _, _, root = interview_project
+    packet, _ = compile_snapshot(read_snapshot(root, 88/30, 3))
+    assert [m['source_last'] for m in packet['media'] if m['kind']=='video'] == [3.966667, 4.966667, 5.966667]
+
+
 def test_three_person_scene_allows_listeners_without_embedded_audio(interview_project):
     spec, project, root = interview_project
     for source in project['sources']:

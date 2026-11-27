@@ -266,6 +266,12 @@ def _compile_span(snapshot, timeline, start, end, span, *, prepared_audio=False,
                                   'source_start': clocks[tuple(node['path'])],
                                   'source_end': clocks[tuple(node['path'])]+(end-start)*rate,
                                   **({'playback_rate':rate} if abs(rate-1)>1e-8 else {})} if kind == 'video' else {})})
+        if len(videos) == 3:
+            # Preserve the final canonical sample itself. Extrapolating from
+            # its rounded first clock can land just before the final MP4 PTS.
+            for item in media:
+                if item['kind'] == 'video':
+                    item['source_last'] = expanded[tuple(item['path'])]['media']['source_time_s']
         def dynamic(nodes):
             return [{'path': node['path'], 'content': node['content'],
                      'motion': node.get('motion'), 'media_motion': node.get('media_motion'), 'caption': node.get('caption'),
@@ -341,6 +347,7 @@ def _build(request_file,request,timing):
             asset=assets[item['asset']]
             if asset_identity(asset['path'])!=asset['identity']:raise ValueError('Native source changed')
             item['video_decode']=packet_index(asset['path'],item['source_start'],item['source_end'],child['fps'])
+            item['video_decode']['last']=item['source_last']
             if asset_identity(asset['path'])!=asset['identity']:raise ValueError('Native source changed')
     jobs,contexts={},{}
     for child in packets:
