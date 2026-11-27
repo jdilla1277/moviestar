@@ -2834,6 +2834,10 @@ def set_composition(
         for src_from, src_to in _apply_trim_to_segments(
             timeline.source_segments, result_from, result_to
         ):
+            # A float remainder at an exact seam can collapse to an empty
+            # span after the helper rounds to stored millisecond precision.
+            if src_from >= src_to:
+                continue
             segment_record = {
                 "source": sid,
                 "source_from": _format_timecode_string(src_from),

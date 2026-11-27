@@ -55,6 +55,52 @@ def test_concat_snapshots_retained_spans(start, end, expected):
     assert spec == before
 
 
+
+@pytest.mark.parametrize("start,end,expected", [
+    (0, .2, [("0:00:00.100", "0:00:00.300")]),
+    (.2, .7, [("0:00:00.500", "0:00:01.000")]),
+    (.199, .2, [("0:00:00.299", "0:00:00.300")]),
+    (.2, .201, [("0:00:00.500", "0:00:00.501")]),
+    (.199, .201, [("0:00:00.299", "0:00:00.300"),
+                  ("0:00:00.500", "0:00:00.501")]),
+    (0, .201, [("0:00:00.100", "0:00:00.300"),
+               ("0:00:00.500", "0:00:00.501")]),
+])
+def test_fractional_cut_seam_keeps_only_nonempty_stored_spans(start, end, expected):
+    spec = empty_spec([{"id": "a", "path": "a.mp4"}])
+    spec = append_trim(spec, "a", .1, 1, 2)
+    spec = append_cut(spec, "a", .2, .4, 2)
+    assert resolve_source(spec, "a", 2).source_segments == ((.1, .3), (.5, 1))
+    result = set_composition(spec, [("a", start, end)], {"a": 2})
+    assert [(s["source_from"], s["source_to"]) for s in result["composition"]] == expected
+
+
+def test_fractional_cut_seam_cli_dry_run_matches_saved_state(
+    tmp_path, monkeypatch, test_video,
+):
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+
+    def invoke(*args):
+        result = runner.invoke(cli, list(args))
+        assert result.exit_code == 0, result.output
+        return json.loads(result.stdout)
+
+    invoke("load", test_video, "--as", "a", "--no-frames", "--no-transcribe")
+    invoke("trim", "--from", ".1", "--to", "1")
+    invoke("cut", "--from", ".2", "--to", ".4")
+    spec_path = tmp_path / "moviestar" / "spec.json"
+    before = spec_path.read_bytes()
+    args = ["concat", "--segment", "a", "--from", "0", "--to", ".2"]
+    dry = invoke(*args, "--dry-run")
+    assert spec_path.read_bytes() == before
+    assert dry["segments_count"] == 1
+    assert dry["composition_duration"]["seconds"] == .2
+    saved = invoke(*args)
+    assert saved["composition"] == dry["composition"]
+    assert saved["composition_duration"] == dry["composition_duration"]
+
+
 def test_concat_preserves_multiple_cuts_and_snapshot_after_later_edits():
     spec = append_cut(_edited_source(), "speaker", 1, 2, 60)
     result = set_composition(spec, [("speaker", 0, 9)], {"speaker": 60})
