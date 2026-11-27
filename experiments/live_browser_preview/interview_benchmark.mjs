@@ -150,7 +150,7 @@ try{
   await waitState(action);
   const elapsed=performance.now()-started;
   await retainPreparation(index);await observeScheduling();
-  report.edits.push({index,name:action.name,elapsed_ms:elapsed,cli_ms:cliElapsed,request:await b.evaluate('window.movieStarPreview.current.request_id'),canvas:action.canvas});
+  report.edits.push({index,name:action.name,elapsed_ms:elapsed,cli_ms:cliElapsed,request:await b.evaluate('window.movieStarPreview.current.request_id'),reused_decoders:await b.evaluate('window.movieStarPreview.events.at(-1).reused_decoders===true'),canvas:action.canvas});
   if(elapsed>=3000)report.problems.push(`Edit ${index} ${action.name}: ${elapsed}ms`);
   await persist();
  }

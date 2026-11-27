@@ -553,6 +553,13 @@ corrupt, expired or over-budget metadata uses fresh indexing. Numeric
 `packet_index` preparation phase explain readiness without exposing candidate
 paths. The browser's decoded-frame queue limits remain unchanged.
 
+Participant border-color edits, shared updates, resets and their undos preserve
+the current source decoders when every other playback and geometry input is
+identical. Colors are validated before an atomic commit; no pending edit changes
+the displayed scene. Border width, format, source, range and other layout changes
+still prepare a new stage. Audio is freshly prepared and source identities are
+still validated for every revision.
+
 Three-picture diagnostics identify `webcodecs` transport. Their frame totals
 count submitted source images, and dropped-frame counts record explicit missed
 presentation deadlines; these are not HTML video-element playback-quality
