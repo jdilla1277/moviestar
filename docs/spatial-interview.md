@@ -84,9 +84,16 @@ Bob is now large and audible, with Alice and Casey as listeners. Check the
 second scene's inherited border, names, picture offsets and captions. Play,
 Pause, Restart and seek apply to all three pictures.
 
-Three-picture native review currently supports one scene at a time. For a
-continuous review across the scene cut, stop native preview and explicitly use
-rendered mode:
+For continuous review across the scene cut, stop the selected-scene preview:
+
+```sh
+moviestar preview --mode native --from 0 --to 6
+```
+
+All six picture players stay within the native resource bound. At three seconds,
+Bob becomes large and audible without restarting the continuous mixed soundtrack.
+Check the cut again after local/shared edits and undo, then seek across it and use
+Restart. For a canonical rendered comparison, stop native preview and run:
 
 ```sh
 moviestar preview --mode rendered --from 0 --to 6
