@@ -295,5 +295,5 @@ def test_saved_read_never_confirms_incomplete_or_contradictory_audio(remote,dama
 def test_saved_read_help_explains_audio_intent_and_unknowns():
     result=CliRunner().invoke(cli,['cloud','edits','show','--help'])
     text=' '.join(result.output.split())
-    for term in ['source_audio','gain_db','muted','source_audio_availability','not measured']:
+    for term in ['source_audio','gain_db','muted','source_audio_availability','not measured','fade_in','fade_out','seconds','milliseconds','dependency_manifest','asset_id','reference_id']:
         assert term in text

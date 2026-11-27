@@ -178,7 +178,10 @@ def register_edits(cloud):
         opened returns revision.spec and revision.resolved.audio_mix/routing for
         a saved mix; reading does not create or update a revision.
         Read source_audio.gain_db and muted for saved dialogue controls; routing
-        identifies its source and result-time ranges. source_audio_availability
+        identifies its source and result-time ranges in milliseconds.
+        fade_in/fade_out are seconds. Join source_id through
+        revision.dependency_manifest to separate asset_id and reference_id.
+        source_audio_availability
         reports stream metadata, not proof of audible speech. Loudness is not
         measured by this read. --revision opens old settings without moving the
         current pointer. No media is downloaded or analyzed.
