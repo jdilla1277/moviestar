@@ -186,6 +186,8 @@ def register_renders(cloud):
 
     from moviestar.cloud_render_frames import register_frame_commands
     register_frame_commands(artifacts)
+    from moviestar.cloud_render_storyboards import register_rendered_storyboard_commands
+    register_rendered_storyboard_commands(artifacts)
 
     @artifacts.command('list')
     @click.argument('project_id')
