@@ -538,6 +538,21 @@ rendered-mode requirement.
 
 ### Decoded-picture diagnostics
 
+Unchanged three-picture source windows can reuse original-packet indexes from
+completed requests in the same preview session. These are byte offsets,
+timestamps and codec metadata; source media payloads and decoded video frames are never
+cached by this mechanism. Each request owns at most six indexes and 12 MiB of
+this metadata, within the existing eight-request history. Expiring a request
+removes its index metadata too.
+
+The current snapshot, speaker mix and final authored images are still compiled
+normally. File identity (including inode/ctime and resolved path), source window,
+frame rate, indexer and ffprobe identity must match before reuse. Missing,
+corrupt, expired or over-budget metadata uses fresh indexing. Numeric
+`packet_reuse.indexed` and `packet_reuse.reused` counters and the opt-in
+`packet_index` preparation phase explain readiness without exposing candidate
+paths. The browser's decoded-frame queue limits remain unchanged.
+
 Three-picture diagnostics identify `webcodecs` transport. Their frame totals
 count submitted source images, and dropped-frame counts record explicit missed
 presentation deadlines; these are not HTML video-element playback-quality

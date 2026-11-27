@@ -338,17 +338,15 @@ def _build(request_file,request,timing):
         plane['asset'] = key
     from moviestar.native_caption_reuse import prepare_jobs
     packets = [s['packet'] for s in packet['segments']] if 'segments' in packet else [packet]
-    from moviestar.native_decode import packet_index
-    for child in packets:
-        media=[m for m in child['media'] if m['kind']=='video']
-        if len(media)!=3:continue
-        child['decoded_transport']=True
-        for item in media:
-            asset=assets[item['asset']]
-            if asset_identity(asset['path'])!=asset['identity']:raise ValueError('Native source changed')
-            item['video_decode']=packet_index(asset['path'],item['source_start'],item['source_end'],child['fps'])
-            item['video_decode']['last']=item['source_last']
-            if asset_identity(asset['path'])!=asset['identity']:raise ValueError('Native source changed')
+    from moviestar.native_packet_reuse import prepare_indexes
+    decoded_packets=[child for child in packets if sum(m['kind']=='video' for m in child['media'])==3]
+    if decoded_packets:
+        with phase(timing,'packet_index'):
+            reuse=prepare_indexes(decoded_packets,assets,folder,request.get('packet_candidates',[]))
+        try:
+            (folder/'packet-reuse.json').write_text(json.dumps(reuse))
+        except OSError:
+            pass
     jobs,contexts={},{}
     for child in packets:
         plane=child.get('caption_plane')
