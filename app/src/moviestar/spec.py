@@ -3416,7 +3416,11 @@ def set_scene_composition(
             spatial = new_spec['spatial']
             spatial.setdefault('scenes', {}).setdefault(
                 scene['id'], {'layout': {'background_color': '#000000', 'children': []}})
-    validate_spec(new_spec)
+    # Validate the proposed edit together with its undo boundary. Replaying
+    # the old journal directly against a new canvas can combine a prior
+    # composition's orientation with the wrong format. save_spec records the
+    # actual command once; this prospective journal is validation-only.
+    validate_spec(append_revision(spec, new_spec, 'scenes set'))
     return new_spec
 
 
