@@ -5,12 +5,18 @@ export function createFrameQueue(index,{fetchPacket,maxFrames=8,maxBytes=128*102
  if(!Number.isInteger(maxFrames)||maxFrames<4||maxFrames>16)throw Error('Invalid decoded frame bound');
  const bytesPerFrame=index.config.codedWidth*index.config.codedHeight*4;
  if(!Number.isFinite(bytesPerFrame)||bytesPerFrame<=0||bytesPerFrame*maxFrames>maxBytes)throw Error('Native decoded frame budget exceeded');
+ // Packet PTS and durations are independently rounded to integer microseconds.
+ // Adjacent original timestamps define disjoint intervals without epsilon gaps
+ // or showing a future picture early. Decoder output remains in display order.
+ const timeline=[...new Set(index.packets.map(p=>p.timestamp))].sort((a,b)=>a-b);
+ const ends=new Map(timeline.slice(0,-1).map((stamp,i)=>[stamp,timeline[i+1]]));
+ const endOf=frame=>ends.get(frame.timestamp)??frame.timestamp+(frame.duration??1e6/index.fps);
  let disposed=false,generation=0,decoder,controller,frames=[],pending=0,cursor=0,error,operation,target=0,flushed=false;
  const metrics={decoded:0,closed:0,peak_frames:0,peak_reserved:0};
  const close=frame=>{frame.close();metrics.closed++;};
  function clear(){for(const frame of frames)close(frame);frames=[];pending=0;if(decoder&&decoder.state!=='closed')decoder.close();controller?.abort();}
- const find=at=>frames.find(f=>f.timestamp<=at+2&&at<f.timestamp+(f.duration??1e6/index.fps)-2);
- function discard(at){frames=frames.filter(f=>{if(f.timestamp+(f.duration??1e6/index.fps)<=at+2){close(f);return false;}return true;});}
+ const find=at=>frames.find(f=>f.timestamp<=at&&at<endOf(f));
+ function discard(at){frames=frames.filter(f=>{if(endOf(f)<=at){close(f);return false;}return true;});}
  function check(attempt){if(disposed||attempt!==generation)return false;if(error)throw error;return true;}
  async function fill(at,attempt){
   const deadline=performance.now()+5000;
@@ -46,7 +52,7 @@ export function createFrameQueue(index,{fetchPacket,maxFrames=8,maxBytes=128*102
       close(frame);error=Error('Native decoded picture dimensions or frame budget changed; use --mode rendered');
       if(decoder.state!=='closed')decoder.close();return;
     }
-    if(frame.timestamp+(frame.duration??1e6/index.fps)<=target+2||frame.timestamp>=index.end*1e6){close(frame);return;}
+    if(endOf(frame)<=target||frame.timestamp>=index.end*1e6){close(frame);return;}
     frames.push(frame);frames.sort((a,b)=>a.timestamp-b.timestamp);metrics.peak_frames=Math.max(metrics.peak_frames,frames.length);
     if(frames.length>maxFrames)error=Error('Native decoder exceeded the frame bound');
    },error(cause){if(attempt===generation&&!error)error=cause;}});decoder=owned;

@@ -3,6 +3,26 @@ import json
 from pathlib import Path
 import subprocess
 
+def test_rounded_packet_timestamps_cover_every_instant_without_gaps_or_early_frames():
+    module=(Path(__file__).parents[1]/'src/moviestar/preview_native_decode.mjs').as_uri()
+    script=r'''
+import assert from 'node:assert/strict';const {createFrameQueue}=await import(MODULE);
+const packets=Array.from({length:90},(_,i)=>({timestamp:Math.round(i*1e6/30),duration:33333,key:i%30===0,offset:i,size:1}));
+const decoderFactory=c=>({state:'configured',configure(){},decode(chunk){c.output({timestamp:chunk.timestamp,duration:33333,close(){}});},close(){this.state='closed';},flush:async()=>{}});
+const q=createFrameQueue({config:{codedWidth:16,codedHeight:16},packets,start:0,end:3,fps:30},
+ {decoderFactory,chunkFactory:x=>x,fetchPacket:async()=>new Uint8Array([0]),maxFrames:4});
+// This exact clock instant failed standalone HD review: the preceding frame
+// was discarded 2us early while the next rounded PTS was still in the future.
+await q.seek(1.866664);assert.equal(q.frameAt(1.866664).timestamp,1833333);
+for(let i=57;i<75;i++)for(const delta of [-3,-2,-1,0,1,2,3]){
+ const at=packets[i].timestamp+delta;await q.ensure(at/1e6);
+ assert.equal(q.frameAt(at/1e6).timestamp,packets[delta<0?i-1:i].timestamp,'Select the exact original packet interval');
+}
+assert.throws(()=>q.frameAt(2.8),/not ready/,'Never extend an old picture into a missing next packet');q.dispose();
+'''
+    result=subprocess.run(['node','--input-type=module','-e',f'const MODULE={json.dumps(module)};'+script],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stdout+result.stderr
+
 def test_frame_queue_is_bounded_and_cancellation_closes_every_frame():
     module=(Path(__file__).parents[1]/'src/moviestar/preview_native_decode.mjs').as_uri()
     script=r'''
