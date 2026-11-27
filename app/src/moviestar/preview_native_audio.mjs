@@ -51,7 +51,7 @@ export function createPreparedAudio(context,destination,signal,duration){
         cancel(){if(!settled){prepared=null;settled=true;}}
       };
     },
-    async play(at,{pictureLead=0,presentationLead,displayFps}={}){
+    async play(at,{pictureLead=0,presentationLead,displayFps,displayOrigin=0}={}){
       api.pause();if(!buffer||disposed)return;
       const attempt=generation,active=()=>!disposed&&!signal?.aborted&&attempt===generation;
       await context.resume();if(!active())return;
@@ -71,6 +71,7 @@ export function createPreparedAudio(context,destination,signal,duration){
       if(offset>=buffer.duration)return;
       if(displayFps!==undefined&&(!Number.isFinite(displayFps)||displayFps<24||displayFps>60))
         throw Error('Unsupported native display frame rate');
+      if(!Number.isFinite(displayOrigin))throw Error('Unsupported native display source origin');
       const display=displayFps===undefined?null:await displayCadence(active,deadline);
       if(!active())return;
       const displayOutput=display?context.getOutputTimestamp():null;
@@ -87,7 +88,8 @@ export function createPreparedAudio(context,destination,signal,duration){
         const earliest=stamp.performanceTime+(scheduled-stamp.contextTime)*1000;
         // Seek offsets remain on the PCM grid. Align the next source-frame
         // boundary, including offsets between source frames, just before RAF.
-        const untilFrame=Math.max(0,Math.ceil(offset*displayFps-1e-7)-offset*displayFps)*1000/displayFps;
+        const sourceFrame=(displayOrigin+offset)*displayFps;
+        const untilFrame=Math.max(0,Math.ceil(sourceFrame-1e-7)-sourceFrame)*1000/displayFps;
         const edge=display.stamp+Math.ceil((earliest+untilFrame+1-display.stamp)/display.period)*display.period-1;
         scheduled=stamp.contextTime+(edge-stamp.performanceTime-untilFrame)/1000;
       }

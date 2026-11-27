@@ -579,7 +579,7 @@ window.moviestarLiveStage={ready,metrics,
       metrics.initial_presented=videos.map(item=>({path:item.path,media_time:item.video.currentTime,...item.frame,quality:{totalVideoFrames:item.beforePlay.totalVideoFrames,droppedVideoFrames:item.beforePlay.droppedVideoFrames}}));playing=true;
       if(reviewAudio?.snapshot().prepared)await reviewAudio.play(this.time,{
         ...(pictureStartup?{presentationLead:pictureStartup.lead}:{pictureLead:1/(2*packet.fps)}),
-        ...(packet.decoded_transport?{displayFps:packet.fps}:{})});if(!active())return;
+        ...(packet.decoded_transport?{displayFps:packet.fps,displayOrigin:packet.source_start}:{})});if(!active())return;
       if(reviewAudio)metrics.prepared_audio=reviewAudio.snapshot();
       if(pictureStartup?.prepared_frame_only){
         if(packet.cut_segment)return; // Parent PCM owns this static interval.

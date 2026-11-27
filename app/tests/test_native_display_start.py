@@ -14,8 +14,9 @@ def node(script):
 
 
 @pytest.mark.parametrize('fps',[24,25,30,50,60])
-def test_decoded_start_preserves_pcm_grid_and_reduces_worst_display_phase(fps):
-    node('const FPS='+str(fps)+';'+r'''
+@pytest.mark.parametrize('origin',[0,.015333333,.032])
+def test_decoded_start_preserves_pcm_grid_and_reduces_worst_display_phase(fps,origin):
+    node('const FPS='+str(fps)+';const ORIGIN='+str(origin)+';'+r'''
 import assert from 'node:assert/strict';const {createPreparedAudio}=await import(MODULE);
 const period=1000/60,work=1.25,uncertainty=2*period;
 for(const phase of [0,1,2,4,6,8,10,12,14,16]){
@@ -38,14 +39,14 @@ for(const phase of [0,1,2,4,6,8,10,12,14,16]){
  globalThis.fetch=async()=>({ok:true,arrayBuffer:async()=>new ArrayBuffer(1)});
  const audio=createPreparedAudio(context,{},new AbortController().signal);
  (await audio.prepare({asset:'mix',duration:3,channels:2,sample_rate:48000})).commit();
- await audio.play(.5+1e-5,{displayFps:FPS,pictureLead:1/(2*FPS)});
+ await audio.play(.5+1e-5,{displayFps:FPS,displayOrigin:ORIGIN,pictureLead:1/(2*FPS)});
  assert.equal(offset,.5,'Keep the authored sample, excluding video seek epsilon');
  assert.ok(Math.abs(started*48000-Math.round(started*48000))<1e-8,'No fractional sample interpolation');
  assert.equal(audio.snapshot().started_context_time,started,'Record the actual scheduled start');
  // Use the unchanged frame-floor rule and the actual modeled draw submission.
  // One skipped idle callback makes presentation uncertainty two refreshes.
- for(let frame=Math.ceil(offset*FPS);frame/FPS<2.5;frame++){
-  const edge=(started+frame/FPS-offset)*1000;
+ for(let frame=Math.ceil((offset+ORIGIN)*FPS);frame/FPS-ORIGIN<2.5;frame++){
+  const edge=(started+frame/FPS-offset-ORIGIN)*1000;
   const submitted=Math.ceil((edge-.25)/period)*period+work;
   assert.ok(submitted>=edge,'Never present a future source picture');
   assert.ok(submitted-edge+uncertainty<=50,`phase ${phase}, fps ${FPS}: ${submitted-edge+uncertainty}ms`);
@@ -151,4 +152,21 @@ const audio=createPreparedAudio(context,{},new AbortController().signal);
 (await audio.prepare({asset:'mix',duration:3,channels:2,sample_rate:48000})).commit();
 await assert.rejects(audio.play(0,{displayFps:30}),/output clock is unavailable/);
 assert.equal(created,0,'Validate the output clock before connecting an unstarted buffer');audio.dispose();
+''')
+
+
+def test_cut_seek_aligns_selected_source_origin_relative_to_the_mix_window():
+    module=(Path(__file__).parents[1]/'src/moviestar/preview_native_cuts.mjs').as_uri()
+    node('const CUTS='+json.dumps(module)+';'+r'''
+import assert from 'node:assert/strict';const {createCutPlayback}=await import(CUTS);
+let master=0;const calls=[];
+const packet={fps:30,range:{from:10,to:16},segments:[0,3].map((offset,i)=>({offset,packet:{
+ source_start:[1.015333333,2.032][i],decoded_transport:true,range:{from:10+offset,to:13+offset},media:Array(3).fill({kind:'video'})}}))};
+const stages=packet.segments.map(s=>({gain:{gain:{cancelScheduledValues(){},setValueAtTime(){}}},api:{packet:s.packet,time:0,metrics:{},
+ pause(){},async play(){},async seek(at){this.time=at;},snapshot(){return{};}}}));
+const api=createCutPlayback({packet,stages,audio:{sampleRate:48000,currentTime:0},metrics:{},show(){},
+ reviewAudio:{snapshot:()=>({prepared:true}),pause(){},seek(at){master=at;},outputTimeAt:()=>master,async play(at,options){calls.push({at,options});}}});
+await api.play();assert.equal(calls[0].options.displayOrigin,1.015333333);assert.equal(calls[0].options.displayFps,30);
+await api.seek(3.5);await api.play();assert.equal(calls[1].at,3.5);
+assert.ok(Math.abs(calls[1].options.displayOrigin+calls[1].at-2.532)<1e-9,'Use selected source time, excluding the result-window origin and scene offset');api.dispose();
 ''')
