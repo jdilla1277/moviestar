@@ -95,7 +95,7 @@ Its `--dry-run` reads the owning account, affected URLs and projected storage.
 Hosted sharing requires Moviestar v0.8.0 or newer and an account. Unlisted links
 can be forwarded. Start with the [sharing guide](docs/sharing-guide.md) and
 [v0.8.0 release notes](docs/releases/v0.8.0.md). For the latest editing fixes,
-see the [v0.8.2 release notes](docs/releases/v0.8.2.md). The
+see the [v0.8.5 release notes](docs/releases/v0.8.5.md). The
 [v0.8.1 release notes](docs/releases/v0.8.1.md) cover review tools and the
 transcription installation migration.
 

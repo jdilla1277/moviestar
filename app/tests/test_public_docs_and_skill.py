@@ -34,6 +34,7 @@ PUBLIC_DOCS = (
     ROOT / "docs" / "releases" / "v0.8.0.md",
     ROOT / "docs" / "releases" / "v0.8.1.md",
     ROOT / "docs" / "releases" / "v0.8.2.md",
+    ROOT / "docs" / "releases" / "v0.8.5.md",
 )
 
 
