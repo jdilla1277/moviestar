@@ -3068,6 +3068,18 @@ def probe(video: str, loudness: bool, from_tc: str | None, to_tc: str | None) ->
             },
             "ffmpeg_command": cmd,
         }
+        unavailable = [key for key in (
+            "integrated_lufs", "true_peak_dbtp", "lra_lu", "threshold_lufs",
+            "target_offset_lu",
+        ) if metrics[key] is None]
+        if unavailable:
+            _add_warnings(result, [_warning(
+                "loudness_metrics_unavailable",
+                "FFmpeg could not measure some loudness metrics for this window. "
+                "Their values are null. Try a longer range for integrated "
+                "loudness; silent audio may remain unmeasurable.",
+                unavailable_metrics=unavailable,
+            )])
 
     click.echo(json.dumps(result, indent=2))
 
