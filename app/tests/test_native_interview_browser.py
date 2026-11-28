@@ -54,6 +54,7 @@ def test_actual_interview_edits_undo_playback_and_export(tmp_path, benchmark, ca
     report = json.loads((folder / 'report.json').read_text())
     assert len(report['edits']) == 20 and len(report['playback']) == 2
     assert report['problems'] == []
+    assert all(edit['reused_decoders'] for edit in report['edits'] if 'canvas' not in edit['name']), 'Border colors and their undos must preserve the actual decoders'
     for shot in report['captures']:
         assert all(v['transport'] == 'webcodecs' for v in shot['snapshot']['videos'])
     for review in report['playback']:

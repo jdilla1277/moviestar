@@ -1,5 +1,5 @@
 import {render} from './spatial_dom.mjs';
-import {playbackKey,prepareCaptionImages} from './preview_native_captions.mjs';
+import {playbackKey,prepareCaptionImages,prepareBorderColors} from './preview_native_captions.mjs';
 
 let resolveReady,rejectReady,packet,video,audio,meter,frameCallback,stopTimer,cuts,shared,frozenFrame,disposed=false;
 const controller=new AbortController(),audit=new URLSearchParams(location.search).has('audit');
@@ -509,6 +509,7 @@ window.moviestarLiveStage={ready,metrics,
     await ready;signal?.throwIfAborted();
     if(disposed||metrics.error||playbackIdentity!==playbackKey(next)
         ||(next.audio_plane&&!cuts&&audio.sampleRate!==48000))return null;
+    const commitBorders=cuts?null:prepareBorderColors(window.moviestarScene.entries,next.initial,signal);
     const transaction=cuts?await cuts.prepareCaptionUpdate(next,signal):await prepareCaptionImages(next.caption_plane,signal);
     if(!transaction)return null;
     let audioTransaction;
@@ -518,6 +519,7 @@ window.moviestarLiveStage={ready,metrics,
     return{
       commit:()=>{
         signal?.throwIfAborted();if(disposed)throw Error('Superseded');
+        commitBorders?.();
         if(cuts)transaction.commit();
         else{
           for(const image of captionImages){image.remove();image.removeAttribute('src');}
