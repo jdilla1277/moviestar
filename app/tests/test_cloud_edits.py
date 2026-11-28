@@ -48,6 +48,10 @@ def test_saved_mix_reads_and_candidate_keep_same_revision_and_transport(remote,t
     response.update(status='would_apply',current_undo_remaining=3,changes=True,projected_resolved={'undo_remaining':4})
     response.pop('revision')
     request={'contract_version':'cloud-editing-v1','expected_base_revision':revision,'operation':{'type':'audio_source','gain_db':-6}}
+    value=saved_mix_read(revision);value['spec']['revisions']=[{}]*4
+    value['spec']['audio_mix']['source_audio']['gain_db']=-6
+    value['resolved']['audio_mix']['source_audio']['gain_db']=-6;value['resolved']['undo_remaining']=4
+    response.update(candidate={'spec':value['spec']},projected_resolved=value['resolved'],normalized_request=request,changed_fields=['audio_mix'],effects={'saved_revisions':0,'activity_events':0,'processing_jobs':0,'customer_usage':0})
     file=tmp_path/'audio.json';file.write_text(json.dumps(request))
     checked=CliRunner().invoke(cli,['cloud','edits','validate',P,'--request',str(file)])
     assert checked.exit_code==0,checked.output
@@ -297,3 +301,21 @@ def test_saved_read_help_explains_audio_intent_and_unknowns():
     text=' '.join(result.output.split())
     for term in ['source_audio','gain_db','muted','source_audio_availability','not measured','fade_in','fade_out','seconds','milliseconds','dependency_manifest','asset_id','reference_id']:
         assert term in text
+
+
+@pytest.mark.parametrize('fault',['missing_candidate','wrong_gain','nonzero_effects','wrong_depth','wrong_base'])
+def test_audio_validation_requires_matching_candidate_and_zero_effects(remote,tmp_path,fault):
+    _,response,_=remote
+    revision='00000000-0000-4000-8000-000000000099'
+    request={'contract_version':'cloud-editing-v1','expected_base_revision':revision,'operation':{'type':'audio_source','gain_db':-6}}
+    value=saved_mix_read(revision);value['spec']['revisions']=[{}];value['spec']['audio_mix']['source_audio']['gain_db']=-6;value['resolved']['audio_mix']['source_audio']['gain_db']=-6;value['resolved']['undo_remaining']=1
+    response.pop('revision');response.update(status='would_apply',current_revision=revision,changes=True,current_undo_remaining=0,changed_fields=['audio_mix'],normalized_request=request,candidate={'spec':value['spec']},projected_resolved=value['resolved'],effects={'saved_revisions':0,'activity_events':0,'processing_jobs':0,'customer_usage':0})
+    if fault=='missing_candidate':response.pop('candidate')
+    if fault=='wrong_gain':response['candidate']['spec']['audio_mix']['source_audio']['gain_db']=-12
+    if fault=='nonzero_effects':response['effects']['saved_revisions']=1
+    if fault=='wrong_depth':response['projected_resolved']['undo_remaining']=0
+    if fault=='wrong_base':response['normalized_request']={**request,'expected_base_revision':None}
+    file=tmp_path/'audio.json';file.write_text(json.dumps(request))
+    result=CliRunner().invoke(cli,['cloud','edits','validate',P,'--request',str(file)])
+    assert result.exit_code==1,result.output
+    assert json.loads(result.output)['error']['code']=='invalid_response'
