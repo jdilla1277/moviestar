@@ -1,10 +1,11 @@
-# Inspect a saved Cloud mix without changing it
+# Read, validate and save Cloud dialogue controls
 
 On a service advertising `saved_revision` read/validation support, the existing edit commands
 can inspect a persisted personal revision and check source gain/mute changes.
 These read/validate commands do not save, render, download media or analyze loudness.
 The separate [one-video trim/undo path](cloud-edits.md#save-one-trim-and-undo)
-can produce saved revisions; audio patches remain validation-only.
+can produce saved revisions. Source gain/mute saves require the separate
+capability and account enrollment described below.
 
 ```sh
 moviestar cloud edits capabilities
@@ -99,10 +100,11 @@ A no-op reports `changes: false`, no changed fields and unchanged undo depth.
 The API and hosted MCP use the same project edit read/validate boundary. No
 separate audio endpoint, local project selection, processing charge or saved
 Activity event is created. The service reads authoritative persisted state;
-the request cannot supply its own spec or dependency manifest. This capability
-does not add an audio save/import path. An existing admitted personal saved
-revision and a capable configured engine bridge are prerequisites. Hosted
-activation, rendering and listening acceptance are separate.
+the request cannot supply its own spec or dependency manifest. Validation
+never saves the candidate; saving requires the separate apply step below. There
+is no spec-import path here. An existing admitted personal saved revision and
+a capable configured engine bridge are prerequisites. Hosted activation,
+rendering and listening acceptance are separate.
 
 For a saved dialogue proposal, compare `projected_resolved.audio_mix.source_audio`
 with the current read; keep `current_undo_remaining` separate from projected undo
@@ -112,3 +114,42 @@ reasserting existing controls is a no-op with no extra projected journal entry.
 events, processing jobs and customer usage. Reopen the project after checking:
 the current revision and controls must still match the first read. The CLI
 rejects missing/mismatched candidate evidence instead of confirming it.
+
+## Save source gain/mute and undo
+
+When `editing.write_operations` includes `audio_source`, and the account is
+separately enrolled, the same apply command saves source-layer controls for one
+owned saved video with no independently added tracks. The initial unsaved
+baseline still supports trim only. No source selector, fades or track editing
+is added. Omitted controls and existing fades/routing/timing stay unchanged.
+
+```sh
+moviestar cloud edits show PROJECT_ID
+moviestar cloud edits validate PROJECT_ID --request audio.json
+moviestar cloud edits apply PROJECT_ID --request audio.json
+moviestar cloud edits show PROJECT_ID
+```
+
+Use the actual current revision in `audio.json` with operation
+`{"type":"audio_source","gain_db":-6}` or `{"type":"audio_source","muted":true}`;
+`muted:false` unmutes. `committed` returns the new immutable revision, saved spec,
+resolved mix, read-back verification and one unmetered saved-edit Activity event.
+A no-op returns `unchanged`, retains a retry receipt and creates no new revision
+or event. Existing originals and historical versions stay intact.
+
+Reopen with `show --revision REVISION_ID`. Undo with a new request using the
+current base and `operation:{"type":"undo"}`: the whole previous command is
+restored, including the complete previous mix. Undo creates a new immutable
+saved version; it does not rewrite earlier specs or rendered outputs.
+
+The existing CLI durable retry mechanism applies unchanged. After a lost reply,
+use `cloud edits apply PROJECT_ID --recover`; retain the original request/key.
+Never silently refresh its base or use a new key to resolve uncertainty. Replays
+recover the original revision plus the separately reported current pointer,
+with no duplicate saved-edit event or usage. Stale new writes reject safely.
+
+**This saves instructions, not a newly audible video.** Rendering nondefault
+source gain/mute requires separate qualified renderer support. Saving schedules
+no processing job and reserves no Cloud processing/output allowance. Current
+renderers explicitly reject unsupported mixes rather than dropping the controls.
+Previously generated videos keep their original settings and URLs.

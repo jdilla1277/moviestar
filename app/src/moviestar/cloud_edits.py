@@ -151,7 +151,11 @@ def _confirmed_mutation(body, project, key, proposal):
            {'saved_revisions':count,'activity_events':count,'processing_jobs':0,'customer_usage':0}.items()):
         return False
     if revision is None:
-        return status=='unchanged'
+        return status=='unchanged' and proposal['operation'].get('type')!='audio_source'
+    if proposal['operation'].get('type')=='audio_source':
+        if not _saved_mix_read_valid(revision):return False
+        controls=revision['spec']['audio_mix']['source_audio']
+        if any(controls.get(k)!=v for k,v in proposal['operation'].items()if k!='type'):return False
     return (isinstance(revision,dict) and isinstance(revision.get('id'),str) and bool(_UUID.fullmatch(revision['id']))
             and isinstance(revision.get('spec'),dict) and isinstance(revision.get('resolved'),dict)
             and (body['replayed'] or revision['id']==current))
@@ -160,11 +164,11 @@ def _confirmed_mutation(body, project, key, proposal):
 def register_edits(cloud):
     @cloud.group('edits')
     def edits():
-        """Read, validate, save and undo a Cloud trim.
+        """Read, validate, save and undo Cloud edit settings.
 
         Owned personal projects with ready owned video references only. An
         unsaved baseline is labelled explicitly; it is not a saved revision.
-        Saved audio mixes support gain/mute dry runs. Use apply for one-source trim/undo and show --revision for exact older state.
+        Saved audio mixes support gain/mute dry runs. Separately enabled one-source gain/mute saves use apply, alongside trim/undo. Use show --revision for exact older state.
         Saved instructions are verified by read-back; rendering is separate.
         These commands do not select or modify a local project.
         """
@@ -237,15 +241,18 @@ def register_edits(cloud):
 
     @edits.command('apply')
     @click.argument('project_id')
-    @click.option('--request','request_file',type=click.Path(path_type=Path),help='Exact cloud-editing-v1 body; trim or undo only.')
+    @click.option('--request','request_file',type=click.Path(path_type=Path),help='Exact cloud-editing-v1 body; trim, separately enabled source gain/mute, or undo.')
     @click.option('--recover',is_flag=True,help='Resend the exact pending request and retained key after an uncertain response.')
     @click.option('--idempotency-key',help='Optional explicit retained key; normally generated and saved before sending.')
     @click.option('--abandon-pending',is_flag=True,help='Archive the pending key/body and stop automatic retry locally. Does not undo/cancel a possible server commit.')
     def apply(project_id,request_file,recover,idempotency_key,abandon_pending):
-        """Save one trim, or undo one complete command, without rendering.
+        """Save edit settings or undo one complete command, without rendering.
 
         Read and validate first. Use the current revision as expected_base_revision,
         or null before the first save. Undo body operation is {"type":"undo"}.
+        Audio operation {"type":"audio_source","gain_db":-6} or muted:true/false
+        requires separate service/account enrollment, one saved owned video
+        and no added tracks. Omitted settings and source routing stay unchanged.
         A second trim uses the current edited source clock. On a lost response,
         run apply PROJECT_ID --recover; do not refresh the base or invent a key.
         A confirmed command reports saved ranges and exact revision. Its
