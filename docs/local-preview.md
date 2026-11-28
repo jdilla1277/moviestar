@@ -67,27 +67,36 @@ scenes before and after it; `--from`/`--to` stay on the full composition's resul
 clock. For example, `--from 1801 --to 1806` reviews that section without preparing
 the preceding thirty minutes. Restart the viewer to select another range.
 
-Each selected span can have **zero, one or two visible MP4s**. A window within
-**one scene** can also have **three visible MP4s**, for a speaker and two
-listeners. Review each three-picture scene separately; a window crossing its
-cut requires rendered mode. See the [editable interview walkthrough](spatial-interview.md).
+Each selected span can have **zero to three visible MP4s**, with at most
+**six video players across the selected window**. Two three-picture scenes can
+play continuously through a hard cut, for a speaker and two listeners in each.
+Three three-picture scenes exceed the six-player bound and require rendered mode. See the [editable interview walkthrough](spatial-interview.md).
 In scenes with video, one visible video carries the resolved speaker audio. Each video keeps its
 own source offset. Play, Pause, seek and revision replacement operate on all
 pictures. All first frames must be prepared before the version becomes current.
 Two-video elements feed the same Web Audio clock. The selected speaker's gain
 is one and the listener's gain is zero; both transport starts are submitted
 together. Pause, seek and replacement cancel pending startup too.
-Three-picture scenes use the canonical prepared PCM mix. Muted startup
-preparation checks every picture and returns to the exact first frames before
-publishing the revision; no preview video is encoded. On Play, videos with real
-embedded audio join the resumed Web Audio clock through zero-gain connections,
-so they do not double the prepared mix. The primary picture must have embedded
-audio to supply that clock; genuinely silent listeners follow group transport.
-If all three pictures lack embedded audio, use rendered mode. Preparation never
-requires an audio autoplay gesture, and Restart reuses the same connections.
-A one-frame three-picture window keeps its already prepared images paused and
-plays only that frame’s audio window. It does not require a nonexistent next
-frame when a source is positioned on its final decoded image.
+Three-picture scenes use the canonical prepared PCM mix. Chrome's WebCodecs
+decoder reads indexed H.264 packets directly from the original MP4 assets, both
+within one scene and across scene cuts. This route supports ordinary
+8-bit square-pixel sources without container display transforms; other source
+formats retain the canonical FFmpeg path through rendered mode. The canonical PCM output clock
+selects each picture from a bounded decoded-frame queue, avoiding independent
+video-element startup clocks at the cut. Source bytes and timestamps remain
+unchanged. There is no encoded preview movie, full-video frame cache or backend
+video decode. First and final images are prepared before publication.
+
+Each queue reserves at most eight frames, reduced for large pictures to fit a
+128 MiB decoded-picture budget; source packet reads are bounded too. These
+limits cover queue-owned pictures and outstanding decode reservations, not the
+browser codec's internal reference buffers or canvas storage. The six-player
+window limit still applies. Seek, replacement and disposal close owned frames
+and cancel pending work. Unsupported codecs or budgets, a missing source frame,
+or a missed presentation deadline fail visibly; use rendered mode for that
+project or device. The existing source/audio validation remains in effect.
+A one-frame three-picture window holds its prepared images and plays only that
+frame’s audio window, including at a source’s final frame.
 A cut switches the composition and its selected speaker audio together. A → B → A can return to
 the same recording at a different source position, with a different layout,
 caption state or component arrangement in each scene.
@@ -172,8 +181,8 @@ includes the current caption text, lines, font size, active word and estimated
 bounds; preset glyphs themselves come from the export renderer, not browser fonts.
 
 Windows containing more than three spans, crossing pacing boundaries inside
-one scene, overlapping any transition, needing more than three visible videos,
-or crossing a cut with three pictures are rejected. Transitions elsewhere in the
+one scene, overlapping any transition, needing more than three visible videos
+per span or more than six players across the window are rejected. Transitions elsewhere in the
 project do not block an otherwise supported window. The chosen sources must have
 no source edit operations. Edits on unrelated sources and unplaced live caption tracks do not block
 this window. Up to two independent audio tracks and source/track gain, mute and edge fades are
@@ -244,7 +253,8 @@ physical listening/lip-sync acceptance for this new profile.
 
 The viewer prepares every selected scene’s actual first video frame, images,
 fonts and canonical DOM before the version becomes current. At most three scene
-players with two decoders each are prepared per version, independent of the full project’s
+players with at most three videos per scene and six across the window are
+prepared per version, independent of the full project’s
 length. One shared 48 kHz audio context plays a continuous canonical audio
 window across cuts, including source-only edits with no extra tracks. Audio is
 measured at that shared output. Stereo speaker downmix preserves center-channel
@@ -413,12 +423,12 @@ samples for the synthetic benchmark. Normal viewing avoids per-frame source
 canvas readback. The audio worklet passes through the sound sent to the output;
 clock estimates still require a physical flash/beep check for acceptance.
 
-At a camera cut, the outgoing videos hold
-their canonical final pictures before the incoming scene is revealed. Their
-decoders stop while the continuous audio window keeps running, so an occluded
-inset does not decode beyond its selected range. Parallel incoming decoders
-retain hidden preroll; a single picture already has its first frame prepared
-and starts at the cut boundary so that frame cannot advance while hidden.
+At a camera cut, the outgoing pictures hold their canonical final images
+while the continuous audio window keeps running. Two-picture media-element
+scenes retain their existing hidden preroll. A decoded three-picture scene and
+a single picture already have their first image prepared and become visible at
+the cut boundary. Decoded pictures follow the master clock rather than advancing
+an independently started transport behind the current scene.
 The source-only route retains its existing visible-carrier and unit-speed
 validation. This changes playback transport, not the saved edit or its sound.
 
@@ -525,3 +535,46 @@ see [camera pan/zoom](spatial-model.md#camera-pan-and-zoom-inside-a-fixed-frame)
 Native inspection reports the actual inner camera box and opacity as well as
 the fixed outer frame. Legacy preset camera/pacing records retain their existing
 rendered-mode requirement.
+
+### Decoded-picture diagnostics
+
+Unchanged three-picture source windows can reuse original-packet indexes from
+completed requests in the same preview session. These are byte offsets,
+timestamps and codec metadata; source media payloads and decoded video frames are never
+cached by this mechanism. Each request owns at most six indexes and 12 MiB of
+this metadata, within the existing eight-request history. Expiring a request
+removes its index metadata too.
+
+The current snapshot, speaker mix and final authored images are still compiled
+normally. File identity (including inode/ctime and resolved path), source window,
+frame rate, indexer and ffprobe identity must match before reuse. Missing,
+corrupt, expired or over-budget metadata uses fresh indexing. Numeric
+`packet_reuse.indexed` and `packet_reuse.reused` counters and the opt-in
+`packet_index` preparation phase explain readiness without exposing candidate
+paths. The browser's decoded-frame queue limits remain unchanged.
+
+Participant border-color edits, shared updates, resets and their undos preserve
+the current source decoders when every other playback and geometry input is
+identical. Colors are validated before an atomic commit; no pending edit changes
+the displayed scene. Border width, format, source, range and other layout changes
+still prepare a new stage. Audio is freshly prepared and source identities are
+still validated for every revision.
+
+Three-picture diagnostics identify `webcodecs` transport. Their frame totals
+count submitted source images, and dropped-frame counts record explicit missed
+presentation deadlines; these are not HTML video-element playback-quality
+counters. Source barcode checks and deliberate-stall regressions verify that
+missing images cannot pass as repeated old pictures.
+
+Canvas timing records animation-frame submission rather than a hardware display
+timestamp. Before decoded three-picture Play or resume, the PCM start is aligned
+to four display-cadence observations, keeping the next selected source boundary
+just before a refresh, including source trims between frame boundaries.
+Audio starts and seek offsets remain on the exact 48 kHz sample
+grid; no future source image is presented early. Pause, seek and replacement
+cancel the wait, and missing display callbacks use the existing two-second
+startup deadline. One- and two-picture media-element starts are unchanged.
+The generated-fixture cue check adds one observed animation-frame
+interval as presentation uncertainty to the measured phase before applying the
+same 50 ms limit. Physical flash/beep and interview lip-sync review remain
+separate human acceptance checks.

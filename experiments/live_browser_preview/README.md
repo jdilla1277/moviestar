@@ -1258,22 +1258,19 @@ with the canonical mix at 1e-5 sample error, geometry within .2 pixels, and pict
 interiors against canonical rendering at the existing eight-level RGB budget.
 A short rendered window also checks both sides of the actual speaker cut.
 
-Three-picture preparation remains muted until a user starts playback. On Play,
-real embedded audio pipelines join the resumed output clock through zero gains;
-the prepared PCM remains the only audible output. The primary picture is chosen
-from an audio-bearing source, including when the first DOM picture is a silent
-listener. All-silent three-picture groups require rendered mode. Playback uses
-the established half-frame device-clock launch, not the startup lead measured
-on the earlier muted pipelines. Restart reuses connections. This addresses the
-single-scene presentation slip retained in #215; first failing CI artifacts
-remain evidence and the zero-drop/50 ms/PCM gates are unchanged.
+Three-picture scenes use bounded WebCodecs picture queues and the canonical
+prepared PCM output clock, in standalone review and across cuts. Their canvas
+transport does not create embedded media-element audio nodes. The existing
+source/audio validation remains conservative: all-silent three-picture groups
+require rendered mode. Restart, seek and undo prepare the exact source images
+before resuming the PCM clock.
 
-Three-picture native windows are deliberately limited to one scene. Continuous
-three-picture cuts require rendered review. The initial cut investigation found
-startup drops; longer preroll and re-priming did not reliably solve them. No cut
-support, relaxed fidelity threshold or real-speech acceptance is implied by this
-journey. Existing one/two-picture cut support is unchanged. Use a new `--out`
-directory for each run; do not replace a failed first result with a rerun.
+The earlier video-element implementation dropped startup frames intermittently,
+including after undo. Longer preroll and re-priming did not reliably solve that
+failure. Those first failing results remain evidence; the decoded transport
+below replaces that implementation. Existing one/two-picture cut behavior is
+unchanged. Use a new `--out` directory for each run; do not replace a failed first
+result with a rerun. Physical display/audio acceptance remains a human check.
 
 ### Matched visual-drop investigation
 
@@ -1297,3 +1294,26 @@ base can fail too; the ordinary candidate acceptance job remains mandatory and
 keeps its zero-drop/50 ms gates. A clean comparison is a non-reproduction, not
 proof that an earlier failure was harmless or pre-existing. A failure on both
 revisions establishes the symptom on both, without proving a shared root cause.
+
+
+### Decoded three-picture transport
+
+The current three-picture implementation indexes original H.264 packets for each selected
+window and decodes bounded picture queues in the browser with WebCodecs. It
+presents source images against the continuous canonical PCM output clock. This
+replaces the unreliable independent video-element startup protocol at the cut;
+the earlier failed timing experiments above remain failure evidence.
+
+Run `interview_benchmark.py --scene all --capture-pcm` to exercise two three-picture
+scenes, including 20 local/shared/format edits and undos. The same resource bound
+allows at most six video players across a window. The source media is neither
+encoded nor rewritten, and no decoded whole-video cache is retained.
+
+For decoded transport, quality records describe submitted source pictures and
+explicit missed presentation deadlines, rather than HTML video-element counters.
+A deliberate 200 ms main-thread stall must fail visibly. Source-image barcode
+checks, first/final image checks and canonical render/export comparisons remain
+required. Canvas submission timing carries one observed animation-frame interval
+of presentation uncertainty, included within the unchanged 50 ms cue limit. The
+full six-second stereo PCM comparison rejects even isolated sample corruption.
+Physical flash/beep acceptance is a separate human check.

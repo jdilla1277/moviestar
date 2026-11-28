@@ -7,6 +7,8 @@ on:
       - 'bin/install-ci-ffmpeg'
       - 'app/tests/test_native_audio*'
       - 'app/tests/test_native_pip_browser.py'
+      - 'app/tests/test_native_interview*'
+      - 'app/tests/test_native_decode*'
       - 'app/tests/test_native_still*'
       - 'experiments/live_browser_preview/**'
       - '.github/workflows/native-audio-performance.yml'
@@ -22,7 +24,10 @@ jobs:
       fail-fast: false
       matrix:
         canvas: ['360x640', '1080x1920']
-        scenario: ['fades', 'two-tracks', 'visual', 'stills', 'spatial-captions', 'framing', 'camera', 'source-cuts', 'speed', 'interview']
+        scenario: ['fades', 'two-tracks', 'visual', 'stills', 'spatial-captions', 'framing', 'camera', 'source-cuts', 'speed', 'interview', 'interview-cuts']
+        include:
+          - {scenario: interview-cuts, canvas: '640x360'}
+          - {scenario: interview-cuts, canvas: '1920x1080'}
     env:
       MOVIESTAR_CHROME_NO_SANDBOX: '1'
     steps:
@@ -86,6 +91,9 @@ jobs:
               "$RUNNER_TEMP/native-env/bin/python" experiments/live_browser_preview/interview_benchmark.py \
                 --scene "$scene" --canvas '${{ matrix.canvas }}' --out "$RUNNER_TEMP/native-audio-evidence/$scene"
             done
+          elif [ '${{ matrix.scenario }}' = interview-cuts ]; then
+            "$RUNNER_TEMP/native-env/bin/python" experiments/live_browser_preview/interview_benchmark.py \
+              --scene all --capture-pcm --canvas '${{ matrix.canvas }}' --out "$RUNNER_TEMP/native-audio-evidence/cuts"
           elif [ '${{ matrix.scenario }}' = speed ]; then
             "$RUNNER_TEMP/native-env/bin/python" experiments/live_browser_preview/speed_benchmark.py \
               --canvas '${{ matrix.canvas }}' --out "$RUNNER_TEMP/native-audio-evidence/matrix"

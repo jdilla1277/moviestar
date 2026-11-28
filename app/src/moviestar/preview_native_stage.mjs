@@ -1,11 +1,12 @@
 import {render} from './spatial_dom.mjs';
-import {playbackKey,prepareCaptionImages} from './preview_native_captions.mjs';
+import {playbackKey,prepareCaptionImages,prepareBorderColors} from './preview_native_captions.mjs';
 
 let resolveReady,rejectReady,packet,video,audio,meter,frameCallback,stopTimer,cuts,shared,frozenFrame,disposed=false;
 const controller=new AbortController(),audit=new URLSearchParams(location.search).has('audit');
 const pendingSeeks=new Set();
 let lastIndex=-1, playing=false, readyDone=false, metadataReady=false, imageReady=false,finishing=false,playGeneration=0;
 let videoGroup,reviewAudio,outputMixer,sceneClock;
+let createDecodedMedia;
 let playbackIdentity,speedFrame,pictureStartup,pendingStageSeek;
 const playbackRate=()=>packet?.playback_rate??1;
 const measuredPictures=()=>playbackRate()!==1||(packet?.prepared_audio&&(packet.media??[]).filter(m=>m.kind==='video').length===3);
@@ -162,7 +163,7 @@ async function checkReady(){
       // A source may be on its final decoded frame, so asking it for an
       // advancing presentation would wait forever. No moving-picture startup
       // lead is needed for this static result window.
-      pictureStartup=packet.samples.length===1&&playbackRate()===1
+      pictureStartup=packet.decoded_transport?{lead:0,decoded:true,prepared_frame_only:packet.samples.length===1}:packet.samples.length===1&&playbackRate()===1
         ? {lead:0,prepared_frame_only:true}
         : await videoGroup.measureStartup();
       if(!pictureStartup||disposed)return;
@@ -267,7 +268,7 @@ function complete(){
 function quality(){return videos.reduce((sum,item)=>{const q=item.video.getVideoPlaybackQuality();return{totalVideoFrames:sum.totalVideoFrames+q.totalVideoFrames,droppedVideoFrames:sum.droppedVideoFrames+q.droppedVideoFrames};},{totalVideoFrames:0,droppedVideoFrames:0});}
 function recordQuality(){
   metrics.quality=quality();metrics.video_quality=videos.map(item=>{const q=item.video.getVideoPlaybackQuality();return{
-    path:item.path,total_frames:q.totalVideoFrames-(item.beforePlay?.totalVideoFrames??0),
+    path:item.path,...(packet.decoded_transport?{presentation_source:q.presentation_source,display_uncertainty_ms:q.display_uncertainty_ms}:{}),total_frames:q.totalVideoFrames-(item.beforePlay?.totalVideoFrames??0),
     dropped_frames:q.droppedVideoFrames-(item.beforePlay?.droppedVideoFrames??0)};});
 }
 function recordVideoQuality(item,phase){
@@ -311,19 +312,6 @@ function connectAudioGraph(){
     gain.connect(destination);item.audioGain=gain;
   }
 }
-function joinInterviewOutputClock(){
-  if(playbackRate()!==1||videos.length!==3||pictureStartup?.prepared_frame_only)return;
-  // Preparation uses muted elements so readiness never needs an autoplay
-  // gesture. Once Play has resumed the device, real audio pipelines can keep
-  // the pictures on that output clock, just as in the two-picture player.
-  // Zero gains leave the canonical PCM as the only audible signal.
-  for(const item of videos){
-    if(!item.hasAudio||item.audioSource)continue;
-    item.video.muted=false;
-    const node=audio.createMediaElementSource(item.video);node.connect(item.audioGain);item.audioSource=node;
-  }
-  return Boolean(videos.find(item=>item.primary)?.audioSource);
-}
 async function initialize(){
   const params=new URLSearchParams(location.search),request=params.get('request');
   const response=await fetch('packet?request='+encodeURIComponent(request)+(params.has('segment')?'&segment='+encodeURIComponent(params.get('segment')):''),{cache:'no-store',signal:controller.signal});
@@ -340,6 +328,7 @@ async function initialize(){
   }
   metrics.source_buffering=packet.media.some(m=>m.kind==='video')?await enableSourceBuffering(controller.signal):false;if(disposed)return;
   Object.assign(window.frameElement.style,{width:packet.canvas.width+'px',height:packet.canvas.height+'px'});
+  if(packet.decoded_transport)({createDecodedMedia}=await import('./preview_native_decoded_media.mjs'));
   const measured=await render({...packet.initial,paint_dir:'native',live_dom:true});
   if(disposed)return;
   const bad=measured.diagnostics.find(item=>item.severity==='error');
@@ -364,7 +353,7 @@ async function initialize(){
     if(!CSS.supports('clip-path','content-box'))throw Error('Native media framing needs content-box clipping.');
     const scene=window.moviestarScene,target=scene.mediaTarget(element),camera=target!==element;
     const frame=camera?target.parentElement.parentElement:document.createElement('div');
-    const media=document.createElement(asset.kind==='video'?'video':'img');
+    const media=asset.video_decode?createDecodedMedia(asset,{offset:packet.cut_segment?packet.range.from-window.parent.moviestarCutShared.rangeStart:0,clock:()=>(packet.cut_segment?window.parent.moviestarCutShared.reviewAudio:reviewAudio)?.outputTimeAt(performance.timeOrigin+performance.now()),signal:controller.signal,onFailure:fail}):document.createElement(asset.kind==='video'?'video':'img');
     if(camera){
       Object.assign(media.style,{position:'absolute',display:'block',left:'0px',top:'0px',width:'100%',height:'100%',
         border:'0px',padding:'0px',objectFit:asset.object_fit,objectPosition:asset.object_position});target.append(media);
@@ -376,7 +365,7 @@ async function initialize(){
     if(asset.kind==='image'){
       media.src='assets/'+asset.asset;const decoded=media.decode().then(()=>scene.setMediaIntrinsic(element,media.naturalWidth,media.naturalHeight));decoded.catch(()=>{});images.push(decoded);
     }else{
-      const primary=key(asset.path)===key(packet.video_path),item={video:media,path:asset.path,start:asset.source_start??packet.source_start,end:asset.source_end??packet.source_end,fps:packet.fps,rate:asset.playback_rate??1,primary,hasAudio:asset.has_audio!==false};
+      const primary=key(asset.path)===key(packet.video_path),item={video:media,path:asset.path,start:asset.source_start??packet.source_start,end:asset.source_end??packet.source_end,fps:packet.fps,rate:asset.playback_rate??1,primary,hasAudio:!asset.video_decode&&asset.has_audio!==false};
       videos.push(item);if(primary)video=media;
       media.playbackRate=item.rate;
       if(measuredPictures())media.muted=true;
@@ -520,6 +509,7 @@ window.moviestarLiveStage={ready,metrics,
     await ready;signal?.throwIfAborted();
     if(disposed||metrics.error||playbackIdentity!==playbackKey(next)
         ||(next.audio_plane&&!cuts&&audio.sampleRate!==48000))return null;
+    const commitBorders=cuts?null:prepareBorderColors(window.moviestarScene.entries,next.initial,signal);
     const transaction=cuts?await cuts.prepareCaptionUpdate(next,signal):await prepareCaptionImages(next.caption_plane,signal);
     if(!transaction)return null;
     let audioTransaction;
@@ -529,6 +519,7 @@ window.moviestarLiveStage={ready,metrics,
     return{
       commit:()=>{
         signal?.throwIfAborted();if(disposed)throw Error('Superseded');
+        commitBorders?.();
         if(cuts)transaction.commit();
         else{
           for(const image of captionImages){image.remove();image.removeAttribute('src');}
@@ -583,13 +574,15 @@ window.moviestarLiveStage={ready,metrics,
         await new Promise(resolve=>setTimeout(resolve,10));
       }
       if(!active())return;
-      const interviewClock=joinInterviewOutputClock();
       metrics.device_ready_at=Date.now();if(packet.cut_segment&&packet.samples.length===1){freezeLastFrame();videos.filter(item=>!item.primary).forEach(freezeFollower);}
       for(const item of videos){item.beforePlay=item.video.getVideoPlaybackQuality();delete item.reportedDrops;}
       metrics.initial_presented=videos.map(item=>({path:item.path,media_time:item.video.currentTime,...item.frame,quality:{totalVideoFrames:item.beforePlay.totalVideoFrames,droppedVideoFrames:item.beforePlay.droppedVideoFrames}}));playing=true;
-      if(reviewAudio?.snapshot().prepared)await reviewAudio.play(this.time,!interviewClock&&pictureStartup?{presentationLead:pictureStartup.lead}:{pictureLead:1/(2*packet.fps)});if(!active())return;
+      if(reviewAudio?.snapshot().prepared)await reviewAudio.play(this.time,{
+        ...(pictureStartup?{presentationLead:pictureStartup.lead}:{pictureLead:1/(2*packet.fps)}),
+        ...(packet.decoded_transport?{displayFps:packet.fps,displayOrigin:packet.source_start}:{})});if(!active())return;
       if(reviewAudio)metrics.prepared_audio=reviewAudio.snapshot();
       if(pictureStartup?.prepared_frame_only){
+        if(packet.cut_segment)return; // Parent PCM owns this static interval.
         // Keep the sole authored image visible. Advancing the decoders could
         // show an out-of-window frame or require an EOF callback to finish.
         const end=metrics.prepared_audio.started_context_time+packet.range.to-packet.range.from;
@@ -613,12 +606,12 @@ window.moviestarLiveStage={ready,metrics,
     return {request_id:packet.request_id,state_id:packet.state_id,time:this.time,source:packet.clock==='scene'?null:sourceFrame(),
       audio:reviewAudio?.snapshot(),
       captions:packet.caption_plane?.states[captionState]?.cues??[],
-      videos:videos.map(item=>({path:item.path,asset:item.video.currentSrc.match(/\/assets\/([a-f0-9]{24})(?:[?#]|$)/)?.[1]??null,audio_gain:item.audioGain?.gain.value,audio_connected:Boolean(item.audioSource),source:sourceFrame(item),media_time:item.video.currentTime,paused:item.video.paused,seeking:item.video.seeking,ready_state:item.video.readyState})),
+      videos:videos.map(item=>({path:item.path,asset:item.video.currentSrc.match(/\/assets\/([a-f0-9]{24})(?:[?#]|$)/)?.[1]??null,audio_gain:item.audioGain?.gain.value,audio_connected:Boolean(item.audioSource),transport:packet.decoded_transport?'webcodecs':'media-element',source:sourceFrame(item),media_time:item.video.currentTime,paused:item.video.paused,seeking:item.video.seeking,ready_state:item.video.readyState})),
       boxes:window.moviestarScene.entries.map(({node,element})=>{
         const r=element.getBoundingClientRect();let opacity=1;
         for(let ancestor=element;ancestor;ancestor=ancestor.parentElement)opacity*=Number(getComputedStyle(ancestor).opacity);
         return {path:node.path,kind:node.kind,text:element.textContent,
-          ...(node.media_motion?{media_motion:node.media_motion}:{}),...(['video','image'].includes(node.kind)?{media_box:node.media_motion?window.moviestarScene.mediaBox(element):(()=>{const m=window.moviestarScene.contentMetrics(element.querySelector('video,img')??element);return{object_fit:m.css.objectFit,object_position:m.css.objectPosition,content_rect:m.rect};})()} : {}),rect:{x:r.x,y:r.y,width:r.width,height:r.height},opacity,caption:node.kind==='caption'?node.caption:undefined,caption_words:node.kind==='caption'?window.moviestarScene.captionWords(element):undefined,text_lines:['text','caption'].includes(node.kind)?window.moviestarScene.textLines(element):undefined};
+          ...(node.media_motion?{media_motion:node.media_motion}:{}),...(['video','image'].includes(node.kind)?{media_box:node.media_motion?window.moviestarScene.mediaBox(element):(()=>{const m=window.moviestarScene.contentMetrics(element.querySelector('video,img,canvas')??element);return{object_fit:m.css.objectFit,object_position:m.css.objectPosition,content_rect:m.rect};})()} : {}),rect:{x:r.x,y:r.y,width:r.width,height:r.height},opacity,caption:node.kind==='caption'?node.caption:undefined,caption_words:node.kind==='caption'?window.moviestarScene.captionWords(element):undefined,text_lines:['text','caption'].includes(node.kind)?window.moviestarScene.textLines(element):undefined};
       })};
   },
   dispose(){

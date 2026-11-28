@@ -134,3 +134,26 @@ assert.equal(api.snapshot().started_offset,started.offset);api.dispose();
 '''.replace('MODULE',repr(module))
     result=subprocess.run(['node','--input-type=module','-e',script],capture_output=True,text=True,timeout=10)
     assert result.returncode==0,result.stdout+result.stderr
+
+
+def test_naturally_ended_buffer_retains_its_output_clock_until_the_final_samples_arrive():
+    module=(Path(__file__).parents[1]/'src/moviestar/preview_native_audio.mjs').as_uri()
+    script=r'''
+import assert from 'node:assert/strict';
+const {createPreparedAudio}=await import(MODULE);
+let output=2.05,node;
+const duration=2/30,context={sampleRate:48000,currentTime:2,resume:async()=>{},
+ getOutputTimestamp:()=>({contextTime:output,performanceTime:1}),
+ decodeAudioData:async()=>({numberOfChannels:2,sampleRate:48000,duration}),
+ createBufferSource:()=>node={connect(){},disconnect(){},start(){},stop(){}}};
+globalThis.fetch=async()=>({ok:true,arrayBuffer:async()=>new ArrayBuffer(16)});
+const audio=createPreparedAudio(context,{},new AbortController().signal,duration);
+(await audio.prepare({asset:'mix',duration,sample_rate:48000,channels:2})).commit();
+await audio.play(0);output=2.05+duration-.01;node.onended();
+assert.equal(audio.snapshot().playing,false);
+assert.ok(Math.abs(audio.outputTimeAt(performance.timeOrigin+1)-(duration-.01))<1e-6,'Rendering can end before the output device plays the final quantum');
+output+=.1;assert.equal(audio.outputTimeAt(performance.timeOrigin+1),duration,'Natural completion holds the exact sample end, never double-counting duration');
+audio.pause();assert.equal(audio.outputTimeAt(performance.timeOrigin+1),null,'Explicit Pause still invalidates the running clock');audio.dispose();
+'''
+    result=subprocess.run(['node','--input-type=module','-e',f'const MODULE={json.dumps(module)};'+script],capture_output=True,text=True,timeout=10)
+    assert result.returncode==0,result.stdout+result.stderr

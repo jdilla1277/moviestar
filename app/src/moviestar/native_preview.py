@@ -27,7 +27,7 @@ def walk(nodes):
 PROFILE = {"name": "native", "transport": "native-browser", "max_window_s": 10,
            "clip_end_tolerance_ms": 50, "clip_end": "approximate",
            "min_fps": 24, "max_fps": 60, "max_segments": 3, "min_videos_per_segment": 0, "max_videos_per_segment": 3,
-           "max_videos_per_cut_segment": 2,
+           "max_videos_per_cut_segment": 3, "max_video_players": 6,
            "max_independent_audio_tracks": MAX_AUDIBLE_TRACKS,
            "fallback_mode": "rendered"}
 
@@ -111,8 +111,6 @@ def compile_snapshot(snapshot):
             has_scene_clock = True
         if picture_count == 3:
             has_three_pictures = prepared_audio = True
-    if has_three_pictures and len(spans) > 1:
-        fail('three-picture native review requires a single scene span; review each scene separately')
     if has_scene_clock and any(metadata.get(span.audio.source_id, {}).get('audio_codec') for span in spans):
         prepared_audio = True
         routed = {span.audio.source_id for span in spans}
@@ -127,6 +125,8 @@ def compile_snapshot(snapshot):
         child, registered = _compile_span(snapshot, timeline, left, right, span, prepared_audio=prepared_audio, validate_source_route=validate_source_route)
         packets.append({'offset': left-start, 'packet': child})
         assets.update(registered)
+    if sum(media['kind'] == 'video' for segment in packets for media in segment['packet']['media']) > PROFILE['max_video_players']:
+        fail('native cut review supports at most six video players across scenes')
     if len(packets) == 1:
         packet = packets[0]['packet']
     else:
@@ -266,6 +266,12 @@ def _compile_span(snapshot, timeline, start, end, span, *, prepared_audio=False,
                                   'source_start': clocks[tuple(node['path'])],
                                   'source_end': clocks[tuple(node['path'])]+(end-start)*rate,
                                   **({'playback_rate':rate} if abs(rate-1)>1e-8 else {})} if kind == 'video' else {})})
+        if len(videos) == 3:
+            # Preserve the final canonical sample itself. Extrapolating from
+            # its rounded first clock can land just before the final MP4 PTS.
+            for item in media:
+                if item['kind'] == 'video':
+                    item['source_last'] = expanded[tuple(item['path'])]['media']['source_time_s']
         def dynamic(nodes):
             return [{'path': node['path'], 'content': node['content'],
                      'motion': node.get('motion'), 'media_motion': node.get('media_motion'), 'caption': node.get('caption'),
@@ -332,6 +338,15 @@ def _build(request_file,request,timing):
         plane['asset'] = key
     from moviestar.native_caption_reuse import prepare_jobs
     packets = [s['packet'] for s in packet['segments']] if 'segments' in packet else [packet]
+    from moviestar.native_packet_reuse import prepare_indexes
+    decoded_packets=[child for child in packets if sum(m['kind']=='video' for m in child['media'])==3]
+    if decoded_packets:
+        with phase(timing,'packet_index'):
+            reuse=prepare_indexes(decoded_packets,assets,folder,request.get('packet_candidates',[]))
+        try:
+            (folder/'packet-reuse.json').write_text(json.dumps(reuse))
+        except OSError:
+            pass
     jobs,contexts={},{}
     for child in packets:
         plane=child.get('caption_plane')

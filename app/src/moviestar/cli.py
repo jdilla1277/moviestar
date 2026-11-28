@@ -1140,14 +1140,16 @@ cli.add_command(composition)
               help="Local viewer port; 0 chooses a temporary port.")
 @click.option("--open/--no-open", "open_browser", default=True, help="Open the viewer in your local browser.")
 @click.option("--mode", type=click.Choice(["rendered", "native"]), default="rendered", show_default=True,
-              help="Rendered MP4 review or fast native playback: up to three videos in one scene, or two per cut scene.")
+              help="Rendered MP4 review or fast native playback: up to three videos per scene and six across hard cuts.")
 def preview(from_tc, to_tc, port, open_browser, mode):
     """Keep one local playback page open while an agent edits scenes.
 
     Runs in the foreground until Ctrl-C. Watches saved edits, including undo,
     and prepares versioned previews with audio. Rendered mode generates an MP4;
     native mode plays supported source media directly with the canonical layout.
-    Native scenes may contain one or two same-rate MP4 videos. Source-only
+    Native scenes may contain up to three same-rate MP4 videos, with six video
+    players across a cut window. Three-picture cuts use bounded H.264 frame
+    queues synchronized to the canonical soundtrack. Source-only
     review uses the selected visible video's embedded audio. Static presets and spatial
     components, preset captions and spoken-word highlighting are supported.
     Caption changes and undo update the viewer without encoding a preview

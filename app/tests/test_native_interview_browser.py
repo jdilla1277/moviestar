@@ -30,7 +30,7 @@ def _audio(path):
                                for f in resampler.resample(src)], axis=1)
 
 
-def _assert_pcm(review, reference):
+def _assert_pcm(review, reference, *, duration=3):
     m = review['metrics']; a = m['prepared_audio']; capture = m['audio_pcm']
     actual = np.asarray(capture['samples']); expected = _audio(reference)
     index = round((capture['start_context_time'] - a['started_context_time'] + a['started_offset']) * 48000)
@@ -41,21 +41,24 @@ def _assert_pcm(review, reference):
         right = min(actual.shape[1], expected.shape[1] - begin, stop - 128)
         errors.append((actual[:, left:right] - expected[:, begin + left:begin + right]).ravel())
     error = min(errors, key=lambda e: np.sqrt(np.mean(e * e)))
-    assert len(error) > 2.8 * 48000 * 2, 'Compare the whole scene, allowing only the final stop quantum'
+    assert len(error) > (duration-.2) * 48000 * 2, 'Compare the whole review, allowing only the final stop quantum'
     assert abs(error).max() < 1e-5
 
 
 @pytest.mark.skipif(not browser_available(), reason='Chrome and Node required')
-@pytest.mark.parametrize('canvas,scene', [('360x640', 'intro'), ('640x360', 'reply')])
-def test_actual_interview_edits_undo_playback_and_export(tmp_path, benchmark, canvas, scene):
+@pytest.mark.parametrize('canvas,scene,depth', [('360x640','intro',0),('640x360','reply',0),('360x640','all',20),('640x360','all',50)])
+def test_actual_interview_edits_undo_playback_and_export(tmp_path, benchmark, canvas, scene, depth):
     from interview_benchmark import run_case
     folder = tmp_path / 'browser'
-    assert run_case(folder, canvas, 0, capture_pcm=True, scene=scene) == 0, (folder / 'driver.log').read_text()
+    assert run_case(folder, canvas, depth, capture_pcm=True, scene=scene) == 0, (folder / 'driver.log').read_text()
     report = json.loads((folder / 'report.json').read_text())
     assert len(report['edits']) == 20 and len(report['playback']) == 2
     assert report['problems'] == []
+    assert all(edit['reused_decoders'] for edit in report['edits'] if 'canvas' not in edit['name']), 'Border colors and their undos must preserve the actual decoders'
+    for shot in report['captures']:
+        assert all(v['transport'] == 'webcodecs' for v in shot['snapshot']['videos'])
     for review in report['playback']:
-        _assert_pcm(review, folder / (review['label'] + '-audio-reference.wav'))
+        _assert_pcm(review, folder / (review['label'] + '-audio-reference.wav'),duration=6 if scene=='all' else 3)
     root = folder / 'project'; spec = load_spec(root)
     assert all(spec['spatial']['scenes'][scene]['layout']['children'][2]['definition_id'] == 'listener_pair'
                for scene in ('intro', 'reply'))
@@ -65,7 +68,7 @@ def test_actual_interview_edits_undo_playback_and_export(tmp_path, benchmark, ca
         os.chdir(root)
         timeline = resolve_project(load_project(root), spec)
         for shot in report['captures']:
-            frame = compile_spatial_frame(spec, timeline, shot['at'] + (0 if scene == 'intro' else 3))
+            frame = compile_spatial_frame(spec, timeline, shot['at'] + (3 if scene == 'reply' else 0))
             boxes = measure_spatial_layout(frame, size)['boxes']
             actual_boxes = {tuple(b['path']): b for b in shot['snapshot']['boxes']}
             for box in boxes:
@@ -200,3 +203,124 @@ try{
             try: server.wait(timeout=9)
             except subprocess.TimeoutExpired: server.kill(); server.wait()
             server.stdout.close()
+
+
+@pytest.mark.parametrize('defect', ['none', 'one_sample', 'short_capture'])
+def test_full_cut_pcm_oracle_rejects_short_or_locally_corrupted_output(tmp_path, benchmark, defect):
+    import wave
+    from pcm_reference import verify_pcm_reference
+    reference=tmp_path/'canonical.wav'
+    with wave.open(str(reference),'wb') as output:
+        output.setparams((2,2,48000,0,'NONE','not compressed'))
+        output.writeframes(np.full((6*48000,2),4096,dtype='<i2').tobytes())
+    samples=np.full((2,6*48000),.125)
+    if defect=='one_sample':samples[1,100]+=.001  # RMS alone would miss this corruption.
+    elif defect=='short_capture':samples=samples[:,:round(2.9*48000)]
+    review={'metrics':{'prepared_audio':{'started_context_time':0,'started_offset':0},
+        'pause_context_time':6+128/48000,
+        'audio_pcm':{'sample_rate':48000,'start_context_time':0,'samples':samples}}}
+    if defect=='none':
+        result=verify_pcm_reference(review,reference,duration=6)
+        assert result['compared_stereo_seconds']==6 and result['maximum_sample_error']==0
+    else:
+        with pytest.raises(AssertionError,match='sample error' if defect=='one_sample' else 'complete review'):
+            verify_pcm_reference(review,reference,duration=6)
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node required')
+def test_one_frame_three_picture_cut_at_source_eof_finishes_and_restarts(tmp_path, benchmark):
+    import selectors
+    from interview import prepare_interview
+    from moviestar.spec import save_spec
+    from moviestar.spatial_layout import _chrome_path
+    root=tmp_path/'project';prepare_interview(root)
+    spec=load_spec(root);children=spec['spatial']['scenes']['intro']['layout']['children']
+    children[1]['bindings']['clip']['source']={'start':5,'end':8}
+    for side in ('left','right'):children[2]['bindings'][side]['source']={'start':5,'end':8}
+    spec['composition'][0]['slots'][0].update(source_from='0:00:05.000',source_to='0:00:08.000')
+    save_spec(spec,cwd=root)
+    with (tmp_path/'server.log').open('w') as log:
+        server=subprocess.Popen([sys.executable,'-m','moviestar.cli','preview','--workspace',str(root),'--mode','native',
+            '--from',str(89/30),'--to',str(91/30),'--port','0','--no-open'],stdout=subprocess.PIPE,stderr=log,text=True)
+        try:
+            with selectors.DefaultSelector() as poll:
+                poll.register(server.stdout,selectors.EVENT_READ);assert poll.select(20)
+                ready=json.loads(server.stdout.readline());assert ready.get('url'),ready
+            script=r'''
+import assert from 'node:assert/strict';import{writeFile}from'node:fs/promises';
+const {Browser}=await import(HELPER),b=await Browser.launch(CHROME,OUT),api='window.movieStarPreview.stage';
+const children=`(()=>{const w=document.querySelector('#stage iframe:not(.pending)').contentWindow;return [...w.document.querySelectorAll('iframe')].map(f=>({snapshot:f.contentWindow.moviestarLiveStage.snapshot(),metrics:f.contentWindow.moviestarLiveStage.metrics}));})()`;
+try{
+ await b.send('Page.navigate',{url:URL+'?audit=1'});await b.wait('window.movieStarPreview?.is_current',15000);
+ for(let trial=0;trial<2;trial++){
+  assert.deepEqual((await b.evaluate(children)).map(c=>c.snapshot.videos.map(v=>v.source.number)),[[239,239,239],[60,90,120]]);
+  await b.click('#play');await b.wait(api+'.metrics.finished||'+api+'.error',6000);
+  assert.equal(await b.evaluate(api+'.error'),null);
+  const result=await b.evaluate(children);assert.ok(result.every(c=>c.snapshot.videos.every(v=>v.paused&&!v.seeking)));
+  assert.ok(result.every(c=>c.metrics.video_quality.every(q=>q.total_frames===0&&q.dropped_frames===0)),'Neither static scene may advance beyond its one authored image');
+  await writeFile(OUT+'/static-cut-'+trial+'.json',JSON.stringify({children:result,metrics:await b.evaluate(api+'.metrics')}));
+  await b.click('#restart');await b.wait(api+'.metrics.finished===false');await b.evaluate(api+'.seek(0)');
+ }
+}finally{await b.close();}
+'''
+            values={'HELPER':(Path(__file__).parents[2]/'experiments/live_browser_preview/browser.mjs').as_uri(),
+                'CHROME':str(_chrome_path()),'OUT':str(tmp_path/'browser'),'URL':ready['url']}
+            result=subprocess.run(['node','--input-type=module','-e',''.join('const '+k+'='+json.dumps(v)+';' for k,v in values.items())+script],capture_output=True,text=True,timeout=40)
+            assert result.returncode==0,result.stdout+result.stderr
+        finally:
+            server.terminate()
+            try:server.wait(timeout=9)
+            except subprocess.TimeoutExpired:server.kill();server.wait()
+            server.stdout.close()
+
+
+@pytest.mark.skipif(not browser_available(), reason='Chrome and Node required')
+@pytest.mark.parametrize('stall', [False, True])
+def test_decoded_incoming_scene_cannot_bleed_through_transparent_current_gaps(tmp_path, benchmark, stall):
+    import selectors
+    from interview import prepare_interview
+    from moviestar.spec import save_spec
+    from moviestar.spatial_layout import _chrome_path
+    root=tmp_path/'project';prepare_interview(root)
+    spec=load_spec(root)
+    spec['spatial']['scenes']['intro']['layout'].pop('background_color')
+    spec['spatial']['scenes']['reply']['layout']['background_color']='#ff0000'
+    save_spec(spec,cwd=root)
+    with (tmp_path/'server.log').open('w') as log:
+        server=subprocess.Popen([sys.executable,'-m','moviestar.cli','preview','--workspace',str(root),
+            '--mode','native','--from','0','--to','6','--port','0','--no-open'],stdout=subprocess.PIPE,stderr=log,text=True)
+        try:
+            with selectors.DefaultSelector() as poll:
+                poll.register(server.stdout,selectors.EVENT_READ);assert poll.select(20)
+                ready=json.loads(server.stdout.readline());assert ready.get('url'),ready
+            script=r'''
+import assert from 'node:assert/strict';import{writeFile}from'node:fs/promises';
+const {Browser}=await import(HELPER),b=await Browser.launch(CHROME,OUT),api='window.movieStarPreview.stage';
+async function capture(name){
+ const clip=await b.evaluate(`(()=>{const r=document.querySelector('#stage iframe:not(.pending)').getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,scale:1};})()`);
+ const png=await b.send('Page.captureScreenshot',{format:'png',clip,captureBeyondViewport:true});await writeFile(OUT+'/'+name+'.png',Buffer.from(png.data,'base64'));
+}
+try{
+ await b.send('Page.navigate',{url:URL});await b.wait('window.movieStarPreview?.is_current',15000);
+ const layerState=await b.evaluate(`(()=>{const w=document.querySelector('#stage iframe:not(.pending)').contentWindow;return [...w.document.querySelectorAll('iframe')].map(f=>({opacity:w.getComputedStyle(f).opacity,background:w.getComputedStyle(f.parentElement).backgroundColor}));})()`);
+ assert.deepEqual(layerState.map(l=>l.opacity),['1','0'],'Only the current scene is visible; decoded pictures do not need hidden video playback');
+ await capture('transparent-intro');await b.evaluate(api+'.seek(3)');await capture('red-reply');
+ if(STALL){
+  await b.evaluate(api+'.seek(0)');await b.click('#play');await b.wait(api+'.time > .2');
+  await b.evaluate('(()=>{const until=performance.now()+200;while(performance.now()<until){}})()');
+  await b.wait(api+'.error',5000);
+  assert.match(await b.evaluate(api+'.error'),/presentation deadline|frame is not ready/,'A missed frame must fail visibly, never silently reuse an older picture');
+ }
+}finally{await b.close();}
+'''
+            values={'HELPER':(Path(__file__).parents[2]/'experiments/live_browser_preview/browser.mjs').as_uri(),
+                'CHROME':str(_chrome_path()),'OUT':str(tmp_path/'browser'),'URL':ready['url'],'STALL':stall}
+            result=subprocess.run(['node','--input-type=module','-e',''.join('const '+k+'='+json.dumps(v)+';' for k,v in values.items())+script],capture_output=True,text=True,timeout=30)
+            assert result.returncode==0,result.stdout+result.stderr
+        finally:
+            server.terminate()
+            try:server.wait(timeout=9)
+            except subprocess.TimeoutExpired:server.kill();server.wait()
+            server.stdout.close()
+    assert tuple(_image(tmp_path/'browser/transparent-intro.png')[30,150])==(255,255,255)
+    assert tuple(_image(tmp_path/'browser/red-reply.png')[30,150])==(255,0,0)
