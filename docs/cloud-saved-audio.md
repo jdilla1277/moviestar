@@ -103,3 +103,12 @@ the request cannot supply its own spec or dependency manifest. This capability
 does not add an audio save/import path. An existing admitted personal saved
 revision and a capable configured engine bridge are prerequisites. Hosted
 activation, rendering and listening acceptance are separate.
+
+For a saved dialogue proposal, compare `projected_resolved.audio_mix.source_audio`
+with the current read; keep `current_undo_remaining` separate from projected undo
+depth. A real proposed change has `changes:true`/`changed_fields:["audio_mix"]`;
+reasserting existing controls is a no-op with no extra projected journal entry.
+`candidate.spec` is unsaved. `effects` must report zero saved revisions, Activity
+events, processing jobs and customer usage. Reopen the project after checking:
+the current revision and controls must still match the first read. The CLI
+rejects missing/mismatched candidate evidence instead of confirming it.
