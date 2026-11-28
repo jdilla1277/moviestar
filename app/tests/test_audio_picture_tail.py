@@ -71,11 +71,20 @@ def test_audio_remux_preserves_every_picture_packet_and_final_decoded_frames(
 
 @pytest.mark.parametrize('profile', ['fast', 'final', 'preview'])
 def test_export_audio_replacement_preserves_whole_file_and_authored_trim(
-    tmp_path, loaded_project, profile,
+    tmp_path, loaded_project, profile, monkeypatch,
 ):
     source, _ = media(tmp_path, 782)
     loaded_project(source, frames=False)
     runner = CliRunner()
+    # Compare the actual pre-mix render with its remux, not a second independent
+    # x264 encode whose compressed packets can vary across CI CPU scheduling.
+    import moviestar.cli as cli_module
+    actual_mix = cli_module.mix_audio
+    captured = []
+    def measured_mix(base, *args, **kwargs):
+        captured.append((picture(base), decoded(base)))
+        return actual_mix(base, *args, **kwargs)
+    monkeypatch.setattr(cli_module, 'mix_audio', measured_mix)
     def invoke(args):
         result = runner.invoke(cli, args)
         assert result.exit_code == 0, result.output
@@ -93,7 +102,11 @@ def test_export_audio_replacement_preserves_whole_file_and_authored_trim(
         before = (tmp_path / 'moviestar/spec.json').read_bytes()
         flags = ['--fast'] if profile == 'fast' else ['--preview'] if profile == 'preview' else []
         plan = invoke(['export', *flags, '--dry-run', '--out', str(out)])
+        prior_count = len(captured)
         result = invoke(['export', *flags, '--out', str(out), '--quiet'])
+        assert len(captured) == prior_count + 1
+        assert picture(out) == captured[-1][0]
+        assert decoded(out) == captured[-1][1]
         assert result['audio_mix_stage'] == 'post_render_remux'
         assert result['ffmpeg_command'] == plan['ffmpeg_command']
         assert (tmp_path / 'moviestar/spec.json').read_bytes() == before
@@ -101,11 +114,6 @@ def test_export_audio_replacement_preserves_whole_file_and_authored_trim(
             assert picture(out) == picture(source)
             assert decoded(out) == decoded(source)
         else:
-            # Compare the intended picture pass, keeping existing fast-trim
-            # keyframe semantics and final/preview encoding profiles intact.
-            base = tmp_path / 'trim-control.mp4'
-            command = list(plan['ffmpeg_command']);command[-1] = str(base)
-            run(command)
-            assert picture(out) == picture(base)
-            assert decoded(out) == decoded(base)
+            # Keep the actual pre-mix pass's packets/timestamps/frames exact,
+            # including existing fast-trim semantics and final/preview profiles.
             if not trimmed:assert len(decoded(out)) == 782
