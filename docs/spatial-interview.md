@@ -112,3 +112,62 @@ change at three seconds, and captions must change on the result clock. Compare
 both portrait and landscape outputs. Generated bars/beeps verify clocks and
 routing; real interview speech, face framing and lip sync still need a human
 review with representative recordings.
+
+## Change the cut after composing
+
+Scene edits preserve the arrangement by **scene ID**. Start from the helper's
+`scenes-640x360.json`, keep the IDs, and use `scenes set changed-scenes.json
+--dry-run` before saving. The following are separate edits; undo each before
+trying the next:
+
+| Change | Edit the scene document | What follows the scene |
+| --- | --- | --- |
+| Shorten Alice's first scene from three seconds to two | Change its slot's `to` from `4` to `3` | The existing picture bindings play their first two seconds. Motion keeps its authored scene-relative keyframes; it is not compressed. |
+| Put Bob's scene first | Reverse the two scene records, retaining `intro` and `reply` | Each scene keeps its component bindings and local customizations. Motion restarts at scene time zero in its new position. |
+| Remove Alice's opening scene | Remove the record with ID `intro` | Bob's retained arrangement moves to the beginning. The removed scene's arrangement is pruned; undo restores it. |
+
+Save a changed document and inspect the resulting scene before continuing:
+
+```sh
+moviestar scenes set changed-scenes.json --dry-run
+moviestar scenes set changed-scenes.json
+moviestar composition model preview --at 0.5 --out changed.png
+moviestar undo
+```
+
+This is **not yet an automatic edit of all related tracks**. Imported SRT cues
+keep their explicit finished-video timestamps. External microphone recordings,
+voiceovers and music added with `audio add` do too. For example, shortening the
+first scene by one second moves Bob's pictures from 3s to 2s, but an imported
+caption or external voiceover placed at 3s still starts at 3s. A looping music
+bed still runs to the new project end; that does not mean narration has followed
+the pictures. Source audio routed by a scene's `audio_from` is a separate case.
+
+`scenes set` warns about stored captions remaining at their old positions.
+Do not interpret the absence of an audio warning as confirmation of sync.
+There is also a known validity failure: removing enough footage can leave an
+external track starting after the new ending. `scenes set` currently accepts
+that state, but audio resolution then fails ([#330](https://github.com/jdilla1277/moviestar/issues/330)).
+Undo the scene change to recover before trying a revised edit.
+
+Rebuild or re-import captions against the new cut and explicitly retime external
+tracks through `audio dump` → edit → `audio set`. Review a rendered export with
+speech before declaring the edited project ready. Every saved correction is a
+separate undo entry; undo them before undoing the scene change.
+
+`cut --source alice --from … --to …` edits Alice's source timeline. It does not
+remove an interval from an already composed interview: saved scene ranges and
+spatial picture bindings refer to source media, and independent result-time
+tracks retain their timestamps. Use the scene document for scene shortening,
+removal or reordering. Removing a passage from the middle of a finished scene
+requires splitting its scene and explicitly adjusting picture bindings and
+related tracks; there is no single composition-wide ripple-cut command.
+
+The repeatable acceptance cases in `app/tests/test_spatial_composed_editing.py`
+cover scene shortening, removal, reordering, source-cut scope and exact undo on
+generated three-picture footage. They also render the actual export audio mix
+and measure separate voice/music tones. These checks establish current clock
+semantics; they do not claim that automatic cross-track retiming is implemented.
+
+The suite retains a strict expected failure for #330. Automatic scene-attached
+dialogue/caption editing is tracked separately in [#331](https://github.com/jdilla1277/moviestar/issues/331).
