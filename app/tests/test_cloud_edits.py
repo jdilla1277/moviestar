@@ -319,3 +319,9 @@ def test_audio_validation_requires_matching_candidate_and_zero_effects(remote,tm
     result=CliRunner().invoke(cli,['cloud','edits','validate',P,'--request',str(file)])
     assert result.exit_code==1,result.output
     assert json.loads(result.output)['error']['code']=='invalid_response'
+
+
+def test_audio_validation_help_explains_candidate_origin_and_noop_status():
+    text=' '.join(CliRunner().invoke(cli,['cloud','edits','validate','--help']).output.split())
+    assert 'saved_candidate' in text and 'derived from saved state' in text
+    assert 'changes:false' in text and 'no-op' in text

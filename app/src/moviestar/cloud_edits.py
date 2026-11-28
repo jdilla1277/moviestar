@@ -223,6 +223,8 @@ def register_edits(cloud):
         Times are integer milliseconds on the edited source clock, initially
         the full source. projected_resolved is a candidate; current_undo_remaining
         describes the unchanged current edit. No revision or Activity is saved.
+        saved_candidate means derived from saved state, not saved itself.
+        would_apply with changes:false is a no-op: no extra projected undo entry.
         For a saved mix, use its current_revision as expected_base_revision and
         operation {"type":"audio_source","gain_db":-6} or muted:true/false.
         Source controls affect routed dialogue, not camera selection; omitted
