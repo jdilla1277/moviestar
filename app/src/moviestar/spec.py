@@ -2766,6 +2766,8 @@ def set_composition(
     tuples in result-time per source. Each is resolved through that
     source's current timeline at this moment — the resulting
     composition stores SOURCE-TIME, so future per-source edits don't shift it.
+    A range crossing prior cuts expands into one segment per retained span,
+    with the requested framing copied to each.
 
     Bounds checks per source mirror :func:`append_trim`:
 
@@ -2825,21 +2827,25 @@ def set_composition(
                 f"result duration of {timeline.effective_duration}s"
             )
 
-        # Snapshot to source-time at this moment (D6).
-        src_from = result_to_source_time(
-            timeline.source_segments, result_from
-        )
-        src_to = result_to_source_time(
-            timeline.source_segments, result_to, at_end=True
-        )
-        segment_record = {
-            "source": sid,
-            "source_from": _format_timecode_string(src_from),
-            "source_to": _format_timecode_string(src_to),
-        }
-        if framings is not None and framings[i] is not None:
-            segment_record["framing"] = framings[i]
-        resolved.append(segment_record)
+        # Keep point-lookup bounds/tolerances, then snapshot every retained
+        # source span. Mapping only the outer endpoints restores cut holes.
+        result_to_source_time(timeline.source_segments, result_from)
+        result_to_source_time(timeline.source_segments, result_to, at_end=True)
+        for src_from, src_to in _apply_trim_to_segments(
+            timeline.source_segments, result_from, result_to
+        ):
+            # A float remainder at an exact seam can collapse to an empty
+            # span after the helper rounds to stored millisecond precision.
+            if src_from >= src_to:
+                continue
+            segment_record = {
+                "source": sid,
+                "source_from": _format_timecode_string(src_from),
+                "source_to": _format_timecode_string(src_to),
+            }
+            if framings is not None and framings[i] is not None:
+                segment_record["framing"] = framings[i]
+            resolved.append(segment_record)
         composition_duration += result_to - result_from
 
     # M14 step 1.4 + 1.5: validate audio_from. Anchor = source-time of

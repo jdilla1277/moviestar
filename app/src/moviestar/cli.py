@@ -24591,6 +24591,9 @@ def concat(
     each source's current edits and stored as source-time on disk. If
     you later trim or cut a source, the composition does not change.
     Re-run `concat` to bring new edits into the final video.
+    A range crossing earlier cuts expands into one stored segment per
+    retained span, preserving its framing. Removed footage stays excluded;
+    segments_count reports the stored spans.
 
     \b
     --audio-from <source-id> (multicam audio routing):
