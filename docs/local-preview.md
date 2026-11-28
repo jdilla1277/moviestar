@@ -567,7 +567,14 @@ counters. Source barcode checks and deliberate-stall regressions verify that
 missing images cannot pass as repeated old pictures.
 
 Canvas timing records animation-frame submission rather than a hardware display
-timestamp. The generated-fixture cue check adds one observed animation-frame
+timestamp. Before decoded three-picture Play or resume, the PCM start is aligned
+to four display-cadence observations, keeping the next selected source boundary
+just before a refresh, including source trims between frame boundaries.
+Audio starts and seek offsets remain on the exact 48 kHz sample
+grid; no future source image is presented early. Pause, seek and replacement
+cancel the wait, and missing display callbacks use the existing two-second
+startup deadline. One- and two-picture media-element starts are unchanged.
+The generated-fixture cue check adds one observed animation-frame
 interval as presentation uncertainty to the measured phase before applying the
 same 50 ms limit. Physical flash/beep and interview lip-sync review remain
 separate human acceptance checks.

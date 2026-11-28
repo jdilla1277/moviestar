@@ -1,3 +1,28 @@
+// Sample the display before scheduling PCM. A source boundary just after a
+// refresh otherwise waits an entire refresh before its picture can be drawn.
+// Actual submission timestamps and observed presentation uncertainty stay raw.
+async function displayCadence(active,deadline){
+  const stamps=[];
+  while(stamps.length<4){
+    const stamp=await new Promise((resolve,reject)=>{
+      let timer,frame;
+      const finish=(value,error)=>{clearTimeout(timer);cancelAnimationFrame(frame);error?reject(error):resolve(value);};
+      const check=()=>{
+        if(!active()){finish(null);return;}
+        if(performance.now()>=deadline){finish(null,Error('Native display clock did not start'));return;}
+        timer=setTimeout(check,10);
+      };
+      frame=requestAnimationFrame(stamp=>finish(stamp));check();
+    });
+    if(stamp===null||!active())return null;
+    if(!Number.isFinite(stamp)||(stamps.length&&stamp<=stamps.at(-1)))throw Error('Invalid native display clock');
+    stamps.push(stamp);
+  }
+  const gaps=stamps.slice(1).map((stamp,i)=>stamp-stamps[i]),base=Math.min(...gaps);
+  const period=(stamps.at(-1)-stamps[0])/gaps.reduce((n,gap)=>n+Math.round(gap/base),0);
+  return{stamp:stamps.at(-1),period};
+}
+
 // One lossless, bounded result-window mix. Picture cuts never restart it.
 export function createPreparedAudio(context,destination,signal,duration){
   let buffer=null,plane=null,source=null,generation=0,disposed=false,offset=0,startedAt=0,lastStart=null,ended=false;
@@ -26,7 +51,7 @@ export function createPreparedAudio(context,destination,signal,duration){
         cancel(){if(!settled){prepared=null;settled=true;}}
       };
     },
-    async play(at,{pictureLead=0,presentationLead}={}){
+    async play(at,{pictureLead=0,presentationLead,displayFps,displayOrigin=0}={}){
       api.pause();if(!buffer||disposed)return;
       const attempt=generation,active=()=>!disposed&&!signal?.aborted&&attempt===generation;
       await context.resume();if(!active())return;
@@ -44,13 +69,31 @@ export function createPreparedAudio(context,destination,signal,duration){
       // otherwise lossless mix, including measured picture-startup leads.
       offset=Math.round(Math.max(0,Math.min(buffer.duration,at))*context.sampleRate)/context.sampleRate;
       if(offset>=buffer.duration)return;
+      if(displayFps!==undefined&&(!Number.isFinite(displayFps)||displayFps<24||displayFps>60))
+        throw Error('Unsupported native display frame rate');
+      if(!Number.isFinite(displayOrigin))throw Error('Unsupported native display source origin');
+      const display=displayFps===undefined?null:await displayCadence(active,deadline);
+      if(!active())return;
+      const displayOutput=display?context.getOutputTimestamp():null;
+      if(displayOutput&&!(displayOutput.contextTime>0&&displayOutput.performanceTime>0))throw Error('Audio output clock is unavailable');
       source=context.createBufferSource();source.buffer=buffer;source.connect(destination);
       const playing=source;source.onended=()=>{if(source===playing){source.disconnect();source=null;offset=buffer.duration;ended=true;}};
       destination.port?.postMessage({kind:'capture'});
       // Schedule ahead of the rendering thread: starting at currentTime can
       // reach it one quantum late, while the master clock records the earlier
       // requested time. Keep the authored offset and reserve dispatch time.
-      startedAt=Math.round((context.currentTime+(presentationLead===undefined ? .05 : Math.max(.05,lead+.01)))*context.sampleRate)/context.sampleRate;
+      let scheduled=context.currentTime+(presentationLead===undefined ? .05 : Math.max(.05,lead+.01));
+      if(display){
+        const stamp=displayOutput;
+        const earliest=stamp.performanceTime+(scheduled-stamp.contextTime)*1000;
+        // Seek offsets remain on the PCM grid. Align the next source-frame
+        // boundary, including offsets between source frames, just before RAF.
+        const sourceFrame=(displayOrigin+offset)*displayFps;
+        const untilFrame=Math.max(0,Math.ceil(sourceFrame-1e-7)-sourceFrame)*1000/displayFps;
+        const edge=display.stamp+Math.ceil((earliest+untilFrame+1-display.stamp)/display.period)*display.period-1;
+        scheduled=stamp.contextTime+(edge-stamp.performanceTime-untilFrame)/1000;
+      }
+      startedAt=Math.round(scheduled*context.sampleRate)/context.sampleRate;
       lastStart={context_time:startedAt,offset};
       source.start(startedAt,offset);
       // Ordinary playback keeps its existing half-frame allowance. A silent
