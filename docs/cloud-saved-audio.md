@@ -112,3 +112,42 @@ reasserting existing controls is a no-op with no extra projected journal entry.
 events, processing jobs and customer usage. Reopen the project after checking:
 the current revision and controls must still match the first read. The CLI
 rejects missing/mismatched candidate evidence instead of confirming it.
+
+## Save source gain/mute and undo
+
+When `editing.write_operations` includes `audio_source`, and the account is
+separately enrolled, the same apply command saves source-layer controls for one
+owned saved video with no independently added tracks. The initial unsaved
+baseline still supports trim only. No source selector, fades or track editing
+is added. Omitted controls and existing fades/routing/timing stay unchanged.
+
+```sh
+moviestar cloud edits show PROJECT_ID
+moviestar cloud edits validate PROJECT_ID --request audio.json
+moviestar cloud edits apply PROJECT_ID --request audio.json
+moviestar cloud edits show PROJECT_ID
+```
+
+Use the actual current revision in `audio.json` with operation
+`{"type":"audio_source","gain_db":-6}` or `{"type":"audio_source","muted":true}`;
+`muted:false` unmutes. `committed` returns the new immutable revision, saved spec,
+resolved mix, read-back verification and one unmetered saved-edit Activity event.
+A no-op returns `unchanged`, retains a retry receipt and creates no new revision
+or event. Existing originals and historical versions stay intact.
+
+Reopen with `show --revision REVISION_ID`. Undo with a new request using the
+current base and `operation:{"type":"undo"}`: the whole previous command is
+restored, including the complete previous mix. Undo creates a new immutable
+saved version; it does not rewrite earlier specs or rendered outputs.
+
+The existing CLI durable retry mechanism applies unchanged. After a lost reply,
+use `cloud edits apply PROJECT_ID --recover`; retain the original request/key.
+Never silently refresh its base or use a new key to resolve uncertainty. Replays
+recover the original revision plus the separately reported current pointer,
+with no duplicate saved-edit event or usage. Stale new writes reject safely.
+
+**This saves instructions, not a newly audible video.** Rendering nondefault
+source gain/mute requires separate qualified renderer support. Saving schedules
+no processing job and reserves no Cloud processing/output allowance. Current
+renderers explicitly reject unsupported mixes rather than dropping the controls.
+Previously generated videos keep their original settings and URLs.

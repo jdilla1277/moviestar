@@ -353,3 +353,22 @@ def test_audio_projection_accepts_real_capped_engine_journal(remote,tmp_path,dep
     file=tmp_path/'audio.json';file.write_text(json.dumps(request));result=CliRunner().invoke(cli,['cloud','edits','validate',P,'--request',str(file)])
     assert result.exit_code==0,result.output
     assert json.loads(result.output)==response
+
+
+
+def test_apply_help_names_separate_audio_enrollment_and_no_render():
+    text=' '.join(CliRunner().invoke(cli,['cloud','edits','apply','--help']).output.split())
+    assert 'audio_source' in text and 'enrollment' in text and 'without rendering' in text
+
+
+def test_audio_save_confirmation_requires_matching_readback_not_just_status():
+    from moviestar.cloud_edits import _confirmed_mutation
+    revision='00000000-0000-4000-8000-000000000099'
+    proposal={**REQUEST,'expected_base_revision':revision,'operation':{'type':'audio_source','gain_db':-6}}
+    value=saved_mix_read(revision);value['spec']['audio_mix']['source_audio']['gain_db']=-6;value['resolved']['audio_mix']['source_audio']['gain_db']=-6
+    body={'contract_version':'cloud-editing-v1','project_id':P,'revision':value,'current_revision':revision,'status':'committed','changes':True,'replayed':False,'idempotency_key':'audio','request_sha256':'a'*64,'canonical_format':'postgres-jsonb-text-v1','normalized_request':proposal,'verification':{'format':'cloud-edit-state-proof-1','saved_state':'read_back_match'},'effects':{'saved_revisions':1,'activity_events':1,'processing_jobs':0,'customer_usage':0}}
+    assert _confirmed_mutation(body,P,'audio',proposal)
+    value['resolved']['audio_mix']['source_audio']['gain_db']=0
+    assert not _confirmed_mutation(body,P,'audio',proposal)
+    value['spec']['audio_mix']['source_audio']['gain_db']=0
+    assert not _confirmed_mutation(body,P,'audio',proposal)
