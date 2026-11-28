@@ -26,6 +26,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from moviestar.json_identity import canonical_json
 from moviestar.preview_timing import PreparationTiming, phase, start_timing, published_timing
+from moviestar.native_packet_reuse import CACHE_NAME as PACKET_INDEX_CACHE
 
 POLL_SECONDS = .2
 CANCEL_SECONDS = 6.0
@@ -102,7 +103,7 @@ class PreviewQueue:
                 if request is None:
                     return None
                 result = {key: deepcopy(value) for key, value in request.items()
-                          if key not in {"media", "spec", "project", "root", "input_identity", "caption_candidates"}}
+                          if key not in {"media", "spec", "project", "root", "input_identity", "caption_candidates", "packet_candidates"}}
                 # Only the validated completed diagnostic is public. Internal
                 # monotonic origins travel to the child in request.json.
                 if 'origin_perf' in result.get('preparation_timing', {}):
@@ -122,6 +123,7 @@ class PreviewQueue:
                 if request.get("media"):
                     path = Path(request["media"])
                     path.unlink(missing_ok=True)
+                    (path.parent/PACKET_INDEX_CACHE).unlink(missing_ok=True)
                     try:
                         path.parent.rmdir()
                     except OSError:
@@ -311,6 +313,12 @@ class PreviewSession:
                     self.assets.update(assets)
                     if self.mode == 'native':
                         try:
+                            reuse=json.loads((folder/'packet-reuse.json').read_text())
+                            self.queue.requests[request_id]['packet_reuse']={key:reuse[key] for key in ('indexed','reused')
+                                if type(reuse.get(key)) is int and 0<=reuse[key]<=6}
+                        except (ValueError,OSError,KeyError,TypeError):
+                            pass
+                        try:
                             reuse=json.loads((folder/'caption-reuse.json').read_text())
                             self.caption_candidates.accept(reuse['records'],folder)
                             # Only numeric counters are public, never candidate paths.
@@ -324,6 +332,7 @@ class PreviewSession:
             # this request. Queue pruning removes them with the descriptor.
             retained = {media}
             if published and self.mode == 'native':
+                if (folder/PACKET_INDEX_CACHE).is_file():retained.add(folder/PACKET_INDEX_CACHE)
                 retained.update(folder / Path(a['path']).relative_to(folder).parts[0]
                     for a in assets.values() if Path(a['path']).is_relative_to(folder))
             for path in folder.iterdir():
@@ -348,6 +357,9 @@ class PreviewSession:
                 request['preparation_timing']=timing.document
             if self.mode == 'native':
                 request['caption_candidates']=self.caption_candidates.snapshot()
+                with self.queue.lock:
+                    request['packet_candidates']=[str(Path(item['media']).parent/PACKET_INDEX_CACHE)
+                        for item in reversed(list(self.queue.requests.values())) if item.get('media')][:RETAINED_REQUESTS]
             folder = self.directory / request["request_id"]
             folder.mkdir()
             (folder / "request.json").write_text(json.dumps(request))
