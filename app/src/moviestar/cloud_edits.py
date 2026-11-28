@@ -84,10 +84,12 @@ def _saved_mix_read_valid(revision):
 
 
 def _audio_projection_valid(body, request):
+    from moviestar.spec import REVISION_LIMIT
     try:
         spec=body['candidate']['spec'];resolved=body['projected_resolved']
         changes=body['changes'];depth=body['current_undo_remaining']
-        return (body['normalized_request']==request and body['current_revision']==request['expected_base_revision']
+        projected_depth=min(REVISION_LIMIT,depth+int(changes))
+        return (0<=depth<=REVISION_LIMIT and body['normalized_request']==request and body['current_revision']==request['expected_base_revision']
                 and set(body['effects'])=={'saved_revisions','activity_events','processing_jobs','customer_usage'}
                 and all(type(v)is int and v==0 for v in body['effects'].values())
                 and _saved_mix_read_valid({'spec':spec,'resolved':resolved})
@@ -95,8 +97,8 @@ def _audio_projection_valid(body, request):
                         or type(v)in(int,float) and type(spec['audio_mix']['source_audio'][k])in(int,float) and spec['audio_mix']['source_audio'][k]==v
                         for k,v in request['operation'].items() if k!='type')
                 and body['changed_fields']==(['audio_mix']if changes else [])
-                and type(resolved['undo_remaining'])is int and resolved['undo_remaining']==depth+int(changes)
-                and isinstance(spec['revisions'],list) and len(spec['revisions'])==depth+int(changes))
+                and type(resolved['undo_remaining'])is int and resolved['undo_remaining']==projected_depth
+                and isinstance(spec['revisions'],list) and len(spec['revisions'])==projected_depth)
     except (KeyError,TypeError,ValueError):return False
 
 

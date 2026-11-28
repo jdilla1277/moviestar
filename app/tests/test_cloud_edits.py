@@ -325,3 +325,31 @@ def test_audio_validation_help_explains_candidate_origin_and_noop_status():
     text=' '.join(CliRunner().invoke(cli,['cloud','edits','validate','--help']).output.split())
     assert 'saved_candidate' in text and 'derived from saved state' in text
     assert 'changes:false' in text and 'no-op' in text
+
+
+@pytest.mark.parametrize('depth',[49,50])
+@pytest.mark.parametrize('change',[True,False])
+def test_audio_projection_accepts_real_capped_engine_journal(remote,tmp_path,depth,change):
+    from moviestar.spec import empty_spec,set_audio_mix,append_revision,REVISION_LIMIT
+    from moviestar.saved_edit_validation import prepare_saved_edit
+    asset='00000000-0000-4000-8000-000000000021'
+    spec=empty_spec([{'id':'speaker','path':'asset:'+asset}])
+    for i in range(depth):
+        mix=json.loads(json.dumps(spec['audio_mix']));mix['source_audio']['gain_db']=-1 if i%2==0 else -2
+        spec=append_revision(spec,set_audio_mix(spec,mix),'audio '+str(i))
+    gain=-6 if change else spec['audio_mix']['source_audio']['gain_db']
+    revision='00000000-0000-4000-8000-000000000099'
+    request={'contract_version':'cloud-editing-v1','expected_base_revision':revision,'operation':{'type':'audio_source','gain_db':gain}}
+    before=json.loads(json.dumps(spec))
+    prepared=prepare_saved_edit([{'source_id':'speaker','asset_id':asset,'media':{'duration_ms':10000,'width':640,'height':360,'audio_codec':'aac'}}],spec,request['operation'])
+    journal=prepared['candidate_spec']['revisions']
+    assert len(journal)==min(REVISION_LIMIT,depth+int(change))
+    assert spec==before
+    if change:
+        assert journal[:-1]==spec['revisions'][max(0,depth+1-REVISION_LIMIT):]
+    else:
+        assert journal==spec['revisions']
+    _,response,_=remote;response.pop('revision');response.update(status='would_apply',current_revision=revision,changes=prepared['changes'],current_undo_remaining=prepared['current_undo_remaining'],changed_fields=prepared['changed_fields'],normalized_request=request,candidate={'spec':prepared['candidate_spec']},projected_resolved=prepared['projected_resolved'],effects={'saved_revisions':0,'activity_events':0,'processing_jobs':0,'customer_usage':0})
+    file=tmp_path/'audio.json';file.write_text(json.dumps(request));result=CliRunner().invoke(cli,['cloud','edits','validate',P,'--request',str(file)])
+    assert result.exit_code==0,result.output
+    assert json.loads(result.output)==response
