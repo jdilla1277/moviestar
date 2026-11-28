@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import tempfile
@@ -54,6 +55,34 @@ def _service_error(body, **extra):
     _fail('cloud_unavailable')
 
 
+def _saved_mix_read_valid(revision):
+    """Check read evidence, without resolving audio or inventing defaults."""
+    try:
+        spec, resolved = revision['spec'], revision['resolved']
+        saved, mix = spec['audio_mix'], resolved['audio_mix']
+        controls = mix['source_audio']
+        if (controls != saved['source_audio'] or any(type(c['muted']) is not bool
+                or any(type(c[k]) not in (int, float) or not math.isfinite(c[k])
+                       for k in ('gain_db', 'fade_in', 'fade_out'))
+                for c in (controls, saved['source_audio']))):
+            return False
+        tracks, original = mix['tracks'], saved['tracks']
+        identities = [t['id'] for t in tracks]
+        available = resolved['source_audio_availability']
+        return (isinstance(tracks, list) and isinstance(original, list)
+                and all(isinstance(i, str) and i for i in identities)
+                and len(set(identities)) == len(identities)
+                and identities == [t['id'] for t in original]
+                and type(resolved['track_count']) is int and resolved['track_count'] == len(tracks)
+                and isinstance(available, dict)
+                and all(v in ('stream_reported', 'no_stream_in_metadata', 'unreported') for v in available.values())
+                and isinstance(resolved['routing'], list)
+                and all(r['source_id'] is None or r['source_id'] in available for r in resolved['routing'])
+                and resolved['loudness'] is None and resolved['loudness_status'] == 'not_measured')
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return False
+
+
 def _response(status, body, project, validate, selected=None):
     from moviestar.cloud import _UUID
     if status != 200:
@@ -70,7 +99,7 @@ def _response(status, body, project, validate, selected=None):
             _fail('invalid_response')
     elif saved:
         revision = body.get('revision')
-        if not isinstance(revision, dict) or revision.get('id') != (selected or current) or not isinstance(revision.get('spec'), dict):
+        if not isinstance(revision, dict) or revision.get('id') != (selected or current) or not _saved_mix_read_valid(revision):
             _fail('invalid_response')
     elif body.get('revision', 'missing') is not None or 'baseline' not in body:
         _fail('invalid_response')
@@ -148,6 +177,14 @@ def register_edits(cloud):
         sources do not imply a composition or dialogue/camera selection.
         opened returns revision.spec and revision.resolved.audio_mix/routing for
         a saved mix; reading does not create or update a revision.
+        Read source_audio.gain_db and muted for saved dialogue controls; routing
+        identifies its source and result-time ranges in milliseconds.
+        fade_in/fade_out are seconds. Join source_id through
+        revision.dependency_manifest to separate asset_id and reference_id.
+        source_audio_availability
+        reports stream metadata, not proof of audible speech. Loudness is not
+        measured by this read. --revision opens old settings without moving the
+        current pointer. No media is downloaded or analyzed.
         """
         from moviestar.cloud import _UUID
         if revision and not _UUID.fullmatch(revision):_fail('invalid_request')
