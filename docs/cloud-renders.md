@@ -2,11 +2,25 @@
 
 Local `export` and `export --preview` stay local. Remote renders explicitly use
 one immutable saved version with the same engine and x264 encoder.
-Saving or undoing instructions does not automatically render.
+Saving or undoing instructions does not automatically render. A save verifies
+instructions, so its proof can still say `execution_ready:false` and input bytes /
+output `not_checked`. Explicit render admission separately checks the supported
+saved state and pins authorized input bytes before queueing. A completed render
+does not rewrite that earlier save proof.
 
-The initial Cloud profile supports one owned ready MP4, trim-only instructions,
-at most 30 seconds of result and a 64 MiB input. Layouts, captions and altered
-audio are not admitted yet. Two output kinds are supported when enrolled:
+For dialogue, save the gain/mute settings first, then render that exact revision.
+The submit body remains revision_id/kind; it accepts no competing mix override.
+Gain changes the already-routed dialogue, not camera selection. Muting the sole
+source removes the output audio stream, matching local export. Unreported source
+audio is not inferred. Undo creates a new saved revision: render that revision
+to hear the restoration; earlier outputs retain their original settings and URLs.
+Saving/undoing remains unmetered, while each deliberately new render uses the
+existing allowance. Retried original render keys recover the same job/output.
+
+The Cloud profiles support one owned ready MP4, trim instructions, at most
+30 seconds of result and a 64 MiB input. Separately enrolled qualified workers
+also apply saved source-dialogue gain/mute. Layouts, captions, added audio tracks
+and audio fades remain unsupported. Two output kinds are supported when enrolled:
 
 | Kind | Local equivalent | Output and processing bounds |
 | --- | --- | --- |
@@ -55,8 +69,10 @@ a different key; both outputs can belong to the same revision. Changed intent wi
 fails. After `submission_unconfirmed`, use the returned recovery command;
 do not infer rollback or generate a replacement key.
 
-`accepted` means queued. Poll the same job through `queued`, `running` and
-`verifying`. Only `succeeded` identifies an independently downloaded/decoded,
+`accepted` acknowledges the retained submission, not its current execution
+state. Inspect `job.state`: a new job starts `queued`, while a replay may already
+be `succeeded`, `failed` or `cancelled`. Poll nonterminal jobs through `queued`,
+`running` and `verifying`. Only `succeeded` identifies an independently downloaded/decoded,
 hash/size/media-verified artifact. Failure or cancellation publishes none.
 Use `cloud renders cancel PROJECT JOB` to fence unfinished work. A completed
 output is unchanged by cancellation, editing or undo.

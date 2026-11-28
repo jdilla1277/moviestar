@@ -120,10 +120,16 @@ def register_renders(cloud):
     @click.option('--kind',type=click.Choice(['preview','final']),default='preview',show_default=True)
     @click.option('--idempotency-key',help='Retain on retries. Generated and saved before sending if omitted.')
     def submit(project_id,revision,kind,idempotency_key):
-        """Request preview (480p) or final (full source dimensions). Accepted means queued.
+        """Request preview (480p) or final (full source dimensions).
+
+        accepted confirms the retained request; job.state is execution state.
+        A new job starts queued; a replay may already be terminal. Only succeeded
+        identifies a verified output.
 
         Both render this exact revision without changing its spec or undo journal.
         Final matches local export with x264; no preview approval is inferred.
+        Separately enrolled workers honor saved source gain/mute. No mix
+        override is accepted here; change and save the edit before rendering.
         Successful output allowance includes the MP4 plus 8 KiB of job metadata.
 
         After an uncertain reply, repeat the identical command/key. A new key
