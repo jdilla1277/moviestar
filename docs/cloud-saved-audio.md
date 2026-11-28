@@ -1,10 +1,11 @@
-# Inspect a saved Cloud mix without changing it
+# Read, validate and save Cloud dialogue controls
 
 On a service advertising `saved_revision` read/validation support, the existing edit commands
 can inspect a persisted personal revision and check source gain/mute changes.
 These read/validate commands do not save, render, download media or analyze loudness.
 The separate [one-video trim/undo path](cloud-edits.md#save-one-trim-and-undo)
-can produce saved revisions; audio patches remain validation-only.
+can produce saved revisions. Source gain/mute saves require the separate
+capability and account enrollment described below.
 
 ```sh
 moviestar cloud edits capabilities
@@ -99,10 +100,11 @@ A no-op reports `changes: false`, no changed fields and unchanged undo depth.
 The API and hosted MCP use the same project edit read/validate boundary. No
 separate audio endpoint, local project selection, processing charge or saved
 Activity event is created. The service reads authoritative persisted state;
-the request cannot supply its own spec or dependency manifest. This capability
-does not add an audio save/import path. An existing admitted personal saved
-revision and a capable configured engine bridge are prerequisites. Hosted
-activation, rendering and listening acceptance are separate.
+the request cannot supply its own spec or dependency manifest. Validation
+never saves the candidate; saving requires the separate apply step below. There
+is no spec-import path here. An existing admitted personal saved revision and
+a capable configured engine bridge are prerequisites. Hosted activation,
+rendering and listening acceptance are separate.
 
 For a saved dialogue proposal, compare `projected_resolved.audio_mix.source_audio`
 with the current read; keep `current_undo_remaining` separate from projected undo
