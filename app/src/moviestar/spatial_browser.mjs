@@ -205,8 +205,9 @@ try {
 } finally {
   requests?.close();
   if (sessionMode) process.stdin.pause();
+  const cleanupError = await stopBrowser(chrome, chromeExited, profile, undefined,
+    socket?.readyState === WebSocket.OPEN ? () => send('Browser.close') : undefined);
   try { socket?.close(); } catch {}
-  const cleanupError = await stopBrowser(chrome, chromeExited, profile);
   if (cleanupError && !process.exitCode) {
     process.stderr.write(`Chrome profile cleanup failed: ${cleanupError.message}\n`);
     process.exitCode = 1;
