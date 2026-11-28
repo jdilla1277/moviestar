@@ -1406,7 +1406,7 @@ def run_loudness_probe(
     true_peak: float = -1.5,
     lra: float = 11.0,
 ) -> tuple[dict, list[str]]:
-    """Measure integrated loudness and peak metrics for an audio stream."""
+    """Measure audio loudness; unavailable/non-finite metrics are None."""
     if not os.path.exists(media_path):
         raise FileNotFoundError(f"File not found: {media_path}")
 
@@ -1426,11 +1426,11 @@ def run_loudness_probe(
 
     raw = _parse_loudnorm_json(result.stderr)
     metrics = {
-        "integrated_lufs": _float_metric(raw, "input_i"),
-        "true_peak_dbtp": _float_metric(raw, "input_tp"),
-        "lra_lu": _float_metric(raw, "input_lra"),
-        "threshold_lufs": _float_metric(raw, "input_thresh"),
-        "target_offset_lu": _float_metric(raw, "target_offset"),
+        "integrated_lufs": _finite_metric(raw, "input_i"),
+        "true_peak_dbtp": _finite_metric(raw, "input_tp"),
+        "lra_lu": _finite_metric(raw, "input_lra"),
+        "threshold_lufs": _finite_metric(raw, "input_thresh"),
+        "target_offset_lu": _finite_metric(raw, "target_offset"),
         "normalization_target": {
             "integrated_lufs": target_lufs,
             "true_peak_dbtp": true_peak,

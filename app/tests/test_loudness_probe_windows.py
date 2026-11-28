@@ -63,12 +63,12 @@ def test_bounded_probe_matches_independently_sliced_pcm(level_steps, start, end)
     actual, _ = run_loudness_probe(str(path), start_time=start, duration=end - start)
     expected, _ = run_loudness_probe(str(reference))
     assert actual["true_peak_dbtp"] == pytest.approx(expected["true_peak_dbtp"], abs=.08)
-    if math.isfinite(expected["integrated_lufs"]):
+    if expected["integrated_lufs"] is not None:
         assert actual["integrated_lufs"] == pytest.approx(expected["integrated_lufs"], abs=.08)
     else:
         # Integrated LUFS can be unavailable for very short windows; future
         # audio must not turn that into a plausible finite measurement.
-        assert actual["integrated_lufs"] == expected["integrated_lufs"]
+        assert actual["integrated_lufs"] is None
 
 
 def test_cli_keeps_range_and_measures_distinct_adjacent_windows(level_steps):
