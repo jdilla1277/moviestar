@@ -2,7 +2,11 @@
 
 Local `export` and `export --preview` stay local. Remote renders explicitly use
 one immutable saved version with the same engine and x264 encoder.
-Saving or undoing instructions does not automatically render.
+Saving or undoing instructions does not automatically render. A save verifies
+instructions, so its proof can still say `execution_ready:false` and input bytes /
+output `not_checked`. Explicit render admission separately checks the supported
+saved state and pins authorized input bytes before queueing. A completed render
+does not rewrite that earlier save proof.
 
 For dialogue, save the gain/mute settings first, then render that exact revision.
 The submit body remains revision_id/kind; it accepts no competing mix override.
@@ -65,8 +69,10 @@ a different key; both outputs can belong to the same revision. Changed intent wi
 fails. After `submission_unconfirmed`, use the returned recovery command;
 do not infer rollback or generate a replacement key.
 
-`accepted` means queued. Poll the same job through `queued`, `running` and
-`verifying`. Only `succeeded` identifies an independently downloaded/decoded,
+`accepted` acknowledges the retained submission, not its current execution
+state. Inspect `job.state`: a new job starts `queued`, while a replay may already
+be `succeeded`, `failed` or `cancelled`. Poll nonterminal jobs through `queued`,
+`running` and `verifying`. Only `succeeded` identifies an independently downloaded/decoded,
 hash/size/media-verified artifact. Failure or cancellation publishes none.
 Use `cloud renders cancel PROJECT JOB` to fence unfinished work. A completed
 output is unchanged by cancellation, editing or undo.

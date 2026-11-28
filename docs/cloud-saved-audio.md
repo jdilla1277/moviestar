@@ -134,6 +134,8 @@ Use the actual current revision in `audio.json` with operation
 `{"type":"audio_source","gain_db":-6}` or `{"type":"audio_source","muted":true}`;
 `muted:false` unmutes. `committed` returns the new immutable revision, saved spec,
 resolved mix, read-back verification and one unmetered saved-edit Activity event.
+The save proof's `execution_ready:false` means input bytes/output have not been
+checked by saving; render admission performs its own checks, separately.
 A no-op returns `unchanged`, retains a retry receipt and creates no new revision
 or event. Existing originals and historical versions stay intact.
 
