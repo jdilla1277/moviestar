@@ -2,7 +2,7 @@
 // error so a caller can preserve an earlier startup or rendering failure.
 import {rmSync} from 'node:fs';
 
-export async function stopBrowser(child, exited, profile, removeProfile = rmSync) {
+export async function stopBrowser(child, exited, profile, removeProfile = rmSync, requestClose) {
   async function waitForExit(milliseconds) {
     let timer;
     try {
@@ -13,8 +13,16 @@ export async function stopBrowser(child, exited, profile, removeProfile = rmSync
       clearTimeout(timer);
     }
   }
+  const deadline = performance.now() + 2000;
+  if (requestClose && child.exitCode === null && child.signalCode === null) {
+    // Browser.close lets Chrome drain profile writers before its parent exits.
+    // A reply is not an exit acknowledgement. Wait for exit, bounded inside
+    // the existing two-second termination budget, then retain forced fallback.
+    Promise.resolve().then(requestClose).catch(() => {});
+    await waitForExit(500);
+  }
   if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
-  await waitForExit(2000);
+  await waitForExit(Math.max(0, deadline - performance.now()));
   if (child.exitCode === null && child.signalCode === null) {
     child.kill('SIGKILL');
     await waitForExit(1000);
