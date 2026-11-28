@@ -4,9 +4,19 @@ Local `export` and `export --preview` stay local. Remote renders explicitly use
 one immutable saved version with the same engine and x264 encoder.
 Saving or undoing instructions does not automatically render.
 
-The initial Cloud profile supports one owned ready MP4, trim-only instructions,
-at most 30 seconds of result and a 64 MiB input. Layouts, captions and altered
-audio are not admitted yet. Two output kinds are supported when enrolled:
+For dialogue, save the gain/mute settings first, then render that exact revision.
+The submit body remains revision_id/kind; it accepts no competing mix override.
+Gain changes the already-routed dialogue, not camera selection. Muting the sole
+source removes the output audio stream, matching local export. Unreported source
+audio is not inferred. Undo creates a new saved revision: render that revision
+to hear the restoration; earlier outputs retain their original settings and URLs.
+Saving/undoing remains unmetered, while each deliberately new render uses the
+existing allowance. Retried original render keys recover the same job/output.
+
+The Cloud profiles support one owned ready MP4, trim instructions, at most
+30 seconds of result and a 64 MiB input. Separately enrolled qualified workers
+also apply saved source-dialogue gain/mute. Layouts, captions, added audio tracks
+and audio fades remain unsupported. Two output kinds are supported when enrolled:
 
 | Kind | Local equivalent | Output and processing bounds |
 | --- | --- | --- |

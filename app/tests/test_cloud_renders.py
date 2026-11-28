@@ -138,3 +138,8 @@ def test_download_checks_actual_bytes_and_never_forwards_account_credentials(tmp
         assert not list(tmp_path.glob('*.part'))
     finally:
         server.shutdown();server.server_close();thread.join()
+
+
+def test_render_help_explains_saved_dialogue_and_no_mix_override():
+    text=' '.join(CliRunner().invoke(cli,['cloud','renders','submit','--help']).output.split())
+    assert 'gain/mute' in text and 'saved' in text and 'override' in text

@@ -148,8 +148,9 @@ Never silently refresh its base or use a new key to resolve uncertainty. Replays
 recover the original revision plus the separately reported current pointer,
 with no duplicate saved-edit event or usage. Stale new writes reject safely.
 
-**This saves instructions, not a newly audible video.** Rendering nondefault
-source gain/mute requires separate qualified renderer support. Saving schedules
-no processing job and reserves no Cloud processing/output allowance. Current
-renderers explicitly reject unsupported mixes rather than dropping the controls.
+**Saving changes instructions; rendering produces the audible video.**
+[Render the exact saved revision](cloud-renders.md) through separately enrolled
+qualified workers to apply source gain/mute in preview or full-quality output.
+Saving schedules no processing job and reserves no Cloud processing/output
+allowance. Unsupported mixes are rejected rather than silently dropping controls.
 Previously generated videos keep their original settings and URLs.

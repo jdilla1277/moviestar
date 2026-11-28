@@ -124,6 +124,8 @@ def register_renders(cloud):
 
         Both render this exact revision without changing its spec or undo journal.
         Final matches local export with x264; no preview approval is inferred.
+        Separately enrolled workers honor saved source gain/mute. No mix
+        override is accepted here; change and save the edit before rendering.
         Successful output allowance includes the MP4 plus 8 KiB of job metadata.
 
         After an uncertain reply, repeat the identical command/key. A new key
