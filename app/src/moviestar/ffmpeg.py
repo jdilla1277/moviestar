@@ -1357,9 +1357,11 @@ def build_loudness_probe_command(
     cmd: list[str] = ["ffmpeg", "-hide_banner", "-nostats", "-loglevel", "info"]
     if start_time is not None:
         cmd += ["-ss", str(start_time)]
-    cmd += ["-i", media_path]
+    # Bound decoded input before loudnorm's lookahead. An output -t stops
+    # encoding later, after the filter has already measured future audio.
     if duration is not None:
         cmd += ["-t", str(duration)]
+    cmd += ["-i", media_path]
     cmd += [
         "-vn",
         "-af",
