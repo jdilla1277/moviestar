@@ -20,4 +20,3 @@ assert.equal(metrics.finished,true,'Static sources never advance media.currentTi
 '''
     result=subprocess.run(['node','--input-type=module','-e',f'const MODULE={json.dumps(module)};'+script],capture_output=True,text=True,timeout=10)
     assert result.returncode==0,result.stdout+result.stderr
-
