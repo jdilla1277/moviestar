@@ -83,7 +83,26 @@ def _saved_mix_read_valid(revision):
         return False
 
 
-def _response(status, body, project, validate, selected=None):
+def _audio_projection_valid(body, request):
+    from moviestar.spec import REVISION_LIMIT
+    try:
+        spec=body['candidate']['spec'];resolved=body['projected_resolved']
+        changes=body['changes'];depth=body['current_undo_remaining']
+        projected_depth=min(REVISION_LIMIT,depth+int(changes))
+        return (0<=depth<=REVISION_LIMIT and body['normalized_request']==request and body['current_revision']==request['expected_base_revision']
+                and set(body['effects'])=={'saved_revisions','activity_events','processing_jobs','customer_usage'}
+                and all(type(v)is int and v==0 for v in body['effects'].values())
+                and _saved_mix_read_valid({'spec':spec,'resolved':resolved})
+                and all(type(spec['audio_mix']['source_audio'][k]) is type(v) and spec['audio_mix']['source_audio'][k]==v
+                        or type(v)in(int,float) and type(spec['audio_mix']['source_audio'][k])in(int,float) and spec['audio_mix']['source_audio'][k]==v
+                        for k,v in request['operation'].items() if k!='type')
+                and body['changed_fields']==(['audio_mix']if changes else [])
+                and type(resolved['undo_remaining'])is int and resolved['undo_remaining']==projected_depth
+                and isinstance(spec['revisions'],list) and len(spec['revisions'])==projected_depth)
+    except (KeyError,TypeError,ValueError):return False
+
+
+def _response(status, body, project, validate, selected=None, request=None):
     from moviestar.cloud import _UUID
     if status != 200:
         _service_error(body)
@@ -92,6 +111,8 @@ def _response(status, body, project, validate, selected=None):
     if (body.get('contract_version') != _CONTRACT or body.get('project_id') != project
             or (current is not None and not saved)
             or body.get('status') != ('would_apply' if validate else 'opened' if saved else 'no_saved_edit')):
+        _fail('invalid_response')
+    if validate and request and request['operation'].get('type')=='audio_source' and not _audio_projection_valid(body,request):
         _fail('invalid_response')
     if validate:
         depth = body.get('current_undo_remaining')
@@ -165,7 +186,7 @@ def register_edits(cloud):
         _capability(command,endpoint,credential,'validation' if request is not None else 'read')
         status, body = _request(endpoint+'/projects/'+project+('/revisions/'+selected if selected else '/edit'+('/validate' if request is not None else '')),credential,
                                 **({'payload':request} if request is not None else {}))
-        _response(status,body,project,request is not None,selected)
+        _response(status,body,project,request is not None,selected,request)
 
     @edits.command('show')
     @click.argument('project_id')
@@ -204,6 +225,8 @@ def register_edits(cloud):
         Times are integer milliseconds on the edited source clock, initially
         the full source. projected_resolved is a candidate; current_undo_remaining
         describes the unchanged current edit. No revision or Activity is saved.
+        saved_candidate means derived from saved state, not saved itself.
+        would_apply with changes:false is a no-op: no extra projected undo entry.
         For a saved mix, use its current_revision as expected_base_revision and
         operation {"type":"audio_source","gain_db":-6} or muted:true/false.
         Source controls affect routed dialogue, not camera selection; omitted
